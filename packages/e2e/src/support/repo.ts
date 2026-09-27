@@ -219,6 +219,11 @@ export class TestRepo {
     return hash.digest("hex");
   }
 
+  /** The fingerprint the Approval Policy lists for the human's key, as ssh-keygen prints it. */
+  policyFingerprint(): string {
+    return sshFingerprint(this.env, `${this.key(HUMAN.key)}.pub`);
+  }
+
   writePolicy(keys: readonly string[] = [HUMAN.key]): void {
     const approverKeys = keys.map((name) => {
       const publicKey = readFileSync(`${this.key(name)}.pub`, "utf8").trim();

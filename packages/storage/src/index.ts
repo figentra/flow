@@ -35,6 +35,7 @@ export {
   sshPublicKeyFingerprint,
   type CommitSignatureCheck,
 } from "./signature.js";
+export { signingKeyFingerprint } from "./signing-key.js";
 
 // ============================================================================
 // Ledger Operations

@@ -78,7 +78,13 @@ export interface ApprovalPayload {
   checksum_form?: 1 | 2;
   /** Email of the Authorised Approver */
   identity: string;
-  /** GPG or SSH key fingerprint used to sign the Approval Signal */
+  /**
+   * Fingerprint of the key the approver's git is configured to sign with
+   * (`SHA256:…` for SSH, the hex fingerprint for GPG), or "" when it could
+   * not be determined — never a path. Informational: verification reads the
+   * signer from the signed commit. Entries written by Vellum 0.1.2 may hold
+   * the configured key's file path instead; they are read as they are.
+   */
   identity_key: string;
   /** Session type - "human" required, "assistant" rejected */
   session_type: "human" | "assistant" | "ci";

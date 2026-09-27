@@ -35,7 +35,12 @@ export function approve(repo: TestRepo, kind: Kind): void {
     artifact: `${kind}.md`,
     identity: HUMAN.email,
     session_type: "human",
+    checksum_form: 2,
+    // The fingerprint the policy lists for the key git signs with — never
+    // user.signingkey's path (a file under this repository's root here).
+    identity_key: repo.policyFingerprint(),
   });
+  expect(repo.ledgerLines().at(-1)).not.toContain(repo.root);
   repo.commitLedger(`approve: ${SLUG} ${kind}`, HUMAN.key);
 }
 

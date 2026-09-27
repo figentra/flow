@@ -13,6 +13,7 @@ import {
   gitConfig,
   loadSpec,
   resolveSpec,
+  signingKeyFingerprint,
   specRiskClass,
 } from "@vellum/storage";
 import type { CliContext } from "../context.js";
@@ -216,7 +217,7 @@ export async function approve(args: ApproveArgs, ctx: CliContext): Promise<numbe
         kind: "approval",
         artifact_checksum: checksum,
         checksum_form: CHECKSUM_FORM,
-        identity_key: gitConfig(repo.root, "user.signingkey") ?? "",
+        identity_key: signingKeyFingerprint(repo.root),
         session_type: "human",
         approval_signal: { commit: null, message_prefix: "approve:" },
       });

@@ -6,10 +6,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { homedir } from "node:os";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { checkLedgerIntegrity } from "@vellum/engine";
 import { computeChecksum, computeChecksumInForm } from "@vellum/protocol";
-import { appendLedgerEntry, readLedgerHead } from "@vellum/storage";
+import { appendLedgerEntry, readLedgerHead, sshPublicKeyFingerprint } from "@vellum/storage";
 import { DESIGN, Fixture, REQUIREMENTS, SLUG, TASKS, withFrontmatter } from "./fixture.js";
 
 function hasSshKeygen(): boolean {
@@ -367,6 +368,21 @@ describe.skipIf(!SSH)("vellum CLI against a temp repository", () => {
 
       const uncommitted = JSON.parse((await fx.cli(["verify", SLUG, "--json"])).stdout);
       expect(JSON.stringify(uncommitted.specs[0].findings)).toContain("not committed");
+    });
+
+    it("records the signing key's fingerprint as identity_key, never its path or the home directory", async () => {
+      fx.git(["config", "gpg.format", "ssh"]);
+      fx.git(["config", "user.signingkey", fx.key("alice")]);
+      const result = await fx.cli(["approve", SLUG, "requirements"], { interactive: true });
+      expect(result.status).toBe(0);
+
+      const alice = sshPublicKeyFingerprint(readFileSync(`${fx.key("alice")}.pub`, "utf8"));
+      expect(alice).toMatch(/^SHA256:/);
+      expect((await fx.ledger())[0]).toMatchObject({ kind: "approval", identity_key: alice });
+      const lines = readFileSync(fx.ledgerPath, "utf8");
+      expect(lines).not.toContain(fx.root);
+      expect(lines).not.toContain(homedir());
+      expect(lines).not.toContain(fx.key("alice"));
     });
 
     it("refuses to approve a plan that leaves a criterion uncovered or a property uncited, naming each and writing nothing", async () => {
