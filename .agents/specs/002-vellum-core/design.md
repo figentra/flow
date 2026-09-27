@@ -1624,7 +1624,11 @@ The `.sdlc/` folder inside each spec directory:
 
 ### Checksum calculation
 
-Checksum covers the artifact body, excluding frontmatter:
+Checksum covers the artifact body, excluding frontmatter. The sketch below is the
+starting point only: the canonical form that is actually hashed also normalises
+formatting, Task Markers, the Execution Log and a formatter's layout — see
+decisions 8, 12 and 13 under Open questions and `canonicalChecksumBody` in
+`@vellum/protocol`.
 
 ```typescript
 function computeChecksum(body: string): string {
@@ -2194,6 +2198,8 @@ Requirement 10 (Keyed Provider Definition) depends on `defineKeyed` and `defineD
 11. **Where a task's verification command comes from.** `tasks.md` has no syntax for it. Decision (accepted by the spec owner, 2026-09-27): it is passed as `vellum task complete <spec> <task> --command "<cmd>"`, and the CLI always executes it itself and records the observed exit status, duration, output digest and HEAD commit as Evidence. No flag accepts an exit status from the caller.
 
 12. **The Execution Log and the Artifact Checksum.** Decision (2026-09-27, found testing the published plugin): the canonical body keeps a `## Execution Log` heading but drops the section's contents, up to the next `#` or `##` heading. spec-implement appends a row after every task; counting those rows would void the plan approval after the first task and refuse every later `task start`. The ledger's Evidence Entries, not the log, are the evidence.
+
+13. **A Markdown formatter's layout and the Artifact Checksum; wrapped tasks.** Must reformatting a spec with a Markdown formatter void its approvals, and must a task a formatter wraps lose its trailers? Decision (2026-09-27, found comparing a plan before and after prettier): no to both. The Artifact Checksum hashes `canonicalChecksumBody`: the canonical body with blank lines before the first content line dropped, each run of blank lines outside fenced code collapsed to one, and soft wraps joined — outside fenced code, a paragraph, list item or block quote continued on following lines reads as one line, each continuation line trimmed and joined with one space. A line continues the block above it unless it is blank or opens a block of its own (heading, table row, fence, thematic break, setext underline, block quote, a bullet, or an ordered item numbered 1 — CommonMark's rule for what may interrupt a paragraph). So prettier's default blank line after the frontmatter, and `--prose-wrap always` re-wrapping at any width or hanging indent, keep the checksum; a changed word, a new paragraph break or a new list item change it; headings, table rows and fenced code are kept line for line, so a formatter that rewrites the contents of a fenced block (prettier's embedded JSON formatting at a narrow width) does change it. Limitation: an indented (not fenced) code block is joined like a paragraph, so re-breaking its lines is not seen. `canonicalArtifactBody`, which readers parse, keeps its line breaks, because the method writes a Property's title, body and `**Validates:**` line as one paragraph. Every reader of `tasks.md` reads tasks through `parseTaskItems`: a task line plus its continuation lines (wrapped or lazy, not list items, not opening a block) and its nested non-task bullets, whose trailing `_Requirements:_` / `_Properties:_` trailers — the Kiro IDE's native nested shape — belong to the task; comment and Kiro trailers are read in any order. `task start` and `task complete` still rewrite only the marker on the task's first line. Consequence: this changes the checksum of any artifact with wrapped prose or repeated blank lines, so an approval recorded before this change reads as modified and needs re-approval.
 
 ## Out of scope for Slice 1
 
