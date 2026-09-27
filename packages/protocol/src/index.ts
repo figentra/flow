@@ -30,7 +30,7 @@ export {
   amendFrontmatter,
 } from "./frontmatter.js";
 
-export { canonicalArtifactBody } from "./canonical-body.js";
+export { canonicalArtifactBody, canonicalChecksumBody } from "./canonical-body.js";
 
 // ============================================================================
 // Markers and Grammar

@@ -28,9 +28,26 @@
  *   approval and every later `task start` would be refused. The ledger, not the
  *   log, is the evidence.
  *
- * Everything else — words, punctuation, blank lines between paragraphs,
- * indentation outside tables, and every character inside a fenced code block
- * apart from trailing whitespace — is kept exactly.
+ * Everything else — words, punctuation, line breaks, blank lines between
+ * paragraphs, indentation outside tables, and every character inside a fenced
+ * code block apart from trailing whitespace — is kept exactly. This is the
+ * form readers parse (a Property's `**Validates:**` line, a criterion's number
+ * and a task's lines keep their own lines here).
+ *
+ * The Artifact Checksum hashes canonicalChecksumBody, which additionally
+ * normalises the layout a Markdown formatter owns (decision 13 in 002's
+ * design):
+ * - blank lines before the first content line, and each run of blank lines
+ *   outside fenced code blocks, which becomes one blank line;
+ * - soft wraps: outside fenced code blocks, a paragraph, list item or block
+ *   quote continued on following lines reads as one line — each continuation
+ *   line is trimmed and joined to the previous one with a single space. A line
+ *   continues the block above it unless it is blank or starts a block of its
+ *   own (a heading, table row, fence, thematic break, setext underline, list
+ *   item or, outside a quote, a block quote). So reflowing text at a different
+ *   width, or changing a list item's hanging indent, keeps the checksum, while
+ *   a changed word, a new paragraph break or a new list item changes it.
+ *   Headings, table rows and code fences are never joined.
  */
 
 const FRONTMATTER = /^---\n[\s\S]*?\n---(?:\n|$)/;
@@ -130,4 +147,90 @@ function canonicalTableRow(line: string): string {
     : trimmed;
 
   return `| ${canonical.join(" | ")} |`;
+}
+
+const HEADING = /^ {0,3}#{1,6}(?:\s|$)/;
+const THEMATIC_BREAK = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/;
+const SETEXT_UNDERLINE = /^ {0,3}(?:=+|-+)\s*$/;
+/**
+ * A list item that can interrupt a paragraph (CommonMark): a bullet, or an
+ * ordered item numbered 1. A wrapped line that happens to start `200) ` or
+ * `3. ` continues the text above it.
+ */
+const LIST_ITEM = /^\s*(?:[-*+]|0{0,8}1[.)])(?:\s|$)/;
+const BLOCK_QUOTE = /^ {0,3}>\s?/;
+
+/**
+ * The form the Artifact Checksum hashes: canonicalArtifactBody with leading
+ * and repeated blank lines and soft wraps normalised (see the module comment).
+ */
+export function canonicalChecksumBody(text: string): string {
+  const out: string[] = [];
+  let fence: { readonly char: string; readonly length: number } | null = null;
+  /** The block continuation lines join onto, and whether it is a block quote. */
+  let open: { quote: boolean } | null = null;
+
+  for (const line of canonicalArtifactBody(text).split("\n")) {
+    if (fence) {
+      out.push(line);
+      if (closesFence(line, fence)) fence = null;
+      continue;
+    }
+
+    if (line === "") {
+      open = null;
+      if (out.length > 0 && out[out.length - 1] !== "") out.push("");
+      continue;
+    }
+
+    const fenceOpen = FENCE_OPEN.exec(line);
+    if (fenceOpen?.[1] !== undefined) {
+      fence = { char: fenceOpen[1].charAt(0), length: fenceOpen[1].length };
+      open = null;
+      out.push(line);
+      continue;
+    }
+
+    const standalone =
+      HEADING.test(line) ||
+      line.trimStart().startsWith("|") ||
+      THEMATIC_BREAK.test(line) ||
+      (open !== null && SETEXT_UNDERLINE.test(line));
+    if (standalone) {
+      open = null;
+      out.push(line);
+      continue;
+    }
+
+    if (open !== null && !LIST_ITEM.test(line)) {
+      if (open.quote && BLOCK_QUOTE.test(line)) {
+        const rest = line.replace(BLOCK_QUOTE, "").trim();
+        if (rest !== "" && !startsBlock(rest)) {
+          out[out.length - 1] += ` ${rest}`;
+          continue;
+        }
+      } else if (!BLOCK_QUOTE.test(line)) {
+        out[out.length - 1] += ` ${line.trim()}`;
+        continue;
+      }
+    }
+
+    open = { quote: BLOCK_QUOTE.test(line) };
+    out.push(line);
+  }
+
+  const joined = out.join("\n").replace(/\n+$/, "");
+  return joined === "" ? "" : `${joined}\n`;
+}
+
+/** True when `line` opens a block of its own rather than continuing one. */
+function startsBlock(line: string): boolean {
+  return (
+    FENCE_OPEN.test(line) ||
+    HEADING.test(line) ||
+    line.startsWith("|") ||
+    THEMATIC_BREAK.test(line) ||
+    LIST_ITEM.test(line) ||
+    BLOCK_QUOTE.test(line)
+  );
 }

@@ -1,0 +1,3 @@
+# Evidence fixtures: exact bytes a formatter produced (or did not). Reformatting
+# them would erase what the tests prove.
+packages/protocol/src/__tests__/fixtures/
