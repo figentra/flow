@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { Artifact, ArtifactKind } from "@vellum/protocol";
-import { computeChecksum, parseFrontmatter } from "@vellum/protocol";
+import { computeChecksum, computeChecksumInForm, parseFrontmatter } from "@vellum/protocol";
 import { planAdoption, planStamp, type FrontmatterPlanInput } from "../stamp.js";
 import { strictVerify } from "../../verify/strict.js";
 import {
@@ -227,6 +227,43 @@ describe("planStamp", () => {
         updatedAt: LATER,
       },
       body: edited,
+    });
+  });
+
+  it("brings frontmatter stamped by Vellum 0.1.2 (checksum form 1) to the current form without a new version", () => {
+    const wrapped = REQUIREMENTS.replace("# Requirements\n", "# Requirements\n\nWrapped by\nhand.\n\n\n");
+    const form1 = computeChecksumInForm(wrapped, 1);
+    expect(form1).not.toBe(computeChecksum(wrapped));
+    const before = adopted({ requirements: wrapped })
+      .requirements!.replace(computeChecksum(wrapped), form1);
+    const plan = planStamp(input({ requirements: before }, 3, LATER));
+    expect(plan).toMatchObject({
+      kind: "plan",
+      writes: [
+        {
+          kind: "requirements",
+          changes: [
+            `checksum form 2: ${computeChecksum(wrapped)} (body unchanged, version 1 kept)`,
+          ],
+        },
+      ],
+    });
+    expect(frontmatterOf(written(plan).requirements!).frontmatter).toMatchObject({
+      version: 1,
+      checksum: computeChecksum(wrapped),
+    });
+  });
+
+  it("still re-versions a body edited since 0.1.2 stamped it", () => {
+    const wrapped = REQUIREMENTS.replace("# Requirements\n", "# Requirements\n\nWrapped by\nhand.\n\n\n");
+    const edited = wrapped.replace("A folder", "A file");
+    const before = adopted({ requirements: wrapped })
+      .requirements!.replace(computeChecksum(wrapped), computeChecksumInForm(wrapped, 1))
+      .replace(wrapped, edited);
+    const plan = planStamp(input({ requirements: before }, 3, LATER));
+    expect(frontmatterOf(written(plan).requirements!).frontmatter).toMatchObject({
+      version: 2,
+      checksum: computeChecksum(edited),
     });
   });
 

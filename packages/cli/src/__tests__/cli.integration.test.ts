@@ -8,8 +8,9 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { checkLedgerIntegrity } from "@vellum/engine";
-import { readLedgerHead } from "@vellum/storage";
-import { DESIGN, Fixture, REQUIREMENTS, SLUG, TASKS } from "./fixture.js";
+import { computeChecksum, computeChecksumInForm } from "@vellum/protocol";
+import { appendLedgerEntry, readLedgerHead } from "@vellum/storage";
+import { DESIGN, Fixture, REQUIREMENTS, SLUG, TASKS, withFrontmatter } from "./fixture.js";
 
 function hasSshKeygen(): boolean {
   try {
@@ -360,6 +361,7 @@ describe.skipIf(!SSH)("vellum CLI against a temp repository", () => {
         kind: "approval",
         identity: "alice@example.com",
         artifact: "requirements.md",
+        checksum_form: 2,
         approval_signal: { commit: null },
       });
 
@@ -683,6 +685,119 @@ describe.skipIf(!SSH)("vellum CLI against a temp repository", () => {
         kind: "approval",
         artifact: "design.md",
         artifact_version: 2,
+      });
+    });
+  });
+
+  describe("a spec approved and started under Vellum 0.1.2 (checksum form 1)", () => {
+    const SPEC = `.agents/specs/${SLUG}`;
+    /** Wrapped prose (design's Property lines read as one paragraph) and blank-line runs: the form-1 and form-2 checksums differ. */
+    const WRAPPED = {
+      requirements: REQUIREMENTS.replace(
+        "# Requirements\n",
+        "# Requirements\n\nA demo spec whose introduction\nwraps.\n\n\n",
+      ),
+      design: DESIGN,
+      tasks: TASKS.replace("# Tasks\n", "# Tasks\n\nBuild both things,\nin order.\n\n\n"),
+    };
+    /** An artifact file exactly as 0.1.2 stamped it: the frontmatter checksum in form 1. */
+    const v012File = (body: string) =>
+      withFrontmatter(body).replace(computeChecksum(body), computeChecksumInForm(body, 1));
+    const fm = (kind: string) => fx.read(`${SPEC}/${kind}.md`).split("\n---\n")[0]!;
+
+    beforeEach(async () => {
+      for (const kind of ALL) {
+        expect(computeChecksumInForm(WRAPPED[kind], 1)).not.toBe(computeChecksum(WRAPPED[kind]));
+        fx.write(`${SPEC}/${kind}.md`, v012File(WRAPPED[kind]));
+      }
+      fx.commit("spec as Vellum 0.1.2 left it");
+      await fx.approve(ALL, "alice", { v012: true });
+      const ledger = await fx.ledger();
+      expect(ledger.every((e) => !("checksum_form" in e))).toBe(true);
+      // Task 1 was started under 0.1.2: a form-1 Task Binding.
+      await appendLedgerEntry(fx.ledgerPath, {
+        kind: "task_binding",
+        id: ledger.length + 1,
+        timestamp: "2026-09-26T10:10:00Z",
+        task_id: "1",
+        requirements_version: 1,
+        requirements_checksum: computeChecksumInForm(WRAPPED.requirements, 1),
+        design_version: 1,
+        design_checksum: computeChecksumInForm(WRAPPED.design, 1),
+        plan_version: 1,
+        plan_checksum: computeChecksumInForm(WRAPPED.tasks, 1),
+      });
+    });
+
+    it("keeps its approvals: status counts them and lint accepts the form-1 frontmatter", async () => {
+      const status = JSON.parse((await fx.cli(["status", SLUG, "--json"])).stdout).specs[0];
+      for (const kind of ALL) {
+        expect(status.approvals[kind]).toEqual({ current: 1, required: 1, complete: true });
+      }
+      expect(status.artifacts.requirements).toMatchObject({
+        checksumCurrent: false,
+        checksumEarlierForm: true,
+      });
+      const human = await fx.cli(["status", SLUG]);
+      expect(human.stdout).toContain("frontmatter checksum is in an earlier form (body unchanged)");
+
+      const lint = await fx.cli(["lint", SLUG]);
+      expect(lint.status).toBe(0);
+    });
+
+    it("completes the task 0.1.2 started, and starts the next with a form-2 binding", async () => {
+      const complete = await fx.cli(["task", "complete", SLUG, "1", "--command=true"]);
+      expect(complete.stderr).not.toContain("refused");
+      expect(complete.status).toBe(0);
+
+      const start = await fx.cli(["task", "start", SLUG, "2"]);
+      expect(start.stderr).toBe("");
+      expect(start.status).toBe(0);
+      expect((await fx.ledger()).at(-1)).toMatchObject({
+        kind: "task_binding",
+        task_id: "2",
+        requirements_checksum: computeChecksum(WRAPPED.requirements),
+        checksum_form: 2,
+      });
+    });
+
+    it("stops counting an approval once the approved content changes", async () => {
+      fx.write(
+        `${SPEC}/requirements.md`,
+        v012File(WRAPPED.requirements).replace("do one thing", "do two things"),
+      );
+      const start = await fx.cli(["task", "start", SLUG, "2"]);
+      expect(start.status).toBe(1);
+      expect(start.stderr).toContain("Requirements approval invalidated");
+      const complete = await fx.cli(["task", "complete", SLUG, "1", "--command=true"]);
+      expect(complete.status).toBe(1);
+      expect(complete.stderr).toContain("requirements.md changed since task 1 started");
+    });
+
+    it("approve asks for stamp, which moves the form without a new version; approvals still count", async () => {
+      const refused = await fx.cli(["approve", SLUG, "requirements"], { interactive: true });
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toContain("records its checksum in an earlier form");
+      expect(refused.stderr).toContain(`npx vellum stamp ${SLUG}`);
+
+      const stamped = await fx.cli(["stamp", SLUG]);
+      expect(stamped.status).toBe(0);
+      for (const kind of ALL) {
+        expect(fm(kind)).toContain("version: 1\n");
+        expect(fm(kind)).toContain(`checksum: ${computeChecksum(WRAPPED[kind])}`);
+      }
+      const status = JSON.parse((await fx.cli(["status", SLUG, "--json"])).stdout).specs[0];
+      for (const kind of ALL) {
+        expect(status.approvals[kind]).toEqual({ current: 1, required: 1, complete: true });
+        expect(status.artifacts[kind]).toMatchObject({ version: 1, checksumCurrent: true });
+      }
+
+      const approved = await fx.cli(["approve", SLUG, "requirements"], { interactive: true });
+      expect(approved.status).toBe(0);
+      expect((await fx.ledger()).at(-1)).toMatchObject({
+        kind: "approval",
+        artifact_checksum: computeChecksum(WRAPPED.requirements),
+        checksum_form: 2,
       });
     });
   });

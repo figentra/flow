@@ -17,7 +17,9 @@
  * Stamping keeps an adopted spec's frontmatter true after its artifacts are
  * written or edited: frontmatter for an artifact added later, the missing
  * fields of a partial block, and — for a body whose canonical form changed —
- * the next version, the new checksum and a new `updatedAt`. It raises the
+ * the next version, the new checksum and a new `updatedAt`; for a checksum in
+ * an earlier form of the unchanged body, the current-form checksum and the
+ * same version. It raises the
  * Recorded Lifecycle State to the in-review state of the latest artifact
  * present when the recorded state is behind it on the main chain, and never
  * lowers it. A Task Marker flip is not a change: the canonical body reads
@@ -33,7 +35,12 @@ import type {
   LifecycleFrontmatter,
   LifecycleState,
 } from "@vellum/protocol";
-import { computeChecksum, serializeFrontmatter } from "@vellum/protocol";
+import {
+  CHECKSUM_FORM,
+  computeChecksum,
+  isEarlierFormChecksum,
+  serializeFrontmatter,
+} from "@vellum/protocol";
 import { chainIndex, isLifecycleState } from "./effective-state.js";
 
 const ORDER: readonly ArtifactKind[] = ["requirements", "design", "tasks"];
@@ -271,13 +278,21 @@ export function planStamp(input: FrontmatterPlanInput): StampPlan {
 
     const previousVersion = Number(fields.get("version") ?? "1");
     const previousChecksum = fields.get("checksum");
+    // A checksum in an earlier form of the unchanged body (frontmatter stamped
+    // by Vellum 0.1.2) is not a body change: the form moves on, the version
+    // does not (decision 14 in 002's design).
+    const earlierForm =
+      previousChecksum !== undefined && isEarlierFormChecksum(previousChecksum, artifact.body);
     const bodyChanged =
       previousChecksum !== undefined &&
       /^[0-9a-f]{64}$/.test(previousChecksum) &&
-      previousChecksum !== checksum;
+      previousChecksum !== checksum &&
+      !earlierForm;
     const version = bodyChanged ? previousVersion + 1 : previousVersion;
     if (bodyChanged)
       changes.push(`body changed: version ${previousVersion} -> ${version}, checksum ${checksum}`);
+    else if (earlierForm)
+      changes.push(`checksum form ${CHECKSUM_FORM}: ${checksum} (body unchanged, version ${version} kept)`);
     else if (previousChecksum !== undefined && previousChecksum !== checksum)
       changes.push(`checksum ${checksum}`);
 

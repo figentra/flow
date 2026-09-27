@@ -18,7 +18,12 @@ import type {
   LifecycleState,
   RiskClass,
 } from "@vellum/protocol";
-import { canonicalArtifactBody, computeChecksum, parseTaskItems } from "@vellum/protocol";
+import {
+  canonicalArtifactBody,
+  computeChecksum,
+  isEarlierFormChecksum,
+  parseTaskItems,
+} from "@vellum/protocol";
 import {
   approvalRecords,
   resolveApprovalSignals,
@@ -75,6 +80,12 @@ export interface ArtifactStatus {
   readonly checksum: string;
   /** Whether the frontmatter's recorded checksum equals the current one */
   readonly checksumCurrent: boolean;
+  /**
+   * Whether the frontmatter records the unchanged body's checksum in an
+   * earlier form (stamped by Vellum 0.1.2): not stale for content, and
+   * `npx vellum stamp` brings it to the current form without a new version.
+   */
+  readonly checksumEarlierForm: boolean;
 }
 
 /**
@@ -149,7 +160,7 @@ export function computeStatusReport(input: StatusInput): StatusReport {
     if (artifact) artifacts[kind] = getArtifactStatus(artifact);
   }
 
-  const records = resolveApprovalSignals(approvalRecords(input.ledger), input.approvalCommits).map(
+  const records = resolveApprovalSignals(approvalRecords(input.ledger, input.artifacts), input.approvalCommits).map(
     (resolved) => resolved.record,
   );
   const approvalFor = (kind: ArtifactKind): ApprovalCount => {
@@ -203,6 +214,13 @@ export function computeStatusReport(input: StatusInput): StatusReport {
 
 const KINDS: readonly ArtifactKind[] = ["requirements", "design", "tasks"];
 
+function checksumNote(status: ArtifactStatus): string {
+  if (status.checksumCurrent) return "";
+  return status.checksumEarlierForm
+    ? " — frontmatter checksum is in an earlier form (body unchanged); run npx vellum stamp to update it"
+    : " — frontmatter checksum is stale";
+}
+
 /**
  * Get artifact status.
  */
@@ -213,6 +231,7 @@ function getArtifactStatus(artifact: Artifact): ArtifactStatus {
     state: artifact.frontmatter.state,
     checksum,
     checksumCurrent: artifact.frontmatter.checksum === checksum,
+    checksumEarlierForm: isEarlierFormChecksum(artifact.frontmatter.checksum, artifact.body),
   };
 }
 
@@ -286,7 +305,7 @@ export function formatStatusHuman(report: StatusReport): string {
     const status = report.artifacts[kind];
     lines.push(
       status
-        ? `  ${kind}: v${status.version} (${status.state})${status.checksumCurrent ? "" : " — frontmatter checksum is stale"}`
+        ? `  ${kind}: v${status.version} (${status.state})${checksumNote(status)}`
         : `  ${kind}: missing`,
     );
   }

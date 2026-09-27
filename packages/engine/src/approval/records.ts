@@ -8,15 +8,29 @@
  * This reads either into the shape verifyApproval takes.
  */
 
-import type { ArtifactKind, Checksum, LedgerEntry } from "@vellum/protocol";
+import type { ArtifactKind, Checksum, ChecksumForm, LedgerEntry } from "@vellum/protocol";
+import { checksumInCurrentForm, readChecksumForm } from "@vellum/protocol";
 
 /** One approval as verifyApproval reads it, with the ledger entry it came from. */
 export interface ApprovalRecordView {
   readonly entryId: number;
   readonly approver: string;
   readonly artifact: ArtifactKind;
+  /**
+   * The approved checksum as the current form sees it: the artifact's current
+   * checksum when the record binds the artifact in the form it was recorded
+   * in, else the checksum exactly as recorded (see checksumInCurrentForm).
+   */
   readonly artifactChecksum: Checksum;
+  /** The form the entry recorded (`checksum_form`; absent is form 1); null when unknown */
+  readonly checksumForm: ChecksumForm | null;
   readonly signalCommit: string;
+}
+
+/** An artifact's body, which each approval's checksum is read against. */
+export interface ApprovedArtifactBody {
+  readonly kind: ArtifactKind;
+  readonly body: string;
 }
 
 interface LooseApproval {
@@ -25,6 +39,8 @@ interface LooseApproval {
   readonly artifact?: unknown;
   readonly artifact_checksum?: unknown;
   readonly artifactChecksum?: unknown;
+  readonly checksum_form?: unknown;
+  readonly checksumForm?: unknown;
   readonly approval_signal?: { readonly commit?: unknown };
   readonly signalCommit?: unknown;
 }
@@ -40,8 +56,19 @@ function text(value: unknown): string {
  * recognisable artifact is skipped; missing string fields read as "", which
  * no policy authorises and no commit map holds, so such an entry never
  * verifies.
+ *
+ * Each record's checksum is read against `artifacts` in the form the entry
+ * recorded (decision 14 in 002's design): an approval Vellum 0.1.2 wrote
+ * (form 1, no `checksum_form`) of an artifact unchanged since reads as bound
+ * to the artifact's current checksum; after a content edit it reads as bound
+ * to other content, as every stale approval does. Every reader compares the
+ * result with the current checksum (computeChecksum), and nothing else.
  */
-export function approvalRecords(ledger: readonly LedgerEntry[]): ApprovalRecordView[] {
+export function approvalRecords(
+  ledger: readonly LedgerEntry[],
+  artifacts: readonly ApprovedArtifactBody[],
+): ApprovalRecordView[] {
+  const bodies = new Map(artifacts.map((a) => [a.kind, a.body] as const));
   const records: ApprovalRecordView[] = [];
   for (const entry of ledger) {
     if (entry.kind !== "approval") continue;
@@ -49,11 +76,16 @@ export function approvalRecords(ledger: readonly LedgerEntry[]): ApprovalRecordV
     const artifact = text(loose.artifact).replace(/\.md$/, "");
     const kind = KINDS.find((k) => k === artifact);
     if (kind === undefined) continue;
+    const recorded = (text(loose.artifact_checksum) || text(loose.artifactChecksum)) as Checksum;
+    const checksumForm = readChecksumForm(loose.checksum_form ?? loose.checksumForm);
+    const body = bodies.get(kind);
     records.push({
       entryId: entry.id,
       approver: text(loose.identity) || text(loose.approver),
       artifact: kind,
-      artifactChecksum: (text(loose.artifact_checksum) || text(loose.artifactChecksum)) as Checksum,
+      artifactChecksum:
+        body === undefined ? recorded : checksumInCurrentForm(recorded, checksumForm, body),
+      checksumForm,
       signalCommit: text(loose.approval_signal?.commit) || text(loose.signalCommit),
     });
   }

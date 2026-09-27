@@ -12,11 +12,18 @@ import type {
   Artifact,
   ArtifactKind,
   Checksum,
+  ChecksumForm,
   GitCommit,
   LedgerEntry,
   RiskClass,
 } from "@vellum/protocol";
-import { canonicalArtifactBody, computeChecksum, parseTaskItems } from "@vellum/protocol";
+import {
+  CHECKSUM_FORM,
+  canonicalArtifactBody,
+  checksumBindsBody,
+  computeChecksum,
+  parseTaskItems,
+} from "@vellum/protocol";
 import { hasRequiredApprovals } from "../approval/verify.js";
 import {
   approvalRecords,
@@ -49,6 +56,12 @@ export interface TaskBinding {
   readonly designChecksum: Checksum;
   readonly planVersion: number;
   readonly planChecksum: Checksum;
+  /**
+   * The canonical form the three checksums hash: CHECKSUM_FORM for a binding
+   * made now; for one read from the ledger, its `checksum_form` (absent is
+   * form 1, as Vellum 0.1.2 wrote it; null when the form is unknown).
+   */
+  readonly checksumForm: ChecksumForm | null;
 }
 
 /** What approvals are verified against: the policy, the spec's risk class, the signal commits. */
@@ -106,7 +119,7 @@ export function preExecutionCheck(
   }
 
   // Criteria 18.2 and 18.3: valid approvals bound to the current checksums
-  const records = resolveApprovalSignals(approvalRecords(ledger), approval.approvalCommits).map(
+  const records = resolveApprovalSignals(approvalRecords(ledger, artifacts), approval.approvalCommits).map(
     (resolved) => resolved.record,
   );
   const checksums = {
@@ -186,14 +199,15 @@ export function preExecutionCheck(
       designChecksum: checksums.design,
       planVersion: tasks.frontmatter.version,
       planChecksum: checksums.tasks,
+      checksumForm: CHECKSUM_FORM,
     },
   };
 }
 
 /**
  * Check if artifact checksums match a task binding (criterion 18.10).
- * Checksums are computed from the artifacts' bodies; a missing artifact is a
- * mismatch.
+ * Checksums are computed from the artifacts' bodies, in the form the binding
+ * recorded (checksumBindsBody); a missing artifact is a mismatch.
  */
 export function checkTaskBinding(
   binding: TaskBinding,
@@ -206,7 +220,7 @@ export function checkTaskBinding(
   ];
   for (const [kind, checksum] of bound) {
     const artifact = currentArtifacts.find((a) => a.kind === kind);
-    if (!artifact || computeChecksum(artifact.body) !== checksum) {
+    if (!artifact || !checksumBindsBody(checksum, binding.checksumForm, artifact.body)) {
       return { matches: false, mismatchedArtifact: kind };
     }
   }

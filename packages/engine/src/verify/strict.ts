@@ -119,7 +119,7 @@ export function strictVerify(
   // Verify each approval against the current artifact checksums (criteria
   // 12.5, 8.2). An approval bound to an older checksum is history once the
   // current text is approved again; see approval/evaluate.
-  const records = resolveApprovalSignals(approvalRecords(ledger), options.approvalCommits);
+  const records = resolveApprovalSignals(approvalRecords(ledger, artifacts), options.approvalCommits);
   let validApprovals = 0;
   let supersededApprovals = 0;
   for (const { record, problem } of records) {

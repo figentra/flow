@@ -12,7 +12,13 @@ import type {
   LedgerEntry,
   RiskClass,
 } from "@vellum/protocol";
-import { brand, computeChecksum, computeLedgerEntryDigest } from "@vellum/protocol";
+import {
+  CHECKSUM_FORM,
+  brand,
+  computeChecksum,
+  computeChecksumInForm,
+  computeLedgerEntryDigest,
+} from "@vellum/protocol";
 
 export const REQUIREMENTS = `# Requirements
 
@@ -104,11 +110,24 @@ export function approvalEntry(
     artifact: `${kind}.md`,
     artifact_version: 1,
     artifact_checksum: computeChecksum(body),
+    checksum_form: CHECKSUM_FORM,
     identity,
     identity_key: "SHA256:alice",
     session_type: "human",
     approval_signal: { commit: SIGNAL, message_prefix: "approve:" },
   } as unknown as LedgerEntry;
+}
+
+/**
+ * An approval entry for `kind` exactly as Vellum 0.1.2 wrote one: no
+ * `checksum_form`, and the checksum of `body` in form 1.
+ */
+export function approvalEntryV012(id: number, kind: ArtifactKind, body: string): LedgerEntry {
+  const { checksum_form: _form, ...entry } = approvalEntry(id, kind, body) as unknown as Record<
+    string,
+    unknown
+  >;
+  return { ...entry, artifact_checksum: computeChecksumInForm(body, 1) } as unknown as LedgerEntry;
 }
 
 /**

@@ -216,7 +216,7 @@ class Context {
   constructor(private readonly input: EffectiveStateInput) {
     this.byKind = new Map(input.artifacts.map((a) => [a.kind, a] as const));
     this.approvals = resolveApprovalSignals(
-      approvalRecords(input.ledger),
+      approvalRecords(input.ledger, input.artifacts),
       input.approvalCommits,
     ).flatMap((resolved) => (resolved.problem === undefined ? [resolved.record] : []));
     const tasks = this.byKind.get("tasks");

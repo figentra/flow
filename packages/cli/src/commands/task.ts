@@ -5,7 +5,13 @@
 
 import { join, relative } from "node:path";
 import type { Checksum, LedgerEntry } from "@vellum/protocol";
-import { EXIT_STATUS, LEDGER_SCHEMA_VERSION, parseTaskItems } from "@vellum/protocol";
+import {
+  CHECKSUM_FORM,
+  EXIT_STATUS,
+  LEDGER_SCHEMA_VERSION,
+  parseTaskItems,
+  readChecksumForm,
+} from "@vellum/protocol";
 import {
   checkLedgerIntegrity,
   checkTaskBinding,
@@ -109,6 +115,7 @@ function latestBinding(ledger: readonly LedgerEntry[], taskId: string): TaskBind
       designChecksum: entry.design_checksum as Checksum,
       planVersion: entry.plan_version as number,
       planChecksum: entry.plan_checksum as Checksum,
+      checksumForm: readChecksumForm(entry.checksum_form),
     };
   }
   return null;
@@ -158,6 +165,7 @@ export const task = {
         design_checksum: b.designChecksum,
         plan_version: b.planVersion,
         plan_checksum: b.planChecksum,
+        checksum_form: CHECKSUM_FORM,
       });
     } catch (error) {
       if (error instanceof LedgerError) {

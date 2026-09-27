@@ -8,7 +8,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { computeChecksum } from "@vellum/protocol";
+import { CHECKSUM_FORM, computeChecksum, computeChecksumInForm } from "@vellum/protocol";
 import { appendLedgerEntry, readLedger, sshPublicKeyFingerprint } from "@vellum/storage";
 import type { CliContext } from "../context.js";
 import { run } from "../run.js";
@@ -162,12 +162,14 @@ export class Fixture {
    * Write an approval record for each kind through the programmatic
    * interface (what `vellum approve` writes; the command itself refuses a
    * non-terminal session) and commit only the ledger files, signed with
-   * `signer`'s key, or unsigned when `signer` is null.
+   * `signer`'s key, or unsigned when `signer` is null. With `v012`, each
+   * record is written exactly as Vellum 0.1.2 wrote one: the checksum in
+   * form 1 and no `checksum_form`.
    */
   async approve(
     kinds: readonly ("requirements" | "design" | "tasks")[],
     signer: string | null,
-    options: { alsoCommit?: string } = {},
+    options: { alsoCommit?: string; v012?: boolean } = {},
   ): Promise<void> {
     for (const kind of kinds) {
       const ledger = await readLedger(this.ledgerPath);
@@ -178,7 +180,9 @@ export class Fixture {
         timestamp: "2026-09-26T10:05:00Z",
         artifact: `${kind}.md`,
         artifact_version: 1,
-        artifact_checksum: computeChecksum(body),
+        ...(options.v012
+          ? { artifact_checksum: computeChecksumInForm(body, 1) }
+          : { artifact_checksum: computeChecksum(body), checksum_form: CHECKSUM_FORM }),
         identity: "alice@example.com",
         identity_key: "",
         session_type: "human",

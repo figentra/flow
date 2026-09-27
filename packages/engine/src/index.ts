@@ -126,6 +126,7 @@ export {
   approvalRecords,
   resolveApprovalSignals,
   type ApprovalRecordView,
+  type ApprovedArtifactBody,
   type ApprovalCommitResolution,
   type ResolvedApproval,
 } from "./approval/records.js";

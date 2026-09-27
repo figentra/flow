@@ -9,6 +9,11 @@
  * by an authorised approver at the spec's risk class, and bound to the
  * artifact's current checksum.
  *
+ * Each approval's `artifactChecksum` is compared as a current-form checksum.
+ * Approvals read from a ledger come through approvalRecords, which reads a
+ * checksum recorded in an earlier form (Vellum 0.1.2's) against the artifact
+ * in that form first.
+ *
  * @see requirements.md Requirement 6.1
  */
 

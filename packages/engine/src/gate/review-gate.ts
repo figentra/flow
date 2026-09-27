@@ -117,7 +117,7 @@ export class ReviewGate {
       );
     } else {
       const records = resolveApprovalSignals(
-        approvalRecords(approvals.ledger),
+        approvalRecords(approvals.ledger, this.inputs.artifacts ?? []),
         approvals.approvalCommits,
       ).flatMap((resolved) => (resolved.problem === undefined ? [resolved.record] : []));
       const required = hasRequiredApprovals(

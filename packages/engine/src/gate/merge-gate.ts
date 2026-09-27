@@ -120,7 +120,7 @@ export class MergeGate {
   /** Each reviewed artifact holds its required valid approvals (criterion 6.1). */
   private checkApprovals(spec: Omit<StrictVerifierInput, "riskClass">, outcome: GateOutcome): void {
     const records = resolveApprovalSignals(
-      approvalRecords(spec.ledger),
+      approvalRecords(spec.ledger, spec.artifacts),
       spec.options?.approvalCommits,
     ).flatMap((resolved) => (resolved.problem === undefined ? [resolved.record] : []));
     const byKind = new Map(spec.artifacts.map((a) => [a.kind, a] as const));

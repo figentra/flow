@@ -13,7 +13,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { computeChecksum } from "@vellum/protocol";
+import { CHECKSUM_FORM, computeChecksum } from "@vellum/protocol";
 import { appendLedgerEntry, readLedger } from "@vellum/storage";
 
 export const SLUG = "001-demo";
@@ -120,6 +120,7 @@ export class Fixture {
       artifact: `${kind}.md`,
       artifact_version: 1,
       artifact_checksum: computeChecksum(BODIES[kind]),
+      checksum_form: CHECKSUM_FORM,
       identity: "alice@example.com",
       identity_key: "",
       session_type: "human",

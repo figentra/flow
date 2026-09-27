@@ -4,7 +4,7 @@
 
 import { relative } from "node:path";
 import type { ArtifactKind } from "@vellum/protocol";
-import { EXIT_STATUS, computeChecksum } from "@vellum/protocol";
+import { CHECKSUM_FORM, EXIT_STATUS, computeChecksum, isEarlierFormChecksum } from "@vellum/protocol";
 import { approverKeys, checkLedgerIntegrity, decidePlanApproval, getApprovers } from "@vellum/engine";
 import {
   LedgerError,
@@ -41,8 +41,9 @@ changed artifact again (and committing that, signed) replaces it: the old
 record is then history, neither counted nor reported.
 
 Approving is refused while the artifact's frontmatter checksum is stale (its
-body changed since it was last stamped): run 'npx vellum stamp <spec>' first,
-so the record binds the version you reviewed.
+body changed since it was last stamped) or in an earlier checksum form
+(stamped by Vellum 0.1.2): run 'npx vellum stamp <spec>' first, so the record
+binds the version you reviewed.
 
 Approving tasks is refused, naming each gap, while the plan leaves a
 criterion of requirements.md without a task or a property of design.md
@@ -157,6 +158,12 @@ export async function approve(args: ApproveArgs, ctx: CliContext): Promise<numbe
   // The record binds the frontmatter's version: a body edited since the last
   // stamp would be recorded under the previous version's number.
   const checksum = computeChecksum(artifact.body);
+  if (isEarlierFormChecksum(artifact.frontmatter.checksum, artifact.body)) {
+    ctx.stderr.write(
+      `vellum approve: refused — the frontmatter of ${kind}.md records its checksum in an earlier form (written by Vellum 0.1.2); the body is unchanged. Run npx vellum stamp ${match.spec.slug} to record it in the current form (version ${artifact.frontmatter.version} is kept), then approve.\n`,
+    );
+    return EXIT_STATUS.FAILURE;
+  }
   if (artifact.frontmatter.checksum !== checksum) {
     ctx.stderr.write(
       `vellum approve: refused — the frontmatter of ${kind}.md is stale: it records checksum ${artifact.frontmatter.checksum} (version ${artifact.frontmatter.version}) but the body's is ${checksum}. Run npx vellum stamp ${match.spec.slug} first, review the result, then approve.\n`,
@@ -208,6 +215,7 @@ export async function approve(args: ApproveArgs, ctx: CliContext): Promise<numbe
         ...common,
         kind: "approval",
         artifact_checksum: checksum,
+        checksum_form: CHECKSUM_FORM,
         identity_key: gitConfig(repo.root, "user.signingkey") ?? "",
         session_type: "human",
         approval_signal: { commit: null, message_prefix: "approve:" },
