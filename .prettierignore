@@ -1,3 +1,7 @@
 # Evidence fixtures: exact bytes a formatter produced (or did not). Reformatting
 # them would erase what the tests prove.
 packages/protocol/src/__tests__/fixtures/
+
+# Files exactly as Vellum 0.1.2 wrote them (form-1 checksums in their frontmatter).
+# Reformatting them would change what scenario 14 proves.
+packages/e2e/src/fixtures/
