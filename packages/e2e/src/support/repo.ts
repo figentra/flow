@@ -186,11 +186,24 @@ export class TestRepo {
     )?.[1];
   }
 
-  /** A SHA-256 over every file in the work tree and .git — to prove nothing was written. */
+  /**
+   * A SHA-256 over what "nothing was written" means — to prove a command wrote
+   * nothing: the commit HEAD names, `git status --porcelain=v1 -uall` (the
+   * index against HEAD and the work tree, untracked files included), and the
+   * path and bytes of every file outside `.git` (the ledger among them).
+   *
+   * `.git` is not hashed byte for byte: `git status` refreshes the stat cache
+   * in `.git/index` when it runs, so a snapshot of `.git` can change between
+   * two runs that wrote nothing. What the index records is covered by the
+   * porcelain status instead.
+   */
   fingerprint(): string {
     const hash = createHash("sha256");
+    hash.update(this.git(["rev-parse", "HEAD"])).update("\0");
+    hash.update(this.git(["status", "--porcelain=v1", "-uall"])).update("\0");
     const walk = (dir: string): void => {
       for (const name of readdirSync(dir).sort()) {
+        if (dir === this.repo && name === ".git") continue;
         const path = join(dir, name);
         const stat = statSync(path);
         if (stat.isDirectory()) walk(path);
@@ -285,7 +298,9 @@ export class TestRepo {
   private expectVellum(args: readonly string[]): Run {
     const result = this.vellum(args);
     if (result.status !== 0) {
-      throw new Error(`vellum ${args.join(" ")} exited ${result.status}: ${result.stdout}${result.stderr}`);
+      throw new Error(
+        `vellum ${args.join(" ")} exited ${result.status}: ${result.stdout}${result.stderr}`,
+      );
     }
     return result;
   }
