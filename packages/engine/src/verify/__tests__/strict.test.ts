@@ -169,6 +169,54 @@ describe("strictVerify", () => {
     expect(result.findings.map((f) => f.message)).toContain("Property P2 is cited by no task");
   });
 
+  // V-05: A Property counts only when a verified task cites it
+  it("fails when a property is cited only by a task without evidence", () => {
+    const ledger = chain([...approvals(), evidenceEntry("1")]); // Task 1 passes, Task 2 has no evidence
+    const result = strictVerify(allArtifacts(), ledger, policy, commits, "standard");
+
+    expect(result.result).toBe("FAIL");
+    // P1 is cited by task 1 (verified), P2 is cited by task 2 (not verified)
+    expect(result.properties).toEqual({ satisfied: 1, total: 2 });
+    expect(result.findings.map((f) => f.message)).toEqual(
+      expect.arrayContaining([
+        "Property P2 is cited by tasks 2, but none have passing Evidence",
+        "Task 2 has no Evidence Entry with exit status 0",
+      ]),
+    );
+  });
+
+  it("passes when every cited property has at least one verified citing task", () => {
+    const ledger = chain([...approvals(), evidenceEntry("1"), evidenceEntry("2")]);
+    const result = strictVerify(allArtifacts(), ledger, policy, commits, "standard");
+
+    expect(result.result).toBe("PASS");
+    expect(result.properties).toEqual({ satisfied: 2, total: 2 });
+    expect(result.findings).toEqual([]);
+  });
+
+  it("fails a property whose only citing task is optional and undone", () => {
+    const optionalTask = TASKS.replace(
+      "- [ ] 2. Second",
+      "- [ ] 2. Second *<!-- criteria: 1.2 --> <!-- properties: P2 -->*",
+    );
+    const ledger = chain([...approvals(), evidenceEntry("1")]); // Only task 1 verified
+    const result = strictVerify(
+      allArtifacts({ tasks: optionalTask }),
+      ledger,
+      policy,
+      commits,
+      "standard",
+    );
+
+    expect(result.result).toBe("FAIL");
+    expect(result.properties).toEqual({ satisfied: 1, total: 2 });
+    expect(result.findings.map((f) => f.message)).toEqual(
+      expect.arrayContaining([
+        "Property P2 is cited by tasks 2, but none have passing Evidence",
+      ]),
+    );
+  });
+
   it("verifies approvals under the spec's risk class, not a fixed one", () => {
     const highOnly = policyFor("high");
 
@@ -189,6 +237,7 @@ describe("strictVerify — required tasks and evidence (criteria 12.4, 9.9)", ()
     expect(result.tasks).toEqual({ satisfied: 1, total: 2 });
     expect(result.findings.map((f) => f.message)).toEqual([
       "Task 2 has no Evidence Entry with exit status 0",
+      "Property P2 is cited by tasks 2, but none have passing Evidence",
     ]);
   });
 
@@ -338,6 +387,7 @@ describe("strictVerify — approvals the policy requires (criterion 12.5)", () =
       const result = verify(ledger("1.1", "2"));
       expect(result.findings.map((f) => f.message)).toEqual([
         "Task 1.2 has no Evidence Entry with exit status 0",
+        "Property P2 is cited by tasks 1.2, but none have passing Evidence",
       ]);
     });
   });

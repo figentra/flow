@@ -272,10 +272,6 @@ export function strictVerify(
       satisfied: coverage.examined.criteria - coverage.uncoveredCriteria.length,
       total: coverage.examined.criteria,
     };
-    properties = {
-      satisfied: coverage.examined.properties - coverage.uncitedProperties.length,
-      total: coverage.examined.properties,
-    };
     if (coverage.examined.criteria === 0) {
       findings.push(
         createFinding(
@@ -299,6 +295,31 @@ export function strictVerify(
     for (const id of coverage.uncitedProperties) {
       findings.push(
         createFinding("tasks.md", 0, "PROPERTY_NOT_CITED", `Property ${id} is cited by no task`),
+      );
+    }
+    // V-05: A Property counts only when a verified task cites it
+    // A cited property is verified only when at least one task that cites it
+    // has passing Evidence at HEAD or an ancestor
+    const unverifiedProperties: { id: string; citingTasks: readonly string[] }[] = [];
+    for (const propCitation of coverage.properties) {
+      if (propCitation.citedBy.length === 0) continue; // already reported as uncited
+      const hasVerifiedCitation = propCitation.citedBy.some((taskId) => passedTasks.has(taskId));
+      if (!hasVerifiedCitation) {
+        unverifiedProperties.push({ id: propCitation.id, citingTasks: propCitation.citedBy });
+      }
+    }
+    properties = {
+      satisfied: coverage.examined.properties - unverifiedProperties.length,
+      total: coverage.examined.properties,
+    };
+    for (const { id, citingTasks } of unverifiedProperties) {
+      findings.push(
+        createFinding(
+          "tasks.md",
+          0,
+          "PROPERTY_NOT_VERIFIED",
+          `Property ${id} is cited by tasks ${citingTasks.join(", ")}, but none have passing Evidence`,
+        ),
       );
     }
   }
