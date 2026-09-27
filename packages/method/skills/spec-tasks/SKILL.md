@@ -173,6 +173,10 @@ reported such a file clean.
 ### Traceability trailer
 
 **Every leaf task ends with `_Requirements: <n>.<m>, …_`** on the same line.
+Write it that way. A Markdown formatter may later wrap a long task onto indented
+continuation lines, trailer included; Vellum reads those lines as part of the
+task — as it does a nested `- _Requirements: …_` bullet under a task, the Kiro
+IDE's shape — and re-wrapping is not an edit to the approved plan.
 
 - Numeric references only, `<requirementNumber>.<criterionNumber>`. No titles, no
   quoted criterion text, no links, no Property numbers in this trailer.

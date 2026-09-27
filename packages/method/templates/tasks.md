@@ -137,7 +137,10 @@ executor with no memory of the first.
 | `[x]`  | Completed                                             | the executing agent, after the task's own verification passes |
 
 The file is the single source of truth for progress. Do not track progress
-anywhere else, and do not reformat the task lines — the parser regex is exact.
+anywhere else. Write each task on one line; a Markdown formatter (`prettier
+--prose-wrap always`, say) may later wrap a long task onto indented continuation
+lines. Vellum reads a wrapped task, trailers included, as the one line it was,
+and re-wrapping keeps the approval — changing a word does not.
 
 ### Optional tasks
 

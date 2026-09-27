@@ -152,8 +152,9 @@ silently reverts another's. This re-read applies to every checkbox edit in this
 contract — Step 3, Step 6 and Step 7 alike.
 
 Rewrite the checkbox from whatever it is (`[ ]`, `[~]`) to `[-]`, changing
-**only that one line**, preserving indentation, numbering, optional marker,
-and trailer exactly. Use a targeted edit, not a rewrite of the file.
+**only that one line** — the task's first line, the one carrying the checkbox,
+when a formatter has wrapped the task onto more — preserving indentation,
+numbering, optional marker, and trailer exactly. Use a targeted edit, not a rewrite of the file.
 
 If the edit is rejected because the file changed since you read it, re-read and
 retry the edit **once**. If the retry is also rejected, stop and report a write
