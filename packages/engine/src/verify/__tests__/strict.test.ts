@@ -165,8 +165,10 @@ describe("strictVerify", () => {
     const uncited = TASKS.replace(" <!-- properties: P2 -->", "");
     const result = strictVerify(allArtifacts({ tasks: uncited }), [], policy, commits, "standard");
 
-    expect(result.properties).toEqual({ satisfied: 1, total: 2 });
+    // P1 is cited but no task has evidence, P2 is not cited at all
+    expect(result.properties).toEqual({ satisfied: 0, total: 2 });
     expect(result.findings.map((f) => f.message)).toContain("Property P2 is cited by no task");
+    expect(result.findings.map((f) => f.message)).toContain("Property P1 is cited by tasks 1, but none have passing Evidence");
   });
 
   // V-05: A Property counts only when a verified task cites it

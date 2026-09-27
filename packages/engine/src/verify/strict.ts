@@ -309,7 +309,7 @@ export function strictVerify(
       }
     }
     properties = {
-      satisfied: coverage.examined.properties - unverifiedProperties.length,
+      satisfied: coverage.examined.properties - unverifiedProperties.length - coverage.uncitedProperties.length,
       total: coverage.examined.properties,
     };
     for (const { id, citingTasks } of unverifiedProperties) {
