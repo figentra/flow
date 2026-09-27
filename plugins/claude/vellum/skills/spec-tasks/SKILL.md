@@ -165,8 +165,13 @@ example used the second, so optional tasks authored from the template were not
 merely mis-flagged — they were not recognised as tasks at all, and the linter
 reported such a file clean.
 
-- **Mark every test sub-task optional with `*`.** Tests are real work and still
-  carry a traceability trailer, but the plan must remain shippable without them.
+- **A task that cites a Property is NEVER optional.** Property tests verify
+  the design's Correctness Properties, and a plan is not complete without the
+  properties it promised. Even if a Property test is "extra verification",
+  omit the `*` marker on any task that carries `_Properties: N, …_`.
+- **Mark every other test sub-task optional with `*`.** Tests that do not cite
+  Properties are real work and still carry a traceability trailer, but the plan
+  must remain shippable without them.
 - **A top-level task is NEVER optional.** Never emit `- [ ]* 3. …`. If an entire
   top-level task is skippable, it does not belong in the plan.
 

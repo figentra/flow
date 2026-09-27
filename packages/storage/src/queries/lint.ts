@@ -227,6 +227,15 @@ function lintSpec(
           });
         }
       }
+      // V-06: A task that cites a Property is never optional
+      if (task.isOptional && (task.propertiesTrailer ?? []).length > 0) {
+        findings.push({
+          file: tasksFile,
+          line: task.lineNumber,
+          rule: "OPTIONAL_PROPERTY_TASK",
+          message: `Task ${task.identifier} cites Properties ${task.propertiesTrailer!.join(", ")} and is marked optional. Property tests are required for verification`,
+        });
+      }
     }
   }
 

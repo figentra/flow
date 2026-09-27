@@ -81,20 +81,20 @@ Build the greeting, then the farewell. Two waves.
 
 **Source documents:** \`requirements.md\`, \`design.md\` (both in this spec directory)
 
-**Total leaf tasks:** 5 · **Optional leaf tasks:** 2 · **Waves:** 4
+**Total leaf tasks:** 5 · **Optional leaf tasks:** 0 · **Waves:** 4
 
 ## Tasks
 
 - [ ] 1. Greeting core
   - [ ] 1.1 Implement greet() in src/greet.mjs _Requirements: 1.1_
   - [ ] 1.2 Refuse an empty name in src/greet.mjs _Requirements: 1.2_
-  - [ ] 1.3* Unit tests for greet() in test/greet.test.mjs _Requirements: 1.1, 1.2_ _Properties: 1, 2_
+  - [ ] 1.3 Unit tests for greet() in test/greet.test.mjs _Requirements: 1.1, 1.2_ _Properties: 1, 2_
 
 - [ ] 2. Checkpoint: ensure all tests pass
 
 - [ ] 3. Farewell
   - [ ] 3.1 Farewell option in src/greet.mjs _Requirements: 2.1_
-  - [ ] 3.2* Unit test for --bye in test/greet.test.mjs _Requirements: 2.1_ _Properties: 3_
+  - [ ] 3.2 Unit test for --bye in test/greet.test.mjs _Requirements: 2.1_ _Properties: 3_
 
 ## Task Dependency Graph
 
@@ -117,10 +117,11 @@ Build the greeting, then the farewell. Two waves.
 
 /**
  * Tasks the engine requires evidence for: every task line that is neither
- * optional nor a parent — the leaves 1.1, 1.2 and 3.1, and checkpoint 2.
+ * optional nor a parent — the leaves 1.1, 1.2, 1.3, 3.1 and 3.2, and checkpoint 2.
  * Parents 1 and 3 are complete when their required sub-tasks are.
+ * (Tasks 1.3 and 3.2 cite Properties and are thus required, not optional.)
  */
-export const REQUIRED_TASKS = ["1.1", "1.2", "2", "3.1"] as const;
+export const REQUIRED_TASKS = ["1.1", "1.2", "1.3", "2", "3.1", "3.2"] as const;
 
 /** Parent tasks: containers with sub-tasks, never started or evidenced themselves. */
 export const PARENT_TASKS = ["1", "3"] as const;

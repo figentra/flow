@@ -140,7 +140,7 @@ describe("scenario 14: upgrading a project approved and started under Vellum 0.1
     expect(spec.findings.filter((f) => f.rule.startsWith("APPROVAL"))).toEqual([]);
   });
 
-  it("status counts them, and lint accepts the frontmatter 0.1.2 stamped", () => {
+  it("status counts them, and lint reports the v0.1.2 optional Property tasks", () => {
     for (const kind of KINDS) {
       expect(status().specs[0]!.approvals[kind]).toEqual({
         current: 1,
@@ -150,7 +150,9 @@ describe("scenario 14: upgrading a project approved and started under Vellum 0.1
     }
     const lint = repo.vellum(["lint", SLUG]);
     expect(lint.stdout + lint.stderr).not.toContain("CHECKSUM_MISMATCH");
-    expect(lint.status).toBe(0);
+    // V-06: v0.1.2 marked Property tests optional, lint now reports them
+    expect(lint.status).toBe(1);
+    expect(lint.stdout + lint.stderr).toContain("OPTIONAL_PROPERTY_TASK");
   });
 
   it("the task 0.1.2 started completes, and the next starts with a form-2 binding", () => {

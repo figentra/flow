@@ -34,15 +34,23 @@ describe("scenario 10: parents and checkpoints", () => {
   });
 
   it("a checkpoint with no evidence is the one task verify names", () => {
-    // A parent's marker flips with its last required sub-task (1.3 is optional).
-    const parentMarkers = { "1.1": [" ", " "], "1.2": ["x", " "], "3.1": ["x", "x"] } as const;
+    // A parent's marker flips with its last required sub-task (V-06: Property tests are required).
+    // Order: 1.1, 1.2, 1.3 (parent 1 → x), 3.1, 3.2 (parent 3 → x)
+    const parentMarkers = {
+      "1.1": [" ", " "],  // After 1.1: neither parent complete
+      "1.2": [" ", " "],  // After 1.2: parent 1 still needs 1.3
+      "1.3": ["x", " "],  // After 1.3: parent 1 complete, parent 3 needs 3.1 and 3.2
+      "3.1": ["x", " "],  // After 3.1: parent 3 still needs 3.2
+      "3.2": ["x", "x"],  // After 3.2: both parents complete
+    } as const;
     for (const id of REQUIRED_TASKS.filter((t) => t !== "2")) {
       expect(repo.vellum(["task", "start", SLUG, id]).status).toBe(0);
       const complete = repo.vellum(["task", "complete", SLUG, id, "--command", PASSING_COMMAND]);
       expect(complete.status).toBe(0);
       const [one, three] = parentMarkers[id as keyof typeof parentMarkers];
       expect([repo.marker("1"), repo.marker("3")]).toEqual([one, three]);
-      if (id === "1.2") expect(complete.stdout).toContain("every required sub-task of task 1 is verified");
+      if (id === "1.3") expect(complete.stdout).toContain("every required sub-task of task 1 is verified");
+      if (id === "3.2") expect(complete.stdout).toContain("every required sub-task of task 3 is verified");
     }
     repo.commitAll(`chore: record ${SLUG} leaf evidence`);
     const verify = repo.vellum(["verify", SLUG, "--strict", "--json"]);

@@ -52,8 +52,7 @@ describe("scenario 1: full lifecycle", () => {
       expect(entry).toMatchObject({ command: PASSING_COMMAND, exit_status: 0, uncommitted: false, timed_out: false });
       expect(entry.output_sha256).toMatch(/^[0-9a-f]{64}$/);
     }
-    // The optional task was never started and keeps its marker.
-    expect(repo.marker("1.3")).toBe(" ");
+    // V-06: Property tests are no longer optional, so all tasks are now required
   });
 
   it("verify --strict passes", () => {

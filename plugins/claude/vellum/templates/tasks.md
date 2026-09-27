@@ -48,7 +48,7 @@ first task that produces something runnable, and say how many waves the graph ha
 - [ ] 2. [Parent task]
   - [ ] 2.1 [Leaf task] _Requirements: 2.1_
   - [ ] 2.2 [Leaf task] _Requirements: 2.2, 2.3_
-  - [ ] 2.3* [Optional leaf task — property-based test for Property 2] _Requirements: 2.1, 2.2_ _Properties: 2_
+  - [ ] 2.3 [Property-based test for Property 2 — NOT optional] _Requirements: 2.1, 2.2_ _Properties: 2_
 
 - [ ] 3. Checkpoint: ensure all tests pass
 
@@ -150,10 +150,16 @@ extra fixtures, nice-to-haves. It may sit immediately after the closing bracket
 and treats them identically. Prefer the second — it is what every example in this
 template uses, and it attaches the marker to the thing that is optional.
 
-Optional tasks are still real work and still carry a `_Requirements:_` trailer.
+**A task that cites a Property is never optional.** Property tests verify the
+design's Correctness Properties, and `npx vellum verify` fails when a Property
+is cited only by optional, undone tasks. Even if a Property test appears to be
+"extra verification", omit the `*` marker on any task that carries
+`_Properties: N, …_`.
 
 **A top-level task is never optional.** If a whole top-level task could be skipped,
 it does not belong in the plan.
+
+Optional tasks are still real work and still carry a `_Requirements:_` trailer.
 
 ### Traceability
 

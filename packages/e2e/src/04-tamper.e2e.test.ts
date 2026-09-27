@@ -142,8 +142,10 @@ describe("scenario 4: tampering", () => {
   it("flipping a task marker keeps the plan approval", () => {
     const repo = copy();
     const path = `${repo.specDir}/tasks.md`;
-    repo.write(path, repo.read(path).replace("- [ ] 1.3* ", "- [-] 1.3* "));
-    repo.commitAll("chore: start the optional tests");
+    // Task 1.3 is now required (V-06), so it's completed in the base spec
+    // Change it back to in-progress - this should still keep the approval
+    repo.write(path, repo.read(path).replace("- [x] 1.3 ", "- [-] 1.3 "));
+    repo.commitAll("chore: restart task 1.3");
     expect(repo.marker("1.3")).toBe("-");
     const status = JSON.parse(repo.vellum(["status", SLUG, "--json"]).stdout).specs[0];
     expect(status.approvals.tasks).toEqual({ current: 1, required: 1, complete: true });
