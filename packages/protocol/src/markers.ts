@@ -70,11 +70,11 @@ export function formatMarker(marker: TaskMarker): string {
  * - Checkbox marker: [ ], [x], [-], [~]
  * - Task identifier: number with optional hierarchy (1, 2.3, 5.1.4)
  * - Task text: any text after identifier
- * - Optional trailers: HTML comments with criteria and/or properties
- * - Kiro trailers ending the text, in either order: `_Requirements: 1.2, 3.4_`
- *   and `_Properties: 1, 3_` (the forms the method's tasks template writes;
- *   a property is cited by its design.md number, `3` or `P3`); each merged
- *   with the matching comment trailer when both are present
+ * - Trailers ending the text, in any order: HTML comments with criteria
+ *   and/or properties, and the Kiro trailers `_Requirements: 1.2, 3.4_` and
+ *   `_Properties: 1, 3_` (the forms the method's tasks template writes; a
+ *   property is cited by its design.md number, `3` or `P3`); each merged with
+ *   the matching comment trailer when both are present
  * - Optional task marker: `(optional)` in the text, or Kiro's `*` right after
  *   the checkbox (`- [ ]* 1.3`) or the identifier (`- [ ] 1.3* …`)
  */
@@ -91,7 +91,7 @@ export function parseTaskLine(line: string): {
   // A `*` right after the checkbox (`- [ ]* 1.3`) or right after the
   // identifier (`- [ ] 1.3* …`) marks the task optional (Kiro form).
   const baseMatch = line.match(
-    /^(\s*)-\s*\[([ x~-])\](\*?)\s*(\d+(?:\.\d+)*)(\*?)\s*\.?\s*(.*?)(\s*<!--[\s\S]*?-->)?$/,
+    /^(\s*)-\s*\[([ x~-])\](\*?)\s*(\d+(?:\.\d+)*)(\*?)\s*\.?\s*(.*?)$/,
   );
 
   if (!baseMatch) {
@@ -102,7 +102,6 @@ export function parseTaskLine(line: string): {
   const identifierStr = baseMatch[4];
   const starred = baseMatch[3] === "*" || baseMatch[5] === "*";
   const text = baseMatch[6];
-  const trailers = baseMatch[7];
 
   // Validate required groups exist
   if (!markerChar || !identifierStr || text === undefined) {
@@ -128,32 +127,13 @@ export function parseTaskLine(line: string): {
     taskText = taskText.replace(/\s*\(optional\)\s*/g, "").trim();
   }
 
-  // Kiro trailers at the end of the text, in either order:
-  // `_Requirements: 1.2, 3.4_` and `_Properties: 1, 3_` (or `P1, P3`)
-  const kiro = takeKiroTrailers(taskText);
-  taskText = kiro.rest;
-  let requirementsTrailer = kiro.requirements;
-  let propertiesTrailer = kiro.properties;
-
-  if (trailers) {
-    // Parse criteria trailer: <!-- criteria: 1.2, 3.4 -->
-    const criteriaMatch = trailers.match(/<!--\s*criteria:\s*([\d.,\s]+)\s*-->/);
-    if (criteriaMatch && criteriaMatch[1]) {
-      const criteria = parseCriterionList(criteriaMatch[1]);
-      if (criteria.length > 0) {
-        requirementsTrailer = [...new Set([...(requirementsTrailer ?? []), ...criteria])];
-      }
-    }
-
-    // Parse properties trailer: <!-- properties: P1, P2 -->
-    const propertiesMatch = trailers.match(/<!--\s*properties:\s*([A-Z\d,\s]+)\s*-->/);
-    if (propertiesMatch && propertiesMatch[1]) {
-      const properties = parsePropertyList(propertiesMatch[1]);
-      if (properties.length > 0) {
-        propertiesTrailer = [...new Set([...(propertiesTrailer ?? []), ...properties])];
-      }
-    }
-  }
+  // Trailers ending the text, in any order: Kiro `_Requirements: …_` and
+  // `_Properties: …_`, and HTML comments `<!-- criteria: … -->` and
+  // `<!-- properties: … -->`.
+  const trailers = takeTrailers(taskText);
+  taskText = trailers.rest;
+  const requirementsTrailer = trailers.requirements;
+  const propertiesTrailer = trailers.properties;
 
   const result: {
     marker: TaskMarker;
@@ -180,39 +160,56 @@ export function parseTaskLine(line: string): {
 }
 
 /**
- * Strip the Kiro trailers ending `text`, in either order —
- * `_Requirements: 1.2, 3.4_` and `_Properties: 1, 3_` (or `P1, P3`) — and
- * return what precedes them with the identifiers each named.
+ * Strip the trailers ending `text`, in any order and interleaved — Kiro
+ * `_Requirements: 1.2, 3.4_` and `_Properties: 1, 3_` (or `P1, P3`), and HTML
+ * comments (`<!-- criteria: 1.2 -->`, `<!-- properties: P1 -->`; any other
+ * trailing comment is dropped) — and return what precedes them with the
+ * identifiers they name: Kiro references first, then comment references,
+ * without duplicates. Only the last Kiro trailer of each kind is read; an
+ * earlier one stays in the text.
  */
-function takeKiroTrailers(text: string): {
+function takeTrailers(text: string): {
   rest: string;
   requirements?: CriterionId[];
   properties?: PropertyId[];
 } {
   let rest = text.trim();
-  let requirements: CriterionId[] | undefined;
-  let properties: PropertyId[] | undefined;
+  let kiroRequirements: CriterionId[] | undefined;
+  let kiroProperties: PropertyId[] | undefined;
+  const commentRequirements: CriterionId[] = [];
+  const commentProperties: PropertyId[] = [];
   for (;;) {
-    const kiroRequirements = /\s*_Requirements:\s*([\d.,\s]+?)\s*_$/.exec(rest);
-    if (kiroRequirements?.[1] !== undefined && requirements === undefined) {
-      rest = rest.slice(0, kiroRequirements.index).trim();
-      const criteria = parseCriterionList(kiroRequirements[1]);
-      if (criteria.length > 0) requirements = criteria;
+    const comment = /\s*<!--((?:(?!-->)[\s\S])*)-->$/.exec(rest);
+    if (comment?.[1] !== undefined) {
+      rest = rest.slice(0, comment.index).trim();
+      const criteria = /^\s*criteria:\s*([\d.,\s]+)$/.exec(comment[1]);
+      if (criteria?.[1] !== undefined) commentRequirements.unshift(...parseCriterionList(criteria[1]));
+      const properties = /^\s*properties:\s*([A-Z\d,\s]+)$/.exec(comment[1]);
+      if (properties?.[1] !== undefined) commentProperties.unshift(...parsePropertyList(properties[1]));
       continue;
     }
-    const kiroProperties = /\s*_Properties:\s*((?:P?\d+)(?:\s*,\s*P?\d+)*)\s*_$/.exec(rest);
-    if (kiroProperties?.[1] !== undefined && properties === undefined) {
-      rest = rest.slice(0, kiroProperties.index).trim();
-      const list = parsePropertyList(kiroProperties[1]);
-      if (list.length > 0) properties = list;
+    const requirements = /\s*_Requirements:\s*([\d.,\s]+?)\s*_$/.exec(rest);
+    if (requirements?.[1] !== undefined && kiroRequirements === undefined) {
+      rest = rest.slice(0, requirements.index).trim();
+      const criteria = parseCriterionList(requirements[1]);
+      if (criteria.length > 0) kiroRequirements = criteria;
+      continue;
+    }
+    const properties = /\s*_Properties:\s*((?:P?\d+)(?:\s*,\s*P?\d+)*)\s*_$/.exec(rest);
+    if (properties?.[1] !== undefined && kiroProperties === undefined) {
+      rest = rest.slice(0, properties.index).trim();
+      const list = parsePropertyList(properties[1]);
+      if (list.length > 0) kiroProperties = list;
       continue;
     }
     break;
   }
+  const requirements = [...new Set([...(kiroRequirements ?? []), ...commentRequirements])];
+  const properties = [...new Set([...(kiroProperties ?? []), ...commentProperties])];
   return {
     rest,
-    ...(requirements ? { requirements } : {}),
-    ...(properties ? { properties } : {}),
+    ...(requirements.length > 0 ? { requirements } : {}),
+    ...(properties.length > 0 ? { properties } : {}),
   };
 }
 
@@ -313,7 +310,8 @@ export function isTaskLine(line: string): boolean {
 // ============================================================================
 
 const FENCE = /^\s*(`{3,}|~{3,})/;
-const HEADING = /^ {0,3}#{1,6}(?:\s|$)/;
+/** A line that opens a block of its own: fence, heading, table row, quote, thematic break. */
+const OWN_BLOCK = /^\s*(?:`{3,}|~{3,}|#{1,6}(?:\s|$)|\||>|([-*_])(?:\s*\1){2,}\s*$)/;
 /**
  * A list item that can interrupt a task's text (CommonMark): a bullet, or an
  * ordered item numbered 1. A wrapped line starting `200) ` continues the text.
@@ -326,18 +324,20 @@ const LIST_ITEM = /^\s*(?:[-*+]|0{0,8}1[.)])(?:\s+|$)/;
  * A Task Item is a task line (see parseTaskLine) together with the lines that
  * belong to it, so a plan reads the same after a formatter wraps it:
  *
- * - **continuation lines** — non-blank lines indented deeper than the task's
- *   list marker that are not themselves list items, headings or fences. They
- *   continue the task's text (a wrapped line, with any hanging indent), so a
- *   trailer that a formatter moved onto a later line is still read;
+ * - **continuation lines** — non-blank lines that are not list items and do
+ *   not open a block of their own (fence, heading, table row, block quote,
+ *   thematic break). They continue the task's text — a wrapped line with any
+ *   hanging indent, or a Markdown lazy continuation line with none — so a
+ *   trailer a formatter moved onto a later line is still read;
  * - **nested detail bullets** — non-task list items indented deeper than the
  *   task (the Kiro IDE's native shape, `- [ ] 1. Title` then
  *   `  - _Requirements: 1.1, 2.3_`). They are not part of the task's text, but
  *   a `_Requirements:_` or `_Properties:_` trailer ending one belongs to the
  *   task above it.
  *
- * An item ends at a blank line, a line indented no deeper than its marker, a
- * heading, a fence, or the next task line (a sub-task starts its own item).
+ * An item ends at a blank line, a list item indented no deeper than its
+ * marker, a line that opens a block of its own, or the next task line (a
+ * sub-task starts its own item).
  * Task lines inside a fenced code block are examples, not tasks. `lineNumber`
  * is the 1-based line of the task line itself, the line whose marker the
  * Platform writes. Every reader of tasks.md — lint, verify, coverage,
@@ -371,9 +371,9 @@ export function parseTaskItems(body: string): TaskLine[] {
     let j = i + 1;
     for (; j < lines.length; j++) {
       const next = lines[j]!;
-      if (next.trim() === "" || indentOf(next) <= indent) break;
-      if (FENCE.test(next) || HEADING.test(next) || parseTaskLine(next) !== null) break;
+      if (next.trim() === "" || parseTaskLine(next) !== null || OWN_BLOCK.test(next)) break;
       if (LIST_ITEM.test(next)) {
+        if (indentOf(next) <= indent) break;
         current = [next.trim().replace(LIST_ITEM, "")];
         details.push(current);
       } else {
@@ -386,7 +386,7 @@ export function parseTaskItems(body: string): TaskLine[] {
     let requirements = parsed.requirementsTrailer;
     let properties = parsed.propertiesTrailer;
     for (const detail of details) {
-      const trailers = takeKiroTrailers(detail.join(" "));
+      const trailers = takeTrailers(detail.join(" "));
       if (trailers.requirements) {
         requirements = [...new Set([...(requirements ?? []), ...trailers.requirements])];
       }

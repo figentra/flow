@@ -94,21 +94,42 @@ describe("parseTaskItems", () => {
     expect(item?.requirementsTrailer).toEqual(["1.1", "1.2"]);
   });
 
-  it("ends an item at a blank line, a less-indented line or a heading", () => {
+  it("ends an item at a blank line, a sibling list item, a heading or a table", () => {
     const plan = [
       "- [ ] 1 One",
       "",
       "  Loose paragraph _Requirements: 9.9_",
       "- [ ] 2 Two",
-      "Not indented _Requirements: 9.9_",
+      "- Sibling bullet _Requirements: 9.9_",
       "- [ ] 3 Three",
       "  ## Heading _Requirements: 9.9_",
+      "- [ ] 4 Four",
+      "| table _Requirements: 9.9_ |",
     ].join("\n");
     const items = parseTaskItems(plan);
     expect(items.map((i) => [i.identifier, i.text, i.requirementsTrailer])).toEqual([
       ["1", "One", undefined],
       ["2", "Two", undefined],
       ["3", "Three", undefined],
+      ["4", "Four", undefined],
+    ]);
+  });
+
+  it("reads comment and Kiro trailers in any order once lines are joined", () => {
+    const [item] = parseTaskItems(
+      "- [ ] 1.1 Write tests (spec-executor) <!-- properties: P1 -->\n_Requirements: 1.1_ <!-- criteria: 1.2 -->\n",
+    );
+    expect(item).toMatchObject({
+      text: "Write tests (spec-executor)",
+      requirementsTrailer: ["1.1", "1.2"],
+      propertiesTrailer: ["P1"],
+    });
+  });
+
+  it("reads a Markdown lazy continuation line (no indent) as part of the task", () => {
+    const items = parseTaskItems("- [ ] 1. Create the file\n_Requirements: 1.1, 1.2_\n");
+    expect(items.map((i) => [i.text, i.requirementsTrailer])).toEqual([
+      ["Create the file", ["1.1", "1.2"]],
     ]);
   });
 
