@@ -5,7 +5,7 @@
  * the Kiro Task Line Grammar.
  */
 
-import type { TaskMarker, TaskId, CriterionId, PropertyId } from "./types";
+import type { TaskMarker, TaskId, CriterionId, PropertyId, TaskLine } from "./types";
 import { parseTaskId, formatTaskId, parseCriterionId, parsePropertyId } from "./types";
 
 // ============================================================================
@@ -128,29 +128,12 @@ export function parseTaskLine(line: string): {
     taskText = taskText.replace(/\s*\(optional\)\s*/g, "").trim();
   }
 
-  // Parse trailers if present
-  let requirementsTrailer: CriterionId[] | undefined;
-  let propertiesTrailer: PropertyId[] | undefined;
-
   // Kiro trailers at the end of the text, in either order:
   // `_Requirements: 1.2, 3.4_` and `_Properties: 1, 3_` (or `P1, P3`)
-  for (;;) {
-    const kiroRequirements = /\s*_Requirements:\s*([\d.,\s]+?)\s*_$/.exec(taskText);
-    if (kiroRequirements?.[1] !== undefined && requirementsTrailer === undefined) {
-      taskText = taskText.slice(0, kiroRequirements.index).trim();
-      const criteria = parseCriterionList(kiroRequirements[1]);
-      if (criteria.length > 0) requirementsTrailer = criteria;
-      continue;
-    }
-    const kiroProperties = /\s*_Properties:\s*((?:P?\d+)(?:\s*,\s*P?\d+)*)\s*_$/.exec(taskText);
-    if (kiroProperties?.[1] !== undefined && propertiesTrailer === undefined) {
-      taskText = taskText.slice(0, kiroProperties.index).trim();
-      const properties = parsePropertyList(kiroProperties[1]);
-      if (properties.length > 0) propertiesTrailer = properties;
-      continue;
-    }
-    break;
-  }
+  const kiro = takeKiroTrailers(taskText);
+  taskText = kiro.rest;
+  let requirementsTrailer = kiro.requirements;
+  let propertiesTrailer = kiro.properties;
 
   if (trailers) {
     // Parse criteria trailer: <!-- criteria: 1.2, 3.4 -->
@@ -194,6 +177,43 @@ export function parseTaskLine(line: string): {
   }
 
   return result;
+}
+
+/**
+ * Strip the Kiro trailers ending `text`, in either order —
+ * `_Requirements: 1.2, 3.4_` and `_Properties: 1, 3_` (or `P1, P3`) — and
+ * return what precedes them with the identifiers each named.
+ */
+function takeKiroTrailers(text: string): {
+  rest: string;
+  requirements?: CriterionId[];
+  properties?: PropertyId[];
+} {
+  let rest = text.trim();
+  let requirements: CriterionId[] | undefined;
+  let properties: PropertyId[] | undefined;
+  for (;;) {
+    const kiroRequirements = /\s*_Requirements:\s*([\d.,\s]+?)\s*_$/.exec(rest);
+    if (kiroRequirements?.[1] !== undefined && requirements === undefined) {
+      rest = rest.slice(0, kiroRequirements.index).trim();
+      const criteria = parseCriterionList(kiroRequirements[1]);
+      if (criteria.length > 0) requirements = criteria;
+      continue;
+    }
+    const kiroProperties = /\s*_Properties:\s*((?:P?\d+)(?:\s*,\s*P?\d+)*)\s*_$/.exec(rest);
+    if (kiroProperties?.[1] !== undefined && properties === undefined) {
+      rest = rest.slice(0, kiroProperties.index).trim();
+      const list = parsePropertyList(kiroProperties[1]);
+      if (list.length > 0) properties = list;
+      continue;
+    }
+    break;
+  }
+  return {
+    rest,
+    ...(requirements ? { requirements } : {}),
+    ...(properties ? { properties } : {}),
+  };
 }
 
 /**
@@ -288,18 +308,115 @@ export function isTaskLine(line: string): boolean {
   return parseTaskLine(line) !== null;
 }
 
+// ============================================================================
+// Task Items
+// ============================================================================
+
+const FENCE = /^\s*(`{3,}|~{3,})/;
+const HEADING = /^ {0,3}#{1,6}(?:\s|$)/;
+/**
+ * A list item that can interrupt a task's text (CommonMark): a bullet, or an
+ * ordered item numbered 1. A wrapped line starting `200) ` continues the text.
+ */
+const LIST_ITEM = /^\s*(?:[-*+]|0{0,8}1[.)])(?:\s+|$)/;
+
+/**
+ * Parse every Task Item of a tasks.md body, in document order.
+ *
+ * A Task Item is a task line (see parseTaskLine) together with the lines that
+ * belong to it, so a plan reads the same after a formatter wraps it:
+ *
+ * - **continuation lines** — non-blank lines indented deeper than the task's
+ *   list marker that are not themselves list items, headings or fences. They
+ *   continue the task's text (a wrapped line, with any hanging indent), so a
+ *   trailer that a formatter moved onto a later line is still read;
+ * - **nested detail bullets** — non-task list items indented deeper than the
+ *   task (the Kiro IDE's native shape, `- [ ] 1. Title` then
+ *   `  - _Requirements: 1.1, 2.3_`). They are not part of the task's text, but
+ *   a `_Requirements:_` or `_Properties:_` trailer ending one belongs to the
+ *   task above it.
+ *
+ * An item ends at a blank line, a line indented no deeper than its marker, a
+ * heading, a fence, or the next task line (a sub-task starts its own item).
+ * Task lines inside a fenced code block are examples, not tasks. `lineNumber`
+ * is the 1-based line of the task line itself, the line whose marker the
+ * Platform writes. Every reader of tasks.md — lint, verify, coverage,
+ * approve, status, task start and complete — reads tasks through this.
+ */
+export function parseTaskItems(body: string): TaskLine[] {
+  const lines = body.split("\n").map((line) => line.replace(/\r$/, ""));
+  const items: TaskLine[] = [];
+  let fence: string | null = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    const open = FENCE.exec(line);
+    if (fence !== null) {
+      if (open?.[1] !== undefined && open[1].charAt(0) === fence.charAt(0) &&
+          open[1].length >= fence.length && line.trim() === open[1]) {
+        fence = null;
+      }
+      continue;
+    }
+    if (open?.[1] !== undefined) {
+      fence = open[1];
+      continue;
+    }
+    if (parseTaskLine(line) === null) continue;
+
+    const indent = indentOf(line);
+    const text: string[] = [line.trimEnd()];
+    const details: string[][] = [];
+    let current = text;
+    let j = i + 1;
+    for (; j < lines.length; j++) {
+      const next = lines[j]!;
+      if (next.trim() === "" || indentOf(next) <= indent) break;
+      if (FENCE.test(next) || HEADING.test(next) || parseTaskLine(next) !== null) break;
+      if (LIST_ITEM.test(next)) {
+        current = [next.trim().replace(LIST_ITEM, "")];
+        details.push(current);
+      } else {
+        current.push(next.trim());
+      }
+    }
+
+    const parsed = parseTaskLine(text.join(" "));
+    if (parsed === null) continue;
+    let requirements = parsed.requirementsTrailer;
+    let properties = parsed.propertiesTrailer;
+    for (const detail of details) {
+      const trailers = takeKiroTrailers(detail.join(" "));
+      if (trailers.requirements) {
+        requirements = [...new Set([...(requirements ?? []), ...trailers.requirements])];
+      }
+      if (trailers.properties) {
+        properties = [...new Set([...(properties ?? []), ...trailers.properties])];
+      }
+    }
+    items.push({
+      lineNumber: i + 1,
+      marker: parsed.marker,
+      identifier: parsed.identifier,
+      text: parsed.text,
+      isOptional: parsed.isOptional,
+      ...(requirements ? { requirementsTrailer: requirements } : {}),
+      ...(properties ? { propertiesTrailer: properties } : {}),
+    });
+    i = j - 1;
+  }
+  return items;
+}
+
+/** Width of a line's leading whitespace, a tab counting as four columns. */
+function indentOf(line: string): number {
+  const lead = /^[ \t]*/.exec(line)?.[0] ?? "";
+  return lead.replace(/\t/g, "    ").length;
+}
+
 /**
  * Extract all task identifiers from a tasks.md body
  */
 export function extractTaskIdentifiers(body: string): TaskId[] {
-  const identifiers: TaskId[] = [];
-
-  for (const line of body.split("\n")) {
-    const parsed = parseTaskLine(line);
-    if (parsed) {
-      identifiers.push(parsed.identifier);
-    }
-  }
-
-  return identifiers;
+  return parseTaskItems(body).map((item) => item.identifier);
 }

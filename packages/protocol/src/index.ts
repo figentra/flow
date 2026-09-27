@@ -46,6 +46,7 @@ export {
   updateTaskMarker,
   isTaskLine,
   extractTaskIdentifiers,
+  parseTaskItems,
 } from "./markers.js";
 
 // ============================================================================
