@@ -69,8 +69,13 @@ export interface ApprovalPayload {
   artifact: "requirements.md" | "design.md" | "tasks.md";
   /** The artifact version at approval time */
   artifact_version: number;
-  /** SHA-256 of artifact body at approval time */
+  /** SHA-256 of artifact body at approval time, in the form `checksum_form` names */
   artifact_checksum: string;
+  /**
+   * The canonical form `artifact_checksum` hashes (checksum-form.ts). Absent
+   * on entries written by Vellum 0.1.2 and earlier, which are form 1.
+   */
+  checksum_form?: 1 | 2;
   /** Email of the Authorised Approver */
   identity: string;
   /** GPG or SSH key fingerprint used to sign the Approval Signal */
@@ -167,6 +172,11 @@ export interface TaskBindingEntryPayload {
   design_checksum: string;
   plan_version: number;
   plan_checksum: string;
+  /**
+   * The canonical form the three checksums hash (checksum-form.ts). Absent on
+   * entries written by Vellum 0.1.2 and earlier, which are form 1.
+   */
+  checksum_form?: 1 | 2;
 }
 
 // ============================================================================

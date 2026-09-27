@@ -31,6 +31,16 @@ export {
 } from "./frontmatter.js";
 
 export { canonicalArtifactBody, canonicalChecksumBody } from "./canonical-body.js";
+export { canonicalBodyForm1 } from "./canonical-body-form-1.js";
+export {
+  CHECKSUM_FORM,
+  checksumBindsBody,
+  checksumInCurrentForm,
+  computeChecksumInForm,
+  isEarlierFormChecksum,
+  readChecksumForm,
+  type ChecksumForm,
+} from "./checksum-form.js";
 
 // ============================================================================
 // Markers and Grammar

@@ -5,27 +5,26 @@
  * and checksum computation.
  */
 
-import { createHash } from "node:crypto";
 import type { LifecycleFrontmatter, LifecycleState, Checksum } from "./types";
 import { parseChecksum } from "./types";
-import { canonicalChecksumBody } from "./canonical-body.js";
+import { CHECKSUM_FORM, checksumBindsBody, computeChecksumInForm } from "./checksum-form.js";
 
 // ============================================================================
 // Checksum Computation
 // ============================================================================
 
 /**
- * Compute the Artifact Checksum: SHA-256 of the canonical form of the body.
+ * Compute the Artifact Checksum in the current form (CHECKSUM_FORM): SHA-256
+ * of the canonical form of the body.
  *
  * The frontmatter is excluded and formatting-only differences are normalised
  * (see canonicalChecksumBody), so an approval survives a reformat — including
  * a Markdown formatter's blank lines and re-wrapped prose — and a frontmatter
- * update, but not a content change.
+ * update, but not a content change. A checksum recorded in an earlier form is
+ * compared in its own form (checksum-form.ts).
  */
 export function computeChecksum(body: string): Checksum {
-  const content = canonicalChecksumBody(body);
-  const hash = createHash("sha256").update(content, "utf8").digest("hex");
-  return hash as Checksum;
+  return computeChecksumInForm(body, CHECKSUM_FORM);
 }
 
 // ============================================================================
@@ -179,14 +178,20 @@ export function serializeFrontmatter(frontmatter: LifecycleFrontmatter, body: st
 // ============================================================================
 
 /**
- * Validate that frontmatter checksum matches computed checksum
+ * Validate that the frontmatter checksum is the body's: true when it equals
+ * the body's checksum in the current form, or in form 1 — frontmatter stamped
+ * by Vellum 0.1.2 for a body unchanged since (decision 14 in 002's design).
+ * Such a checksum is not stale for content; `npx vellum stamp` rewrites it in
+ * the current form (isEarlierFormChecksum tells the two apart).
  */
 export function validateFrontmatterChecksum(
   frontmatter: LifecycleFrontmatter,
   body: string,
 ): boolean {
-  const computed = computeChecksum(body);
-  return frontmatter.checksum === computed;
+  return (
+    frontmatter.checksum === computeChecksum(body) ||
+    checksumBindsBody(frontmatter.checksum, 1, body)
+  );
 }
 
 /**

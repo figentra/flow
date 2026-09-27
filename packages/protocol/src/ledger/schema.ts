@@ -235,6 +235,11 @@ function validateKindFieldTypes(
           message: "session_type must be 'human', 'assistant', or 'ci'",
         });
       }
+      checkChecksumForm(entry, entryId, findings);
+      break;
+
+    case "task_binding":
+      checkChecksumForm(entry, entryId, findings);
       break;
 
     case "evidence":
@@ -344,4 +349,22 @@ export function isValidLedgerEntry(entry: unknown): entry is LedgerEntry {
   const findings = validateLedgerEntry(record);
 
   return findings.length === 0;
+}
+
+/**
+ * `checksum_form` is optional (an entry without it is form 1, as Vellum 0.1.2
+ * wrote it); when present it names a known form.
+ */
+function checkChecksumForm(
+  entry: Record<string, unknown>,
+  entryId: number | undefined,
+  findings: SchemaValidationFinding[],
+): void {
+  if (!("checksum_form" in entry) || entry.checksum_form === 1 || entry.checksum_form === 2) return;
+  findings.push({
+    kind: "schema_violation",
+    entry_id: entryId,
+    field: "checksum_form",
+    message: "checksum_form, when present, must be 1 or 2",
+  });
 }

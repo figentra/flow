@@ -319,6 +319,41 @@ describe("Ledger Schema (Task 4.3)", () => {
       const { plan_checksum: _drop, ...partial } = binding;
       expect(validateLedgerEntry(partial).map((f) => f.field)).toEqual(["plan_checksum"]);
     });
+
+    it("accepts checksum_form 1 or 2 and names any other value", () => {
+      expect(validateLedgerEntry({ ...binding, checksum_form: 2 })).toEqual([]);
+      expect(validateLedgerEntry({ ...binding, checksum_form: 1 })).toEqual([]);
+      expect(validateLedgerEntry({ ...binding, checksum_form: "2" }).map((f) => f.field)).toEqual([
+        "checksum_form",
+      ]);
+    });
+  });
+
+  describe("checksum_form on approval entries", () => {
+    const approval = {
+      kind: "approval",
+      id: 2,
+      predecessor_digest: "a".repeat(64),
+      timestamp: "2026-09-26T10:00:00Z",
+      artifact: "requirements.md",
+      artifact_version: 1,
+      artifact_checksum: "b".repeat(64),
+      identity: "test@example.com",
+      identity_key: "SHA256:abc",
+      session_type: "human",
+      approval_signal: { commit: null, message_prefix: "approve:" },
+    };
+
+    it("is optional: an entry without it is form 1, as Vellum 0.1.2 wrote it", () => {
+      expect(validateLedgerEntry(approval)).toEqual([]);
+      expect(validateLedgerEntry({ ...approval, checksum_form: 2 })).toEqual([]);
+    });
+
+    it("names a form this version does not know", () => {
+      expect(validateLedgerEntry({ ...approval, checksum_form: 3 }).map((f) => f.field)).toEqual([
+        "checksum_form",
+      ]);
+    });
   });
 
   describe("adoption kind", () => {
