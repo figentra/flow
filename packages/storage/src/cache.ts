@@ -6,12 +6,9 @@
  */
 
 import { join } from "node:path";
-import { mkdir, rm, readdir, readFile, writeFile, access } from "node:fs/promises";
+import { mkdir, rm, readdir, readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
-
-/** Cache version - increment when schema changes */
-const CACHE_VERSION = "1";
 
 /** Default max cache size in bytes (50 MB) */
 const DEFAULT_MAX_SIZE = 50 * 1024 * 1024;

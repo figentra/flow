@@ -7,6 +7,7 @@
 
 import { appendFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { dirname, basename } from "node:path";
 import type { LedgerEntry, Checksum } from "@vellum/protocol";
 import { brand } from "@vellum/protocol";
 import { createFilesystem } from "./fs.js";
@@ -18,13 +19,15 @@ const INITIAL_HASH = "0000000000000000000000000000000000000000000000000000000000
  * Read all entries from ledger file.
  */
 export async function readLedger(ledgerPath: string): Promise<readonly LedgerEntry[]> {
-  const fs = createFilesystem(dirname(ledgerPath));
+  const dir = dirname(ledgerPath);
+  const filename = basename(ledgerPath);
+  const fs = createFilesystem(dir);
 
-  if (!(await fs.exists(ledgerPath))) {
+  if (!(await fs.exists(filename))) {
     return Object.freeze([]);
   }
 
-  const content = await fs.readFile(ledgerPath);
+  const content = await fs.readFile(filename);
   const lines = content.split("\n").filter((line: string) => line.trim());
 
   const entries: LedgerEntry[] = [];
@@ -156,8 +159,6 @@ export async function verifyLedgerIntegrity(ledgerPath: string): Promise<{
     errors: errors as { seq: number; message: string }[],
   };
 }
-
-import { dirname } from "node:path";
 
 /**
  * Detect if ledger has a fork (two entries with same predecessor).

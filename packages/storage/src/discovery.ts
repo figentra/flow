@@ -6,6 +6,7 @@
 
 import { join, basename } from "node:path";
 import type { SpecMetadata, ArtifactKind, LifecycleState } from "@vellum/protocol";
+import { brand } from "@vellum/protocol";
 import { createFilesystem } from "./fs.js";
 
 /** Default spec directory location */
@@ -62,15 +63,13 @@ export async function readSpecMetadata(
     tasks: { exists: false, path: join(specPath, "tasks.md") },
   };
 
-  for (const [kind, info] of Object.entries(artifacts)) {
+  for (const [, info] of Object.entries(artifacts)) {
     if (await fs.exists(info.path)) {
       info.exists = true;
     }
   }
 
-  // Determine if this is a legacy spec
-  // Legacy spec has artifacts but no frontmatter
-  let isLegacy = true;
+  // Determine state from frontmatter if present
   let state: LifecycleState = "DRAFT";
 
   // Check if requirements.md has frontmatter
@@ -78,33 +77,20 @@ export async function readSpecMetadata(
     const content = await fs.readFile(artifacts.requirements.path);
     const frontmatter = parseFrontmatter(content);
 
-    if (frontmatter) {
-      isLegacy = false;
-      // Extract state from frontmatter if present
-      if (frontmatter.frontmatter.state) {
-        state = frontmatter.frontmatter.state as LifecycleState;
-      }
+    if (frontmatter && frontmatter.frontmatter.state) {
+      state = frontmatter.frontmatter.state as LifecycleState;
     }
   }
-
-  // Determine legacy stage based on which artifacts exist
-  const legacyStage = determineLegacyStage(artifacts);
 
   // Derive spec number from directory name (e.g., "001-feature" -> 1)
   const specNumber = parseSpecNumber(specId);
 
   return {
-    specId,
-    specNumber,
+    slug: brand<string, "SpecSlug">(specId), // Using specId as slug for now
+    specId: brand<string, "SpecId">(specId),
+    specNumber: brand<number, "SpecNumber">(specNumber),
     path: specPath,
-    artifacts: {
-      requirements: artifacts.requirements.exists,
-      design: artifacts.design.exists,
-      tasks: artifacts.tasks.exists,
-    },
-    isLegacy,
     state,
-    legacyStage,
   };
 }
 
@@ -153,6 +139,8 @@ export async function isValidSpecDirectory(repoPath: string, specPath: string): 
 /**
  * Determine legacy stage from artifact presence.
  */
+// Legacy stage determination - not currently used
+/*
 function determineLegacyStage(
   artifacts: Record<ArtifactKind, { exists: boolean; path: string }>,
 ): "empty" | "requirements" | "design" | "tasks" | "in-progress" | "verification" | "invalid" {
@@ -183,13 +171,14 @@ function determineLegacyStage(
 
   return "invalid";
 }
+*/
 
 /**
  * Parse spec number from directory name.
  */
 function parseSpecNumber(specId: string): number {
   const match = specId.match(/^(\d+)/);
-  return match ? parseInt(match[1], 10) : 0;
+  return match && match[1] ? parseInt(match[1], 10) : 0;
 }
 
 // Re-export parseFrontmatter for use here

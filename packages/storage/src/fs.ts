@@ -75,12 +75,13 @@ class FilesystemImpl implements FileSystem {
     }
   }
 
-  async stat(path: string): Promise<{ mtime: Date; size: number }> {
+  async stat(path: string): Promise<{ mtime: Date; size: number; isDirectory: boolean }> {
     const absolute = this.resolve(path);
     const stats = await stat(absolute);
     return {
       mtime: stats.mtime,
       size: stats.size,
+      isDirectory: stats.isDirectory(),
     };
   }
 

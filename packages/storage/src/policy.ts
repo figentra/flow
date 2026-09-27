@@ -6,7 +6,7 @@
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ConsumerConfiguration, PolicyError } from "../domain/policy/types.js";
+import type { ConsumerConfiguration, PolicyError } from "./domain/policy/types";
 
 /**
  * Schema version supported by this Platform version.
@@ -173,9 +173,7 @@ export function isAuthorisedForRiskClass(
     return false;
   }
 
-  return approver.authorised_for.includes(
-    riskClass as ConsumerConfiguration["approval"]["approvers"][number]["authorised_for"][number],
-  );
+  return !!approver.authorised_for?.includes(riskClass as string);
 }
 
 /**

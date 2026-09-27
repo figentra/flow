@@ -67,6 +67,20 @@ export interface SpecDirectory {
   readonly ledgerPath: string;
 }
 
+/** Spec metadata */
+export interface SpecMetadata {
+  /** Spec slug (e.g., "016-queue-capability") */
+  readonly slug: SpecSlug;
+  /** Spec ID (e.g., "016") */
+  readonly specId: SpecId;
+  /** Spec number (e.g., 16) */
+  readonly specNumber: SpecNumber;
+  /** Absolute path to spec directory */
+  readonly path: string;
+  /** Current lifecycle state */
+  readonly state: LifecycleState;
+}
+
 // ============================================================================
 // Artifact Types
 // ============================================================================
@@ -448,7 +462,7 @@ export interface FileSystem {
   /** Delete file */
   delete(path: string): Promise<void>;
   /** Get file stats */
-  stat(path: string): Promise<{ mtime: Date; size: number }>;
+  stat(path: string): Promise<{ mtime: Date; size: number; isDirectory: boolean }>;
   /** Create directory recursively */
   mkdirp(path: string): Promise<void>;
   /** Update a section between markers atomically */
