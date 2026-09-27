@@ -18,7 +18,7 @@ import type {
   RiskClass,
   TaskLine,
 } from "@vellum/protocol";
-import { canonicalArtifactBody, computeChecksum, parseTaskLine } from "@vellum/protocol";
+import { canonicalArtifactBody, computeChecksum, parseTaskItems } from "@vellum/protocol";
 import {
   approvalRecords,
   resolveApprovalSignals,
@@ -322,12 +322,9 @@ export function strictVerify(
   };
 }
 
-/** Parse the task lines of a tasks.md body, keeping their 1-based line numbers. */
+/** Parse the tasks of a tasks.md body, keeping their 1-based line numbers. */
 function taskLines(body: string): TaskLine[] {
-  return body.split("\n").flatMap((line, index) => {
-    const parsed = parseTaskLine(line);
-    return parsed ? [{ ...parsed, lineNumber: index + 1 }] : [];
-  });
+  return parseTaskItems(body);
 }
 
 /**

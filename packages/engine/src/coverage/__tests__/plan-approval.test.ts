@@ -41,4 +41,58 @@ describe("decidePlanApproval", () => {
       coverage: null,
     });
   });
+
+  it("reads trailers a formatter wrapped onto continuation lines (prettier --prose-wrap always)", () => {
+    const tasks = [
+      "# Tasks",
+      "",
+      "- [ ] 1 Build the first thing, described at a length that a formatter",
+      "      wraps with a hanging indent _Requirements:",
+      "      1.1_ _Properties: 1_",
+      "- [x] 2 Build the second thing",
+      "      <!-- criteria: 1.2 --> <!-- properties: P2 -->",
+      "",
+    ].join("\n");
+    const decision = decidePlanApproval(allArtifacts({ tasks }));
+    expect(decision.approvable).toBe(true);
+    expect(decision.coverage?.examined).toEqual({ criteria: 2, properties: 2, tasks: 2 });
+  });
+
+  it("reads the Kiro IDE's nested trailer bullets under each task", () => {
+    const tasks = [
+      "# Tasks",
+      "",
+      "- [ ] 1. Build the first thing",
+      "  - Write the module",
+      "  - _Requirements: 1.1_",
+      "  - _Properties: 1_",
+      "",
+      "- [ ] 2. Build the second thing",
+      "  - _Requirements: 1.2_",
+      "  - _Properties: 2_",
+      "",
+    ].join("\n");
+    const decision = decidePlanApproval(allArtifacts({ tasks }));
+    expect(decision.approvable).toBe(true);
+    expect(decision.coverage?.criteria.map((c) => [c.id, c.coveredBy])).toEqual([
+      ["1.1", ["1"]],
+      ["1.2", ["2"]],
+    ]);
+  });
+
+  it("still refuses a wrapped or nested plan whose trailer does not name a criterion", () => {
+    const tasks = [
+      "# Tasks",
+      "",
+      "- [ ] 1. Build the first thing _Requirements: 1.1_",
+      "  _Properties: 1, 2_",
+      "- [ ] 2. Build the second thing",
+      "  - A detail that mentions 1.2 but is no trailer",
+      "",
+    ].join("\n");
+    expect(decidePlanApproval(allArtifacts({ tasks }))).toMatchObject({
+      approvable: false,
+      problems: ["Criterion 1.2 is referenced by no task's requirements trailer"],
+    });
+  });
 });

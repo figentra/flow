@@ -22,7 +22,7 @@
  */
 
 import type { Finding } from "@vellum/protocol";
-import { parseTaskLine } from "@vellum/protocol";
+import { parseTaskItems } from "@vellum/protocol";
 import { RuleIdentifier } from "./rules.js";
 
 const HEADING = /^##\s+Task Dependency Graph\s*$/;
@@ -97,7 +97,7 @@ export function validateWaveGraph(text: string, file: string): Finding[] {
     return [finding(graphLine, RuleIdentifier.WAVE_GRAPH_INVALID, waves)];
   }
 
-  const tasks = planTasks(lines);
+  const tasks = planTasks(text);
   const byId = new Map(tasks.map((t) => [t.id, t]));
   const isParent = (id: string) => tasks.some((t) => t.id.startsWith(`${id}.`));
   const findings: Finding[] = [];
@@ -200,24 +200,12 @@ function readWaves(value: unknown): { id: number; tasks: string[] }[] | string {
   return waves;
 }
 
-/** Every task line outside a code fence, in document order. */
-function planTasks(lines: readonly string[]): PlanTask[] {
-  const tasks: PlanTask[] = [];
-  let inFence = false;
-  lines.forEach((line, index) => {
-    if (/^\s*(```|~~~)/.test(line)) {
-      inFence = !inFence;
-      return;
-    }
-    if (inFence) return;
-    const task = parseTaskLine(line);
-    if (task === null) return;
-    tasks.push({
-      id: task.identifier,
-      line: index + 1,
-      complete: task.marker === "x",
-      checkpoint: CHECKPOINT.test(task.text),
-    });
-  });
-  return tasks;
+/** Every task outside a code fence, in document order (protocol parseTaskItems). */
+function planTasks(text: string): PlanTask[] {
+  return parseTaskItems(text).map((task) => ({
+    id: task.identifier,
+    line: task.lineNumber,
+    complete: task.marker === "x",
+    checkpoint: CHECKPOINT.test(task.text),
+  }));
 }

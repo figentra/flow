@@ -18,7 +18,7 @@ import type {
   LifecycleState,
   RiskClass,
 } from "@vellum/protocol";
-import { canonicalArtifactBody, computeChecksum, parseTaskLine } from "@vellum/protocol";
+import { canonicalArtifactBody, computeChecksum, parseTaskItems } from "@vellum/protocol";
 import {
   approvalRecords,
   resolveApprovalSignals,
@@ -241,9 +241,7 @@ function computeVerificationStatus(
 
   const required = tasks
     ? requiredTasks(
-        canonicalArtifactBody(tasks.body)
-          .split("\n")
-          .flatMap((line) => parseTaskLine(line) ?? []),
+        parseTaskItems(canonicalArtifactBody(tasks.body)),
       ).map((line) => line.identifier as string)
     : [];
   const completed = required.filter((id) => passed.has(id)).length;

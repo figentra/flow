@@ -12,7 +12,7 @@
  */
 
 import type { Artifact, TaskLine } from "@vellum/protocol";
-import { canonicalArtifactBody, parseTaskLine } from "@vellum/protocol";
+import { canonicalArtifactBody, parseTaskItems } from "@vellum/protocol";
 import { computeCoverage, type CoverageResult } from "./validate.js";
 
 /** Whether the plan, as the artifacts stand, may be approved. */
@@ -77,8 +77,5 @@ export function decidePlanApproval(artifacts: readonly Artifact[]): PlanApproval
 }
 
 function planTaskLines(body: string): TaskLine[] {
-  return body.split("\n").flatMap((line, index) => {
-    const parsed = parseTaskLine(line);
-    return parsed ? [{ ...parsed, lineNumber: index + 1 }] : [];
-  });
+  return parseTaskItems(body);
 }

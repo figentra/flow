@@ -5,7 +5,7 @@
 
 import { join, relative } from "node:path";
 import type { Checksum, LedgerEntry } from "@vellum/protocol";
-import { EXIT_STATUS, LEDGER_SCHEMA_VERSION, parseTaskLine } from "@vellum/protocol";
+import { EXIT_STATUS, LEDGER_SCHEMA_VERSION, parseTaskItems } from "@vellum/protocol";
 import {
   checkLedgerIntegrity,
   checkTaskBinding,
@@ -283,9 +283,7 @@ export const task = {
     // A parent whose last required sub-task this was is complete too; its
     // marker flips in the same write (Task Markers are outside the checksum).
     const parents = parentsCompletedBy(
-      tasksText
-        .split("\n")
-        .flatMap((line) => parseTaskLine(line.replace(/\r$/, "")) ?? []),
+      parseTaskItems(tasksText),
       new Set([...passingTasks(spec.ledger), args.taskId]),
       args.taskId,
     );

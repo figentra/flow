@@ -38,7 +38,7 @@ import type {
   RiskClass,
   TaskLine,
 } from "@vellum/protocol";
-import { canonicalArtifactBody, computeChecksum, parseTaskLine } from "@vellum/protocol";
+import { canonicalArtifactBody, computeChecksum, parseTaskItems } from "@vellum/protocol";
 import {
   approvalRecords,
   resolveApprovalSignals,
@@ -221,12 +221,7 @@ class Context {
     ).flatMap((resolved) => (resolved.problem === undefined ? [resolved.record] : []));
     const tasks = this.byKind.get("tasks");
     this.tasks = tasks
-      ? canonicalArtifactBody(tasks.body)
-          .split("\n")
-          .flatMap((line, index) => {
-            const parsed = parseTaskLine(line);
-            return parsed ? [{ ...parsed, lineNumber: index + 1 }] : [];
-          })
+      ? parseTaskItems(canonicalArtifactBody(tasks.body))
       : [];
   }
 

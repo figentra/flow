@@ -6,7 +6,7 @@ import { relative } from "node:path";
 import type { ArtifactKind, Finding } from "@vellum/protocol";
 import {
   canonicalArtifactBody,
-  parseTaskLine,
+  parseTaskItems,
   validateLedgerEntry,
 } from "@vellum/protocol";
 import {
@@ -201,16 +201,17 @@ function lintSpec(
           rule: "TASK_MARKER_INVALID",
           message: `Task marker [${checkbox[1]}] is not one of [ ], [~], [-], [x]`,
         });
-        return;
       }
-      const task = parseTaskLine(line);
-      if (!task) return;
+    });
+    // A task's trailers may sit on the lines a formatter wrapped it onto, or in
+    // a nested Kiro bullet; parseTaskItems reads them all.
+    for (const task of parseTaskItems(tasksText)) {
       examined.taskLines++;
       for (const ref of task.requirementsTrailer ?? []) {
         if (criteria !== null && !criteria.has(ref)) {
           findings.push({
             file: tasksFile,
-            line: index + 1,
+            line: task.lineNumber,
             rule: "TASK_CRITERION_UNDEFINED",
             message: `Task ${task.identifier} cites criterion ${ref}, which requirements.md does not define`,
           });
@@ -220,13 +221,13 @@ function lintSpec(
         if (properties !== null && !properties.has(ref)) {
           findings.push({
             file: tasksFile,
-            line: index + 1,
+            line: task.lineNumber,
             rule: "TASK_PROPERTY_UNDEFINED",
             message: `Task ${task.identifier} cites property ${ref}, which design.md does not define`,
           });
         }
       }
-    });
+    }
   }
 
   if (only === undefined) {

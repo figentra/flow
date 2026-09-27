@@ -42,6 +42,25 @@ _Requirements: 1.1, 1.2_
     });
   });
 
+  it("reads trailers on wrapped lines and in a nested Kiro bullet, as the protocol does", () => {
+    const tasks = parseTasks(
+      [
+        "- [ ] 1. Parent",
+        "  - [ ] 1.1 Write the parser for the whole input, wrapped by a",
+        "        formatter (spec-executor) _Requirements: 1.1,",
+        "        1.2_",
+        "  - [ ] 1.2 Test the parser (spec-executor)",
+        "    - _Requirements: 2.1_",
+        "    - _Properties: 3_",
+      ].join("\n"),
+    );
+    expect(tasks.map((t) => [t.id, t.referenced_criteria, t.referenced_properties, t.executor])).toEqual([
+      ["1", undefined, undefined, undefined],
+      ["1.1", ["1.1", "1.2"], undefined, "spec-executor"],
+      ["1.2", ["2.1"], ["3"], "spec-executor"],
+    ]);
+  });
+
   it("marks test tasks", () => {
     const tasksText = `
 - [ ] 1. Write tests for feature

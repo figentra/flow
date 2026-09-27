@@ -30,7 +30,7 @@ import type {
   RiskClass,
   TaskMarker,
 } from "@vellum/protocol";
-import { brand, parseFrontmatter, parseTaskLine } from "@vellum/protocol";
+import { brand, parseFrontmatter, parseTaskItems } from "@vellum/protocol";
 import type { ApprovalCommitResolution } from "@vellum/engine";
 import { LedgerError, getLedgerHeadPath, parseLedger, parseLedgerHead } from "./ledger.js";
 import { LEDGER_FILE, MACHINE_FOLDER } from "./state.js";
@@ -384,15 +384,19 @@ export interface TaskLocation {
   readonly isOptional: boolean;
 }
 
-/** Find task `taskId` in tasks.md text; null when absent, an error when listed twice. */
+/**
+ * Find task `taskId` in tasks.md text; null when absent, an error when listed
+ * twice. A task a formatter wrapped over several lines is found at its first
+ * line, the one that carries the marker.
+ */
 export function findTask(tasksText: string, taskId: string): TaskLocation | null {
-  const found: TaskLocation[] = [];
-  tasksText.split("\n").forEach((line, index) => {
-    const parsed = parseTaskLine(line.replace(/\r$/, ""));
-    if (parsed && parsed.identifier === taskId) {
-      found.push({ lineNumber: index + 1, marker: parsed.marker, isOptional: parsed.isOptional });
-    }
-  });
+  const found: TaskLocation[] = parseTaskItems(tasksText)
+    .filter((item) => item.identifier === taskId)
+    .map((item) => ({
+      lineNumber: item.lineNumber,
+      marker: item.marker,
+      isOptional: item.isOptional,
+    }));
   if (found.length > 1) {
     throw new Error(`Task ${taskId} appears ${found.length} times in tasks.md`);
   }

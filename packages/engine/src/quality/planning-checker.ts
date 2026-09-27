@@ -5,7 +5,7 @@
  */
 
 import type { QualityFinding } from "@vellum/protocol";
-import { createQualityFinding } from "@vellum/protocol";
+import { createQualityFinding, parseTaskItems } from "@vellum/protocol";
 import { RULE_IDS } from "./rules";
 import { parseCriteria } from "./patterns/criterion-parser";
 import { parseProperties } from "./coverage-checker";
@@ -41,93 +41,33 @@ export interface TaskInfo {
  * @returns Array of task info
  */
 export function parseTasks(tasksText: string): TaskInfo[] {
-  const tasks: TaskInfo[] = [];
-  const lines = tasksText.split("\n");
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line) continue;
-
-    // Match task markdown: - [ ] N. Title or - [-] N.N Title (sub-tasks may be indented)
-    const match = line.match(/^\s*-\s+\[[~\-\sx]\]\*?\s+(\d+(?:\.\d+)*)\*?\.?\s+(.+)/);
-    if (match && match[1] && match[2]) {
-      // The protocol's trailers: <!-- criteria: 1.2 --> <!-- properties: P1 -->
-      const criteriaTrailer = match[2].match(/<!--\s*criteria:\s*([\d.,\s]+?)\s*-->/);
-      const propertiesTrailer = match[2].match(/<!--\s*properties:\s*([P\d,\s]+?)\s*-->/);
-      let title = match[2].replace(/<!--[\s\S]*?-->/g, "").trim();
-      // Kiro trailers on the task line itself, as the method's template writes them
-      const kiroCriteria: string[] = [];
-      const kiroProperties: string[] = [];
-      for (;;) {
-        const req = /\s*_Requirements:\s*([\d.,\s]+?)\s*_$/.exec(title);
-        const prop = /\s*_Properties:\s*((?:P?\d+)(?:\s*,\s*P?\d+)*)\s*_$/.exec(title);
-        const found = req ?? prop;
-        if (!found?.[1]) break;
-        (found === req ? kiroCriteria : kiroProperties).push(...splitList(found[1]));
-        title = title.slice(0, found.index).trim();
-      }
-      const task: TaskInfo = {
-        id: match[1],
-        title,
-        state: "pending",
-        line_number: i + 1,
-      };
-      if (criteriaTrailer?.[1]) {
-        task.referenced_criteria = splitList(criteriaTrailer[1]);
-      }
-      if (propertiesTrailer?.[1]) {
-        task.referenced_properties = splitList(propertiesTrailer[1]).map((p) =>
-          p.replace(/^P/, ""),
-        );
-      }
-      if (kiroCriteria.length > 0) {
-        task.referenced_criteria = [...(task.referenced_criteria ?? []), ...kiroCriteria];
-      }
-      if (kiroProperties.length > 0) {
-        task.referenced_properties = [
-          ...(task.referenced_properties ?? []),
-          ...kiroProperties.map((p) => p.replace(/^P/, "")),
-        ];
-      }
-
-      // Look for Requirements trailer in following lines
-      for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
-        const reqLine = lines[j];
-        if (!reqLine) continue;
-        const reqMatch = reqLine.match(/_Requirements:\s*([\d.,\s]+)_/i);
-        if (reqMatch && reqMatch[1]) {
-          task.referenced_criteria = [
-            ...(task.referenced_criteria ?? []),
-            ...splitList(reqMatch[1]),
-          ];
-          break;
-        }
-        if (reqLine.match(/^-\s+\[/)) {
-          break; // Next task
-        }
-      }
-
-      // Check if it's a test task
-      task.is_test = task.title.toLowerCase().includes("test");
-
-      // Look for executor in title
-      const executorMatch = task.title.match(/\(([^)]+)\)$/);
-      if (executorMatch && executorMatch[1]) {
-        task.executor = executorMatch[1];
-      }
-
-      tasks.push(task);
+  // The protocol's reader: trailers on the task line, on the lines a formatter
+  // wrapped it onto, and in a nested Kiro `_Requirements:_` bullet.
+  return parseTaskItems(tasksText).map((item) => {
+    const task: TaskInfo = {
+      id: item.identifier,
+      title: item.text,
+      state: "pending",
+      line_number: item.lineNumber,
+    };
+    if (item.requirementsTrailer && item.requirementsTrailer.length > 0) {
+      task.referenced_criteria = [...item.requirementsTrailer];
     }
-  }
+    if (item.propertiesTrailer && item.propertiesTrailer.length > 0) {
+      task.referenced_properties = item.propertiesTrailer.map((p) => p.replace(/^P/, ""));
+    }
 
-  return tasks;
-}
+    // Check if it's a test task
+    task.is_test = task.title.toLowerCase().includes("test");
 
-function splitList(list: string): string[] {
-  return list
-    .split(",")
-    .map((item) => item.trim())
-    .filter((item) => item !== "");
+    // Look for executor in title
+    const executorMatch = task.title.match(/\(([^)]+)\)$/);
+    if (executorMatch && executorMatch[1]) {
+      task.executor = executorMatch[1];
+    }
+
+    return task;
+  });
 }
 
 /** Rule identifier of a check the planning checker could not run. */

@@ -50,4 +50,20 @@ describe("setTaskMarkers", () => {
     expect(setTaskMarker(path, "2", "~")).toBe(" ");
     expect(readFileSync(path, "utf8")).toBe(PLAN.replace("- [ ] 2.", "- [~] 2."));
   });
+
+  it("flips only the first line's marker of a task a formatter wrapped", () => {
+    const wrapped = [
+      "# Tasks",
+      "",
+      "- [ ] 3. A task long enough that prettier --prose-wrap always wraps it",
+      "      onto a second line that mentions - [ ] as text _Requirements:",
+      "      1.1_",
+      "  - _Requirements: 1.2_",
+      "- [ ] 4. Next",
+      "",
+    ].join("\n");
+    writeFileSync(path, wrapped);
+    expect(setTaskMarkers(path, new Map([["3", "x"]] as const))).toEqual(new Map([["3", " "]]));
+    expect(readFileSync(path, "utf8")).toBe(wrapped.replace("- [ ] 3.", "- [x] 3."));
+  });
 });

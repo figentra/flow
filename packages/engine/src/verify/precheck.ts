@@ -16,7 +16,7 @@ import type {
   LedgerEntry,
   RiskClass,
 } from "@vellum/protocol";
-import { canonicalArtifactBody, computeChecksum, parseTaskLine } from "@vellum/protocol";
+import { canonicalArtifactBody, computeChecksum, parseTaskItems } from "@vellum/protocol";
 import { hasRequiredApprovals } from "../approval/verify.js";
 import {
   approvalRecords,
@@ -143,9 +143,7 @@ export function preExecutionCheck(
   }
 
   // Criterion 18.4: the task exists and its references resolve
-  const lines = canonicalArtifactBody(tasks.body)
-    .split("\n")
-    .flatMap((line) => parseTaskLine(line) ?? []);
+  const lines = parseTaskItems(canonicalArtifactBody(tasks.body));
   const task = lines.find((line) => line.identifier === taskIdentifier);
   if (!task) {
     errors.push(`Task ${taskIdentifier} not found in tasks.md`);
