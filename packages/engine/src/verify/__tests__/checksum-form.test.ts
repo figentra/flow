@@ -86,7 +86,8 @@ describe("an approval recorded by Vellum 0.1.2 (form 1)", () => {
     );
 
     expect(result.result).toBe("FAIL");
-    expect(result.approvals).toEqual({ satisfied: 2, total: 3 });
+    // Criterion 8.6: the design and plan approvals were given before the amendment
+    expect(result.approvals).toEqual({ satisfied: 0, total: 3 });
     expect(result.findings.map((f) => f.message)).toContain(
       `Approval invalid: CHECKSUM_MISMATCH — requirements.md was approved at ${computeChecksumInForm(WRAPPED.requirements, 1)} and is now ${computeChecksum(EDITED)}`,
     );

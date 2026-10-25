@@ -21,7 +21,7 @@ import {
   resolveApprovalSignals,
   type ApprovalCommitResolution,
 } from "../approval/records.js";
-import { hasRequiredApprovals } from "../approval/verify.js";
+import { evaluateApprovals } from "../approval/evaluate.js";
 import { runQualityChecks } from "../quality/index.js";
 import type { AdrStatus } from "../quality/section-checker.js";
 import type { GateEvaluationResult, GateRunnerOptions } from "./index";
@@ -120,14 +120,13 @@ export class ReviewGate {
         approvalRecords(approvals.ledger, this.inputs.artifacts ?? []),
         approvals.approvalCommits,
       ).flatMap((resolved) => (resolved.problem === undefined ? [resolved.record] : []));
-      const required = hasRequiredApprovals(
+      const required = evaluateApprovals(
         records,
         approvals.policy,
         this.options.risk_class,
-        artifactKind,
-        checksum,
         approvals.gitCommits,
-      );
+        new Map([...byKind].map(([kind, a]) => [kind, computeChecksum(a.body)] as const)),
+      ).artifacts.get(artifactKind)!;
       if (!required.met) {
         outcome.finding(
           "MISSING_APPROVAL",

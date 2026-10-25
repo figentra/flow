@@ -7,12 +7,8 @@
 import type { ArtifactKind, GitCommit } from "@vellum/protocol";
 import { computeChecksum } from "@vellum/protocol";
 import { approvalRecords, resolveApprovalSignals } from "../approval/records.js";
-import {
-  getApprovers,
-  hasRequiredApprovals,
-  matchesApprover,
-  signerIsApprovers,
-} from "../approval/verify.js";
+import { evaluateApprovals } from "../approval/evaluate.js";
+import { getApprovers, matchesApprover, signerIsApprovers } from "../approval/verify.js";
 import type { GateEvaluationResult, GateRunnerOptions } from "./index";
 import { GateOutcome } from "./gate-outcome.js";
 import { checkChangeset, type ChangesetFile } from "./validation/changeset-checker.js";
@@ -124,6 +120,13 @@ export class MergeGate {
       spec.options?.approvalCommits,
     ).flatMap((resolved) => (resolved.problem === undefined ? [resolved.record] : []));
     const byKind = new Map(spec.artifacts.map((a) => [a.kind, a] as const));
+    const evaluation = evaluateApprovals(
+      records,
+      spec.policy,
+      this.options.risk_class,
+      spec.gitCommits,
+      new Map(spec.artifacts.map((a) => [a.kind, computeChecksum(a.body)] as const)),
+    );
 
     for (const kind of REVIEWED) {
       const artifact = byKind.get(kind);
@@ -134,14 +137,7 @@ export class MergeGate {
         );
         continue;
       }
-      const required = hasRequiredApprovals(
-        records,
-        spec.policy,
-        this.options.risk_class,
-        kind,
-        computeChecksum(artifact.body),
-        spec.gitCommits,
-      );
+      const required = evaluation.artifacts.get(kind)!;
       if (!required.met) {
         outcome.finding(
           "MERGE_GATE_INVALID_APPROVAL",

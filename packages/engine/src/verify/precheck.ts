@@ -24,7 +24,7 @@ import {
   computeChecksum,
   parseTaskItems,
 } from "@vellum/protocol";
-import { hasRequiredApprovals } from "../approval/verify.js";
+import { describeStanding, evaluateApprovals } from "../approval/evaluate.js";
 import {
   approvalRecords,
   resolveApprovalSignals,
@@ -127,22 +127,30 @@ export function preExecutionCheck(
     design: computeChecksum(design.body),
     tasks: computeChecksum(tasks.body),
   } as const;
+  const evaluation = evaluateApprovals(
+    records,
+    approval.policy,
+    approval.riskClass,
+    approval.gitCommits,
+    new Map(Object.entries(checksums) as [ArtifactKind, Checksum][]),
+  );
   for (const kind of ["requirements", "design", "tasks"] as const) {
     const ofKind = records.filter((r) => r.artifact === kind);
-    const status = hasRequiredApprovals(
-      ofKind,
-      approval.policy,
-      approval.riskClass,
-      kind,
-      checksums[kind],
-      approval.gitCommits,
-    );
+    const status = evaluation.artifacts.get(kind)!;
     if (status.met) continue;
 
     const stale = ofKind.find((r) => r.artifactChecksum !== checksums[kind]);
+    // Criteria 8.6, 8.7: an approval voided by an upstream amendment
+    const voided = evaluation.records.find(
+      ({ record, standing }) => record.artifact === kind && standing.kind === "upstream-amended",
+    );
     if (status.required === 0) {
       errors.push(
         `${ARTIFACT_LABEL[kind]} approval requirement missing from the policy for risk class ${approval.riskClass}`,
+      );
+    } else if (status.count === 0 && voided) {
+      errors.push(
+        `${ARTIFACT_LABEL[kind]} approval invalidated: ${describeStanding(voided.record, voided.standing)}`,
       );
     } else if (status.count === 0 && stale) {
       errors.push(

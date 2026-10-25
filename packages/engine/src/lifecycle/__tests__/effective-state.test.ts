@@ -63,6 +63,47 @@ describe("computeEffectiveLifecycleState", () => {
     expect(result).toMatchObject({ kind: "computed", state: "DESIGN_IN_REVIEW" });
   });
 
+  it("holds a spec at DESIGN_IN_REVIEW when requirements were amended and approved again, but design was not (criterion 8.6)", () => {
+    const edited = REQUIREMENTS.replace("A folder", "A file");
+    const ledger = chain([...verifiedLedger(), approvalEntry(0, "requirements", edited)]);
+    const result = computeEffectiveLifecycleState(
+      input({
+        artifacts: [
+          artifact("requirements", edited),
+          artifact("design", DESIGN),
+          artifact("tasks", TASKS),
+        ],
+        ledger,
+      }),
+    );
+    expect(result).toMatchObject({ kind: "computed", state: "DESIGN_IN_REVIEW" });
+    if (result.kind !== "computed") return;
+    expect(result.failedPrecondition).toMatch(
+      /^DESIGN_IN_REVIEW → DESIGN_APPROVED: design.md has 0 of the 1 valid approvals .*; approval entry 2: SUPERSEDED_BY_UPSTREAM_AMENDMENT — design.md was approved while requirements.md was at /,
+    );
+  });
+
+  it("reaches the recorded state again once design and plan are approved after the amendment", () => {
+    const edited = REQUIREMENTS.replace("A folder", "A file");
+    const ledger = chain([
+      ...verifiedLedger(),
+      approvalEntry(0, "requirements", edited),
+      approvalEntry(0, "design", DESIGN),
+      approvalEntry(0, "tasks", TASKS),
+    ]);
+    const result = computeEffectiveLifecycleState(
+      input({
+        artifacts: [
+          artifact("requirements", edited),
+          artifact("design", DESIGN),
+          artifact("tasks", TASKS),
+        ],
+        ledger,
+      }),
+    );
+    expect(result).toEqual({ kind: "computed", state: "VERIFICATION", failedPrecondition: null });
+  });
+
   it("stops at PLAN_APPROVED when no task was started", () => {
     const result = computeEffectiveLifecycleState(
       input({ ledger: approvals(), recordedState: "IN_PROGRESS" }),

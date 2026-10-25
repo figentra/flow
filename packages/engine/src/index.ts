@@ -88,6 +88,9 @@ export {
 
 export {
   evaluateApprovals,
+  describeStanding,
+  SUPERSEDED_BY_UPSTREAM_AMENDMENT,
+  UPSTREAM_ARTIFACTS,
   type ApprovalStanding,
   type ApprovalEvaluation,
   type EvaluatedApproval,

@@ -322,7 +322,8 @@ describe("a stamp cannot revive a stale approval", () => {
 
     const result = strictVerify(artifacts, verifiedLedger(), policy, commits, "standard");
     expect(result.result).toBe("FAIL");
-    expect(result.approvals).toEqual({ satisfied: 2, total: 3 });
+    // Criterion 8.6: the design and plan approvals were given before the amendment
+    expect(result.approvals).toEqual({ satisfied: 0, total: 3 });
     expect(result.findings[0]?.message).toBe(
       `Approval invalid: CHECKSUM_MISMATCH — requirements.md was approved at ${computeChecksum(REQUIREMENTS)} and is now ${computeChecksum(edited)}`,
     );
@@ -338,6 +339,7 @@ describe("a stamp cannot revive a stale approval", () => {
       "standard",
     );
     expect(result.result).toBe("FAIL");
-    expect(result.approvals).toEqual({ satisfied: 2, total: 3 });
+    // Criterion 8.6: the design and plan approvals were given before the amendment
+    expect(result.approvals).toEqual({ satisfied: 0, total: 3 });
   });
 });
