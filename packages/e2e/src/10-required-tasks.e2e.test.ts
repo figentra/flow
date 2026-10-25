@@ -34,13 +34,14 @@ describe("scenario 10: parents and checkpoints", () => {
   });
 
   it("a checkpoint with no evidence is the one task verify names", () => {
-    // A parent's marker flips with its last required sub-task (V-06: Property tests are required).
+    // A parent is [-] once a sub-task starts and flips to [x] with its last
+    // required sub-task (decision 15; V-06: Property tests are required).
     // Order: 1.1, 1.2, 1.3 (parent 1 → x), 3.1, 3.2 (parent 3 → x)
     const parentMarkers = {
-      "1.1": [" ", " "],  // After 1.1: neither parent complete
-      "1.2": [" ", " "],  // After 1.2: parent 1 still needs 1.3
-      "1.3": ["x", " "],  // After 1.3: parent 1 complete, parent 3 needs 3.1 and 3.2
-      "3.1": ["x", " "],  // After 3.1: parent 3 still needs 3.2
+      "1.1": ["-", " "],  // After 1.1: parent 1 started, not complete
+      "1.2": ["-", " "],  // After 1.2: parent 1 still needs 1.3
+      "1.3": ["x", " "],  // After 1.3: parent 1 complete, parent 3 not started
+      "3.1": ["x", "-"],  // After 3.1: parent 3 still needs 3.2
       "3.2": ["x", "x"],  // After 3.2: both parents complete
     } as const;
     for (const id of REQUIRED_TASKS.filter((t) => t !== "2")) {

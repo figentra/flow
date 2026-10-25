@@ -97,7 +97,9 @@ sub-task). If no line matches, stop and report: "Task <id> does not exist in
 refuse: parent tasks are containers, never units of work. Report which
 sub-tasks exist — one of those is the actual unit to implement. `npx vellum task
 start` refuses a parent the same way, and `npx vellum verify` requires no evidence
-for one: a parent is complete when its required sub-tasks are.
+for one: a parent is complete when its required sub-tasks are, or, when all its
+sub-tasks are optional, when every one of them is. Vellum sets the parent's marker
+(`[-]` on the first sub-task's start, `[x]` on completion); never edit it yourself.
 
 **Checkpoint.** If the matched line reads `Checkpoint: …`, refuse as a unit of
 implementation. Instead record the workspace-wide verification through Vellum,

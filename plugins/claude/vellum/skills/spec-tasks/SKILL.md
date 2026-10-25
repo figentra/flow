@@ -213,7 +213,10 @@ Checkpoints have no sub-tasks, no `*`, no trailer, and no entry in the wave grap
 A checkpoint is still a Required Task: `spec-implement` records its
 workspace-wide verification through `npx vellum task complete`, and `npx vellum verify`
 requires that evidence. A parent task needs no evidence of its own — it is
-complete when its required sub-tasks are.
+complete when its required sub-tasks are, or, when all its sub-tasks are
+optional, when every one of them is. `npx vellum task start` marks a parent
+`[-]` when its first sub-task starts, and `npx vellum task complete` marks it
+`[x]`; never set a parent's marker by hand.
 
 ## Step 3 — build the Task Dependency Graph
 

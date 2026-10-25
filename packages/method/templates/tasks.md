@@ -183,7 +183,9 @@ or a similarly concrete verification. Checkpoints have no sub-tasks, no
 `_Requirements:_` trailer, and no entry in the dependency graph. A checkpoint
 is still a Required Task: its verification run is recorded with
 `npx vellum task complete`, and `npx vellum verify` requires that evidence. A parent task
-needs none of its own; it is complete when its required sub-tasks are.
+needs none of its own; it is complete when its required sub-tasks are, or, when all
+its sub-tasks are optional, when every one of them is. Vellum sets a parent's marker:
+`[-]` when a sub-task starts, `[x]` when it is complete.
 
 ### What is NOT in this plan
 

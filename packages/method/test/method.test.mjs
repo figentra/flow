@@ -356,3 +356,10 @@ test("each approval hand-off says what to do when approve refuses a stale checks
     );
   }
 });
+
+test("the parent-completion rule is decision 15's wherever the method states it", () => {
+  // A parent is complete when its required sub-tasks are, or, all optional, when every one is.
+  const rule = /complete when its required sub-tasks are, or, when all\s+(its\s+)?sub-tasks are\s+optional, when every one of them is/;
+  for (const name of ["spec-tasks", "spec-implement"]) assert.match(skill(name), rule, name);
+  assert.match(readFileSync(join(METHOD, "templates", "tasks.md"), "utf8"), rule, "templates/tasks.md");
+});

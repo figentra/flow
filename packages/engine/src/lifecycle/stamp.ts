@@ -41,7 +41,7 @@ import {
   isEarlierFormChecksum,
   serializeFrontmatter,
 } from "@vellum/protocol";
-import { chainIndex, isLifecycleState } from "./effective-state.js";
+import { chainIndex, isLifecycleState, type EffectiveState } from "./effective-state.js";
 
 const ORDER: readonly ArtifactKind[] = ["requirements", "design", "tasks"];
 
@@ -317,4 +317,81 @@ export function planStamp(input: FrontmatterPlanInput): StampPlan {
     );
   }
   return { kind: "plan", writes, recordedState: state };
+}
+
+/** What `planRecordState` reads. */
+export interface RecordStateInput {
+  /** The spec's directory name, for messages */
+  readonly spec: string;
+  /** The raw text of each artifact file that exists */
+  readonly texts: ReadonlyMap<ArtifactKind, string>;
+  /** The state to record: a state on Table 5.A's main chain */
+  readonly target: LifecycleState;
+  /**
+   * The Effective Lifecycle State computed with `target` as the Recorded
+   * Lifecycle State: the engine walks towards it and stops at the first
+   * unmet precondition, so it equals `target` only when every precondition
+   * on the way holds.
+   */
+  readonly effective: EffectiveState;
+}
+
+/** A state-only rewrite of each artifact's frontmatter, or why nothing changes. */
+export type RecordStatePlan =
+  | {
+      readonly kind: "record";
+      readonly from: LifecycleState;
+      readonly to: LifecycleState;
+      /** The complete new text of each artifact: only its `state:` line differs */
+      readonly writes: readonly { readonly kind: ArtifactKind; readonly text: string }[];
+    }
+  | { readonly kind: "unchanged"; readonly reason: string };
+
+/**
+ * Plan recording `target` as the Recorded Lifecycle State (criterion 5.3;
+ * decision 16 in 002's design). Records only forward along the main chain,
+ * and only a state the Effective Lifecycle State supports (criterion 5.10):
+ * unchanged when the recorded state is off the main chain (BLOCKED, a
+ * terminal state, INVALID), already at or past `target`, or when the
+ * effective state computed for `target` is not `target`. The rewrite changes
+ * the `state:` line of each artifact's frontmatter and nothing else — no
+ * version, checksum or `updatedAt` — and appends no ledger entry: Table 5.A's
+ * main-chain transitions record none. The frontmatter is outside the Artifact
+ * Checksum, so no approval changes.
+ */
+export function planRecordState(input: RecordStateInput): RecordStatePlan {
+  if (chainIndex(input.target) < 0) {
+    return { kind: "unchanged", reason: `${input.target} is not on the main chain` };
+  }
+  const artifacts = readAll({ spec: input.spec, texts: input.texts, ledgerEntries: 0, now: "" });
+  if (!Array.isArray(artifacts)) return { kind: "unchanged", reason: artifacts.message };
+  const recorded = artifacts[0]!.fields?.get("state") as LifecycleState | undefined;
+  if (recorded === undefined) {
+    return { kind: "unchanged", reason: `${input.spec}: requirements.md records no state; run npx vellum stamp ${input.spec}` };
+  }
+  if (chainIndex(recorded) < 0) {
+    return { kind: "unchanged", reason: `the Recorded Lifecycle State ${recorded} is off the main chain` };
+  }
+  if (chainIndex(recorded) >= chainIndex(input.target)) {
+    return { kind: "unchanged", reason: `the Recorded Lifecycle State is already ${recorded}` };
+  }
+  const { effective } = input;
+  if (effective.kind !== "computed" || effective.state !== input.target) {
+    const reached = effective.kind === "computed" ? effective.state : effective.holdsThrough;
+    const why = effective.kind === "computed" ? effective.failedPrecondition : effective.reason;
+    return {
+      kind: "unchanged",
+      reason: `the Effective Lifecycle State reaches ${reached}, not ${input.target}${why ? ` (${why})` : ""}`,
+    };
+  }
+
+  const writes: { kind: ArtifactKind; text: string }[] = [];
+  for (const artifact of artifacts) {
+    const text = input.texts.get(artifact.kind)!;
+    const block = BLOCK.exec(text);
+    if (block === null || !artifact.fields?.has("state")) continue;
+    const rewritten = block[0].replace(/^state:[ \t]*.*$/m, `state: ${input.target}`);
+    if (rewritten !== block[0]) writes.push({ kind: artifact.kind, text: rewritten + text.slice(block[0].length) });
+  }
+  return { kind: "record", from: recorded, to: input.target, writes };
 }

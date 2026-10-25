@@ -29,7 +29,7 @@ export {
   InvalidTransitionError,
 } from "./lifecycle/state-machine.js";
 
-export { requiredTasks, parentTaskIds, parentsCompletedBy } from "./lifecycle/required-tasks.js";
+export { requiredTasks, parentTaskIds, parentsCompletedBy, ancestorTasks } from "./lifecycle/required-tasks.js";
 
 export {
   computeEffectiveLifecycleState,
@@ -41,7 +41,10 @@ export {
 export {
   planAdoption,
   planStamp,
+  planRecordState,
   IN_REVIEW_STATE,
+  type RecordStateInput,
+  type RecordStatePlan,
   type AdoptionPlan,
   type StampPlan,
   type FrontmatterPlan,

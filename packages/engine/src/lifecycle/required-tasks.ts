@@ -8,8 +8,9 @@
  * - A parent task — a line with sub-task lines beneath it (`1.` when `1.1`
  *   exists) — is a container, not a unit of work: the method's spec-implement
  *   refuses to implement one, and `vellum task start` refuses to start one. It
- *   is complete when each of its required sub-tasks is verified, so it needs no
- *   evidence of its own.
+ *   is complete when each of its required sub-tasks is verified — or, when all
+ *   its sub-tasks are optional, when every one of them is (decision 15) — so it
+ *   needs no evidence of its own.
  * - A checkpoint (`N. Checkpoint: …`) is required. The method runs the
  *   workspace-wide verification at a checkpoint and marks it only if that run
  *   is green; the Evidence Entry `vellum task complete` records for that run is
@@ -38,31 +39,50 @@ export function requiredTasks<T extends TaskRef>(tasks: readonly T[]): T[] {
 }
 
 /**
- * The parents whose last required sub-task `taskId` is: each ancestor of
- * `taskId` (nearest first) that is a task line, has at least one required
- * descendant, and has every required descendant in `verified`. `vellum task
- * complete` marks them `[x]` in the same write that marks `taskId`; Task
- * Markers are outside the Artifact Checksum, so approvals stay valid.
+ * The ancestors of `taskId` that are task lines, nearest first. `vellum task
+ * start` marks those still `[ ]` as `[-]`: a parent has started once any of
+ * its sub-tasks has (decision 15).
+ */
+export function ancestorTasks(tasks: readonly Pick<TaskLine, "identifier">[], taskId: string): string[] {
+  const ids = new Set(tasks.map((task) => task.identifier as string));
+  const ancestors: string[] = [];
+  for (let dot = taskId.lastIndexOf("."); dot > 0; dot = taskId.lastIndexOf(".", dot - 1)) {
+    const parent = taskId.slice(0, dot);
+    if (ids.has(parent)) ancestors.push(parent);
+  }
+  return ancestors;
+}
+
+/**
+ * The parents `taskId`'s verification completes (decision 15): each ancestor
+ * of `taskId` (nearest first) that is a task line whose counted sub-tasks
+ * include `taskId` and are all in `verified`. A parent's counted sub-tasks
+ * are its required leaf descendants when it has at least one; a parent whose
+ * leaf descendants are all optional counts every one of them, so it is
+ * complete only when all its optional work is done. `vellum task complete`
+ * marks the parents `[x]` in the same write that marks `taskId`; Task Markers
+ * are outside the Artifact Checksum, so approvals stay valid.
  *
- * Empty when `taskId` is not itself required (an optional or parent task
- * never completes a parent) or is not in `verified`.
+ * Empty when `taskId` is a parent itself, is not in `verified`, or is an
+ * optional task under a parent that has required sub-tasks (optional work
+ * never decides such a parent).
  */
 export function parentsCompletedBy<T extends TaskRef>(
   tasks: readonly T[],
   verified: ReadonlySet<string>,
   taskId: string,
 ): string[] {
-  const required = requiredTasks(tasks).map((task) => task.identifier as string);
-  if (!required.includes(taskId) || !verified.has(taskId)) return [];
-  const ids = new Set(tasks.map((task) => task.identifier as string));
+  const parents = parentTaskIds(tasks);
+  if (parents.has(taskId) || !verified.has(taskId)) return [];
+  const leaves = tasks.filter((task) => !parents.has(task.identifier as string));
 
   const completed: string[] = [];
-  for (let dot = taskId.lastIndexOf("."); dot > 0; dot = taskId.lastIndexOf(".", dot - 1)) {
-    const parent = taskId.slice(0, dot);
-    if (!ids.has(parent)) continue;
-    const descendants = required.filter((id) => id.startsWith(`${parent}.`));
-    if (descendants.length === 0 || !descendants.every((id) => verified.has(id))) break;
-    completed.push(parent);
+  for (const parent of ancestorTasks(tasks, taskId)) {
+    const descendants = leaves.filter((task) => (task.identifier as string).startsWith(`${parent}.`));
+    const required = descendants.filter((task) => !task.isOptional);
+    const counted = (required.length > 0 ? required : descendants).map((task) => task.identifier as string);
+    if (!counted.includes(taskId)) continue;
+    if (counted.every((id) => verified.has(id))) completed.push(parent);
   }
   return completed;
 }
