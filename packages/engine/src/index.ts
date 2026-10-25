@@ -192,6 +192,22 @@ export {
 export { decidePlanApproval, type PlanApprovalDecision } from "./coverage/plan-approval.js";
 
 // ============================================================================
+// Task Context (the per-task briefing)
+// ============================================================================
+
+export {
+  buildTaskContext,
+  type TaskContext,
+  type TaskContextArtifact,
+  type ContextCriterion,
+  type ContextProperty,
+  type ContextDesignSection,
+  type ContextGlossaryEntry,
+  type ContextMissing,
+} from "./context/task-context.js";
+export { formatTaskContextMarkdown } from "./context/format.js";
+
+// ============================================================================
 // Check Mode
 // ============================================================================
 
