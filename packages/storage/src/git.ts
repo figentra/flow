@@ -255,22 +255,26 @@ class GitOpsImpl implements GitReader, GitWriter {
 
 /**
  * Read assistant-session markers from a commit message (its trailers
- * included): `Assistant: <name>`, or a `Co-Authored-By:` / `Generated-By:`
- * trailer tagged `[<name>: assistant]`.
+ * included): `Assistant: <name>`; a `Co-Authored-By:` / `Generated-By:`
+ * trailer tagged `[<name>: assistant]`; Claude Code's own
+ * `Co-Authored-By: <name> <noreply@anthropic.com>` trailer; or its
+ * `Generated with [Claude Code]` line.
  */
 export function parseSessionMetadata(message: string): GitCommit["sessionMetadata"] {
   const assistantPatterns = [
     /^assistant:\s*(\S+)/im,
     /^co-authored-by:.*\[(\S+):\s*assistant\]/im,
     /^generated-by:.*\[(\S+):\s*assistant\]/im,
+    /^co-authored-by:\s*([^<\n]*?)\s*<noreply@anthropic\.com>/im,
+    /generated with \[(claude code)\]/i,
   ];
 
   for (const pattern of assistantPatterns) {
     const match = message.match(pattern);
-    if (match && match[1]) {
+    if (match) {
       return {
         isAssistant: true,
-        assistantName: match[1],
+        assistantName: match[1] || "Claude",
       };
     }
   }

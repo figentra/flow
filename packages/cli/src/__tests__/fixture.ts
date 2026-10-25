@@ -164,12 +164,12 @@ export class Fixture {
    * non-terminal session) and commit only the ledger files, signed with
    * `signer`'s key, or unsigned when `signer` is null. With `v012`, each
    * record is written exactly as Vellum 0.1.2 wrote one: the checksum in
-   * form 1 and no `checksum_form`.
+   * form 1 and no `checksum_form`. `trailer` ends the commit message.
    */
   async approve(
     kinds: readonly ("requirements" | "design" | "tasks")[],
     signer: string | null,
-    options: { alsoCommit?: string; v012?: boolean } = {},
+    options: { alsoCommit?: string; v012?: boolean; trailer?: string } = {},
   ): Promise<void> {
     for (const kind of kinds) {
       const ledger = await readLedger(this.ledgerPath);
@@ -199,7 +199,8 @@ export class Fixture {
       signer === null
         ? []
         : ["-c", "gpg.format=ssh", "-c", `user.signingkey=${this.key(signer)}`, "commit", "-S"];
-    this.git([...(sign.length > 0 ? sign : ["commit"]), "-q", "-m", `approve: ${kinds.join(", ")}`]);
+    const message = `approve: ${kinds.join(", ")}${options.trailer ? `\n\n${options.trailer}` : ""}`;
+    this.git([...(sign.length > 0 ? sign : ["commit"]), "-q", "-m", message]);
   }
 
   /** Run the CLI in the repository with captured output. */

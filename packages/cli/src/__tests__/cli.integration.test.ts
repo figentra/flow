@@ -460,6 +460,14 @@ describe.skipIf(!SSH)("vellum CLI against a temp repository", () => {
       );
     });
 
+    it("fails an approval whose signed commit carries Claude Code's Co-Authored-By trailer", async () => {
+      await fx.approve(ALL, "alice", { trailer: "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" });
+
+      const result = await fx.cli(["verify", SLUG, "--json"]);
+      expect(result.status).toBe(1);
+      expect(JSON.stringify(JSON.parse(result.stdout).specs[0].findings)).toContain("FROM_ASSISTANT");
+    });
+
     it("fails an approval whose signed commit also changes other files", async () => {
       fx.write("src/feature.ts", "export const x = 1;\n");
       await fx.approve(ALL, "alice", { alsoCommit: "src/feature.ts" });
