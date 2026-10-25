@@ -51,6 +51,7 @@ Arrows point from a package to what it may depend on (`turbo.json` boundaries):
 - Ledger integrity checker
 - Coverage validation
 - Evidence validation
+- Per-task briefing (`buildTaskContext`)
 
 **Dependencies**: @vellum/protocol
 
@@ -85,13 +86,12 @@ Arrows point from a package to what it may depend on (`turbo.json` boundaries):
 
 ### @vellum/renderers
 
-**Purpose**: Output formatters.
+**Purpose**: The assistant dialects the plugins render (Claude Code, OpenCode, Kiro). The JSON,
+Markdown and console formatters and the old context bundle were removed: nothing called them
+(see `docs/removed-code.md`). Per ADR 0286 d6 this layer moves to `@stackra/renderers`.
 
 **Contains**:
 
-- JSON renderer
-- Markdown renderer
-- Human-readable console output
 - Assistant projection renderer
 
 **Dependencies**: @vellum/protocol, @vellum/engine
