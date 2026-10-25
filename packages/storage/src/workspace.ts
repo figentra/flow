@@ -37,7 +37,13 @@ import { LEDGER_FILE, MACHINE_FOLDER } from "./state.js";
 import { SPEC_DIR } from "./discovery.js";
 import { parseSessionMetadata } from "./git.js";
 import { verifyCommitSigner } from "./signature.js";
-import { DEFAULT_POLICY_PATH, loadPolicy, riskClassForSpec, toApprovalPolicy } from "./policy.js";
+import {
+  DEFAULT_POLICY_PATH,
+  loadPolicy,
+  parsePolicy,
+  riskClassForSpec,
+  toApprovalPolicy,
+} from "./policy.js";
 import type { ConsumerConfiguration, PolicyError } from "./domain/policy/types.js";
 
 const KINDS: readonly ArtifactKind[] = ["requirements", "design", "tasks"];
@@ -204,26 +210,67 @@ export type PolicyLoad =
   | { readonly kind: "missing"; readonly path: string }
   | { readonly kind: "invalid"; readonly path: string; readonly message: string };
 
-/** Load the repository's Approval Policy (`.sdlc/policy.json` at the root). */
-export async function loadApprovalPolicy(repoRoot: string): Promise<PolicyLoad> {
+/**
+ * Load the repository's Approval Policy (`.sdlc/policy.json` at the root).
+ *
+ * With `targetBranch` (the merge request's target), the policy is read from
+ * that branch's tip, never from the working tree, so a change cannot add the
+ * key that approves it (criterion 7.10). The branch is looked up as
+ * `origin/<name>` first, then as `<name>`. A target branch that is not in the
+ * clone is `invalid` (callers report INCONCLUSIVE); a target branch with no
+ * policy file is `missing`.
+ */
+export async function loadApprovalPolicy(
+  repoRoot: string,
+  targetBranch?: string,
+): Promise<PolicyLoad> {
+  let path = DEFAULT_POLICY_PATH;
   try {
-    const config = await loadPolicy(repoRoot);
-    return {
-      kind: "loaded",
-      config,
-      policy: toApprovalPolicy(config, DEFAULT_POLICY_PATH),
-      path: DEFAULT_POLICY_PATH,
-    };
+    let config: ConsumerConfiguration;
+    if (targetBranch === undefined) {
+      config = await loadPolicy(repoRoot);
+    } else {
+      const ref = resolveBranch(repoRoot, targetBranch);
+      path = `${ref ?? targetBranch}:${DEFAULT_POLICY_PATH}`;
+      if (ref === null) {
+        return {
+          kind: "invalid",
+          path,
+          message: `the target branch ${targetBranch} is not in this clone (fetch it, e.g. fetch-depth: 0); approvals are judged by the target branch's policy, never the working tree's`,
+        };
+      }
+      let content: string;
+      try {
+        content = runGit(repoRoot, ["show", path]);
+      } catch {
+        return { kind: "missing", path };
+      }
+      config = parsePolicy(content, path);
+    }
+    return { kind: "loaded", config, policy: toApprovalPolicy(config, path), path };
   } catch (error) {
     const policyError = error as PolicyError;
-    if (policyError?.code === "POLICY_MISSING")
-      return { kind: "missing", path: DEFAULT_POLICY_PATH };
+    if (policyError?.code === "POLICY_MISSING") return { kind: "missing", path };
     return {
       kind: "invalid",
-      path: DEFAULT_POLICY_PATH,
+      path,
       message: policyError?.message ?? String(error),
     };
   }
+}
+
+/** `origin/<name>` or `<name>` when it names a commit here, else null. */
+function resolveBranch(repoRoot: string, name: string): string | null {
+  if (name === "" || name.startsWith("-")) return null;
+  for (const candidate of [`origin/${name}`, name]) {
+    try {
+      runGit(repoRoot, ["rev-parse", "--verify", "--quiet", `${candidate}^{commit}`]);
+      return candidate;
+    } catch {
+      // Not this one.
+    }
+  }
+  return null;
 }
 
 /** The risk class of a spec under a loaded policy (`standard` otherwise). */

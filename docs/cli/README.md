@@ -53,6 +53,15 @@ Every key needs its `public_key` (an OpenSSH public key line, or an ASCII-armore
 an SSH key's `fingerprint` must be the one `ssh-keygen -lf` prints for that key, or the policy
 is refused. A spec not listed in `spec_risk_classes` is `standard`.
 
+On a merge request, approvals are judged by the target branch's policy, not the one in the
+working tree (criterion 7.10), so a change cannot add the key that approves it, raise an
+approver's rights or lower its spec's risk class. The target branch comes from
+`VELLUM_TARGET_BRANCH`, else `GITHUB_BASE_REF` (GitHub Actions), else
+`CI_MERGE_REQUEST_TARGET_BRANCH_NAME` (GitLab CI), and is read as `origin/<name>`, else
+`<name>`. A target branch that is not in the clone makes every command that reads the policy
+INCONCLUSIVE; one with no policy file counts no approval. So the policy itself, and every
+change to it, lands through a merge reviewed under the policy already on the target branch.
+
 ## Commands
 
 ### `vellum status [spec] [--json]`
@@ -192,4 +201,6 @@ Or run the bundle's bin, which is the same CLI: `node packages/vellum/dist/cli.j
 temp directory and runs `vellum` and `vellum-mcp` from it.
 
 In CI, run `lint` and `verify`. `verify` needs the full history (`fetch-depth: 0`) to resolve
-approval commits and evidence ancestry, and the signing tools the policy's keys use.
+approval commits and evidence ancestry, and the signing tools the policy's keys use. On a pull
+request it also needs the target branch fetched (`fetch-depth: 0` fetches it), whose
+Approval Policy it uses.

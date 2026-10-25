@@ -23,6 +23,11 @@ export interface CliContext {
   interactive: boolean;
   /** The assistant session detected from the environment, if any */
   assistantSession: string | null;
+  /**
+   * The merge request's target branch, when the environment names one:
+   * approvals are then judged by its Approval Policy (criterion 7.10)
+   */
+  targetBranch?: string;
   /** Stdout stream */
   stdout: OutputStream;
   /** Stderr stream */
@@ -54,6 +59,25 @@ export function detectAssistantSession(env: NodeJS.ProcessEnv): string | null {
 }
 
 /**
+ * Environment variables naming a merge request's target branch, in order:
+ * Vellum's own, then GitHub Actions' and GitLab CI's.
+ */
+const TARGET_BRANCH_VARIABLES = [
+  "VELLUM_TARGET_BRANCH",
+  "GITHUB_BASE_REF",
+  "CI_MERGE_REQUEST_TARGET_BRANCH_NAME",
+] as const;
+
+/** The first non-empty target-branch variable in `env`, or undefined. */
+export function detectTargetBranch(env: NodeJS.ProcessEnv): string | undefined {
+  for (const name of TARGET_BRANCH_VARIABLES) {
+    const value = env[name]?.trim();
+    if (value) return value;
+  }
+  return undefined;
+}
+
+/**
  * Create a CLI context from command arguments and environment.
  */
 export function createCliContext(
@@ -63,12 +87,14 @@ export function createCliContext(
   env: NodeJS.ProcessEnv = process.env,
 ): CliContext {
   const ci = env.CI === "true" || env.CI === "1";
+  const targetBranch = detectTargetBranch(env);
   return {
     json: args.json ?? false,
     cwd: process.cwd(),
     ci,
     interactive: Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY) && !ci,
     assistantSession: detectAssistantSession(env),
+    ...(targetBranch === undefined ? {} : { targetBranch }),
     stdout: process.stdout,
     stderr: process.stderr,
   };

@@ -509,6 +509,87 @@ describe.skipIf(!SSH)("vellum CLI against a temp repository", () => {
       expect(result.status).toBe(2);
       expect(result.stderr).toContain("no spec to verify");
     });
+
+    describe("against the target branch's Approval Policy (criterion 7.10)", () => {
+      let base: string;
+
+      /** On a branch off `base`, list mallory's key for alice in the policy and commit it. */
+      function addMalloryKeyOnBranch(): void {
+        base = fx.git(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
+        fx.git(["checkout", "-q", "-b", "feature"]);
+        const policy = JSON.parse(fx.read(".sdlc/policy.json"));
+        const malloryPub = readFileSync(`${fx.key("mallory")}.pub`, "utf8").trim();
+        policy.approval.approvers[0].keys.push({
+          type: "ssh",
+          fingerprint: sshPublicKeyFingerprint(malloryPub),
+          public_key: malloryPub,
+        });
+        fx.write(".sdlc/policy.json", JSON.stringify(policy, null, 2));
+        fx.commit("list another key for alice");
+      }
+
+      it("does not count an approval signed by a key the change itself added to the policy", async () => {
+        addMalloryKeyOnBranch();
+        await fx.approve(ALL, "mallory");
+        await completeAll();
+
+        // Judged by the working tree's policy, the change approves itself.
+        expect((await fx.cli(["verify", SLUG])).status).toBe(0);
+
+        const result = await fx.cli(["verify", SLUG, "--json"], { targetBranch: base });
+        expect(result.status).toBe(1);
+        expect(JSON.stringify(JSON.parse(result.stdout).specs[0].findings)).toContain(
+          "SIGNER_NOT_AUTHORIZED",
+        );
+      });
+
+      it("passes approvals signed by a key the target branch lists, naming the policy it used", async () => {
+        addMalloryKeyOnBranch();
+        await fx.approve(ALL, "alice");
+        await completeAll();
+
+        const result = await fx.cli(["verify", SLUG], { targetBranch: base });
+        expect(result.stdout).toContain(`Approval Policy: ${base}:.sdlc/policy.json (the target branch's)`);
+        expect(result.stdout).toContain("Result: PASS");
+        expect(result.status).toBe(0);
+      });
+
+      it("counts no approval when the target branch has no policy, even if the change adds one", async () => {
+        base = fx.git(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
+        fx.git(["checkout", "-q", "-b", "without-policy"]);
+        fx.git(["rm", "-q", ".sdlc/policy.json"]);
+        fx.commit("no policy yet");
+        fx.git(["checkout", "-q", base]);
+        await fx.approve(ALL, "alice");
+        await completeAll();
+
+        const result = await fx.cli(["verify", SLUG], { targetBranch: "without-policy" });
+        expect(result.stdout).toContain("Approval Policy: missing (without-policy:.sdlc/policy.json)");
+        expect(result.status).toBe(1);
+      });
+
+      it("is INCONCLUSIVE, never the working tree's policy, when the target branch is not in the clone", async () => {
+        await fx.approve(ALL, "alice");
+        await completeAll();
+
+        const result = await fx.cli(["verify", SLUG], { targetBranch: "not-fetched" });
+        expect(result.status).toBe(2);
+        expect(result.stderr).toContain("the target branch not-fetched is not in this clone");
+      });
+
+      it("reads the remote-tracking branch before a local branch of the same name", async () => {
+        addMalloryKeyOnBranch();
+        // A local branch named like the target, carrying the change's policy.
+        fx.git(["branch", "-q", "release", "feature"]);
+        fx.git(["update-ref", "refs/remotes/origin/release", base]);
+        await fx.approve(ALL, "mallory");
+        await completeAll();
+
+        const result = await fx.cli(["verify", SLUG, "--json"], { targetBranch: "release" });
+        expect(result.status).toBe(1);
+        expect(result.stdout).toContain("SIGNER_NOT_AUTHORIZED");
+      });
+    });
   });
 
   describe("doctor", () => {

@@ -63,6 +63,19 @@ export async function loadPolicy(
     throw policyError;
   }
 
+  return parsePolicy(content, policyPath);
+}
+
+/**
+ * Parse and validate Consumer Configuration text; `policyPath` names where
+ * it came from in errors.
+ *
+ * @throws {PolicyError} on invalid or unsupported policy
+ */
+export function parsePolicy(
+  content: string,
+  policyPath: string = DEFAULT_POLICY_PATH,
+): ConsumerConfiguration {
   // Parse JSON
   let config: unknown;
   try {

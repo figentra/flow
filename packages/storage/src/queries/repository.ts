@@ -32,11 +32,18 @@ export interface Repository {
   readonly policy: PolicyLoad;
 }
 
-/** Open the repository containing `cwd`; null when `cwd` is not inside a git work tree. */
-export async function openRepository(cwd: string): Promise<Repository | null> {
+/**
+ * Open the repository containing `cwd`; null when `cwd` is not inside a git
+ * work tree. With `targetBranch`, the Approval Policy is the target branch's
+ * (criterion 7.10).
+ */
+export async function openRepository(
+  cwd: string,
+  targetBranch?: string,
+): Promise<Repository | null> {
   const root = findRepoRoot(cwd);
   if (root === null) return null;
-  return { root, policy: await loadApprovalPolicy(root) };
+  return { root, policy: await loadApprovalPolicy(root, targetBranch) };
 }
 
 /** The message every surface gives when there is no repository. */

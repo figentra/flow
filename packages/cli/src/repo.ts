@@ -25,9 +25,12 @@ export {
 /** An open repository. */
 export type Repo = Repository;
 
-/** Open the repository containing ctx.cwd; exit status 2 when there is none. */
+/**
+ * Open the repository containing ctx.cwd; exit status 2 when there is none.
+ * The Approval Policy is ctx.targetBranch's when it is set (criterion 7.10).
+ */
 export async function openRepo(ctx: CliContext): Promise<Repo | number> {
-  const repo = await openRepository(ctx.cwd);
+  const repo = await openRepository(ctx.cwd, ctx.targetBranch);
   if (repo === null) {
     ctx.stderr.write(`vellum: ${notARepositoryMessage(ctx.cwd)}\n`);
     return EXIT_STATUS.INCONCLUSIVE;

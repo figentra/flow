@@ -59,6 +59,8 @@ export async function verify(
       ctx.stdout.write(
         `Approval Policy: missing (${result.policy.path}); no approval can be valid\n\n`,
       );
+    } else if (ctx.targetBranch !== undefined) {
+      ctx.stdout.write(`Approval Policy: ${result.policy.path} (the target branch's)\n\n`);
     }
     for (const r of result.specs) {
       ctx.stdout.write(`Spec: ${r.spec}\n`);

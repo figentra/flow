@@ -86,6 +86,7 @@ export {
 
 export {
   loadPolicy,
+  parsePolicy,
   toApprovalPolicy,
   riskClassForSpec,
   DEFAULT_POLICY_PATH,
