@@ -45,7 +45,7 @@ import {
   type ApprovalCommitResolution,
   type ApprovalRecordView,
 } from "../approval/records.js";
-import { hasRequiredApprovals } from "../approval/verify.js";
+import { describeStanding, evaluateApprovals, type ApprovalEvaluation } from "../approval/evaluate.js";
 import { decidePlanApproval } from "../coverage/plan-approval.js";
 import { validateProtocol } from "../validate/protocol-validator.js";
 import { buildTaskGraph, validateTaskGraph } from "../validate/task-graph.js";
@@ -210,15 +210,20 @@ export function computeEffectiveLifecycleState(input: EffectiveStateInput): Effe
 /** Precondition checks over one spec's content. */
 class Context {
   private readonly byKind: ReadonlyMap<ArtifactKind, Artifact>;
-  private readonly approvals: readonly ApprovalRecordView[];
+  private readonly approvals: ApprovalEvaluation<ApprovalRecordView>;
   private readonly tasks: readonly TaskLine[];
 
   constructor(private readonly input: EffectiveStateInput) {
     this.byKind = new Map(input.artifacts.map((a) => [a.kind, a] as const));
-    this.approvals = resolveApprovalSignals(
-      approvalRecords(input.ledger, input.artifacts),
-      input.approvalCommits,
-    ).flatMap((resolved) => (resolved.problem === undefined ? [resolved.record] : []));
+    this.approvals = evaluateApprovals(
+      resolveApprovalSignals(approvalRecords(input.ledger, input.artifacts), input.approvalCommits).flatMap(
+        (resolved) => (resolved.problem === undefined ? [resolved.record] : []),
+      ),
+      input.policy,
+      input.riskClass,
+      input.gitCommits,
+      new Map(input.artifacts.map((a) => [a.kind, computeChecksum(a.body)] as const)),
+    );
     const tasks = this.byKind.get("tasks");
     this.tasks = tasks
       ? parseTaskItems(canonicalArtifactBody(tasks.body))
@@ -326,23 +331,23 @@ class Context {
   private approved(kind: ArtifactKind): Check {
     const artifact = this.byKind.get(kind);
     if (!artifact) return { status: "unmet", message: `${kind}.md does not exist` };
-    const result = hasRequiredApprovals(
-      this.approvals,
-      this.input.policy,
-      this.input.riskClass,
-      kind,
-      computeChecksum(artifact.body),
-      this.input.gitCommits,
+    const result = this.approvals.artifacts.get(kind);
+    if (result?.met === true) return MET;
+    // Criteria 8.6, 8.7: name the upstream amendment that voided an approval
+    const voided = this.approvals.records.flatMap(({ record, standing }) =>
+      record.artifact === kind && standing.kind === "upstream-amended"
+        ? [`approval entry ${record.entryId}: ${describeStanding(record, standing)}`]
+        : [],
     );
-    if (result.met) return MET;
     return {
       status: "unmet",
       message:
-        this.input.policy === null
+        (this.input.policy === null
           ? `${kind}.md has no valid approval: the Approval Policy is missing`
-          : result.required === 0
+          : (result?.required ?? 0) === 0
             ? `the Approval Policy names no required approvals for ${kind} at risk class ${this.input.riskClass}`
-            : `${kind}.md has ${result.count} of the ${result.required} valid approvals the policy requires at its current checksum`,
+            : `${kind}.md has ${result?.count ?? 0} of the ${result?.required ?? 0} valid approvals the policy requires at its current checksum`) +
+        (voided.length > 0 ? `; ${voided.join("; ")}` : ""),
     };
   }
 

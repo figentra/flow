@@ -26,7 +26,7 @@ import {
 } from "../approval/records.js";
 import { computeCoverage } from "../coverage/validate.js";
 import { checkLedgerIntegrity } from "../ledger/integrity.js";
-import { evaluateApprovals } from "../approval/evaluate.js";
+import { describeStanding, evaluateApprovals } from "../approval/evaluate.js";
 import { createFinding } from "../validate/finding.js";
 import { requiredTasks as requiredTasksOf } from "../lifecycle/required-tasks.js";
 
@@ -141,44 +141,22 @@ export function strictVerify(
   );
   const evaluation = evaluateApprovals(signalled, policy, riskClass, gitCommits, currentChecksums);
   for (const { record, standing } of evaluation.records) {
-    switch (standing.kind) {
-      case "valid":
-        validApprovals++;
-        break;
-      case "superseded":
-        supersededApprovals++;
-        break;
-      case "invalidated":
-        findings.push(
-          createFinding(
-            ".sdlc/ledger.jsonl",
-            record.entryId,
-            "APPROVAL_INVALID",
-            `Approval invalid: CHECKSUM_MISMATCH — ${record.artifact}.md was approved at ${standing.approvedChecksum} and is now ${standing.currentChecksum}`,
-          ),
-        );
-        break;
-      case "rejected":
-        findings.push(
-          createFinding(
-            ".sdlc/ledger.jsonl",
-            record.entryId,
-            "APPROVAL_INVALID",
-            `Approval invalid: ${standing.reason}`,
-          ),
-        );
-        break;
-      case "artifact-missing":
-        findings.push(
-          createFinding(
-            ".sdlc/ledger.jsonl",
-            record.entryId,
-            "APPROVAL_INVALID",
-            `Approval invalid: approved artifact ${record.artifact}.md is not present`,
-          ),
-        );
-        break;
+    if (standing.kind === "valid") {
+      validApprovals++;
+      continue;
     }
+    if (standing.kind === "superseded") {
+      supersededApprovals++;
+      continue;
+    }
+    findings.push(
+      createFinding(
+        ".sdlc/ledger.jsonl",
+        record.entryId,
+        "APPROVAL_INVALID",
+        `Approval invalid: ${describeStanding(record, standing)}`,
+      ),
+    );
   }
 
   // Each present artifact holds the approvals the policy requires (criterion

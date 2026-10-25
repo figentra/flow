@@ -70,7 +70,9 @@ describe("computeStatusReport", () => {
     });
 
     expect(report.approvals.requirements.current).toBe(0);
-    expect(report.approvals.design.current).toBe(1);
+    // Criterion 8.6: the design and plan approvals were given before the amendment
+    expect(report.approvals.design.current).toBe(0);
+    expect(report.approvals.tasks.current).toBe(0);
   });
 
   it("counts failed attempts separately from verified tasks", () => {

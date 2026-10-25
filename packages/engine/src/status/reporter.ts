@@ -29,7 +29,8 @@ import {
   resolveApprovalSignals,
   type ApprovalCommitResolution,
 } from "../approval/records.js";
-import { countValidApprovals, getRequiredApprovalCount } from "../approval/verify.js";
+import { evaluateApprovals } from "../approval/evaluate.js";
+import { getRequiredApprovalCount } from "../approval/verify.js";
 import { checkLedgerIntegrity } from "../ledger/integrity.js";
 import {
   computeEffectiveLifecycleState,
@@ -163,19 +164,16 @@ export function computeStatusReport(input: StatusInput): StatusReport {
   const records = resolveApprovalSignals(approvalRecords(input.ledger, input.artifacts), input.approvalCommits).map(
     (resolved) => resolved.record,
   );
+  const evaluation = evaluateApprovals(
+    records,
+    input.policy,
+    input.riskClass,
+    input.gitCommits,
+    new Map(input.artifacts.map((a) => [a.kind, computeChecksum(a.body)] as const)),
+  );
   const approvalFor = (kind: ArtifactKind): ApprovalCount => {
-    const artifact = byKind.get(kind);
     const required = getRequiredApprovalCount(input.policy, input.riskClass, kind);
-    const current = artifact
-      ? countValidApprovals(
-          records,
-          input.policy,
-          input.riskClass,
-          kind,
-          computeChecksum(artifact.body),
-          input.gitCommits,
-        )
-      : 0;
+    const current = evaluation.artifacts.get(kind)?.count ?? 0;
     return { current, required, complete: required > 0 && current >= required };
   };
 

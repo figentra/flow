@@ -63,17 +63,32 @@ describe("strictVerify", () => {
       "standard",
     );
 
+    // Criteria 8.6: the design and plan approvals were given before the
+    // amendment of requirements, so they no longer count either.
+    const was = computeChecksum(REQUIREMENTS);
+    const now = computeChecksum(edited);
     expect(result.result).toBe("FAIL");
-    expect(result.approvals).toEqual({ satisfied: 2, total: 3 });
+    expect(result.approvals).toEqual({ satisfied: 0, total: 3 });
     expect(result.findings.map((f) => f.message)).toEqual([
-      `Approval invalid: CHECKSUM_MISMATCH — requirements.md was approved at ${computeChecksum(REQUIREMENTS)} and is now ${computeChecksum(edited)}`,
+      `Approval invalid: CHECKSUM_MISMATCH — requirements.md was approved at ${was} and is now ${now}`,
+      `Approval invalid: SUPERSEDED_BY_UPSTREAM_AMENDMENT — design.md was approved while requirements.md was at ${was}; requirements.md has since been amended to ${now}`,
+      `Approval invalid: SUPERSEDED_BY_UPSTREAM_AMENDMENT — tasks.md was approved while requirements.md was at ${was}; requirements.md has since been amended to ${now}`,
       "requirements.md has 0 of the 1 valid approvals the policy requires",
+      "design.md has 0 of the 1 valid approvals the policy requires",
+      "tasks.md has 0 of the 1 valid approvals the policy requires",
     ]);
   });
 
   it("passes when an amended artifact is approved again: the old approval is history", () => {
     const edited = REQUIREMENTS.replace("A folder", "A file");
-    const ledger = chain([...verifiedLedger(), approvalEntry(0, "requirements", edited)]);
+    // Criterion 8.6: amending requirements voids the design and plan
+    // approvals given before it, so the chain is approved again.
+    const ledger = chain([
+      ...verifiedLedger(),
+      approvalEntry(0, "requirements", edited),
+      approvalEntry(0, "design", DESIGN),
+      approvalEntry(0, "tasks", TASKS),
+    ]);
     const result = strictVerify(
       allArtifacts({ requirements: edited }),
       ledger,
@@ -85,7 +100,7 @@ describe("strictVerify", () => {
     expect(result.findings).toEqual([]);
     expect(result.result).toBe("PASS");
     expect(result.approvals).toEqual({ satisfied: 3, total: 3 });
-    expect(result.supersededApprovals).toBe(1);
+    expect(result.supersededApprovals).toBe(3);
   });
 
   it("names the artifact and both checksums of an approval no re-approval replaced", () => {
@@ -114,6 +129,8 @@ describe("strictVerify", () => {
       forged,
       ...verifiedLedger(),
       approvalEntry(0, "requirements", edited),
+      approvalEntry(0, "design", DESIGN),
+      approvalEntry(0, "tasks", TASKS),
     ]);
     const result = strictVerify(
       allArtifacts({ requirements: edited }),
@@ -127,7 +144,8 @@ describe("strictVerify", () => {
     expect(result.findings.map((f) => `${f.line} ${f.message}`)).toEqual([
       "1 Approval invalid: INVALID_SIGNAL",
     ]);
-    expect(result.supersededApprovals).toBe(1);
+    // The old requirements approval, and the design and plan approvals given before its amendment
+    expect(result.supersededApprovals).toBe(3);
   });
 
   it("reports missing artifacts and approvals of them", () => {

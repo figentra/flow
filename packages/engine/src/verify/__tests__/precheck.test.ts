@@ -41,8 +41,13 @@ describe("preExecutionCheck", () => {
     const result = preExecutionCheck(allArtifacts({ requirements: edited }), approvals(), "1", context);
 
     expect(result.passed).toBe(false);
+    // Criterion 8.6: the design and plan approvals given before the amendment are void too
+    const was = computeChecksum(REQUIREMENTS);
+    const now = computeChecksum(edited);
     expect(result.errors).toEqual([
-      `Requirements approval invalidated: approved checksum ${computeChecksum(REQUIREMENTS)}, current checksum ${computeChecksum(edited)}`,
+      `Requirements approval invalidated: approved checksum ${was}, current checksum ${now}`,
+      `Design approval invalidated: SUPERSEDED_BY_UPSTREAM_AMENDMENT — design.md was approved while requirements.md was at ${was}; requirements.md has since been amended to ${now}`,
+      `Tasks approval invalidated: SUPERSEDED_BY_UPSTREAM_AMENDMENT — tasks.md was approved while requirements.md was at ${was}; requirements.md has since been amended to ${now}`,
     ]);
   });
 

@@ -30,7 +30,7 @@ import {
   verifyApproval,
   type ApprovalRejectionReason,
 } from "../../approval/verify.js";
-import { evaluateApprovals } from "../../approval/evaluate.js";
+import { describeStanding, evaluateApprovals } from "../../approval/evaluate.js";
 
 /**
  * Approval validation result.
@@ -131,6 +131,11 @@ export function validateApprovals(
   );
   for (const { record, standing } of evaluation.records) {
     if (standing.kind === "valid" || standing.kind === "superseded") continue;
+    if (standing.kind === "upstream-amended") {
+      // Valid on its own; voided by an upstream amendment (criteria 8.6, 8.7)
+      errors.push(`Approval invalid: ${describeStanding(record, standing)}`);
+      continue;
+    }
     errors.push(...validateApproval(record, context).errors);
   }
 
