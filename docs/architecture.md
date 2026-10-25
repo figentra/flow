@@ -147,6 +147,7 @@ Arrows point from a package to what it may depend on (`turbo.json` boundaries):
 - `vellum_verify` - `vellum verify --json`
 - `vellum_check` - `vellum check --json`
 - `vellum_trace` - a spec's most recent ledger entries
+- `vellum_context` - `vellum context <spec> <task> --json`, one task's briefing
 - `vellum_get_artifact` - one spec artifact by repository-relative path (paths leaving the root are refused)
 
 Approve, task start/complete and evidence recording are refused by name: they are CLI-only.

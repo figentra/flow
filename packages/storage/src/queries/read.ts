@@ -7,6 +7,7 @@ import type {
   LedgerEntry,
   LifecycleFrontmatter,
 } from "@vellum/protocol";
+import { buildTaskContext, type TaskContext } from "@vellum/engine";
 import { SPEC_DIR } from "../discovery.js";
 import { listSpecs, loadSpec, type SpecRef } from "../workspace.js";
 import { isArtifactKind } from "./lint.js";
@@ -39,6 +40,28 @@ export function queryTrace(
       entries: count === 0 ? [] : spec.ledger.slice(-count),
     },
   };
+}
+
+/** The per-task briefing: what `vellum context --json` writes and `vellum_context` returns. */
+export type ContextQuery = { readonly spec: string } & TaskContext;
+
+/**
+ * The per-task briefing for `taskId` (decision 17 in 002's design): null when
+ * tasks.md defines no such task; INCONCLUSIVE when the spec has no tasks.md.
+ * Reads the three documents only; frontmatter, when present, is ignored.
+ */
+export function queryContext(
+  ref: SpecRef,
+  taskId: string,
+): QueryResult<ContextQuery | null> {
+  const spec = loadSpec(ref);
+  if (!spec.texts.has("tasks"))
+    return { kind: "inconclusive", message: `${ref.slug} has no tasks.md` };
+  const context = buildTaskContext(
+    [...spec.texts].map(([kind, body]) => ({ kind, body })),
+    taskId,
+  );
+  return { kind: "ok", value: context === null ? null : { spec: ref.slug, ...context } };
 }
 
 export interface ArtifactQuery {

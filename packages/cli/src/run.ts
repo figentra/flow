@@ -16,6 +16,7 @@ import { doctor } from "./commands/doctor.js";
 import { approve, APPROVE_HELP } from "./commands/approve.js";
 import { task, DEFAULT_TIMEOUT_SECONDS } from "./commands/task.js";
 import { adopt, stamp } from "./commands/frontmatter.js";
+import { context } from "./commands/context.js";
 
 export const HELP = `vellum ${VERSION} — specification lifecycle enforcement
 
@@ -51,11 +52,17 @@ COMMANDS
       artifact, the next version and checksum of a changed body, and the
       recorded state raised to the latest artifact's in-review state.
       Never makes an approval valid; appends nothing to the ledger.
+  context <spec> <task-id> [--json]
+      The task's briefing: the task, the full text of the criteria and
+      Properties it cites, the design sections and glossary terms it uses,
+      its parent, sub-tasks and wave, and what could not be found.
   task start <spec> <task-id>
-      Pre-execution check; records a Task Binding and sets [-].
+      Pre-execution check; records a Task Binding and sets [-]. Records
+      IN_PROGRESS once the content supports it.
   task complete <spec> <task-id> --command=<cmd> [--timeout=<seconds>]
       Runs <cmd> itself, records the evidence, sets [x] only on exit 0 at a
-      clean HEAD. Default timeout ${DEFAULT_TIMEOUT_SECONDS}s.
+      clean HEAD; records VERIFIED once the content supports it. Default
+      timeout ${DEFAULT_TIMEOUT_SECONDS}s.
 
 EXIT STATUS
   0 PASS / done, 1 FAIL / refused, 2 INCONCLUSIVE, usage error, or not implemented
@@ -79,6 +86,7 @@ const IMPLEMENTED = [
   "check",
   "adopt",
   "stamp",
+  "context",
 ];
 
 function usage(ctx: CliContext, message: string): number {
@@ -180,6 +188,16 @@ export async function run(argv: readonly string[], ctx: CliContext): Promise<num
         return usage(ctx, `usage: vellum ${command} <spec> [--json]`);
       }
       return (command === "adopt" ? adopt : stamp)({ spec, json }, withJson);
+    }
+
+    case "context": {
+      const bad = checkOptions(ctx, args, command, ["json"]);
+      if (bad !== null) return bad;
+      const [spec, taskId, ...extra] = rest;
+      if (spec === undefined || taskId === undefined || extra.length > 0) {
+        return usage(ctx, "usage: vellum context <spec> <task-id> [--json]");
+      }
+      return context({ spec, taskId, json }, withJson);
     }
 
     case "task": {

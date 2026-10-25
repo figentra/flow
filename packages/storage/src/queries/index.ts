@@ -52,7 +52,9 @@ export {
 export {
   queryTrace,
   queryArtifact,
+  queryContext,
   type TraceQuery,
   type ArtifactQuery,
+  type ContextQuery,
 } from "./read.js";
 export { resolveRepoPath, type RepoPath } from "./paths.js";

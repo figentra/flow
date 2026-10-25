@@ -4,7 +4,7 @@
  */
 
 import { join, relative } from "node:path";
-import type { Checksum, LedgerEntry } from "@vellum/protocol";
+import type { Checksum, LedgerEntry, LifecycleState } from "@vellum/protocol";
 import {
   CHECKSUM_FORM,
   EXIT_STATUS,
@@ -16,9 +16,11 @@ import {
   checkLedgerIntegrity,
   ancestorTasks,
   checkTaskBinding,
+  computeEffectiveLifecycleState,
   containsSecretPattern,
   parentsCompletedBy,
   requiredTasks,
+  planRecordState,
   preExecutionCheck,
   type TaskBinding,
 } from "@vellum/engine";
@@ -34,7 +36,9 @@ import {
   setTaskMarker,
   setTaskMarkers,
   specRiskClass,
+  writeFileAtomically,
   type LoadedSpec,
+  type SpecRef,
 } from "@vellum/storage";
 import { VERSION } from "../version.js";
 import type { CliContext } from "../context.js";
@@ -123,6 +127,36 @@ function latestBinding(ledger: readonly LedgerEntry[], taskId: string): TaskBind
   return null;
 }
 
+/**
+ * Record the first of `targets` the content now supports as the Recorded
+ * Lifecycle State (decision 16 in 002's design): the spec is read again as
+ * this command left it, and only each artifact's `state:` line is rewritten.
+ * Returns the sentence to print, or "" when nothing changes.
+ */
+function recordState(repo: Repo, ref: SpecRef, targets: readonly LifecycleState[]): string {
+  const spec = loadSpec(ref);
+  const policy = enginePolicy(repo.policy);
+  const git = gitContext(repo.root, spec, policy);
+  for (const target of targets) {
+    const effective = computeEffectiveLifecycleState({
+      artifacts: spec.artifacts,
+      ledger: spec.ledger,
+      recordedState: target,
+      policy,
+      riskClass: specRiskClass(repo.policy, ref.slug),
+      gitCommits: git.gitCommits,
+      ledgerHead: spec.ledgerHead,
+      approvalCommits: git.approvalCommits,
+      verifiedHistory: git.verifiedHistory,
+    });
+    const plan = planRecordState({ spec: ref.slug, texts: spec.texts, target, effective });
+    if (plan.kind !== "record") continue;
+    for (const write of plan.writes) writeFileAtomically(join(ref.path, `${write.kind}.md`), write.text);
+    return ` Recorded Lifecycle State: ${plan.from} → ${plan.to}.`;
+  }
+  return "";
+}
+
 export const task = {
   /**
    * Start a task (criterion 18): the pre-execution check (artifacts exist,
@@ -188,7 +222,8 @@ export const task = {
     );
     ctx.stdout.write(
       `Task ${args.taskId} started: Task Binding recorded, marker set to [-]` +
-        (started.length > 0 ? `; ${started.map((p) => `parent ${p}`).join(" and ")} marked [-] too.\n` : ".\n"),
+        (started.length > 0 ? `; ${started.map((p) => `parent ${p}`).join(" and ")} marked [-] too.` : ".") +
+        `${recordState(repo, spec.ref, ["IN_PROGRESS"])}\n`,
     );
     return EXIT_STATUS.SUCCESS;
   },
@@ -322,8 +357,9 @@ export const task = {
     ctx.stdout.write(
       `Task ${args.taskId} verified: ${summary}. Evidence recorded; marker set to [x]` +
         (parents.length > 0
-          ? `; ${reasons.join(", and ")}, so ${parents.length === 1 ? "its marker is" : "their markers are"} set to [x] too.\n`
-          : ".\n"),
+          ? `; ${reasons.join(", and ")}, so ${parents.length === 1 ? "its marker is" : "their markers are"} set to [x] too.`
+          : ".") +
+        `${recordState(repo, spec.ref, ["VERIFIED", "IN_PROGRESS"])}\n`,
     );
     return EXIT_STATUS.SUCCESS;
   },

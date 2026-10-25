@@ -15,6 +15,7 @@ import {
   openRepository,
   queryArtifact,
   queryCheck,
+  queryContext,
   queryLint,
   queryStatus,
   queryTrace,
@@ -134,6 +135,21 @@ export const TOOLS: readonly ToolDefinition[] = [
         },
       },
       required: ["spec"],
+      additionalProperties: false,
+    },
+    annotations: READ_ONLY,
+  },
+  {
+    name: "vellum_context",
+    description:
+      "What `vellum context <spec> <task> --json` returns: one task's briefing — the task, the full text of every criterion and Property it cites, the design sections and glossary terms it uses, its parent, sub-tasks and wave, and a missing list naming anything cited that was not found. Read it before the full documents.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        spec: SPEC,
+        task: { type: "string", description: "Task identifier, e.g. 2.3" },
+      },
+      required: ["spec", "task"],
       additionalProperties: false,
     },
     annotations: READ_ONLY,
@@ -283,6 +299,15 @@ async function run(
         (args.limit as number | undefined) ?? 20,
       );
       return query.kind === "ok" ? text(query.value) : error(query.message);
+    }
+    case "vellum_context": {
+      const specs = select(repo, args.spec);
+      if (!Array.isArray(specs)) return specs;
+      const query = queryContext(specs[0]!, args.task as string);
+      if (query.kind === "inconclusive") return error(query.message);
+      return query.value === null
+        ? error(`${specs[0]!.slug}/tasks.md defines no task ${args.task as string}`)
+        : text(query.value);
     }
     case "vellum_get_artifact": {
       const query = queryArtifact(repo, args.path as string);

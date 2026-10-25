@@ -135,7 +135,9 @@ check, which nobody without the approver's signing key can satisfy.
 The pre-execution check: the three artifacts exist and hold the approvals the policy requires,
 bound to their current checksums, and the task's criterion and property references resolve.
 On success it appends a Task Binding to the ledger and sets the task's marker to `[-]`; on
-failure it writes nothing. Exit 0 started, 1 refused.
+failure it writes nothing. Exit 0 started, 1 refused. When the content supports it, it also
+records `IN_PROGRESS` as the spec's state (only the `state:` frontmatter line changes, so no
+approval does).
 
 ### `vellum task complete <spec> <task-id> --command=<cmd> [--timeout=<seconds>]`
 
@@ -152,6 +154,19 @@ exit 1 when the command failed (a failed attempt is recorded, the marker unchang
 evidence was recorded as uncommitted.
 
 There is no `--exit` option.
+
+After a verified task it records `VERIFIED` as the spec's state when the Strict Verifier would
+pass, else `IN_PROGRESS` when the content supports it, in the same way. `verify` and `check`
+never write.
+
+### `vellum context <spec> <task-id> [--json]`
+
+The briefing an executor reads instead of the whole spec (decision 17 in 002's design): the
+task, the full text of every criterion and Property it cites, the design sections and glossary
+terms it uses, its parent, sub-tasks and wave, and a `missing` list naming anything cited that
+the documents do not define. Writes nothing. Exit 0 printed, 1 when `tasks.md` defines no such
+task, 2 on a usage error, an unmatched spec or a spec with no `tasks.md`. The MCP tool
+`vellum_context` returns the `--json` document.
 
 ### `vellum adopt <spec> [--json]`
 

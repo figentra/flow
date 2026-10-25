@@ -33,12 +33,12 @@ Last updated before: 2026-09-27. Released so far: 0.1.0, 0.1.1, 0.1.2 on `https:
 | V-06 | spec-tasks never makes Property tests optional                           | 0.1.3   | agent             | done, unreleased |
 | V-07 | spec-run asks whether to include optional tasks                          | 0.1.3   | agent             | in progress |
 | V-08 | spec-run asks what to do when a review gate blocks                       | 0.1.3   | agent             | in progress |
-| V-09 | The recorded lifecycle state advances                                    | 0.1.3   | agent             | in progress |
+| V-09 | The recorded lifecycle state advances                                    | 0.1.3   | agent             | in review (decision 16; task start/complete record it; tests not run) |
 | V-10 | Failed attempts appear in the Execution Log                              | 0.1.3   | agent             | in progress |
 | V-11 | Consistent parent-task markers                                           | 0.1.3   | agent             | in progress |
 | V-12 | Release 0.1.3                                                            | 0.1.3   | agent             | queued                  |
 | V-13 | One git worktree per concurrent executor                                 | 0.1.4   | agent             | queued                  |
-| V-14 | `vellum context <spec> <task>` per-task briefing                         | 0.1.4   | agent             | in progress (branch feat/vellum-context) |
+| V-14 | `vellum context <spec> <task>` per-task briefing                         | 0.1.4   | agent             | in review (CLI and MCP wired, decision 17; no e2e scenario yet; tests not run) |
 | V-15 | Verification commands sized to the task                                  | 0.1.4   | agent             | queued                  |
 | V-16 | spec-tasks warns about long dependency chains                            | 0.1.4   | agent             | queued                  |
 | V-17 | Release 0.1.4                                                            | 0.1.4   | agent             | queued                  |

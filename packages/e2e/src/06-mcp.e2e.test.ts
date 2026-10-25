@@ -61,6 +61,7 @@ describe("scenario 6: MCP over stdio from the installed tarball", () => {
       "vellum_verify",
       "vellum_check",
       "vellum_trace",
+      "vellum_context",
       "vellum_get_artifact",
     ]);
     for (const tool of tools) {

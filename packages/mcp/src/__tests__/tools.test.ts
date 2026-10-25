@@ -13,6 +13,7 @@ import {
   lintDocument,
   openRepository,
   queryCheck,
+  queryContext,
   queryLint,
   queryStatus,
   queryVerify,
@@ -60,6 +61,7 @@ describe("MCP tools against a temp repository", () => {
       "vellum_verify",
       "vellum_check",
       "vellum_trace",
+      "vellum_context",
       "vellum_get_artifact",
     ]);
     for (const tool of TOOLS) {
@@ -250,6 +252,28 @@ describe("MCP tools against a temp repository", () => {
       expect(
         (await callTool(fx.repo, "vellum_trace", { spec: SLUG })).isError,
       ).toBe(true);
+    });
+  });
+
+  describe("vellum_context", () => {
+    it("returns the briefing the context query computes, and writes nothing", async () => {
+      const before = fx.git(["status", "--porcelain", "--untracked-files=all"]);
+      const query = queryContext(specs[0]!, "1");
+      if (query.kind !== "ok" || query.value === null) throw new Error("expected a briefing");
+      const result = payload(await callTool(fx.repo, "vellum_context", { spec: SLUG, task: "1" }));
+      expect(result).toEqual(JSON.parse(JSON.stringify(query.value)));
+      expect(result.spec).toBe(SLUG);
+      expect((result.task as { id: string }).id).toBe("1");
+      expect(fx.git(["status", "--porcelain", "--untracked-files=all"])).toBe(before);
+    });
+
+    it("is an error for a task tasks.md does not define, or without a task", async () => {
+      expect(errorMessage(await callTool(fx.repo, "vellum_context", { spec: SLUG, task: "9" }))).toContain(
+        "defines no task 9",
+      );
+      expect(errorMessage(await callTool(fx.repo, "vellum_context", { spec: SLUG }))).toContain(
+        "requires argument 'task'",
+      );
     });
   });
 

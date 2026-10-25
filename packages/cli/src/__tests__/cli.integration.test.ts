@@ -268,6 +268,39 @@ describe.skipIf(!SSH)("vellum CLI against a temp repository", () => {
       });
     });
 
+    it("records IN_PROGRESS at the first start and VERIFIED at the last completion, keeping every approval (decision 16)", async () => {
+      const states = () =>
+        ALL.map((kind) => /^state: (\S+)$/m.exec(fx.read(`.agents/specs/${SLUG}/${kind}.md`))?.[1]);
+      for (const kind of ALL) {
+        const path = `.agents/specs/${SLUG}/${kind}.md`;
+        fx.write(path, fx.read(path).replace("state: IN_PROGRESS", "state: PLAN_IN_REVIEW"));
+      }
+      fx.commit("record PLAN_IN_REVIEW");
+      await fx.approve(ALL, "alice");
+
+      const start = await fx.cli(["task", "start", SLUG, "1"]);
+      expect(start.status).toBe(0);
+      expect(start.stdout).toContain("Recorded Lifecycle State: PLAN_IN_REVIEW → IN_PROGRESS.");
+      expect(states()).toEqual(["IN_PROGRESS", "IN_PROGRESS", "IN_PROGRESS"]);
+
+      const first = await fx.cli(["task", "complete", SLUG, "1", "--command=true"]);
+      expect(first.status).toBe(0);
+      expect(first.stdout).not.toContain("Recorded Lifecycle State");
+      expect(states()).toEqual(["IN_PROGRESS", "IN_PROGRESS", "IN_PROGRESS"]);
+
+      expect((await fx.cli(["task", "start", SLUG, "2"])).status).toBe(0);
+      const last = await fx.cli(["task", "complete", SLUG, "2", "--command=true"]);
+      expect(last.status).toBe(0);
+      expect(last.stdout).toContain("Recorded Lifecycle State: IN_PROGRESS → VERIFIED.");
+      expect(states()).toEqual(["VERIFIED", "VERIFIED", "VERIFIED"]);
+
+      fx.commit("record task evidence");
+      expect((await fx.cli(["verify", SLUG])).status).toBe(0);
+      const check = await fx.cli(["check", SLUG]);
+      expect(check.stdout).toContain("Check mode: PASS");
+      expect(check.status).toBe(0);
+    });
+
     it("a failing command records the failed attempt and leaves the marker", async () => {
       await fx.approve(ALL, "alice");
       await fx.cli(["task", "start", SLUG, "2"]);
@@ -904,6 +937,37 @@ describe.skipIf(!SSH)("vellum CLI against a temp repository", () => {
         artifact_checksum: computeChecksum(WRAPPED.requirements),
         checksum_form: 2,
       });
+    });
+  });
+
+  describe("context", () => {
+    it("prints the task's briefing with the criteria and Properties it cites, writing nothing", async () => {
+      const before = fx.git(["status", "--porcelain", "--untracked-files=all"]);
+      const result = await fx.cli(["context", SLUG, "1"]);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain(`# Task 1 — ${SLUG}`);
+      expect(result.stdout).toContain("SHALL do one thing");
+      expect(result.stdout).not.toContain("SHALL do another thing");
+      expect(fx.git(["status", "--porcelain", "--untracked-files=all"])).toBe(before);
+    });
+
+    it("with --json prints the briefing document", async () => {
+      const result = await fx.cli(["context", "demo", "2", "--json"]);
+      expect(result.status).toBe(0);
+      const doc = JSON.parse(result.stdout);
+      expect(doc.spec).toBe(SLUG);
+      expect(doc.task.id).toBe("2");
+      expect(doc.criteria.map((c: { id: string }) => c.id)).toEqual(["1.2"]);
+      expect(doc.properties.map((p: { id: string }) => p.id)).toEqual(["P2"]);
+      expect(doc.missing).toEqual([]);
+    });
+
+    it("exits 1 for a task tasks.md does not define, and 2 for a usage error or unmatched spec", async () => {
+      const undefinedTask = await fx.cli(["context", SLUG, "9"]);
+      expect(undefinedTask.status).toBe(1);
+      expect(undefinedTask.stderr).toContain(`${SLUG}/tasks.md defines no task 9`);
+      expect((await fx.cli(["context", SLUG])).status).toBe(2);
+      expect((await fx.cli(["context", "nope", "1"])).status).toBe(2);
     });
   });
 
