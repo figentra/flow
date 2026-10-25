@@ -14,9 +14,11 @@ import {
 } from "@vellum/protocol";
 import {
   checkLedgerIntegrity,
+  ancestorTasks,
   checkTaskBinding,
   containsSecretPattern,
   parentsCompletedBy,
+  requiredTasks,
   preExecutionCheck,
   type TaskBinding,
 } from "@vellum/engine";
@@ -174,8 +176,20 @@ export const task = {
       }
       throw error;
     }
-    setTaskMarker(join(spec.ref.path, "tasks.md"), args.taskId, "-");
-    ctx.stdout.write(`Task ${args.taskId} started: Task Binding recorded, marker set to [-]\n`);
+    // Decision 15: a parent has started once any of its sub-tasks has. Only a
+    // `[ ]` parent changes; the roll-up in `task complete` decides `[x]`.
+    const items = parseTaskItems(spec.texts.get("tasks") ?? "");
+    const started = ancestorTasks(items, args.taskId).filter(
+      (id) => items.find((item) => item.identifier === id)?.marker === " ",
+    );
+    setTaskMarkers(
+      join(spec.ref.path, "tasks.md"),
+      new Map([args.taskId, ...started].map((id) => [id, "-"] as const)),
+    );
+    ctx.stdout.write(
+      `Task ${args.taskId} started: Task Binding recorded, marker set to [-]` +
+        (started.length > 0 ? `; ${started.map((p) => `parent ${p}`).join(" and ")} marked [-] too.\n` : ".\n"),
+    );
     return EXIT_STATUS.SUCCESS;
   },
 
@@ -290,16 +304,25 @@ export const task = {
     }
     // A parent whose last required sub-task this was is complete too; its
     // marker flips in the same write (Task Markers are outside the checksum).
+    // A parent whose sub-tasks all count as done — its required ones, or every
+    // one when all are optional (decision 15) — completes in the same write.
+    const items = parseTaskItems(tasksText);
     const parents = parentsCompletedBy(
-      parseTaskItems(tasksText),
+      items,
       new Set([...passingTasks(spec.ledger), args.taskId]),
       args.taskId,
     );
     setTaskMarkers(tasksPath, new Map([args.taskId, ...parents].map((id) => [id, "x"] as const)));
+    const required = requiredTasks(items).map((item) => item.identifier as string);
+    const reasons = parents.map((p) =>
+      required.some((id) => id.startsWith(`${p}.`))
+        ? `every required sub-task of task ${p} is verified`
+        : `every sub-task of task ${p} is verified (all are optional)`,
+    );
     ctx.stdout.write(
       `Task ${args.taskId} verified: ${summary}. Evidence recorded; marker set to [x]` +
         (parents.length > 0
-          ? `; every required sub-task of ${parents.map((p) => `task ${p}`).join(" and ")} is verified, so ${parents.length === 1 ? "its marker is" : "their markers are"} set to [x] too.\n`
+          ? `; ${reasons.join(", and ")}, so ${parents.length === 1 ? "its marker is" : "their markers are"} set to [x] too.\n`
           : ".\n"),
     );
     return EXIT_STATUS.SUCCESS;
