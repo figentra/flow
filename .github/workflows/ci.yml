@@ -3,7 +3,8 @@ name: CI
 # No job in this workflow reads a secret: nothing here needs a token, a
 # registry credential or a signing key. The end-to-end suite generates its
 # own throwaway SSH signing keys inside a temp directory per run. Publishing
-# lives only in release.yml, behind a human-pushed tag and OIDC.
+# lives only in release.yml, behind a vX.Y.Z tag, the owner's `release`
+# Environment approval and OIDC.
 
 on:
   push:

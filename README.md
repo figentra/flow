@@ -84,8 +84,9 @@ npx vellum doctor
 The package has no runtime dependencies and needs Node.js 22 or later. It provides two bins:
 `vellum` (the CLI) and `vellum-mcp` (the read-only MCP server the assistant plugins start).
 
-Releases: a maintainer pushes a `vX.Y.Z` tag, and `.github/workflows/release.yml` runs the full
-gate and publishes that version, taking the registry token from Infisical over GitHub OIDC.
+Releases: the owner or an agent pushes a `vX.Y.Z` tag, and `.github/workflows/release.yml` runs the full
+gate, waits for the owner's one approval of the GitHub `release` Environment, and publishes that version,
+taking the registry token from Infisical over GitHub OIDC.
 
 ## Development
 

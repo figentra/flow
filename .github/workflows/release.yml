@@ -1,6 +1,8 @@
 name: Release
 
-# A human pushes a vX.Y.Z tag; this job publishes @figentra/vellum at that
+# The owner or an agent pushes a vX.Y.Z tag (deploy model, owner 2026-10-28,
+# Stackra ADR 0468); the job then waits in the GitHub Environment `release`
+# until the owner approves it once, and publishes @figentra/vellum at that
 # version to the private Figentra registry (https://npm.figentra.com/, an
 # npflared registry). Nothing is published to the public npm registry:
 # packages/vellum/package.json pins publishConfig.registry, and a bundle test
@@ -9,8 +11,11 @@ name: Release
 # The registry token is never stored in GitHub. The job authenticates to
 # Infisical with GitHub OIDC and reads NPFLARED_AUTH_TOKEN from the /ci path.
 # A human sets up, once:
+#   - the GitHub Environment `release`: one required reviewer (the owner),
+#     deployment tags `v*.*.*` only;
 #   - an Infisical machine identity with GitHub OIDC auth bound to this
-#     repository and to tag refs, allowed to read /ci in the prod environment;
+#     repository and to the `release` environment (subject
+#     repo:figentra/vellum:environment:release), allowed to read /ci in prod;
 #   - NPFLARED_AUTH_TOKEN in /ci (a npflared token that may publish @figentra/vellum);
 #   - repository variables (not secrets) INFISICAL_IDENTITY_ID and INFISICAL_PROJECT_SLUG.
 
@@ -31,6 +36,7 @@ jobs:
   publish:
     name: Publish @figentra/vellum
     runs-on: ubuntu-latest
+    environment: release # the one owner approval before a publish
     steps:
       - uses: actions/checkout@v4
 
