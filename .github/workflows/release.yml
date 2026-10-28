@@ -58,6 +58,22 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # STA-1393: Turborepo remote cache (turbo.stackra.figentra.com). The job's GitHub OIDC token is
+      # exchanged with Infisical (Stackra project, EU) for TURBO_API, TURBO_TOKEN, TURBO_TEAM and
+      # TURBO_REMOTE_CACHE_SIGNATURE_KEY from prod /ci/turbo. Skipped while the org variable
+      # INFISICAL_TURBO_IDENTITY_ID is unset; turbo then uses its local cache only.
+      - name: Turborepo remote cache (Infisical OIDC)
+        if: vars.INFISICAL_TURBO_IDENTITY_ID != ''
+        uses: Infisical/secrets-action@d2e351f16c6ca20d17c85e6c992e04bdeb64e87d # v1.0.18
+        with:
+          method: oidc
+          identity-id: ${{ vars.INFISICAL_TURBO_IDENTITY_ID }}
+          domain: https://eu.infisical.com
+          project-id: dd4724f4-7b9a-46ae-a899-b34af2d626b2
+          env-slug: prod
+          secret-path: /ci/turbo
+          export-type: env
+
       # The same gate CI runs, including the pack -> offline install -> run test.
       - name: Build, typecheck, lint and test
         run: pnpm turbo run build typecheck lint test --force
