@@ -32,8 +32,32 @@ concurrency: release-${{ github.ref }}
 permissions: {}
 
 jobs:
+  # Until the owner has set the bot App's secrets (and the registry's trusted-publisher row), the release is skipped
+  # with a notice instead of failing red on every push to main. Only whether each secret is set is read, never a value.
+  ready:
+    name: Release setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    outputs:
+      ok: ${{ steps.check.outputs.ok }}
+    steps:
+      - id: check
+        env:
+          HAS_APP_ID: ${{ secrets.STACKRA_BOT_APP_ID != '' }}
+          HAS_PRIVATE_KEY: ${{ secrets.STACKRA_BOT_PRIVATE_KEY != '' }}
+        run: |
+          if [ "$HAS_APP_ID" = true ] && [ "$HAS_PRIVATE_KEY" = true ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=Release skipped::STACKRA_BOT_APP_ID and STACKRA_BOT_PRIVATE_KEY are not both set on figentra/flow; the owner's setup (the release environment, the bot secrets, the registry's trusted-publisher row for @figentra/flow) comes first"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+
   release:
     name: Release
+    needs: ready
+    if: needs.ready.outputs.ok == 'true'
     permissions:
       contents: write
       pull-requests: write
