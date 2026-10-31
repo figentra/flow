@@ -95,6 +95,38 @@ test("github-issues: title, states, In Progress as a label and Done as closing, 
   assert.deepEqual(calls[3]?.body, { state: "closed", state_reason: "completed" });
 });
 
+// @covers sta-1729:FR-12 sta-1729:AC-049
+test("github-issues: a role is one role label, never a created one; missing labels are listed", async (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  sh(r.root, "remote", "set-url", "origin", "git@github.com:acme/app.git");
+  /** @type {string[]} */
+  const calls = [];
+  const existing = new Set(["role:backend", "role:qa"]);
+  /** @type {import("../lib/github.mjs").Api} */
+  const api = (method, path) => {
+    calls.push(`${method} ${path}`);
+    const label = path.match(/^\/repos\/acme\/app\/labels\/(.+)$/)?.[1];
+    if (label) return { ok: existing.has(decodeURIComponent(label)), json: {}, err: "404" };
+    return { ok: true, json: { labels: [{ name: "bug" }, { name: "role:qa" }] }, err: "" };
+  };
+  const tracker = githubIssuesTracker({ kind: "github-issues" }, { root: r.root, api });
+  await tracker.role?.("GH-1", "role:backend");
+  assert.deepEqual(calls, [
+    "GET /repos/acme/app/labels/role%3Abackend",
+    "GET /repos/acme/app/issues/1",
+    "DELETE /repos/acme/app/issues/1/labels/role%3Aqa",
+    "POST /repos/acme/app/issues/1/labels",
+  ]);
+  calls.length = 0;
+  await assert.rejects(
+    tracker.role?.("GH-1", "role:chef") ?? Promise.resolve(),
+    /does not exist on GitHub \(the lead creates it\)/,
+  );
+  assert.deepEqual(calls, ["GET /repos/acme/app/labels/role%3Achef"], "nothing is posted");
+  assert.deepEqual(await tracker.missingLabels?.(["role:backend", "role:chef"]), ["role:chef"]);
+});
+
 test("gate plan's stage report: a tracker failure is a warning, never swallowed; a success comments", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "flow-stage-"));
   t.after(() => rmSync(dir, { recursive: true }));

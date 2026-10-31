@@ -10,11 +10,12 @@
 // @covers sta-1729:FR-1 sta-1729:AC-001 sta-1729:AC-002 sta-1729:P-001
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { slugOf, start } from "../commands/start.mjs";
-import { sh, repo } from "./__fixtures__/repo.mjs";
+import { CONFIG_FILE } from "../lib/product.mjs";
+import { CONFIG, sh, repo } from "./__fixtures__/repo.mjs";
 
 /** An injected tracker recording the In Progress moves. */
 function tracker(title = "Add the Pay connector: Stripe & co", { fail = false } = {}) {
@@ -127,4 +128,87 @@ test("start: a Linear failure warns after the worktree exists", async (t) => {
   });
   assert.equal(result.ok, true);
   assert.match(warnings.join(), /the tracker was not updated/);
+});
+
+/** A repository with a one-role roster. */
+const rostered = () =>
+  repo({
+    [CONFIG_FILE]: JSON.stringify({ ...CONFIG, team: "roster.yaml" }),
+    "roster.yaml":
+      "version: 1\nowner:\n  keeps: [money]\nroles:\n  - id: backend\n    label: role:backend\n    file: backend.yaml\n",
+    "backend.yaml":
+      "id: backend\nlabel: role:backend\npurpose: Builds.\nchanges: []\napproves: []\nreviewed_by: []\n",
+  });
+
+// @covers sta-1729:FR-12 sta-1729:AC-049
+test("start with a roster: the role from --role or the spec sets the label and records the builder", async (t) => {
+  const r = rostered();
+  t.after(r.dispose);
+  const dir = join(r.root, ".agents", "specs", "sta-9-roled");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "spec.md"), "# X\n\n**Role**: backend\n**Session**: Backend A\n");
+  sh(r.root, "add", "-A");
+  sh(r.root, "commit", "-q", "-m", "spec");
+  sh(r.root, "push", "-q", "origin", "main");
+  /** @type {string[]} */
+  const seen = [];
+  const issues = {
+    ...tracker().issues,
+    async role(/** @type {string} */ key, /** @type {string} */ label) {
+      seen.push(`${key} ${label}`);
+    },
+    async comment(/** @type {string} */ key, /** @type {string} */ body) {
+      seen.push(`${key} ${body}`);
+    },
+  };
+  assert.equal(
+    (await start({ cwd: r.root, key: "STA-9", slug: "roled", issues, ...quiet })).ok,
+    true,
+  );
+  assert.deepEqual(seen, [
+    "STA-9 role:backend",
+    "STA-9 Builder: role `backend`, session Backend A.",
+  ]);
+  seen.length = 0;
+  await start({
+    cwd: r.root,
+    key: "STA-10",
+    slug: "flag",
+    role: "backend",
+    session: "S",
+    issues,
+    ...quiet,
+  });
+  assert.deepEqual(seen, ["STA-10 role:backend", "STA-10 Builder: role `backend`, session S."]);
+});
+
+test("start with a roster: an unknown --role is refused first; no role only warns", async (t) => {
+  const r = rostered();
+  t.after(r.dispose);
+  const issues = tracker().issues;
+  const refused = await start({
+    cwd: r.root,
+    key: "STA-11",
+    slug: "x",
+    role: "chef",
+    issues,
+    ...quiet,
+  });
+  assert.match(refused.problem ?? "", /--role chef is not a role of the roster \(backend\)/);
+  assert.equal(existsSync(join(r.root, ".claude", "worktrees", "sta-11-x")), false);
+  /** @type {string[]} */
+  const warnings = [];
+  const ok = await start({
+    cwd: r.root,
+    key: "STA-12",
+    slug: "y",
+    issues,
+    log: () => {},
+    warn: (s) => warnings.push(s),
+  });
+  assert.equal(ok.ok, true);
+  assert.match(
+    warnings.join(),
+    /no role \(pass --role, or set the spec's \*\*Role\*\*\); the lead assigns one/,
+  );
 });
