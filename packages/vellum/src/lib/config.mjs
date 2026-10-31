@@ -1,10 +1,9 @@
 /**
- * Vellum file contract:
- * Purpose: the repository's configuration (AC-035, AC-036): `vellum.config.json` at the repository root, validated
- *   against `SCHEMA` (shipped as `schema/vellum.config.schema.json` for editors), with every unknown key or wrong type
+ * Figentra Flow file contract:
+ * Purpose: the repository's configuration (AC-035, AC-036): `figentra-flow.config.json` at the repository root, validated
+ *   against `SCHEMA` (shipped as `schema/figentra-flow.config.schema.json` for editors), with every unknown key or wrong type
  *   refused by its path. Each port reads its block; a port with no block refuses the commands that need it, naming the
- *   key (`need`). There are no defaults that name an organisation. For one minor version, the older `package.json`
- *   `"vellum"` keys (`credentials`, `gate`, `gateApp`) are read with a deprecation warning when no config file exists.
+ *   key (`need`). There are no defaults that name an organisation, and no other file is read in its place.
  * Boundary: reads two files; never writes; never runs code from the repository (the config is JSON, ADR decision 1 of
  *   the phase A plan stop).
  * Runtime: node
@@ -31,7 +30,7 @@ const port = (
   })),
 });
 
-/** The configuration's JSON Schema (draft 2020-12), the single source of `schema/vellum.config.schema.json`. */
+/** The configuration's JSON Schema (draft 2020-12), the single source of `schema/figentra-flow.config.schema.json`. */
 export const SCHEMA = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $id: CONFIG_FILE.replace(".json", ".schema.json"),
@@ -189,20 +188,6 @@ export function validate(schema, value, path = "") {
  * @typedef {{ config: Config, source: string | undefined, warnings: string[], errors: string[] }} Loaded
  */
 
-/** The older `package.json` `"vellum"` keys as configuration (deprecated; read for one minor version). */
-function fromPackage(/** @type {any} */ legacy) {
-  /** @type {Config} */
-  const config = { version: 1 };
-  const credentials = legacy.credentials;
-  if (credentials === "gh-user") config.credentials = { kind: "gh-user" };
-  const script =
-    typeof credentials === "string" ? credentials.match(/^wrapper:(\S+)$/)?.[1] : undefined;
-  if (script) config.credentials = { kind: "wrapper", gh: ["pnpm", script, "--"] };
-  if (typeof legacy.gate === "string") config.gate = { check: legacy.gate };
-  if (typeof legacy.gateApp === "string") config.apps = { gate: { login: legacy.gateApp } };
-  return config;
-}
-
 /**
  * The repository's configuration.
  * @param {string} root
@@ -229,21 +214,6 @@ export function loadConfig(root) {
       errors: validate(SCHEMA, parsed).map((p) => `${CONFIG_FILE}: ${p}`),
     };
   }
-  let legacy;
-  try {
-    legacy = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).vellum;
-  } catch {
-    legacy = undefined;
-  }
-  if (legacy && typeof legacy === "object")
-    return {
-      config: fromPackage(legacy),
-      source: join(root, "package.json"),
-      warnings: [
-        `package.json "vellum" is deprecated: move it into ${CONFIG_FILE} (it is read until the next minor version)`,
-      ],
-      errors: [],
-    };
   return { config: {}, source: undefined, warnings: [], errors: [] };
 }
 

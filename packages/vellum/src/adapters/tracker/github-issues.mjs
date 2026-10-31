@@ -1,5 +1,5 @@
 /**
- * Vellum file contract:
+ * Figentra Flow file contract:
  * Purpose: the `github-issues` tracker adapter: keys `gh-<n>` name the repository's own issue `#<n>`; its title, its
  *   state (closed as completed is Done, closed as not planned is Canceled, open is Open), In Progress as a label, Done
  *   as closing it as completed, and comments, through the GitHub API with the repository's credentials.

@@ -1,5 +1,5 @@
 /**
- * Vellum file contract:
+ * Figentra Flow file contract:
  * Purpose: the git facts the worktree commands need: the repository's main checkout, its default branch, its
  *   worktrees, whether a worktree is clean, saved (its head on a remote ref, or every commit landed by patch), how long
  *   it has been idle, which ignored files it holds outside the usual caches, its size, and which folders running

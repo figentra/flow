@@ -33,7 +33,7 @@ eval "$_paths_output"
 unset _paths_output
 
 # Stackra gate: refuse to plan until the spec is clarified and linked to Linear
-(cd "$REPO_ROOT" && ./node_modules/.bin/vellum gate plan "$FEATURE_SPEC") || exit 1
+(cd "$REPO_ROOT" && ./node_modules/.bin/figentra-flow gate plan "$FEATURE_SPEC") || exit 1
 
 # Ensure the feature directory exists
 mkdir -p "$FEATURE_DIR"

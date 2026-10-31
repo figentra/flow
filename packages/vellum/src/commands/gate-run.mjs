@@ -1,9 +1,9 @@
 /**
- * Vellum file contract:
- * Purpose: `vellum gate run [--ref <branch>] [--box <ssh host>] [--no-wait] [--on-demand]`, the caller's side of the
+ * Figentra Flow file contract:
+ * Purpose: `figentra-flow gate run [--ref <branch>] [--box <ssh host>] [--no-wait] [--on-demand]`, the caller's side of the
  *   gate: check that the head is committed and pushed, clone exactly that commit into a temporary folder with the
  *   box poster beside it, and run the repository's check command on a testbed box (`stackra testbed run`) or on a
- *   named host (`--box`). The box posts `vellum/gate`; this side only passes its exit code through.
+ *   named host (`--box`). The box posts `figentra-flow/gate`; this side only passes its exit code through.
  * Boundary: runs no check on the caller's machine (FR-9). Refuses a dirty tree, a detached head without `--ref`, a
  *   head that is not the remote branch tip, and a missing `stackra`, before any box is claimed. Removes its temporary
  *   folder when the run ends.
@@ -203,7 +203,7 @@ export async function gateRun(options) {
   }
 }
 
-/** `vellum gate run [--ref <branch>] [--box <ssh host>] [--no-wait] [--on-demand]`. */
+/** `figentra-flow gate run [--ref <branch>] [--box <ssh host>] [--no-wait] [--on-demand]`. */
 export async function run(/** @type {string[]} */ args) {
   const opt = (/** @type {string} */ name) =>
     args.includes(`--${name}`) ? args[args.indexOf(`--${name}`) + 1] : undefined;

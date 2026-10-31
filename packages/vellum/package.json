@@ -1,29 +1,31 @@
 {
-  "name": "@stackra/vellum",
+  "name": "figentra-flow",
   "version": "0.0.0",
   "private": false,
-  "description": "Vellum: the spec CLI for Stackra repositories. Installs spec-kit's .specify/ with the Stackra preset, syncs the speckit skills, and runs the stage gates, traceability and Linear links",
+  "description": "Figentra Flow: spec-driven development from spec to landed change. Spec gates and traceability on spec-kit, worktrees, the gate on a box, land, and adapters for your tracker, runner, credentials and secrets",
   "keywords": [
     "linear",
     "sdlc",
     "spec-kit",
     "specs",
-    "stackra",
-    "traceability"
+    "traceability",
+    "workflow",
+    "worktrees"
   ],
-  "homepage": "https://github.com/figentra/vellum#readme",
+  "homepage": "https://github.com/figentra/flow#readme",
   "bugs": {
-    "url": "https://github.com/figentra/vellum/issues"
+    "url": "https://github.com/figentra/flow/issues"
   },
   "license": "MIT",
   "author": "Figentra (https://figentra.com)",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/figentra/vellum.git",
+    "url": "git+https://github.com/figentra/flow.git",
     "directory": "packages/vellum"
   },
   "bin": {
-    "vellum": "./bin/vellum.mjs"
+    "fflow": "./bin/figentra-flow.mjs",
+    "figentra-flow": "./bin/figentra-flow.mjs"
   },
   "files": [
     "bin",

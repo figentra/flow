@@ -1,5 +1,5 @@
 /**
- * Vellum file contract:
+ * Figentra Flow file contract:
  * Purpose: hold the credentials and secrets ports to their contracts: `env` needs a token in the environment,
  *   `gh-user` is the caller's own login by choice, `wrapper` refuses a `pnpm` script the repository lacks, a missing
  *   block refuses; network git through a local origin needs no credentials, and a network origin without them is

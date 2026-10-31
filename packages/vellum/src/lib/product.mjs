@@ -1,5 +1,5 @@
 /**
- * Vellum file contract:
+ * Figentra Flow file contract:
  * Purpose: the one place the product's name lives (AC-042): the CLI name, the config file, the gate's status context
  *   and comment marker, the gate job folder, the environment prefix and the user folder. The product is being renamed;
  *   a rename changes this module, `package.json` and the docs.
@@ -16,8 +16,14 @@ export const PACKAGE = JSON.parse(
   readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
 ).name;
 
-/** The CLI's name, as users type it. */
-export const NAME = "vellum";
+/** The product's name, as people read it. */
+export const DISPLAY_NAME = "Figentra Flow";
+
+/** The CLI's name, as users type it (also the npm package and the binary). */
+export const NAME = "figentra-flow";
+
+/** The binary's short alias. */
+export const ALIAS = "fflow";
 
 /** The repository's configuration file. */
 export const CONFIG_FILE = `${NAME}.config.json`;
@@ -32,7 +38,10 @@ export const GATE_MARKER = `<!-- ${STATUS_CONTEXT} -->`;
 export const GATE_DIR = `.${NAME}-gate`;
 
 /** The environment variables' prefix (`<PREFIX>GATE_APP_ID`, `<PREFIX>WORKSPACE`, …). */
-export const ENV_PREFIX = `${NAME.toUpperCase()}_`;
+export const ENV_PREFIX = `${NAME.toUpperCase().replaceAll("-", "_")}_`;
 
 /** The user's folder under the home directory (`~/.config/<name>`). */
 export const USER_DIR = [".config", NAME];
+
+/** The branch config key `land` records its squash commit under (`branch.<b>.<key>`, AC-029). */
+export const LANDED_KEY = `${NAME.replace(/-(\w)/g, (_, c) => c.toUpperCase())}Landed`;

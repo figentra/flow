@@ -1,6 +1,6 @@
 /**
- * Vellum file contract:
- * Purpose: the independent AI review of Stackra ADR 0230, as `vellum land` reads it: the counted verdict on a PR's
+ * Figentra Flow file contract:
+ * Purpose: the independent AI review of Stackra ADR 0230, as `figentra-flow land` reads it: the counted verdict on a PR's
  *   head from the `stackra-reviewer` App (matched by App identity, never a login string), unedited, first line
  *   `AI-REVIEW: PASS <40-hex head> base=<base>`, never from the PR's author or the head commit's author or committer;
  *   or the owner's APPROVED review on the head with the `owner-approval` token. A FAIL for the head beats any PASS.
@@ -10,12 +10,6 @@
  * Governing contract: Stackra ADR 0230 (reviewer identity), ADR 0285; STA-1729 phase 3 (AC-031).
  * Secrets: none.
  */
-
-/** The reviewer App's slug. */
-export const REVIEWER = "stackra-reviewer";
-
-/** The owner user whose APPROVED review with `owner-approval` also counts (ADR 0230). */
-export const OWNER = "figentra-usr";
 
 const VERDICT_LINE =
   /^AI-REVIEW:\s*(PASS|FAIL)\s+([0-9a-f]{40})(?:\s+base=(\S+))?(?:\s+patch=([0-9a-f]{40}))?\s*$/i;
@@ -37,11 +31,15 @@ export const actor = (login = "") =>
     .toLowerCase();
 
 /** A REST issue comment written by the reviewer App itself, not by an account that only shares its name. */
-export const byReviewerApp = (/** @type {any} */ c) =>
-  c.user?.type === "Bot" && c.performed_via_github_app?.slug === REVIEWER;
+export const byReviewerApp = (/** @type {any} */ c, /** @type {string} */ reviewer) =>
+  c.user?.type === "Bot" && c.performed_via_github_app?.slug === reviewer;
 
 /** A REST pull request review approving `sha` by the owner user with the `owner-approval` token. */
-export const ownerApproves = (/** @type {any} */ r, /** @type {string} */ sha, owner = OWNER) =>
+export const ownerApproves = (
+  /** @type {any} */ r,
+  /** @type {string} */ sha,
+  /** @type {string} */ owner,
+) =>
   r.user?.type === "User" &&
   r.user.login === owner &&
   r.state === "APPROVED" &&
@@ -54,11 +52,14 @@ export const ownerApproves = (/** @type {any} */ r, /** @type {string} */ sha, o
  * @param {{ sha: string, base: string }} pr
  * @param {any[]} comments
  * @param {any[]} reviews
- * @param {(string | undefined)[]} [authors]
- * @param {string} [owner]
+ * @param {(string | undefined)[]} authors
+ * @param {{ reviewer: string | undefined, owner?: string }} identities the configuration's `apps.review.slug` and
+ *   `apps.owner`; with no reviewer nothing counts, with no owner no owner review counts
  * @returns {{ verdict: "PASS" | "FAIL" | null, ignored: string[] }}
  */
-export function aiReview(pr, comments, reviews, authors = [], owner = OWNER) {
+export function aiReview(pr, comments, reviews, authors, { reviewer, owner }) {
+  if (!reviewer)
+    return { verdict: null, ignored: ["no review App is configured (apps.review.slug)"] };
   const { sha, base: target } = pr;
   const self = new Set(authors.filter(Boolean).map((a) => actor(a)));
   /** @type {string[]} */
@@ -66,7 +67,7 @@ export function aiReview(pr, comments, reviews, authors = [], owner = OWNER) {
   // An edit to any reviewer comment voids every reviewer verdict posted before it.
   const voidBefore =
     comments
-      .filter((c) => byReviewerApp(c) && c.updated_at !== c.created_at)
+      .filter((c) => byReviewerApp(c, reviewer) && c.updated_at !== c.created_at)
       .map((c) => String(c.updated_at))
       .toSorted()
       .at(-1) ?? "";
@@ -81,16 +82,19 @@ export function aiReview(pr, comments, reviews, authors = [], owner = OWNER) {
     if (match ? match[2].toLowerCase() !== sha : !loose || !failForHead(loose[1], sha)) continue;
     const who = c.user?.login ?? "unknown";
     const [, kind, , base] = match ?? [line, "FAIL"];
-    if (!byReviewerApp(c)) ignored.push(`${who} is not the ${REVIEWER} app`);
+    if (!byReviewerApp(c, reviewer)) ignored.push(`${who} is not the ${reviewer} app`);
     else if (self.has(actor(who))) ignored.push(`${who} authored this change and cannot review it`);
     else if (c.updated_at !== c.created_at) ignored.push(`a verdict by ${who} was edited`);
     else if (String(c.created_at) < voidBefore)
-      ignored.push(`a ${REVIEWER} comment was edited after this verdict; post a new one`);
+      ignored.push(`a ${reviewer} comment was edited after this verdict; post a new one`);
     else if (kind.toUpperCase() === "PASS" && base !== target)
       ignored.push(`a PASS names base ${base ?? "none"}, the PR targets ${target}`);
     else verdicts.add(kind.toUpperCase());
   }
-  const ownerOk = !self.has(actor(owner)) && reviews.some((r) => ownerApproves(r, sha, owner));
+  const ownerOk =
+    owner !== undefined &&
+    !self.has(actor(owner)) &&
+    reviews.some((r) => ownerApproves(r, sha, owner));
   const verdict = verdicts.has("FAIL") ? "FAIL" : verdicts.has("PASS") || ownerOk ? "PASS" : null;
   return { verdict, ignored };
 }

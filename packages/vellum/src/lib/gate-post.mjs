@@ -1,5 +1,5 @@
 /**
- * Vellum file contract:
+ * Figentra Flow file contract:
  * Purpose: the box side of the gate: after the check ran, post the gate's commit status on the head it checked, and
  *   one PR comment with the report, as the configured gate App. `gate run` copies this file into the job's gate folder,
  *   so the box needs no install; it imports only `node:` modules, and reads the status context, the comment marker

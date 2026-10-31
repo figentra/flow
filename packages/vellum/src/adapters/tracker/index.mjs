@@ -1,8 +1,8 @@
 /**
- * Vellum file contract:
+ * Figentra Flow file contract:
  * Purpose: the tracker port (AC-037): the key scheme a repository's issues use (the key in a branch, a worktree, a spec
  *   folder; the branch and folder names `start` makes) and the adapter that reads and moves issues: `linear` or
- *   `github-issues` (Jira later, same shape). `trackerFor(root)` builds both from `vellum.config.json`'s `tracker`.
+ *   `github-issues` (Jira later, same shape). `trackerFor(root)` builds both from `figentra-flow.config.json`'s `tracker`.
  *   A repository with a config file but no tracker gets a scheme that reads any `<letters>-<n>` key and no adapter,
  *   so offline commands work and the ones that move issues refuse naming the key (AC-036). For one minor version a
  *   repository with no config file keeps the Linear `STA` scheme it used before, with a warning.
@@ -59,7 +59,7 @@ export function keyScheme(block) {
   };
 }
 
-/** The Linear `STA` scheme repositories used before `vellum.config.json` (read for one minor version). */
+/** The Linear `STA` scheme repositories used before `figentra-flow.config.json` (read for one minor version). */
 export const LEGACY_TRACKER = { kind: "linear", team: "STA", branchPrefix: "figentra" };
 
 /**

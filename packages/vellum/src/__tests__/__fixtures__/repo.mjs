@@ -1,5 +1,5 @@
 /**
- * Vellum file contract:
+ * Figentra Flow file contract:
  * Purpose: a throwaway repository for the worktree command tests: a main checkout on `main` with one commit, pushed to
  *   a local bare `origin` whose HEAD is `main`, so fetch, push and `origin/HEAD` work with no network.
  * Boundary: test helper; writes only under the OS temp folder, and the caller removes it.

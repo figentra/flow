@@ -13,7 +13,7 @@ STOP and report it; never fall back to a numbered folder.
 
 ## Stackra: gate (runs first)
 
-`setup-plan.sh` runs `vellum gate plan` and exits non-zero until the spec has
+`setup-plan.sh` runs `figentra-flow gate plan` and exits non-zero until the spec has
 `**Clarifications status**: complete`, a `**Linear**: STA-n` key and a fully answered `## Impact`
 section. If it fails, STOP: print its output, tell the user to run `/speckit.clarify`, and write
 nothing. Never edit the marker yourself to get past the gate.

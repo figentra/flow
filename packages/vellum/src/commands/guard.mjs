@@ -1,8 +1,8 @@
 /**
- * Vellum file contract:
- * Purpose: `vellum guard [--print-settings]` — the agent hook that keeps worktrees inside their repository: it reads
+ * Figentra Flow file contract:
+ * Purpose: `figentra-flow guard [--print-settings]` — the agent hook that keeps worktrees inside their repository: it reads
  *   a PreToolUse event on stdin and denies a Bash command that runs `git … worktree add <path>` with the path outside
- *   that repository's `.claude/worktrees/`, naming `vellum start`. `--print-settings` prints the `.claude/settings.json`
+ *   that repository's `.claude/worktrees/`, naming `figentra-flow start`. `--print-settings` prints the `.claude/settings.json`
  *   entry that wires it.
  * Boundary: reads stdin, writes the hook's JSON answer on a denial and nothing otherwise. It follows `cd <dir> &&`,
  *   `git -C <dir>` and quoted words; input it cannot parse passes (a hook fails open), a `worktree add` it can read
@@ -15,12 +15,13 @@ import { existsSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 
 import { mainCheckout } from "../lib/git.mjs";
+import { NAME } from "../lib/product.mjs";
 
 /** The `.claude/settings.json` entry that runs the guard before every Bash call. */
 export const SETTINGS = {
   hooks: {
     PreToolUse: [
-      { matcher: "Bash", hooks: [{ type: "command", command: "pnpm exec vellum guard" }] },
+      { matcher: "Bash", hooks: [{ type: "command", command: `pnpm exec ${NAME} guard` }] },
     ],
   },
 };
@@ -123,7 +124,7 @@ export function decide(command, cwd) {
     if (!root) continue;
     const inside = join(resolve(root), ".claude", "worktrees") + sep;
     if (!resolve(path).startsWith(inside))
-      return `Worktrees live only in ${inside} (ADR 0503): ${path} is outside it. Run \`vellum start <STA-n>\`, which makes the branch and the worktree there.`;
+      return `Worktrees live only in ${inside} (ADR 0503): ${path} is outside it. Run \`${NAME} start <STA-n>\`, which makes the branch and the worktree there.`;
   }
   return undefined;
 }
@@ -135,7 +136,7 @@ async function stdin() {
   return text;
 }
 
-/** `vellum guard [--print-settings]`. */
+/** `figentra-flow guard [--print-settings]`. */
 export async function run(args) {
   if (args.includes("--print-settings")) {
     console.log(JSON.stringify(SETTINGS, null, 2));

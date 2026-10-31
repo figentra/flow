@@ -1,13 +1,13 @@
 /**
- * Vellum file contract:
- * Purpose: `vellum gate` (core's `spec-gate`, moved unchanged) — the stage gates for spec-kit specs in `.agents/specs/sta-<n>-<slug>/` (ADR 0120 D1, owner
+ * Figentra Flow file contract:
+ * Purpose: `figentra-flow gate` (core's `spec-gate`, moved unchanged) — the stage gates for spec-kit specs in `.agents/specs/sta-<n>-<slug>/` (ADR 0120 D1, owner
  *          decision OR12).
  * Boundary: reads the spec folders, git and, through the tracker port, comments on the issue (best-effort); writes no spec
  *           file.
  * Runtime: node
  * Governing contract: ADR 0120 (SDLC spec location, lanes and change risk); ADR 0121; ADR 0065 (rule 7).
  *
- *   run [--ref b] [--box host]  the checks on a testbed box (or `--box`); the box posts `vellum/gate` (STA-1729)
+ *   run [--ref b] [--box host]  the checks on a testbed box (or `--box`); the box posts `figentra-flow/gate` (STA-1729)
  *   plan <spec.md>              exit 1 unless the spec may be planned (run by setup-plan.sh)
  *   check <dir>                 the stage rules for the spec's declared `**Status**`
  *   tasks <tasks.md>            tasks lint: ids, covers, routes, deps, coverage, waves
@@ -36,7 +36,7 @@
  *   Implementing  at least one task ticked
  *   Done          every live task ticked (spec-trace adds test coverage)
  * Tracker: `plan` and `stage` comment the stage on the spec's issue through the tracker port; a failure warns, never part of
- * the exit code (ADR 0065 rule 7). `ci` never calls it. VELLUM_TRACKER=off (or STACKRA_LINEAR=off) disables it.
+ * the exit code (ADR 0065 rule 7). `ci` never calls it. FIGENTRA_FLOW_TRACKER=off (or STACKRA_LINEAR=off) disables it.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -44,7 +44,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { trackerFor } from "../adapters/tracker/index.mjs";
 import { BRANCH_RE } from "../lib/linear.mjs";
-import { ENV_PREFIX, NAME } from "../lib/product.mjs";
+import { DISPLAY_NAME, ENV_PREFIX, NAME, PACKAGE } from "../lib/product.mjs";
 
 /** The preset this package ships, installed when a repository keeps no `.agents/speckit/presets` of its own. */
 const BUNDLED_PRESETS = fileURLToPath(new URL("../../assets/presets", import.meta.url));
@@ -94,7 +94,7 @@ export function checkSpec(text) {
   if (!/^\*\*Clarifications status\*\*:\s*complete\s*$/im.test(body))
     problems.push("`**Clarifications status**` is not `complete` (run /speckit.clarify)");
   if (!/^\*\*Linear\*\*:\s*STA-\d+\b/m.test(body))
-    problems.push("`**Linear**` has no STA-n key (vellum linear issue, or the Linear MCP)");
+    problems.push(`\`**Linear**\` has no STA-n key (${NAME} linear issue, or the Linear MCP)`);
   if (/\[NEEDS CLARIFICATION/i.test(body)) problems.push("a `[NEEDS CLARIFICATION` marker remains");
 
   const impact = body.match(/^## Impact\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1];
@@ -642,9 +642,9 @@ export function tripwire(root = ROOT) {
   const problems = [];
   const read = (p) => (existsSync(join(root, p)) ? readFileSync(join(root, p), "utf8") : null);
   const plan = read(".specify/scripts/bash/setup-plan.sh");
-  // `spec-gate.mjs` is the call before Vellum; either keeps the gate.
-  if (plan !== null && !/spec-gate\.mjs|vellum gate/.test(plan))
-    problems.push("setup-plan.sh lost its gate call (re-add `vellum gate plan`)");
+  // `spec-gate.mjs` is the call before Figentra Flow; either keeps the gate.
+  if (plan !== null && !new RegExp(String.raw`spec-gate\.mjs|${NAME} gate`).test(plan))
+    problems.push(`setup-plan.sh lost its gate call (re-add \`${NAME} gate plan\`)`);
   const common = read(".specify/scripts/bash/common.sh");
   if (common !== null && !/SPECIFY_FEATURE_DIRECTORY[\s\S]*\.specify\/feature\.json/.test(common))
     problems.push(
@@ -684,7 +684,7 @@ export function tripwire(root = ROOT) {
     }
   }
   // The installed preset is what `pnpm speckit:sync` made of its source: the repository's own .agents/speckit/presets
-  // when it has one, else the preset bundled in Vellum (Stackra ADR 0503: core keeps no copy since W2).
+  // when it has one, else the preset bundled in Figentra Flow (Stackra ADR 0503: core keeps no copy since W2).
   const walk = (dir) =>
     readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
       e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)],
@@ -699,7 +699,7 @@ export function tripwire(root = ROOT) {
         problems.push(
           source === own
             ? `${installed} differs from .agents/speckit/presets/${rel} (edit the source, then \`pnpm speckit:sync\`)`
-            : `${installed} differs from the preset bundled in @stackra/vellum (run \`pnpm speckit:sync\`; change the preset in Vellum)`,
+            : `${installed} differs from the preset bundled in ${PACKAGE} (run \`pnpm speckit:sync\`; change the preset in ${DISPLAY_NAME})`,
         );
     }
   // The bundled `speckit` workflow skips clarify and analyze (ADR 0121 D19); it stays disabled.
@@ -891,7 +891,7 @@ function report(problems) {
 }
 
 export function run([mode, ...args]) {
-  // phase 2: the checks on a box, posted as `vellum/gate` (STA-1729)
+  // phase 2: the checks on a box, posted as `figentra-flow/gate` (STA-1729)
   if (mode === "run") return import("./gate-run.mjs").then((m) => m.run(args));
   const [arg, stage] = args;
   if (mode === "plan" && arg) {
@@ -971,7 +971,7 @@ export function run([mode, ...args]) {
     return failures ? 1 : 0;
   }
   console.error(
-    `usage: vellum gate run [--ref <branch>] [--box <host>] [--no-wait] [--on-demand] | plan <spec.md> | check <dir> | tasks <tasks.md> | lane | branch | ci [--base=ref] | stage <spec.md> <${STAGES.join("|")}> | dir [--slug s] [--key STA-n]`,
+    `usage: ${NAME} gate run [--ref <branch>] [--box <host>] [--no-wait] [--on-demand] | plan <spec.md> | check <dir> | tasks <tasks.md> | lane | branch | ci [--base=ref] | stage <spec.md> <${STAGES.join("|")}> | dir [--slug s] [--key STA-n]`,
   );
   return 2;
 }

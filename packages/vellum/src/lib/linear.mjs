@@ -1,6 +1,6 @@
 /**
- * Vellum file contract:
- * Purpose: the Linear client `vellum linear` uses, vendored from Stackra core's `tools/scripts/linear.mjs` (ADR 0065,
+ * Figentra Flow file contract:
+ * Purpose: the Linear client `figentra-flow linear` uses, vendored from Stackra core's `tools/scripts/linear.mjs` (ADR 0065,
  *   0121): `client` (token from the environment), `linear` (issue reads and writes), `isAgent`, `TEAM`, `BRANCH_RE`.
  *   Core's `pnpm linear` CLI stays in core; only the library half is here.
  * Boundary: talks to Linear's GraphQL API through net.mjs; writes no repo file.

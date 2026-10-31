@@ -1,6 +1,6 @@
 /**
- * Vellum file contract:
- * Purpose: `vellum parse <file>` — print what the spec parsers (core's `spec-parse`, moved unchanged into
+ * Figentra Flow file contract:
+ * Purpose: `figentra-flow parse <file>` — print what the spec parsers (core's `spec-parse`, moved unchanged into
  *   ../lib/spec-parse.mjs) read from one spec-kit artifact, as JSON: tasks.md → its tasks, plan.md → its properties
  *   (P → validated FRs), routing.yaml → its task types, any other file → its live and struck FR/SC/EC/P ids.
  * Boundary: reads one file; writes only stdout.
@@ -11,6 +11,7 @@
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { definedIds, parseTasks, properties, routes } from "../lib/spec-parse.mjs";
+import { NAME } from "../lib/product.mjs";
 
 /** The parse of `text`, chosen by the file name. */
 export function parse(name, text) {
@@ -27,7 +28,7 @@ export function parse(name, text) {
 
 export function run([file]) {
   if (!file) {
-    console.error("usage: vellum parse <spec.md|plan.md|tasks.md|routing.yaml>");
+    console.error(`usage: ${NAME} parse <spec.md|plan.md|tasks.md|routing.yaml>`);
     return 2;
   }
   console.log(JSON.stringify(parse(basename(file), readFileSync(file, "utf8")), null, 2));

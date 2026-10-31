@@ -1,5 +1,5 @@
 /**
- * Vellum file contract:
+ * Figentra Flow file contract:
  * Purpose: hold the tracker port to AC-037 and the leader's rule for `gate plan`: the key scheme parses, displays and
  *   names branches and folders per tracker (`linear` by team, `github-issues` as `gh-<n>`, any prefix without a
  *   tracker); a repository with no config file keeps the Linear `STA` scheme with a warning, and one with a config but

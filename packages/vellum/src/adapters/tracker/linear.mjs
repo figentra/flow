@@ -1,5 +1,5 @@
 /**
- * Vellum file contract:
+ * Figentra Flow file contract:
  * Purpose: the `linear` tracker adapter: an issue's title and state, moving it to In Progress or Done, and comments,
  *   through the Linear client in `lib/linear.mjs` (the agent app's minted token, else an API key).
  * Boundary: GraphQL calls to Linear; a failure is thrown to the caller, which reports it as a warning.

@@ -1,9 +1,9 @@
 /**
- * Vellum file contract:
+ * Figentra Flow file contract:
  * Purpose: hold the artifact guard to AC-043: a change adding files under `.cache/`, `node_modules/`, `dist/`,
  *   `.turbo/` or `coverage/` (at any depth), or a file over the size limit, is named; the configuration's `artifacts`
- *   replaces both; ordinary source and deletions pass; `vellum gate run` refuses such a change before any box, and
- *   `vellum land`'s rules carry the problems.
+ *   replaces both; ordinary source and deletions pass; `figentra-flow gate run` refuses such a change before any box, and
+ *   `figentra-flow land`'s rules carry the problems.
  * Boundary: temporary repositories with a local bare origin; the runner injected; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1729 phase A (AC-043).
@@ -69,7 +69,7 @@ test("artifacts: build output and an oversized file are named; source passes", (
 test("gate run: a change carrying artifacts is refused before any box", async (t) => {
   const r = repo();
   t.after(r.dispose);
-  sh(r.root, "remote", "set-url", "origin", "git@github.com:figentra/vellum.git");
+  sh(r.root, "remote", "set-url", "origin", "git@github.com:figentra/flow.git");
   sh(r.root, "remote", "set-url", "--push", "origin", r.origin);
   const head = change(r.root, { "coverage/lcov.info": "x\n" });
   sh(r.root, "push", "-q", "origin", "x");
@@ -85,7 +85,7 @@ test("gate run: the configuration's artifacts replace the defaults", async (t) =
     [CONFIG_FILE]: JSON.stringify({ version: 1, artifacts: { paths: ["generated/"] } }),
   });
   t.after(r.dispose);
-  sh(r.root, "remote", "set-url", "origin", "git@github.com:figentra/vellum.git");
+  sh(r.root, "remote", "set-url", "origin", "git@github.com:figentra/flow.git");
   const head = change(r.root, { "generated/x.ts": "x\n", "coverage/ok.txt": "fine here\n" });
   const result = await gateRun({ cwd: r.root, tip: () => head, runner: () => 0 });
   assert.match(result.problem ?? "", /generated\/x\.ts/);
@@ -100,9 +100,10 @@ test("land rules: the artifact problems refuse the PR", () => {
     head: { sha: "c".repeat(40) },
   };
   const statuses = [
-    { context: "vellum/gate", state: "success", creator: { login: "stackra-gate[bot]" } },
+    { context: "figentra-flow/gate", state: "success", creator: { login: "stackra-gate[bot]" } },
   ];
   const problems = landRules({
+    gateApp: "stackra-gate[bot]",
     pr,
     statuses,
     base: "main",

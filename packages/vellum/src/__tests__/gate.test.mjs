@@ -1,5 +1,5 @@
 /**
- * Vellum file contract:
+ * Figentra Flow file contract:
  * Purpose: hold the stage gates (state machine, plan, tasks, lane, branch, bug lane, tripwire), the v2 templates
  *   and the Linear task parser to their contract (moved from core's spec-gate tests; core keeps its wiring).
  * Boundary: pure functions plus one dry-run child process; no network, no repository writes; node:test and node:assert.
@@ -44,7 +44,7 @@ import { init } from "../commands/init.mjs";
 import { ASSETS, installSkills } from "../commands/sync.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const BIN = join(HERE, "../../bin/vellum.mjs");
+const BIN = join(HERE, "../../bin/figentra-flow.mjs");
 const impact = (v = "none") =>
   [
     "Apps touched",
@@ -63,7 +63,7 @@ const impact = (v = "none") =>
   ]
     .map((f) => `- **${f}**: ${v}`)
     .join("\n");
-/** A repository as `vellum init` and the skill fallback of `vellum sync` leave it, with the preset source in place. */
+/** A repository as `figentra-flow init` and the skill fallback of `figentra-flow sync` leave it, with the preset source in place. */
 const ROOT = mkdtempSync(join(tmpdir(), "vellum-root-"));
 init(ROOT);
 installSkills(ROOT);
@@ -353,7 +353,7 @@ test("tripwire: the repository passes, and an upgrade that drops the wrap or res
   }
 });
 
-test("tripwire: without its own preset source a repository's installed preset must equal Vellum's bundled one", () => {
+test("tripwire: without its own preset source a repository's installed preset must equal Figentra Flow's bundled one", () => {
   const root = mkdtempSync(join(tmpdir(), "spec-trip-bundled-"));
   try {
     const bundled = fileURLToPath(new URL("../../assets/presets/stackra", import.meta.url));
@@ -365,7 +365,7 @@ test("tripwire: without its own preset source a repository's installed preset mu
     );
     assert.match(
       tripwire(root).join(),
-      /\.specify\/presets\/stackra\/templates\/spec-template\.md differs from the preset bundled in @stackra\/vellum/,
+      /\.specify\/presets\/stackra\/templates\/spec-template\.md differs from the preset bundled in figentra-flow/,
     );
   } finally {
     rmSync(root, { recursive: true });

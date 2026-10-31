@@ -1,6 +1,6 @@
 /**
- * Vellum file contract:
- * Purpose: hold `vellum parse`'s choice of parser by file name to its contract.
+ * Figentra Flow file contract:
+ * Purpose: hold `figentra-flow parse`'s choice of parser by file name to its contract.
  * Boundary: pure function; node:test and node:assert.
  * Runtime: node
  */

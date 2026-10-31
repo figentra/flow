@@ -1,6 +1,6 @@
 /**
- * Vellum file contract:
- * Purpose: hold `vellum land` to its contract: every rule refuses with its reason (state, draft, conflict, stacked
+ * Figentra Flow file contract:
+ * Purpose: hold `figentra-flow land` to its contract: every rule refuses with its reason (state, draft, conflict, stacked
  *   base, no, red or foreign gate, title, approvals, the ruleset before phase 6); a green PR squash-merges on its exact
  *   head with `Refs:` and co-author trailers, then Linear Done, the merge commit recorded, the worktree removed though
  *   its squash has a new patch id, the branch deleted and a comment; a refused merge changes nothing after it; a
@@ -16,11 +16,14 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { GATE_APP, landOne, landRules, landStack, squashMessage } from "../commands/land.mjs";
+import { landOne, landRules, landStack, squashMessage } from "../commands/land.mjs";
+
+/** The gate App login the configuration names. */
+const GATE_APP = "figentra-gate[bot]";
 import { commit, repo, sh } from "./__fixtures__/repo.mjs";
 
 const SHA = "c".repeat(40);
-const GREEN = [{ context: "vellum/gate", state: "success", creator: { login: GATE_APP } }];
+const GREEN = [{ context: "figentra-flow/gate", state: "success", creator: { login: GATE_APP } }];
 /** @param {Record<string, unknown>} [over] */
 const pr = (over = {}) => ({
   number: 7,
@@ -36,29 +39,33 @@ const quiet = { log: () => {}, warn: () => {} };
 const PASSED = { verdict: "PASS", ignored: [] };
 
 test("rules: a green, approved, conventional PR on main may land; each rule names its reason", () => {
-  const ok = { pr: pr(), statuses: GREEN, base: "main", required: true };
+  const ok = { pr: pr(), statuses: GREEN, base: "main", required: true, gateApp: GATE_APP };
   assert.deepEqual(landRules(ok), []);
   const cases = [
     [{ pr: pr({ state: "closed" }) }, /is closed/],
     [{ pr: pr({ draft: true }) }, /draft/],
     [{ pr: pr({ mergeable_state: "dirty" }) }, /conflicts with main/],
     [{ pr: pr({ base: { ref: "figentra/sta-4-x" } }) }, /stacked on `figentra\/sta-4-x`.*--stack/],
-    [{ statuses: [] }, /no vellum\/gate on the head c{12}/],
+    [{ statuses: [] }, /no figentra-flow\/gate on the head c{12}/],
     [
       {
         statuses: [
-          { context: "vellum/gate", state: "failure", creator: { login: GATE_APP } },
+          { context: "figentra-flow/gate", state: "failure", creator: { login: GATE_APP } },
           ...GREEN,
         ],
       },
       /is failure/,
     ],
     [
-      { statuses: [{ context: "vellum/gate", state: "success", creator: { login: "someone" } }] },
+      {
+        statuses: [
+          { context: "figentra-flow/gate", state: "success", creator: { login: "someone" } },
+        ],
+      },
       /posted by someone, not stackra-gate\[bot\]/,
     ],
     [{ pr: pr({ title: "Land it" }) }, /conventional commit header/],
-    [{ required: false }, /does not require vellum\/gate yet.*--manual-ok/],
+    [{ required: false }, /does not require figentra-flow\/gate yet.*--manual-ok/],
   ];
   for (const [over, reason] of cases)
     assert.match(
@@ -70,7 +77,14 @@ test("rules: a green, approved, conventional PR on main may land; each rule name
 });
 
 test("rules: a feature spec needs its approval and Tasked; a spec without a tier passes", () => {
-  const ok = { pr: pr(), statuses: GREEN, base: "main", required: true, review: PASSED };
+  const ok = {
+    pr: pr(),
+    statuses: GREEN,
+    base: "main",
+    required: true,
+    gateApp: GATE_APP,
+    review: PASSED,
+  };
   const feature = (/** @type {string} */ status) =>
     `# Spec\n\n**Status**: ${status}\n\n**Tier**: feature\n\n**Approver**: leader\n\n## Status history\n\n- Draft → Clarified\n`;
   assert.match(
@@ -83,7 +97,7 @@ test("rules: a feature spec needs its approval and Tasked; a spec without a tier
 });
 
 test("rules: a change with a spec needs the AI review PASS on its head (AC-031); trivial work, with no spec, is exempt", () => {
-  const base = { pr: pr(), statuses: GREEN, base: "main", required: true };
+  const base = { pr: pr(), statuses: GREEN, base: "main", required: true, gateApp: GATE_APP };
   const small = "# Spec\n\n**Status**: Tasked\n\n**Tier**: small\n";
   assert.deepEqual(landRules(base), []);
   assert.deepEqual(landRules({ ...base, spec: "# Spec\n\n**Tier**: trivial\n" }), []);
@@ -131,21 +145,21 @@ function world({ failMerge = false } = {}) {
   const api = (method, p, body) => {
     calls.push({ method, path: p, body });
     const ok = (/** @type {unknown} */ json) => ({ ok: true, json, err: "" });
-    if (method === "GET" && p === "/repos/figentra/vellum/pulls/7")
+    if (method === "GET" && p === "/repos/figentra/flow/pulls/7")
       return ok(pr({ head: { sha: head, ref: branch } }));
-    if (p.startsWith(`/repos/figentra/vellum/commits/${head}/statuses`)) return ok(GREEN);
-    if (p === "/repos/figentra/vellum/rules/branches/main")
+    if (p.startsWith(`/repos/figentra/flow/commits/${head}/statuses`)) return ok(GREEN);
+    if (p === "/repos/figentra/flow/rules/branches/main")
       return ok([
         {
           type: "required_status_checks",
-          parameters: { required_status_checks: [{ context: "vellum/gate" }] },
+          parameters: { required_status_checks: [{ context: "figentra-flow/gate" }] },
         },
       ]);
-    if (p.startsWith("/repos/figentra/vellum/contents/"))
+    if (p.startsWith("/repos/figentra/flow/contents/"))
       return { ok: false, json: undefined, err: "HTTP 404" };
-    if (p.startsWith("/repos/figentra/vellum/pulls/7/commits"))
+    if (p.startsWith("/repos/figentra/flow/pulls/7/commits"))
       return ok([{ commit: { message: "feat: a" } }]);
-    if (method === "PUT" && p === "/repos/figentra/vellum/pulls/7/merge") {
+    if (method === "PUT" && p === "/repos/figentra/flow/pulls/7/merge") {
       if (failMerge)
         return { ok: false, json: undefined, err: "gh: Head branch was modified (HTTP 409)" };
       sh(r.root, "merge", "-q", "--squash", branch);
@@ -165,9 +179,10 @@ test("land: a green PR squash-merges on its head, then Done, the record, the wor
   const done = [];
   const result = await landOne({
     root: w.r.root,
-    repo: "figentra/vellum",
+    repo: "figentra/flow",
     base: "main",
     number: 7,
+    gateApp: GATE_APP,
     deps: { api: w.api, done: async (key) => void done.push(key), ...quiet },
   });
   assert.equal(result.code, 0, JSON.stringify(result));
@@ -185,9 +200,9 @@ test("land: a green PR squash-merges on its head, then Done, the record, the wor
   assert.deepEqual(
     w.calls.filter((c) => c.method !== "GET").map((c) => `${c.method} ${c.path}`),
     [
-      "PUT /repos/figentra/vellum/pulls/7/merge",
-      `DELETE /repos/figentra/vellum/git/refs/heads/${w.branch}`,
-      "POST /repos/figentra/vellum/issues/7/comments",
+      "PUT /repos/figentra/flow/pulls/7/merge",
+      `DELETE /repos/figentra/flow/git/refs/heads/${w.branch}`,
+      "POST /repos/figentra/flow/issues/7/comments",
     ],
   );
 });
@@ -198,9 +213,10 @@ test("land: a refused merge changes nothing after it; a failed Linear call only 
   const deps = { api: refused.api, done: async () => {}, ...quiet };
   const no = await landOne({
     root: refused.r.root,
-    repo: "figentra/vellum",
+    repo: "figentra/flow",
     base: "main",
     number: 7,
+    gateApp: GATE_APP,
     deps,
   });
   assert.equal(no.code, 1);
@@ -217,9 +233,10 @@ test("land: a refused merge changes nothing after it; a failed Linear call only 
   const warnings = [];
   const warned = await landOne({
     root: flaky.r.root,
-    repo: "figentra/vellum",
+    repo: "figentra/flow",
     base: "main",
     number: 7,
+    gateApp: GATE_APP,
     deps: {
       api: flaky.api,
       done: async () => Promise.reject(new Error("Linear down")),
@@ -241,13 +258,13 @@ test("land --stack: lands the bottom, updates the next by a merge commit and a p
   commit(topPath, "c.txt");
   /** @type {import("../lib/github.mjs").Api} */
   const api = (method, p, body) => {
-    if (method === "GET" && p === "/repos/figentra/vellum/pulls/8")
+    if (method === "GET" && p === "/repos/figentra/flow/pulls/8")
       return {
         ok: true,
         json: pr({ number: 8, base: { ref: w.branch }, head: { sha: "d".repeat(40), ref: top } }),
         err: "",
       };
-    if (method === "GET" && p.startsWith("/repos/figentra/vellum/pulls?state=open&head=figentra:"))
+    if (method === "GET" && p.startsWith("/repos/figentra/flow/pulls?state=open&head=figentra:"))
       return {
         ok: true,
         json: [{ number: 7, base: { ref: "main" }, head: { ref: w.branch } }],
@@ -259,19 +276,25 @@ test("land --stack: lands the bottom, updates the next by a merge commit and a p
   const gated = [];
   const result = await landStack({
     root: w.r.root,
-    repo: "figentra/vellum",
+    repo: "figentra/flow",
     base: "main",
     number: 8,
+    gateApp: GATE_APP,
     deps: { api, done: async () => {}, ...quiet, gate: async (dir) => (gated.push(dir), 1) },
   });
   assert.equal(result.code, 1);
   assert.match(
     "problems" in result ? result.problems.join() : "",
-    /#8: vellum gate run exited 1; the stack stops here/,
+    /#8: figentra-flow gate run exited 1; the stack stops here/,
   );
   assert.deepEqual(gated, [topPath]);
   // The bottom landed; the top got main by a merge commit (two parents), pushed without a rewrite.
   assert.equal(existsSync(w.path), false);
   assert.equal(sh(topPath, "rev-list", "--parents", "-n", "1", "HEAD").split(" ").length, 3);
   assert.equal(sh(w.r.origin, "rev-parse", `refs/heads/${top}`), sh(topPath, "rev-parse", "HEAD"));
+});
+
+test("rules: with no gate App configured nothing lands", () => {
+  const problems = landRules({ pr: pr(), statuses: GREEN, base: "main", required: true });
+  assert.match(problems.join(), /no gate App is configured: set apps\.gate\.login/);
 });

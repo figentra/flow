@@ -1,7 +1,7 @@
 /**
- * Vellum file contract:
- * Purpose: the workspace list, `~/.config/vellum/workspace.yaml` (`VELLUM_WORKSPACE` overrides the path): every
- *   repository Vellum acts on with `--all`, each with its folder and GitHub slug; and finding the repositories under
+ * Figentra Flow file contract:
+ * Purpose: the workspace list, `~/.config/figentra-flow/workspace.yaml` (`FIGENTRA_FLOW_WORKSPACE` overrides the path): every
+ *   repository Figentra Flow acts on with `--all`, each with its folder and GitHub slug; and finding the repositories under
  *   some folders to write it.
  * Boundary: reads and writes that one file; the YAML is the small fixed shape below, so no YAML library is needed.
  * Runtime: node
@@ -13,7 +13,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { git } from "./git.mjs";
-import { ENV_PREFIX, USER_DIR } from "./product.mjs";
+import { DISPLAY_NAME, ENV_PREFIX, NAME, USER_DIR } from "./product.mjs";
 
 /** The workspace file's path. */
 export const workspaceFile = (
@@ -55,7 +55,7 @@ export function writeWorkspace(repos, file = workspaceFile()) {
   );
   writeFileSync(
     file,
-    `# Vellum workspace: the repositories \`--all\` acts on (vellum init --workspace).\nrepos:\n${body.join("\n")}\n`,
+    `# ${DISPLAY_NAME} workspace: the repositories \`--all\` acts on (${NAME} init --workspace).\nrepos:\n${body.join("\n")}\n`,
   );
 }
 

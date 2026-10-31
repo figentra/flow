@@ -1,13 +1,13 @@
 /**
- * Vellum file contract:
- * Purpose: `vellum clean [--dry-run] [--adopt] [--fix-ignore] [--all]` — remove the finished worktrees of the
+ * Figentra Flow file contract:
+ * Purpose: `figentra-flow clean [--dry-run] [--adopt] [--fix-ignore] [--all]` — remove the finished worktrees of the
  *   repository (or of every workspace repository with `--all`), move stray ones inside, and make `.gitignore` ignore
  *   `.claude/worktrees/`. A worktree is removed only when it is
  *   - not a tester's (`g-*`, `*-gate`, `land-*`, `tpl-core`, `c6-lock*`, `template-wt-lean`);
  *   - not in use: no running process (a session, a dev server, a shell) has its working folder inside it;
  *   - clean (no change, untracked files included);
  *   - saved: its head on a remote ref, or every commit landed by patch (`git cherry`), since core lands by cherry-pick,
- *     or the squash commit `vellum land` recorded (`branch.<b>.vellumLanded`) on the default branch;
+ *     or the squash commit `figentra-flow land` recorded (`branch.<b>.figentraFlowLanded`) on the default branch;
  *   - finished: its issue Done or Canceled when its name carries a key, else idle for 2 hours or more by its HEAD
  *     reflog (a detached HEAD or a builder sub-agent tree);
  *   - free of ignored files outside the usual caches (`.env`, `ios/`, `android/` keep it).
@@ -24,7 +24,7 @@ import { basename, join, resolve, sep } from "node:path";
 import { trackerFor } from "../adapters/tracker/index.mjs";
 import { matches } from "../lib/artifacts.mjs";
 import { loadConfig } from "../lib/config.mjs";
-import { CONFIG_FILE } from "../lib/product.mjs";
+import { CONFIG_FILE, LANDED_KEY, NAME } from "../lib/product.mjs";
 import {
   busyFolders,
   defaultBranch,
@@ -52,7 +52,7 @@ const FINISHED = new Set(["Done", "Canceled", "Cancelled", "Duplicate"]);
  */
 
 /**
- * The tester's worktree names that repositories used before `vellum.config.json`'s `clean.keep`, applied for one minor
+ * The tester's worktree names that repositories used before `figentra-flow.config.json`'s `clean.keep`, applied for one minor
  * version only where no config file exists.
  */
 export const LEGACY_KEEP = ["g-*", "*-gate", "land-*", "tpl-core", "c6-lock*", "template-wt-lean"];
@@ -83,7 +83,7 @@ export function ignoresWorktrees(root) {
 /**
  * Cleans the repository at `cwd`.
  * @param {{ cwd: string, dry?: boolean, adopt?: boolean, fixIgnore?: boolean, issues?: Issues, now?: number,
- *           busy?: string[], only?: string[] }} options   `only`: act on these worktree paths alone (`vellum land`)
+ *           busy?: string[], only?: string[] }} options   `only`: act on these worktree paths alone (`figentra-flow land`)
  * @returns {Promise<Report>}
  */
 export async function clean(options) {
@@ -152,7 +152,7 @@ export async function clean(options) {
     }
     if (!resolve(tree.path).startsWith(inside)) {
       if (!options.adopt) {
-        keep("outside .claude/worktrees (vellum clean --adopt moves it in)");
+        keep(`outside .claude/worktrees (${NAME} clean --adopt moves it in)`);
         continue;
       }
       const idle = idleHours(tree.path, now);
@@ -178,9 +178,9 @@ export async function clean(options) {
       report.adopted.push(`${tree.path} → ${target}`);
       continue;
     }
-    // AC-029: a squash merge has its own patch id, so `vellum land` records the merge commit on the branch.
+    // AC-029: a squash merge has its own patch id, so `figentra-flow land` records the merge commit on the branch.
     const landed =
-      tree.branch && git(root, ["config", "--get", `branch.${tree.branch}.vellumLanded`]).out;
+      tree.branch && git(root, ["config", "--get", `branch.${tree.branch}.${LANDED_KEY}`]).out;
     const landedOnBase =
       Boolean(landed) && git(root, ["merge-base", "--is-ancestor", landed, `origin/${base}`]).ok;
     if (!landedOnBase && !isSaved(tree.path, base)) {
@@ -240,12 +240,12 @@ export async function clean(options) {
 export const human = (kb) =>
   kb >= 1_048_576 ? `${(kb / 1_048_576).toFixed(1)} GB` : `${(kb / 1024).toFixed(0)} MB`;
 
-/** `vellum clean [--dry-run] [--adopt] [--fix-ignore] [--all]`. */
+/** `figentra-flow clean [--dry-run] [--adopt] [--fix-ignore] [--all]`. */
 export async function run(args) {
   const dry = args.includes("--dry-run");
   const roots = args.includes("--all") ? readWorkspace().map((r) => r.path) : [process.cwd()];
   if (roots.length === 0) {
-    console.error("vellum clean: the workspace list is empty (vellum init --workspace <dir>…)");
+    console.error(`${NAME} clean: the workspace list is empty (${NAME} init --workspace <dir>…)`);
     return 1;
   }
   const verb = dry ? "would remove" : "removed";
@@ -259,7 +259,7 @@ export async function run(args) {
     });
     freed += r.freedKb;
     console.log(
-      `vellum clean: ${cwd}: ${verb} ${r.removed.length}, kept ${r.kept.length}${r.adopted.length ? `, adopted ${r.adopted.length}` : ""}`,
+      `${NAME} clean: ${cwd}: ${verb} ${r.removed.length}, kept ${r.kept.length}${r.adopted.length ? `, adopted ${r.adopted.length}` : ""}`,
     );
     for (const p of r.removed) console.log(`  ${verb}  ${p}`);
     for (const a of r.adopted) console.log(`  ${dry ? "would move" : "moved"}  ${a}`);
@@ -268,6 +268,6 @@ export async function run(args) {
     if (r.ignoreFixed)
       console.log(`  ${dry ? "would add" : "added"} .claude/worktrees/ to .gitignore; commit it`);
   }
-  console.log(`vellum clean: ${dry ? "would free" : "freed"} ${human(freed)}`);
+  console.log(`${NAME} clean: ${dry ? "would free" : "freed"} ${human(freed)}`);
   return 0;
 }

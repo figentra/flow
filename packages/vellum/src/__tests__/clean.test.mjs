@@ -1,6 +1,6 @@
 /**
- * Vellum file contract:
- * Purpose: hold `vellum clean` to its contract: a worktree goes only when it is clean, saved (on a remote, or landed
+ * Figentra Flow file contract:
+ * Purpose: hold `figentra-flow clean` to its contract: a worktree goes only when it is clean, saved (on a remote, or landed
  *   by cherry-pick), finished (issue Done or Canceled, or idle 2 hours without a key, detached HEADs included) and free
  *   of ignored files outside the caches; tester trees, dirty, unsaved, open, recently used and `.env` trees stay with
  *   their reason; the space freed is counted; `--adopt` moves stray trees in and lists tester ones; `--fix-ignore`

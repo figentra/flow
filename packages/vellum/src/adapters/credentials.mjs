@@ -1,5 +1,5 @@
 /**
- * Vellum file contract:
+ * Figentra Flow file contract:
  * Purpose: the credentials port (AC-034, AC-036): the command prefixes that run `gh` (GitHub API calls) and network
  *   `git` with the credentials the configuration names. `env`: `gh` and `git` with `GH_TOKEN` or `GITHUB_TOKEN` set
  *   by the caller; `gh-user`: the caller's own `gh` login and git credentials, chosen on purpose; `wrapper`: the

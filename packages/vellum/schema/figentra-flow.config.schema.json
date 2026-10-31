@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "vellum.config.schema.json",
-  "title": "vellum.config.json",
+  "$id": "figentra-flow.config.schema.json",
+  "title": "figentra-flow.config.json",
   "type": "object",
   "additionalProperties": false,
   "required": ["version"],

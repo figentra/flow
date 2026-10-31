@@ -1,8 +1,8 @@
 /**
- * Vellum file contract:
- * Purpose: hold `vellum gate run` to its contract: refusals before any box (dirty, detached, unpushed, no GitHub
+ * Figentra Flow file contract:
+ * Purpose: hold `figentra-flow gate run` to its contract: refusals before any box (dirty, detached, unpushed, no GitHub
  *   origin, no `stackra`); the job folder is a clean clone at the head with the default branch's ref and the poster
- *   beside it; the check command (default, `vellum.gate`, the spec gate where Vellum is installed); the box command
+ *   beside it; the check command (default, `gate.check` in the configuration, the spec gate where Figentra Flow is installed); the box command
  *   keeps the log and the exit for the poster; the runner's exit code passes through.
  * Boundary: temporary repositories with a local bare origin; the runner and the remote tip injected; no network,
  *   no box.
@@ -17,10 +17,10 @@ import { join } from "node:path";
 
 import { secretsPort } from "../adapters/secrets.mjs";
 import { boxCommand, checkCommand, gateRun, slugOf } from "../commands/gate-run.mjs";
-import { ENV_PREFIX, GATE_MARKER, STATUS_CONTEXT } from "../lib/product.mjs";
+import { CONFIG_FILE, ENV_PREFIX, GATE_MARKER, STATUS_CONTEXT } from "../lib/product.mjs";
 import { commit, repo, sh } from "./__fixtures__/repo.mjs";
 
-const GITHUB = "git@github.com:figentra/vellum.git";
+const GITHUB = "git@github.com:figentra/flow.git";
 
 /** A repository whose origin names GitHub while pushes go to the local bare origin. */
 function ghRepo(/** @type {Record<string, string>} */ files = {}) {
@@ -59,8 +59,8 @@ test("gate run: the job is a clean clone at the head, with the poster and the jo
         base: sh(dir, "rev-parse", "refs/remotes/origin/main"),
         origin: sh(dir, "remote", "get-url", "origin"),
         file: existsSync(join(dir, "a.txt")),
-        poster: existsSync(join(dir, ".vellum-gate", "post.mjs")),
-        job: JSON.parse(readFileSync(join(dir, ".vellum-gate", "job.json"), "utf8")),
+        poster: existsSync(join(dir, ".figentra-flow-gate", "post.mjs")),
+        job: JSON.parse(readFileSync(join(dir, ".figentra-flow-gate", "job.json"), "utf8")),
       };
       return 1;
     },
@@ -75,13 +75,13 @@ test("gate run: the job is a clean clone at the head, with the poster and the jo
   assert.deepEqual(seen.job, {
     sha,
     branch: "main",
-    repository: "figentra/vellum",
+    repository: "figentra/flow",
     startedAt: "2026-10-31T10:00:00.000Z",
     context: STATUS_CONTEXT,
     marker: GATE_MARKER,
     envPrefix: ENV_PREFIX,
   });
-  assert.match(seen.label, /^vellum gate figentra\/vellum@[0-9a-f]{12}$/);
+  assert.match(seen.label, /^figentra-flow gate figentra\/vellum@[0-9a-f]{12}$/);
   assert.equal(existsSync(seen.dir), false);
 });
 
@@ -124,17 +124,17 @@ test("gate run: a missing stackra is a refusal naming --box", async (t) => {
   assert.match(result.problem ?? "", /--box/);
 });
 
-test("check command: pnpm verify by default, the repository's own, and the spec gate where Vellum is installed", (t) => {
+test("check command: pnpm verify by default, the repository's own, and the spec gate where Figentra Flow is installed", (t) => {
   const r = repo({
+    [CONFIG_FILE]: JSON.stringify({ version: 1, gate: { check: "pnpm test" } }),
     "package.json": JSON.stringify({
-      vellum: { gate: "pnpm test" },
-      devDependencies: { "@stackra/vellum": "catalog:" },
+      devDependencies: { "figentra-flow": "catalog:" },
     }),
   });
   t.after(r.dispose);
   assert.equal(
     checkCommand(r.root),
-    "pnpm install --frozen-lockfile && pnpm test && pnpm exec vellum gate ci",
+    "pnpm install --frozen-lockfile && pnpm test && pnpm exec figentra-flow gate ci",
   );
   assert.equal(
     checkCommand(join(r.root, "nowhere")),
@@ -145,18 +145,18 @@ test("check command: pnpm verify by default, the repository's own, and the spec 
 test("box command: the check's log and exit are kept for the poster; the secrets port wraps the poster", () => {
   assert.equal(
     boxCommand("pnpm verify"),
-    "{ pnpm verify; echo $? > .vellum-gate/exit; } 2>&1 | tee .vellum-gate/log.txt; node .vellum-gate/post.mjs",
+    "{ pnpm verify; echo $? > .figentra-flow-gate/exit; } 2>&1 | tee .figentra-flow-gate/log.txt; node .figentra-flow-gate/post.mjs",
   );
   assert.match(
     boxCommand("x", {
       wrap: (c) => secretsPort({ kind: "infisical", paths: { gate: "/ci/gate" } }).wrap(c, "gate"),
     }),
-    /; infisical run --silent --path=\/ci\/gate -- node \.vellum-gate\/post\.mjs$/,
+    /; infisical run --silent --path=\/ci\/gate -- node \.figentra-flow-gate\/post\.mjs$/,
   );
 });
 
 test("slug: the GitHub owner/name of an ssh or https origin", () => {
-  assert.equal(slugOf("git@github.com:figentra/vellum.git"), "figentra/vellum");
+  assert.equal(slugOf("git@github.com:figentra/flow.git"), "figentra/flow");
   assert.equal(slugOf("https://github.com/figentra/stackra"), "figentra/stackra");
   assert.equal(slugOf("/tmp/origin.git"), undefined);
 });

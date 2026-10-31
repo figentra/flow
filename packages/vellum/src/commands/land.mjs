@@ -1,7 +1,7 @@
 /**
- * Vellum file contract:
- * Purpose: `vellum land [<pr>] [--stack] [--dry-run] [--manual-ok]`, the lander's checklist as code: squash-merge a PR
- *   only when it is open, clean, based on the default branch, green on `vellum/gate` from the gate App on its exact
+ * Figentra Flow file contract:
+ * Purpose: `figentra-flow land [<pr>] [--stack] [--dry-run] [--manual-ok]`, the lander's checklist as code: squash-merge a PR
+ *   only when it is open, clean, based on the default branch, green on `figentra-flow/gate` from the gate App on its exact
  *   head, conventionally titled and its spec's approvals are recorded; then set Linear Done, record the merge commit,
  *   remove the worktree through `clean`'s rules, delete the branch and comment. `--stack` lands a stack bottom-up.
  * Boundary: every rule is read from GitHub's live state and the spec at the PR's head; nothing changes until all
@@ -18,14 +18,11 @@ import { clean } from "./clean.mjs";
 import { gateRun } from "./gate-run.mjs";
 import { trackerFor } from "../adapters/tracker/index.mjs";
 import { github } from "../lib/github.mjs";
-import { aiReview, REVIEWER } from "../lib/review.mjs";
+import { aiReview } from "../lib/review.mjs";
 import { artifactProblems } from "../lib/artifacts.mjs";
 import { loadConfig } from "../lib/config.mjs";
-import { NAME, STATUS_CONTEXT } from "../lib/product.mjs";
+import { LANDED_KEY, NAME, STATUS_CONTEXT } from "../lib/product.mjs";
 import { defaultBranch, fetch, git, mainCheckout, remote, worktrees } from "../lib/git.mjs";
-
-/** The status creator `land` trusts by default (defence in depth; the ruleset is the guarantee). */
-export const GATE_APP = "stackra-gate[bot]";
 
 /** A conventional commit header (the squash commit's title). */
 export const CONVENTIONAL =
@@ -33,7 +30,8 @@ export const CONVENTIONAL =
 
 /**
  * Every reason the PR may not land; empty means it may.
- * @param {{ pr: any, statuses: any[], base: string, spec?: string, gateApp?: string, required: boolean,
+ * @param {{ pr: any, statuses: any[], base: string, spec?: string, gateApp?: string, reviewer?: string,
+ *           required: boolean,
  *           manualOk?: boolean, stack?: boolean, review?: { verdict: string | null, ignored: string[] },
  *           artifacts?: string[] }} input
  * @returns {string[]}
@@ -43,7 +41,8 @@ export function landRules({
   statuses,
   base,
   spec,
-  gateApp = GATE_APP,
+  gateApp,
+  reviewer,
   required,
   manualOk = false,
   stack = false,
@@ -51,6 +50,10 @@ export function landRules({
   artifacts = [],
 }) {
   const problems = [...artifacts];
+  // The trusted gate status creator comes only from the configuration (defence in depth; the ruleset is the
+  // guarantee).
+  if (!gateApp)
+    problems.push("no gate App is configured: set apps.gate.login in the configuration");
   const head = String(pr.head?.sha ?? "").slice(0, 12);
   if (pr.state !== "open") problems.push(`the PR is ${pr.merged ? "already merged" : pr.state}`);
   if (pr.draft) problems.push("the PR is a draft");
@@ -78,7 +81,7 @@ export function landRules({
   // trivial work has no spec and is exempt.
   if (spec !== undefined && tierOf(spec) !== "trivial" && review?.verdict !== "PASS")
     problems.push(
-      `no AI review PASS for ${pr.head?.sha} (counted verdict: ${review?.verdict ?? "none"}): a different agent posts "AI-REVIEW: PASS ${pr.head?.sha} base=${pr.base?.ref}" as the ${REVIEWER} app through \`pnpm bot:review\`${review?.ignored.length ? `; ignored: ${[...new Set(review.ignored)].join("; ")}` : ""}`,
+      `no AI review PASS for ${pr.head?.sha} (counted verdict: ${review?.verdict ?? "none"}): a different agent posts "AI-REVIEW: PASS ${pr.head?.sha} base=${pr.base?.ref}" as the ${reviewer ?? "(unconfigured, apps.review.slug)"} app through \`pnpm bot:review\`${review?.ignored.length ? `; ignored: ${[...new Set(review.ignored)].join("; ")}` : ""}`,
     );
   if (spec !== undefined) {
     problems.push(...checkApproval(spec).map((p) => `spec: ${p}`));
@@ -140,7 +143,7 @@ function specAt(
 /**
  * Lands one PR.
  * @param {{ root: string, repo: string, base: string, number: number, dry?: boolean, manualOk?: boolean,
- *           gateApp?: string, deps: LandDeps }} options
+ *           gateApp?: string, reviewer?: string, owner?: string, deps: LandDeps }} options
  * @returns {Promise<{ code: number, problems?: string[], merged?: string }>}
  */
 export async function landOne({
@@ -151,6 +154,8 @@ export async function landOne({
   dry = false,
   manualOk = false,
   gateApp,
+  reviewer,
+  owner,
   deps,
 }) {
   const { api, log, warn } = deps;
@@ -176,6 +181,7 @@ export async function landOne({
     list(api("GET", `/repos/${repo}/issues/${number}/comments?per_page=100`)),
     list(api("GET", `/repos/${repo}/pulls/${number}/reviews?per_page=100`)),
     [pr.json.user?.login, commit.author?.login, commit.committer?.login],
+    { reviewer, owner },
   );
   // AC-043: the head must be here to check its files; fetch it when it is not.
   if (!git(root, ["cat-file", "-e", `${head}^{commit}`]).ok) fetch(root);
@@ -190,13 +196,14 @@ export async function landOne({
     review,
     artifacts,
     gateApp,
+    reviewer,
     required,
     manualOk,
   });
   if (problems.length) return { code: 1, problems };
   if (dry) {
     log(
-      `vellum land: would squash-merge #${number} (${branch} at ${head.slice(0, 12)}) into ${base}`,
+      `${NAME} land: would squash-merge #${number} (${branch} at ${head.slice(0, 12)}) into ${base}`,
     );
     return { code: 0 };
   }
@@ -210,7 +217,7 @@ export async function landOne({
   });
   if (!merge.ok) return { code: 1, problems: [`GitHub refused the merge: ${merge.err}`] };
   const sha = merge.json.sha;
-  log(`vellum land: #${number} landed on ${base} as ${sha.slice(0, 12)}`);
+  log(`${NAME} land: #${number} landed on ${base} as ${sha.slice(0, 12)}`);
 
   let warned = false;
   const step = async (/** @type {string} */ what, /** @type {() => unknown} */ fn) => {
@@ -219,7 +226,7 @@ export async function landOne({
       if (out === false) throw new Error("failed");
     } catch (error) {
       warned = true;
-      warn(`vellum land: warning: ${what}: ${/** @type {Error} */ (error).message}`);
+      warn(`${NAME} land: warning: ${what}: ${/** @type {Error} */ (error).message}`);
     }
   };
   if (key)
@@ -230,7 +237,7 @@ export async function landOne({
   if (git(root, ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`]).ok)
     await step(
       "record the merge commit",
-      () => git(root, ["config", `branch.${branch}.vellumLanded`, sha]).ok,
+      () => git(root, ["config", `branch.${branch}.${LANDED_KEY}`, sha]).ok,
     );
   await step("fetch", () => fetch(root).ok);
   const tree = worktrees(root).find((t) => t.branch === branch);
@@ -242,7 +249,7 @@ export async function landOne({
         issues: { state: async () => "Done" },
       });
       for (const k of r.kept)
-        log(`vellum land: kept ${k.path}: ${k.reason} (vellum clean takes it later)`);
+        log(`${NAME} land: kept ${k.path}: ${k.reason} (${NAME} clean takes it later)`);
     });
   await step(
     "delete the branch",
@@ -262,11 +269,21 @@ export async function landOne({
  * Lands the stack under `number` bottom-up: each next PR is updated by merging the default branch, pushed, gated
  * and landed in turn. Stops at the first that cannot go, naming it.
  * @param {{ root: string, repo: string, base: string, number: number, manualOk?: boolean, gateApp?: string,
- *           deps: LandDeps & { gate: (cwd: string) => Promise<number> } }} options
+ *           reviewer?: string, owner?: string, deps: LandDeps & { gate: (cwd: string) => Promise<number> } }} options
  */
-export async function landStack({ root, repo, base, number, manualOk = false, gateApp, deps }) {
+export async function landStack({
+  root,
+  repo,
+  base,
+  number,
+  manualOk = false,
+  gateApp,
+  reviewer,
+  owner,
+  deps,
+}) {
   const { api, log } = deps;
-  const owner = repo.split("/")[0];
+  const org = repo.split("/")[0];
   /** @type {any[]} */
   const chain = [];
   let cur = api("GET", `/repos/${repo}/pulls/${number}`).json;
@@ -275,7 +292,7 @@ export async function landStack({ root, repo, base, number, manualOk = false, ga
     if (cur.base.ref === base) break;
     cur = (api(
       "GET",
-      `/repos/${repo}/pulls?state=open&head=${owner}:${encodeURIComponent(cur.base.ref)}`,
+      `/repos/${repo}/pulls?state=open&head=${org}:${encodeURIComponent(cur.base.ref)}`,
     ).json ?? [])[0];
     if (!cur)
       return {
@@ -292,7 +309,7 @@ export async function landStack({ root, repo, base, number, manualOk = false, ga
         return {
           code: 1,
           problems: [
-            `#${pr.number} (${pr.head.ref}) has no local worktree to update; \`vellum start\` one, then land again`,
+            `#${pr.number} (${pr.head.ref}) has no local worktree to update; \`${NAME} start\` one, then land again`,
           ],
         };
       fetch(root);
@@ -315,23 +332,33 @@ export async function landStack({ root, repo, base, number, manualOk = false, ga
       if (gate !== 0)
         return {
           code: 1,
-          problems: [`#${pr.number}: vellum gate run exited ${gate}; the stack stops here`],
+          problems: [`#${pr.number}: ${NAME} gate run exited ${gate}; the stack stops here`],
         };
     }
-    const result = await landOne({ root, repo, base, number: pr.number, manualOk, gateApp, deps });
+    const result = await landOne({
+      root,
+      repo,
+      base,
+      number: pr.number,
+      manualOk,
+      gateApp,
+      reviewer,
+      owner,
+      deps,
+    });
     if (result.code === 1 || result.code === 2)
       return { ...result, problems: (result.problems ?? []).map((p) => `#${pr.number}: ${p}`) };
-    log(`vellum land --stack: ${i + 1}/${chain.length} landed`);
+    log(`${NAME} land --stack: ${i + 1}/${chain.length} landed`);
   }
   return { code: 0 };
 }
 
-/** `vellum land [<pr>] [--stack] [--dry-run] [--manual-ok]`. */
+/** `figentra-flow land [<pr>] [--stack] [--dry-run] [--manual-ok]`. */
 export async function run(/** @type {string[]} */ args) {
   const cwd = process.cwd();
   const root = mainCheckout(cwd);
   if (!root) {
-    console.error("vellum land: not in a git repository");
+    console.error(`${NAME} land: not in a git repository`);
     return 2;
   }
   const url = git(root, ["remote", "get-url", "origin"]).out;
@@ -376,13 +403,16 @@ export async function run(/** @type {string[]} */ args) {
     warn: console.error,
     gate: async (/** @type {string} */ dir) => (await gateRun({ cwd: dir })).code,
   };
+  const apps = loadConfig(root).config.apps ?? {};
   const options = {
     root,
     repo,
     base: defaultBranch(root),
     number,
     manualOk: args.includes("--manual-ok"),
-    gateApp: loadConfig(root).config.apps?.gate?.login ?? GATE_APP,
+    gateApp: apps.gate?.login,
+    reviewer: apps.review?.slug,
+    owner: apps.owner,
     deps,
   };
   const result = args.includes("--stack")

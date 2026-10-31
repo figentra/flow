@@ -1,6 +1,6 @@
 /**
- * Vellum file contract:
- * Purpose: hold `vellum init` to its contract: the bundled `.specify/` lands whole, the constitution starts from the
+ * Figentra Flow file contract:
+ * Purpose: hold `figentra-flow init` to its contract: the bundled `.specify/` lands whole, the constitution starts from the
  *   template, and an existing `.specify/` is kept unless forced.
  * Boundary: writes only temp directories; node:test and node:assert.
  * Runtime: node

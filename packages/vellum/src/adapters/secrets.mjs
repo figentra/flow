@@ -1,5 +1,5 @@
 /**
- * Vellum file contract:
+ * Figentra Flow file contract:
  * Purpose: the secrets port (AC-040): wraps a command so it runs with the secrets one scope needs, without the value
  *   ever passing through this process. `env`: the command unchanged (the caller's environment holds the values);
  *   `infisical`: `infisical run --silent [--token=…] [--projectId=…] [--env=…] --path=<the scope's path> -- <command>`.

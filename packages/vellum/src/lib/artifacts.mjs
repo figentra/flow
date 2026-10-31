@@ -1,8 +1,8 @@
 /**
- * Vellum file contract:
+ * Figentra Flow file contract:
  * Purpose: the artifact guard (AC-043): the files a branch adds or changes against the default branch that are build
  *   or tool output (a path under `.cache/`, `node_modules/`, `dist/`, `.turbo/` or `coverage/` by default) or larger
- *   than the size limit (5 MB by default). `vellum gate run` and `vellum land` refuse while there is any. Both lists
+ *   than the size limit (5 MB by default). `figentra-flow gate run` and `figentra-flow land` refuse while there is any. Both lists
  *   are the configuration's `artifacts` (`paths`, `maxBytes`).
  * Boundary: reads git only (`git diff`, `git cat-file -s`); changes nothing.
  * Runtime: node

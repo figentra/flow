@@ -1,7 +1,7 @@
 /**
- * Vellum file contract:
+ * Figentra Flow file contract:
  * Purpose: hold the GitHub credentials rule (AC-034): with no credentials named, or a wrapper the repository lacks,
- *   Vellum refuses and never runs the caller's own `gh`; a named wrapper runs `pnpm <script> -- api …`; `gh-user` runs
+ *   Figentra Flow refuses and never runs the caller's own `gh`; a named wrapper runs `pnpm <script> -- api …`; `gh-user` runs
  *   `gh api …` only because the repository says so; a wrapper's leading output does not hide the JSON body.
  * Boundary: temporary folders and an injected spawn; nothing runs.
  * Runtime: node
@@ -15,11 +15,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { bodyOf, CredentialsError, github } from "../lib/github.mjs";
+import { CONFIG_FILE } from "../lib/product.mjs";
 
-/** A folder holding `package.json` with `pkg`. */
-function folder(/** @type {object} */ pkg) {
-  const dir = mkdtempSync(join(tmpdir(), "vellum-gh-"));
+/** A folder holding `package.json` with `pkg`, and the configuration file when `config` is given. */
+function folder(/** @type {object} */ pkg, /** @type {object | undefined} */ config = undefined) {
+  const dir = mkdtempSync(join(tmpdir(), "flow-gh-"));
   writeFileSync(join(dir, "package.json"), JSON.stringify(pkg));
+  if (config) writeFileSync(join(dir, CONFIG_FILE), JSON.stringify({ version: 1, ...config }));
   return dir;
 }
 
@@ -36,13 +38,14 @@ function recorder() {
 }
 
 test("credentials: none named, or a missing wrapper, is refused before anything runs", (t) => {
-  for (const pkg of [
-    {},
-    { vellum: {} },
-    { vellum: { credentials: "wrapper:bot:gh" } },
-    { vellum: { credentials: "token" } },
+  for (const [pkg, config] of [
+    [{}, undefined],
+    [{}, {}],
+    [{ vellum: { credentials: "gh-user" } }, undefined],
+    [{}, { credentials: { kind: "wrapper", gh: ["pnpm", "bot:gh", "--"] } }],
+    [{}, { credentials: { kind: "token" } }],
   ]) {
-    const dir = folder(pkg);
+    const dir = folder(pkg, config);
     t.after(() => rmSync(dir, { recursive: true }));
     const { calls, spawn } = recorder();
     assert.throws(() => github(dir, { spawn }), CredentialsError);
@@ -51,11 +54,11 @@ test("credentials: none named, or a missing wrapper, is refused before anything 
 });
 
 test("credentials: a named wrapper runs through pnpm, and gh-user runs gh only on purpose", (t) => {
-  const wrapped = folder({
-    scripts: { "bot:gh": "node bot.mjs gh" },
-    vellum: { credentials: "wrapper:bot:gh" },
-  });
-  const solo = folder({ vellum: { credentials: "gh-user" } });
+  const wrapped = folder(
+    { scripts: { "bot:gh": "node bot.mjs gh" } },
+    { credentials: { kind: "wrapper", gh: ["pnpm", "bot:gh", "--"] } },
+  );
+  const solo = folder({}, { credentials: { kind: "gh-user" } });
   t.after(() => [wrapped, solo].forEach((d) => rmSync(d, { recursive: true })));
   const a = recorder();
   assert.deepEqual(github(wrapped, { spawn: a.spawn })("GET", "/repos/o/r"), {

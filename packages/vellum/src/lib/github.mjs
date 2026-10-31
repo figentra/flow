@@ -1,9 +1,9 @@
 /**
- * Vellum file contract:
- * Purpose: GitHub REST calls for the commands that act on pull requests (`vellum land`), through `gh` with the
+ * Figentra Flow file contract:
+ * Purpose: GitHub REST calls for the commands that act on pull requests (`figentra-flow land`), through `gh` with the
  *   credentials the repository's configuration names (the credentials port: `env`, `gh-user` or `wrapper`).
  * Boundary: one `gh api` process per call; no retries. Never falls back to a personal `gh` login: with no credentials
- *   configured it refuses (AC-034, AC-036). Vellum never reads, prints or passes a token: `gh` or the wrapper holds it.
+ *   configured it refuses (AC-034, AC-036). Figentra Flow never reads, prints or passes a token: `gh` or the wrapper holds it.
  * Runtime: node
  * Governing contract: STA-1729 (AC-034; phase A, A1).
  * Secrets: none here; the token stays inside `gh` or the wrapper.

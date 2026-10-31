@@ -1,5 +1,5 @@
 /**
- * Vellum file contract:
+ * Figentra Flow file contract:
  * Purpose: hold spec-trace's trace matrix and drift rules to their contract, on the sta-901 fixture.
  * Boundary: pure functions; no git, no network; node:test and node:assert.
  * Runtime: node

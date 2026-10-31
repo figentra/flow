@@ -1,6 +1,6 @@
 /**
- * Vellum file contract:
- * Purpose: `vellum start <key> [--slug s] [--install] [--dry-run]` — the only way a worktree is made: fetch, then
+ * Figentra Flow file contract:
+ * Purpose: `figentra-flow start <key> [--slug s] [--install] [--dry-run]` — the only way a worktree is made: fetch, then
  *   branch `<branchPrefix>/<key>-<slug>` from `origin/<default>` into `<repo>/.claude/worktrees/<key>-<slug>`, and
  *   move the issue to In Progress through the tracker port, naming the branch.
  * Boundary: writes one branch and one worktree, or nothing: an existing folder or branch (local or remote) is refused.
@@ -116,7 +116,7 @@ export async function start(options) {
   return { ok: true, path, branch };
 }
 
-/** `vellum start <issue-key> [--slug s] [--install] [--dry-run]`. */
+/** `figentra-flow start <issue-key> [--slug s] [--install] [--dry-run]`. */
 export async function run(args) {
   const key = args.find((a) => !a.startsWith("--") && args[args.indexOf(a) - 1] !== "--slug");
   const at = args.indexOf("--slug");

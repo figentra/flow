@@ -1,5 +1,9 @@
 # Feature Specification: Vellum runs the whole development workflow
 
+> **Renamed (owner, 2026-10-31):** Vellum is now **Figentra Flow** (`figentra-flow`, alias `fflow`; repository
+> figentra/flow; `figentra-flow.config.json`; status context `figentra-flow/gate`). This spec keeps its folder and its
+> history; `vellum` below means `figentra-flow`. No compatibility is kept for the old names.
+
 **Feature Branch**: `figentra/sta-1729-vellum-workflow`
 
 **Created**: 2026-10-31
@@ -180,3 +184,4 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - 2026-10-31: Tasked (scope added) — Approved by owner 2026-10-31 (relayed by the leader): the neutral core with adapters, FR-11 and AC-035 to AC-042; designed at its own plan stop before phase 4
 - 2026-10-31: phase A Planned — Approved by leader 2026-10-31 (JSON config with schema, testbed as a command runner, github-actions for outsiders, app create human-only, Jira later, one-minor deprecation, product name held; AC-043 artifact guard added)
 - 2026-10-31: phase 4 Planned — Approved by leader 2026-10-31 (metrics on demand, a hand-written MCP server with a conformance test, tracker state only with a tracker adapter, `sessionCap` in workspace.yaml; built after phase A)
+- 2026-10-31: Tasked (revised) — Approved by owner 2026-10-31 (relayed by the leader, confirmed by the owner in the build session): the product is Figentra Flow, published as `figentra-flow`; no compatibility with the old names

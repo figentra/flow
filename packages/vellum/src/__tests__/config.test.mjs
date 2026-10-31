@@ -1,5 +1,5 @@
 /**
- * Vellum file contract:
+ * Figentra Flow file contract:
  * Purpose: hold the configuration to AC-035, AC-036 and AC-042: the shipped schema file equals `SCHEMA`; Figentra's
  *   configuration and a minimal outside one are valid; an unknown key, a wrong kind, a wrong type and a missing field
  *   are refused by their path; a missing port is refused naming its key; the older `package.json` keys still work with
@@ -120,21 +120,12 @@ test("config: a file is loaded and validated; a missing port is refused naming i
   assert.match(loadConfig(broken).errors.join(), /not valid JSON/);
 });
 
-test("config: package.json's older keys still work for one minor version, with a warning", (t) => {
+test("config: only the configuration file is read; package.json's old key is ignored", (t) => {
   const dir = folder({
-    "package.json": JSON.stringify({
-      vellum: { credentials: "wrapper:bot:gh", gate: "pnpm test", gateApp: "x[bot]" },
-    }),
+    "package.json": JSON.stringify({ vellum: { credentials: "gh-user", gate: "pnpm test" } }),
   });
   t.after(() => rmSync(dir, { recursive: true }));
-  const loaded = loadConfig(dir);
-  assert.deepEqual(loaded.config, {
-    version: 1,
-    credentials: { kind: "wrapper", gh: ["pnpm", "bot:gh", "--"] },
-    gate: { check: "pnpm test" },
-    apps: { gate: { login: "x[bot]" } },
-  });
-  assert.match(loaded.warnings.join(), /deprecated/);
+  assert.deepEqual(loadConfig(dir), { config: {}, source: undefined, warnings: [], errors: [] });
 });
 
 test("product: the name-bearing literals appear only in product.mjs among the sources (AC-042)", () => {

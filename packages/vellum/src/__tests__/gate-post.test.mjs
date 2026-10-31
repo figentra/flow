@@ -1,5 +1,5 @@
 /**
- * Vellum file contract:
+ * Figentra Flow file contract:
  * Purpose: hold the box poster to its contract: `success` only for exit 0, `failure` otherwise, on the checked sha;
  *   nothing posted when the tip moved or no token can be minted; one PR comment updated, not duplicated; the JWT
  *   signed with the App key; and no secret (the key, the JWT, the installation token, a secret-looking environment
@@ -26,7 +26,7 @@ const TOKEN = "ghs_installationtoken123456";
 const JOB = {
   sha: SHA,
   branch: "figentra/sta-1-x",
-  repository: "figentra/vellum",
+  repository: "figentra/flow",
   context: CONTEXT,
   marker: MARKER,
   envPrefix: ENV_PREFIX,
@@ -57,21 +57,20 @@ function github({ tip = SHA, prs = [7], comments = [], failToken = false } = {})
       json: async () => json,
     });
     const path = url.replace("https://api.github.com", "");
-    if (path === "/repos/figentra/vellum/installation") return ok({ id: 9 });
+    if (path === "/repos/figentra/flow/installation") return ok({ id: 9 });
     if (path === "/app/installations/9/access_tokens")
       return failToken
         ? { ok: false, status: 401, json: async () => ({}) }
         : ok({ token: TOKEN }, 201);
-    if (path.startsWith("/repos/figentra/vellum/git/ref/heads/"))
-      return ok({ object: { sha: tip } });
-    if (path.startsWith("/repos/figentra/vellum/pulls?"))
+    if (path.startsWith("/repos/figentra/flow/git/ref/heads/")) return ok({ object: { sha: tip } });
+    if (path.startsWith("/repos/figentra/flow/pulls?"))
       return ok(prs.map((number) => ({ number })));
-    if (path.startsWith("/repos/figentra/vellum/issues/7/comments?")) return ok(comments);
-    if (path === "/repos/figentra/vellum/issues/7/comments")
+    if (path.startsWith("/repos/figentra/flow/issues/7/comments?")) return ok(comments);
+    if (path === "/repos/figentra/flow/issues/7/comments")
       return ok({ html_url: "https://c/new" }, 201);
-    if (path.startsWith("/repos/figentra/vellum/issues/comments/"))
+    if (path.startsWith("/repos/figentra/flow/issues/comments/"))
       return ok({ html_url: "https://c/old" });
-    if (path === `/repos/figentra/vellum/statuses/${SHA}`) return ok({}, 201);
+    if (path === `/repos/figentra/flow/statuses/${SHA}`) return ok({}, 201);
     return { ok: false, status: 404, json: async () => ({}) };
   };
   return { calls, fetch };

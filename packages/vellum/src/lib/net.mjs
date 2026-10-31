@@ -1,6 +1,6 @@
 /**
- * Vellum file contract:
- * Purpose: the network layer `vellum linear` calls Linear through, vendored unchanged from Stackra core's
+ * Figentra Flow file contract:
+ * Purpose: the network layer `figentra-flow linear` calls Linear through, vendored unchanged from Stackra core's
  *   `tools/scripts/bot-token.mjs` (STA-302): fetch over an undici Agent with a connect timeout when undici is
  *   installed, retries with backoff for idempotent calls, and `retryUnlessLanded` for writes. The token mint is not
  *   vendored.

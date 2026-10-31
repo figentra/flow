@@ -1,11 +1,11 @@
 /**
- * Vellum file contract:
- * Purpose: `vellum sync` (core's `speckit-sync`, moved unchanged) — install the Stackra spec-kit preset into
+ * Figentra Flow file contract:
+ * Purpose: `figentra-flow sync` (core's `speckit-sync`, moved unchanged) — install the Stackra spec-kit preset into
  *   `.specify/presets/`, keep the bundled `speckit` workflow disabled, and re-render both integrations (spec-kit
  *   registers preset commands for the active integration only, so OpenCode first, then Claude). The preset source is
  *   the repo's `.agents/speckit/presets/` when it has one, else the preset bundled in this package.
  *   Without `specify` on PATH it copies the bundled, already rendered `speckit-*` skills and commands instead.
- *   The installed copies are generated and committed; `vellum gate ci` (tripwire) fails when they drift from the source.
+ *   The installed copies are generated and committed; `figentra-flow gate ci` (tripwire) fails when they drift from the source.
  * Boundary: writes only `.specify/` (through the pinned `specify`), or `.claude/skills/speckit-*` and
  *   `.opencode/commands/speckit.*` when it falls back.
  * Runtime: node
