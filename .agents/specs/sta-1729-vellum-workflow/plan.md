@@ -144,9 +144,157 @@ the Mac. Each test carries `@covers sta-1729:AC-###`.
 - **P-002**: the guard denies a `worktree add` path outside `.claude/worktrees/` and passes every other command — Validates: FR-2
 - **P-003**: `--fix-ignore` leaves every repository ignoring `.claude/worktrees/` exactly once — Validates: FR-3
 - **P-004**: `vellum clean` removes a tree only when it is clean, saved (on a remote or landed by patch), finished (issue closed, or idle 2 hours without a key) and free of precious ignored files, and never a tester tree — Validates: FR-4
-- **P-005**: phase 2's gate posts `vellum/gate` only for the head it ran on (designed in phase 2) — Validates: FR-5
+- **P-005**: the gate posts `vellum/gate` only on the commit it checked, only while that commit is still the branch tip, only from the box with the gate App, and never `success` unless the check command exited 0 (phase 2) — Validates: FR-5
 - **P-006**: phase 3's land merges only on a green gate and recorded approvals (designed in phase 3) — Validates: FR-6
 - **P-007**: phase 4's status lists every workspace repository (designed in phase 4) — Validates: FR-7
 - **P-008**: phase 5's release publishes only to the Stackra registry and ship never reaches production (designed in phase 5) — Validates: FR-8
 - **P-009**: no phase adds a check that runs on the Mac beyond oxfmt and oxlint — Validates: FR-9
 - **P-010**: the sessions phase shows each spec's assigned session and never treats a peer message as an approval (designed in its phase) — Validates: FR-10
+
+## Phase 2: the gate (design, for the leader's plan stop)
+
+Phase 2 makes one result count: `vellum gate run` checks the exact head of a branch on a testbed box and the box posts
+the `vellum/gate` commit status on that head. Covers FR-5, FR-9, AC-008, AC-009 and P-005.
+
+### Architecture overview
+
+`vellum gate` already holds the spec gate (`plan`, `check`, `tasks`, `lane`, `branch`, `ci`, `dir`). Phase 2 adds two
+modes beside them, so nothing existing moves:
+
+1. `vellum gate run [--ref <branch>] [--no-wait]` on the builder's Mac (or any caller). It resolves the head, exports
+   exactly that commit, and hands it to `stackra testbed run` with the box command. It never runs a check itself.
+2. `vellum gate post` runs **on the box**, inside the testbed job container, after the checks. It posts the status
+   and the report with the gate App's token, which only the box can read.
+
+```text
+builder ── vellum gate run ──► git archive <sha> ─► temp dir ─► stackra testbed run "<session> gate" <dir> "<box cmd>"
+                                                                     │  (box: container per job, Infisical secrets)
+                                                                     ▼
+                       pnpm install --frozen-lockfile && <verify> ; node .vellum-gate/post.mjs <exit> <sha> <branch>
+                                                                     │
+                                                                     ▼
+                                     GitHub: commit status `vellum/gate` on <sha> + PR comment (gate App)
+```
+
+The status is unforgeable because of who can post it, not where Vellum runs. The poster is a GitHub App, the
+"Stackra Gate" App. Its key lives only in Infisical `/ci/gate`, which only the testbed's gate identity reads (ADR 0484
+decision 7). Phase 6's branch rule requires `vellum/gate` **from that App** (a ruleset's required check bound to the
+App's integration id), so a status posted with any other token, the agents' `bot:gh` one included, does not count.
+
+### Components and responsibilities
+
+- `src/commands/gate-run.mjs`, the `run` mode, on the caller's side:
+  - resolves the head with `git rev-parse HEAD`;
+  - refuses a dirty tree, and a head that is not the remote branch tip (`git ls-remote origin <branch>`, through the
+    repository's `bot:git` when it has one), because a status may only describe a pushed commit (AC-009);
+  - exports the commit with `git archive <sha>` into a temp folder, so untracked, ignored and uncommitted files never
+    reach the box;
+  - writes `.vellum-gate/post.mjs` and `.vellum-gate/job.json` (sha, branch, repository slug, PR number when there is
+    one) into that folder;
+  - calls `stackra testbed run "<session> gate <repo>@<short sha>" <dir> "<box cmd>"` and passes its exit code
+    through: 0 green, 1 red, 73 busy, 75 no healthy box.
+- `src/lib/gate-post.mjs`, a dependency-free Node script that `run` copies into the job (the box has no Vellum
+  installed, so this needs no publish):
+  - reads `job.json` and the verify exit code;
+  - mints an installation token from `VELLUM_GATE_APP_ID` and `VELLUM_GATE_PRIVATE_KEY` (environment only, from
+    `infisical run`; never printed or written);
+  - checks the branch tip again and posts only if it is still `<sha>`; otherwise it reports "stale" and posts nothing
+    (AC-009);
+  - posts `vellum/gate` with `success` or `failure`, plus a description (the failing step, or the counts);
+  - posts or updates one PR comment holding the report: each step, its duration, and the tail of a failing step's
+    log, with secrets masked by Infisical.
+- The box command: `pnpm install --frozen-lockfile && pnpm verify && vellum-spec; node .vellum-gate/post.mjs $?`.
+  `vellum-spec` is `pnpm exec vellum gate ci` when the repository has Vellum, and skipped otherwise. The repository
+  can name its own check command in `package.json` `"vellum": { "gate": "<cmd>" }`; the default is `pnpm verify`.
+
+### Files and folders
+
+- `packages/vellum/src/commands/gate-run.mjs`: the `run` mode, wired in `gate.mjs`'s `run([mode, ...])` switch.
+- `packages/vellum/src/lib/gate-post.mjs`: the box-side poster; no imports outside `node:`.
+- `packages/vellum/src/lib/github-app.mjs`: the App JWT (RS256 with `node:crypto`), the installation token, and the
+  status and comment calls over `fetch`. Used only by `gate-post.mjs`, which inlines it when copied.
+- Tests in `packages/vellum/src/__tests__/gate-run.test.mjs` and `gate-post.test.mjs`.
+
+### Data models and migrations
+
+None. The gate keeps no state: the commit status is the record, and the PR comment is the report. `job.json` is
+`{ sha, branch, repository, pr?, startedAt }`, written per run and deleted with the job folder.
+
+### Contracts
+
+- CLI:
+  - `vellum gate run [--ref <branch>] [--no-wait] [--on-demand]`: exit 0 green, 1 red, 2 usage or refused, 73 every
+    box busy (with `--no-wait`), 75 no healthy box.
+  - `vellum gate post <exit-code>`: box-only. It refuses unless `VELLUM_GATE_APP_ID` is set.
+- GitHub: commit status context `vellum/gate`, with state `success` or `failure`. `pending` is never left behind: the
+  box posts once, at the end. The description is at most 140 characters, and the target URL is the PR comment.
+- Testbed: `stackra testbed run` from `@stackra/cli` (ADR 0484) on the caller's PATH or as `pnpm exec stackra`.
+  Vellum does not depend on the package; a missing `stackra` is a refusal that names it.
+
+### Error handling
+
+- A dirty tree, an unpushed head, or no `stackra`: refused before any box is claimed (exit 2), naming the fix.
+- Testbed busy or unhealthy: its exit code passes through (73 or 75), and nothing is posted.
+- Verify fails: `failure` is posted with the failing step. The poster's own failure (a token, the network) exits
+  non-zero and posts nothing, so the head has no status and stays unmergeable; it never posts `success` on doubt.
+- The head moves during the run: nothing is posted; "stale: <branch> is now <new sha>" is printed.
+
+### Security and tenancy
+
+- The App key is read only on the box through `infisical run` with the job's named paths (ADR 0484 decision 7). The
+  caller's Mac never holds it, and Vellum never prints, logs or passes it on a command line. The installation token
+  lives in memory for one run.
+- The App needs only `statuses: write` and `pull_requests: write` on the repositories it gates.
+- The exported tree is `git archive` of a pushed commit, so the box checks exactly what will merge.
+- No tenancy: this is developer tooling.
+
+### Testing strategy
+
+- `gate-run`: a temporary repository with a local bare origin and an injected testbed runner, covering:
+  - the refusals: dirty, unpushed, stale, no `stackra`;
+  - the archive holds only committed files, plus `.vellum-gate/`;
+  - exit codes pass through.
+- `gate-post`: an injected `fetch`, covering:
+  - `success` and `failure` bodies on the right sha;
+  - nothing posted when the tip moved;
+  - nothing posted when the token mint fails;
+  - one comment updated, not duplicated;
+  - the JWT signed with a throwaway test key generated in the test.
+- No network, no real App and no box in tests. The first real run is f4's acceptance on vellum itself.
+
+### Rollout
+
+1. Owner:
+   - creates the "Stackra Gate" App (statuses and pull requests: write) and installs it on the gated repositories;
+   - puts `VELLUM_GATE_APP_ID` and `VELLUM_GATE_PRIVATE_KEY` in Infisical `/ci/gate`;
+   - adds `/ci/gate` to the testbed's allowed job paths in `infra-testbed`.
+2. Depends on `stackra testbed` landing in core (branch `figentra/sta-1626-testbed`, ADR 0484). Until it does, f4
+   gates by hand as today.
+3. f4's acceptance: `vellum gate run` on a vellum PR posts `vellum/gate` from the App on its head, green and then
+   red on a deliberately broken commit.
+4. Phase 6 makes it required per repository, bound to the App.
+
+### Phase 2 correctness properties
+
+P-005 (above, made concrete for phase 2) and P-009's part: `vellum gate run` runs no check on the caller's machine.
+
+### Decisions at the plan stop (leader, 2026-10-31)
+
+1. **A new "Stackra Gate" App**, used only to post `vellum/gate`. The ruleset trusts only that App.
+2. **`vellum gate ci` runs wherever Vellum is installed.** Phase 6 installs Vellum in every repository, so the
+   "when present" branch only covers the transition.
+3. **`--box <ssh host>` ships now** as f4's manual path. Once `stackra testbed` lands (STA-1626), testbed is the
+   default and `--box` stays as the override. On a `--box` host the poster runs under
+   `infisical run --path=/ci/gate`, so the host needs the gate identity logged in.
+4. **The poster logs nothing secret.** The App key, the JWT, the installation token and every value from the
+   environment whose name looks secret are kept out of the PR comment and the box log. A log tail is redacted
+   before it is posted.
+
+The box command is POSIX `sh`. The check runs in a group whose output is written to `.vellum-gate/log.txt` and
+whose exit code goes to `.vellum-gate/exit`. The poster reads both. Its exit code is 0 when it posted green, 1 when
+it posted red, 4 when it could not post, and 5 when the head went stale. So `vellum gate run` exits with the gate's
+result.
+
+The exported tree is a local clone of the repository at `<sha>`, not a `git archive`. It carries
+`refs/remotes/origin/<default>` and the GitHub `origin` URL, because `vellum gate ci` diffs against the default
+branch. Nothing uncommitted or untracked is in it.

@@ -7,6 +7,7 @@
  * Runtime: node
  * Governing contract: ADR 0120 (SDLC spec location, lanes and change risk); ADR 0121; ADR 0065 (rule 7).
  *
+ *   run [--ref b] [--box host]  the checks on a testbed box (or `--box`); the box posts `vellum/gate` (STA-1729)
  *   plan <spec.md>              exit 1 unless the spec may be planned (run by setup-plan.sh)
  *   check <dir>                 the stage rules for the spec's declared `**Status**`
  *   tasks <tasks.md>            tasks lint: ids, covers, routes, deps, coverage, waves
@@ -854,6 +855,8 @@ function report(problems) {
 }
 
 export function run([mode, ...args]) {
+  // phase 2: the checks on a box, posted as `vellum/gate` (STA-1729)
+  if (mode === "run") return import("./gate-run.mjs").then((m) => m.run(args));
   const [arg, stage] = args;
   if (mode === "plan" && arg) {
     if (gate(arg)) return 1;
@@ -934,7 +937,7 @@ export function run([mode, ...args]) {
     return failures ? 1 : 0;
   }
   console.error(
-    `usage: vellum gate plan <spec.md> | check <dir> | tasks <tasks.md> | lane | branch | ci [--base=ref] | stage <spec.md> <${STAGES.join("|")}> | dir [--slug s] [--key STA-n]`,
+    `usage: vellum gate run [--ref <branch>] [--box <host>] [--no-wait] [--on-demand] | plan <spec.md> | check <dir> | tasks <tasks.md> | lane | branch | ci [--base=ref] | stage <spec.md> <${STAGES.join("|")}> | dir [--slug s] [--key STA-n]`,
   );
   return 2;
 }

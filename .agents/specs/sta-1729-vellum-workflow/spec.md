@@ -150,3 +150,4 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - 2026-10-31: Planned → Tasked (tasks for phase 1; later phases are placeholders)
 - 2026-10-31: Tasked (scope added) — Approved by owner 2026-10-31 ("Yes, record it", relayed by the leader): the sessions phase, FR-10 and AC-023 to AC-026; designed at its own plan stop
 - 2026-10-31: Tasked (revised) — Approved by leader 2026-10-31 (AC-027: never remove or adopt a tree a live session works in; adopt only after 2 h idle)
+- 2026-10-31: phase 2 Planned — Approved by leader 2026-10-31 (the gate design: a dedicated Stackra Gate App, `vellum gate ci` where Vellum is installed, `--box` now, no secret in any log)
