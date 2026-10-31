@@ -13,7 +13,8 @@
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "verify": "pnpm format:check && turbo run lint typecheck test build",
-    "changeset": "changeset"
+    "changeset": "changeset",
+    "changeset:version": "changeset version && pnpm install --lockfile-only"
   },
   "devDependencies": {
     "@changesets/changelog-git": "catalog:release",

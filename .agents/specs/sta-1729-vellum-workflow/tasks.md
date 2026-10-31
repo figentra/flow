@@ -17,6 +17,10 @@ Phase 1 is designed and approved; the later phases are placeholders, refined whe
 - [x] T009 Vellum ignores its worktrees in `.gitignore` — covers: FR-3, AC-006 — route: spec-task
 - [ ] T010 The five other repositories ignore their worktrees in each `.gitignore` (billing, invoicing, brand, stackra/notes, stackra/pro) — covers: FR-3, AC-006 — route: spec-task — deps: T004
 
+## Publish path (W0, leader 2026-10-31: ahead of phase 2)
+
+- [ ] T015 The Release workflow calling Stackra core's Runway npm provider, and the `changeset:version` script, in `.github/workflows/release.yml` and `package.json` — covers: FR-8, AC-013 — route: spec-task
+
 ## Phase 2: the gate (design pending)
 
 - [ ] T020 `vellum gate` over `stackra testbed`, posting `vellum/gate` in `packages/vellum/src/commands/gate.mjs` — covers: FR-5, FR-9, AC-008, AC-009 — route: spec-task
