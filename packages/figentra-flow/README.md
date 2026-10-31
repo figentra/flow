@@ -29,6 +29,7 @@ pnpm exec figentra-flow sync         # install the preset and render the speckit
 | `figentra-flow clean [--dry-run] [--adopt] [--fix-ignore] [--all]` | removes finished worktrees (clean, saved, issue Done or idle 2 h), reports what it kept and the space freed                                            |
 | `figentra-flow guard [--print-settings]`                           | the PreToolUse hook that denies `git worktree add` outside `.claude/worktrees/`                                                                        |
 | `figentra-flow init --workspace <dir>…`                            | writes the workspace list (`~/.config/figentra-flow/workspace.yaml`) that `--all` acts on                                                              |
+| `figentra-flow init --runner github-actions [--force]`             | writes the gate workflow for the `github-actions` runner, and a starter config when there is none                                                      |
 
 A repository keeps one-line aliases: `"spec:gate": "figentra-flow gate"`, `"spec:trace": "figentra-flow trace"`,
 `"speckit:sync": "figentra-flow sync"`, and `"spec:linear": "infisical run --env=dev --path=/agents --silent -- figentra-flow linear"`.
@@ -101,7 +102,13 @@ setting you have not made refuses and names it.
     A command runner brings its own secrets; `"secrets": true` wraps the poster with the secrets port as `ssh` and
     `local` do.
 
-  `github-actions` follows. With a config file but no runner, `gate run` refuses; without a config file, the testbed
+  - `github-actions`, optionally with `workflow` (default `figentra-flow-gate.yml`), for repositories with no box.
+    `figentra-flow init --runner github-actions` writes the workflow, and a starter config when there is none. Set
+    the repository secrets `FIGENTRA_FLOW_GATE_APP_ID` and `FIGENTRA_FLOW_GATE_PRIVATE_KEY`. `gate run` dispatches it
+    on the default branch, follows the run and passes its result through. The change's code runs in a `check` job
+    with no secret; a separate `post` job, which never checks out the repository, posts the status.
+
+  With a config file but no runner, `gate run` refuses; without a config file, the testbed
   command is kept, with a warning, until the next minor version.
 
 - `preset` picks the spec-kit preset `sync` installs and the rules the gate holds a spec to:

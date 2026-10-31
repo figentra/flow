@@ -979,6 +979,9 @@ function report(problems) {
 export function run([mode, ...args]) {
   // phase 2: the checks on a box, posted as `figentra-flow/gate` (STA-1729)
   if (mode === "run") return import("./gate-run.mjs").then((m) => m.run(args));
+  // the check command alone, for a runner that runs it itself (the github-actions workflow's `check` job)
+  if (mode === "command")
+    return import("./gate-run.mjs").then((m) => (console.log(m.checkCommand(ROOT)), 0));
   const [arg, stage] = args;
   if (mode === "plan" && arg) {
     if (gate(arg)) return 1;
@@ -1057,7 +1060,7 @@ export function run([mode, ...args]) {
     return failures ? 1 : 0;
   }
   console.error(
-    `usage: ${NAME} gate run [--ref <branch>] [--box <host>] [-- <runner flags>] | plan <spec.md> | check <dir> | tasks <tasks.md> | lane | branch | ci [--base=ref] | stage <spec.md> <${STAGES.join("|")}> | dir [--slug s] [--key <key>]`,
+    `usage: ${NAME} gate run [--ref <branch>] [--box <host>] [-- <runner flags>] | command | plan <spec.md> | check <dir> | tasks <tasks.md> | lane | branch | ci [--base=ref] | stage <spec.md> <${STAGES.join("|")}> | dir [--slug s] [--key <key>]`,
   );
   return 2;
 }
