@@ -80,7 +80,7 @@ export function fetch(root) {
     wrapped = false;
   }
   if (!wrapped) return git(root, ["fetch", "-q", "origin"]);
-  const r = spawnSync("pnpm", ["-s", "bot:git", "--", "fetch", "-q", "origin"], {
+  const r = spawnSync("pnpm", ["bot:git", "--", "fetch", "-q", "origin"], {
     cwd: root,
     encoding: "utf8",
   });
