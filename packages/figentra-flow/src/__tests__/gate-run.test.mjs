@@ -168,7 +168,7 @@ test("check command: pnpm verify by default, the repository's own, and the spec 
   const r = repo({
     [CONFIG_FILE]: JSON.stringify({ version: 1, gate: { check: "pnpm test" } }),
     "package.json": JSON.stringify({
-      devDependencies: { "figentra-flow": "catalog:" },
+      devDependencies: { "@figentra/flow": "catalog:" },
     }),
   });
   t.after(r.dispose);

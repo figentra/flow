@@ -1,5 +1,5 @@
 {
-  "name": "figentra-flow",
+  "name": "@figentra/flow",
   "version": "0.0.0",
   "private": false,
   "description": "Figentra Flow: spec-driven development from spec to landed change. Spec gates and traceability on spec-kit, worktrees, the gate on a box, land, and adapters for your tracker, runner, credentials and secrets",
@@ -57,7 +57,7 @@
   "publishConfig": {
     "access": "public",
     "provenance": true,
-    "registry": "https://registry.npmjs.org/"
+    "registry": "https://npm.stackra.figentra.com/"
   },
   "scripts": {
     "build": "tsc --noEmit false --declaration --emitDeclarationOnly --outDir dist",
