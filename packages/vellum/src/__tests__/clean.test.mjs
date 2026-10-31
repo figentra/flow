@@ -187,12 +187,18 @@ test("clean: never removes or adopts a tree a running process works in", async (
   sh(path, "push", "-q", "origin", "HEAD");
   mkdirSync(join(path, "deep"));
   const child = spawn("sleep", ["30"], { cwd: join(path, "deep"), stdio: "ignore" });
-  t.after(() => child.kill());
-  await new Promise((done) => child.once("spawn", done));
-  const report = await clean({ cwd: r.root, issues: states(["STA-11"]) });
-  assert.deepEqual(report.removed, []);
-  assert.match(report.kept.find((k) => k.path === path)?.reason ?? "", /in use/);
-  assert.equal(existsSync(path), true);
+  const exited = new Promise((done) => child.once("exit", done));
+  try {
+    await new Promise((done) => child.once("spawn", done));
+    const report = await clean({ cwd: r.root, issues: states(["STA-11"]) });
+    assert.deepEqual(report.removed, []);
+    assert.match(report.kept.find((k) => k.path === path)?.reason ?? "", /in use/);
+    assert.equal(existsSync(path), true);
+  } finally {
+    // the child ends inside the test, before the repository is removed, so nothing outlives the file
+    child.kill("SIGKILL");
+    await exited;
+  }
 });
 
 test("clean: an in-use folder matches by path prefix, not by a shared name start", async (t) => {

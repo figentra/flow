@@ -83,12 +83,14 @@ export async function post({ job, exit, log = "", env, fetch, now = Date.now() }
         "vellum gate: VELLUM_GATE_APP_ID or VELLUM_GATE_PRIVATE_KEY is not set; nothing posted",
       ],
     };
-  const call = async (
-    /** @type {string} */ path,
-    /** @type {string} */ token,
-    method = "GET",
-    /** @type {unknown} */ body,
-  ) => {
+  /**
+   * One API call; throws a message naming the method, the path and the status, never a header.
+   * @param {string} path
+   * @param {string} token
+   * @param {string} [method]
+   * @param {unknown} [body]
+   */
+  const call = async (path, token, method = "GET", body = undefined) => {
     const res = await fetch(`${API}${path}`, {
       method,
       headers: {
