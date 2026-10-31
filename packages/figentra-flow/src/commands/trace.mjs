@@ -19,7 +19,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { FOLDER, SPECS_DIR, statusOf, testsText } from "./gate.mjs";
+import { repoScheme, SPECS_DIR, statusOf, testsText } from "./gate.mjs";
 import {
   coversTags,
   definedIds,
@@ -36,8 +36,8 @@ const ROOT = process.cwd();
 const readIf = (p) => (existsSync(p) ? readFileSync(p, "utf8") : "");
 
 /** The trace matrix for one spec folder's texts; `tests` is the concatenated text of the test files. */
-export function trace({ folder, spec, plan = "", tasks = "", tests = "" }) {
-  const key = folder.match(FOLDER)?.[1];
+export function trace({ folder, spec, plan = "", tasks = "", tests = "", keys = repoScheme() }) {
+  const key = keys.folderKey(folder);
   const covered = new Set(coversTags(tests, key));
   const live = parseTasks(tasks).filter((t) => !t.struck);
   const tasksFor = (id) => live.filter((t) => t.covers.includes(id)).map((t) => t.id);
@@ -69,13 +69,13 @@ export function traceProblems(t) {
   for (const fr of t.frs)
     if (!fr.tested && !fr.via.length)
       problems.push(
-        `${fr.id} has no test carrying \`@covers sta-${t.key}:${fr.id}\` (directly or via a P-###)`,
+        `${fr.id} has no test carrying \`@covers ${t.key}:${fr.id}\` (directly or via a P-###)`,
       );
   for (const p of t.ps)
-    if (!p.tested) problems.push(`${p.id} has no test carrying \`@covers sta-${t.key}:${p.id}\``);
+    if (!p.tested) problems.push(`${p.id} has no test carrying \`@covers ${t.key}:${p.id}\``);
   for (const ac of t.acs ?? [])
     if (!ac.tested)
-      problems.push(`${ac.id} has no test carrying \`@covers sta-${t.key}:${ac.id}\` (ADR 0502)`);
+      problems.push(`${ac.id} has no test carrying \`@covers ${t.key}:${ac.id}\` (ADR 0502)`);
   for (const sc of t.scs)
     if (!sc.method)
       problems.push(`${sc.id} names no verification method ("— verified by: unit|e2e|k6|manual")`);

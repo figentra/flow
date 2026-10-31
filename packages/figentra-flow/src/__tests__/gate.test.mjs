@@ -39,6 +39,7 @@ import {
   tripwire,
   WRAPPED,
 } from "../commands/gate.mjs";
+import { keyScheme } from "../adapters/tracker/index.mjs";
 import { labelsFor, specLinks, unlinkedTasks } from "../commands/linear.mjs";
 import { init } from "../commands/init.mjs";
 import { ASSETS, installSkills } from "../commands/sync.mjs";
@@ -94,7 +95,7 @@ const at = (status) =>
 test("a Draft spec passes with open questions; later stages need their rules and artifacts", () => {
   const draft = spec({ status: "pending", linear: "STA-n", body: impact("[open]") });
   assert.deepEqual(checkStage("sta-12-x", draft), []);
-  assert.match(checkStage("001-x", draft)[0], /sta-<n>-<slug>/);
+  assert.match(checkStage("001-x", draft)[0], /<key>-<slug>/);
   assert.match(checkStage("sta-12-x", spec({ linear: "STA-13" })).join(), /does not match/);
   assert.match(checkStage("sta-12-x", spec({ stage: "Bogus" }))[0], /Status/);
   assert.match(checkStage("sta-12-x", spec({ stage: "Ready" }))[0], /Status/);
@@ -181,8 +182,8 @@ test("Implementing needs a ticked task; Done needs them all", () => {
 });
 
 test("lane: feat commits need a spec through the branch or Refs keys", () => {
-  const specKeys = new Set(["163"]);
-  const taskKeys = new Set(["170"]);
+  const specKeys = new Set(["sta-163"]);
+  const taskKeys = new Set(["sta-170"]);
   const feat = "feat(x): y\n\nRefs: STA-5";
   assert.deepEqual(checkLane({ commits: ["chore: x"], branch: "figentra/sta-5-x" }), []);
   assert.match(
@@ -193,12 +194,16 @@ test("lane: feat commits need a spec through the branch or Refs keys", () => {
   assert.deepEqual(checkLane({ commits: ["feat: y\n\nRefs: STA-170"], taskKeys }), []);
 });
 
-test("branch: Linear-named or allow-listed", () => {
+test("branch: the tracker's shape or allow-listed", () => {
   assert.deepEqual(checkBranch("figentra/sta-163-sdd-gates"), []);
   assert.deepEqual(checkBranch("renovate/node-24"), []);
   assert.deepEqual(checkBranch("changeset-release/main"), []);
-  assert.match(checkBranch("spec/notifications").join(), /not `figentra\/sta-<n>-<slug>`/);
-  assert.match(checkBranch("chore/foo").join(), /not `figentra\/sta-<n>-<slug>`/);
+  assert.deepEqual(checkBranch("delegate/sta-163-t1"), []);
+  assert.match(
+    checkBranch("spec/notifications").join(),
+    /not `figentra\|delegate\/sta-<n>-<slug>`/,
+  );
+  assert.match(checkBranch("chore/foo").join(), /not `figentra\|delegate\/sta-<n>-<slug>`/);
 });
 
 test("ready rule: only the PR's own spec (the branch key's folder) must be at Tasked", () => {
@@ -225,7 +230,7 @@ test("foreign status: another spec's Status line moves only with a Refs naming i
       after: statusSpec("Clarified"),
       commits: ["fix: y\n\nRefs: STA-170"],
     }).join(),
-    /sta-35-notifications: .*Draft.*Clarified.*Refs: STA-35/,
+    /sta-35-notifications: .*Draft.*Clarified.*Refs: STA-35`/,
   );
   assert.deepEqual(
     checkForeignStatus({
@@ -252,7 +257,10 @@ test("foreign status: another spec's Status line moves only with a Refs naming i
   assert.deepEqual(checkForeignStatus({ ...base, before: "", after: statusSpec("Draft") }), []);
   // Removing the line is a change too.
   assert.equal(checkForeignStatus({ ...base, after: "# X\n" }).length, 1);
-  assert.deepEqual([...refsKeys(["feat: a\n\nRefs: STA-1, sta-2", "fix: STA-3"])], ["1", "2"]);
+  assert.deepEqual(
+    [...refsKeys(["feat: a\n\nRefs: STA-1, sta-2", "fix: STA-3"])],
+    ["sta-1", "sta-2"],
+  );
 });
 
 test("branch never blocks: a chore-lane PR's `chore/foo` branch only warns (check-pr owns the label escape)", () => {
@@ -274,7 +282,7 @@ test("branch never blocks: a chore-lane PR's `chore/foo` branch only warns (chec
 test("bug lane: the folder is keyed and a regression test covers sta-n:BUG", () => {
   assert.deepEqual(checkBug("sta-44-crash", "/** @covers sta-44:BUG */"), []);
   assert.match(checkBug("sta-44-crash", "nothing").join(), /@covers sta-44:BUG/);
-  assert.match(checkBug("44-crash", "").join(), /not `sta-<n>-<slug>`/);
+  assert.match(checkBug("44-crash", "").join(), /not `<key>-<slug>`/);
 });
 
 test("specDir names the folder from the branch key, reuses an existing one, and refuses without a key", () => {
@@ -284,12 +292,56 @@ test("specDir names the folder from the branch key, reuses an existing one, and 
       dir: ".agents/specs/sta-7-foo",
     });
     assert.match(specDir({ root, branch: "figentra/sta-7-foo" }).error, /--slug/);
-    assert.match(specDir({ root, branch: "main", slug: "foo" }).error, /no STA key/);
+    assert.match(specDir({ root, branch: "main", slug: "foo" }).error, /no issue key/);
     mkdirSync(join(root, ".agents/specs/sta-7-bar"), { recursive: true });
     assert.deepEqual(specDir({ root, key: "STA-7" }), { dir: ".agents/specs/sta-7-bar" });
     assert.deepEqual(specDir({ root, branch: "delegate/sta-7-t1" }), {
       dir: ".agents/specs/sta-7-bar",
     });
+  } finally {
+    rmSync(root, { recursive: true });
+  }
+});
+
+test("another tracker's scheme: keys, branches, folders, lanes, bugs and specDir follow it (AC-037)", () => {
+  const ops = keyScheme({
+    kind: "linear",
+    team: "OPS",
+    branchPrefix: "acme",
+    otherBranchPrefixes: ["bot"],
+  });
+  assert.deepEqual(checkBranch("acme/ops-4-fix", ops), []);
+  assert.deepEqual(checkBranch("bot/ops-4-fix", ops), []);
+  assert.match(checkBranch("figentra/sta-4-fix", ops).join(), /not `acme\|bot\/ops-<n>-<slug>`/);
+  assert.equal(isOwnSpec("ops-4-fix", "acme/ops-4-fix", ops), true);
+  assert.equal(isOwnSpec("sta-4-fix", "figentra/sta-4-fix", ops), false);
+  assert.deepEqual([...refsKeys(["fix: a\n\nRefs: OPS-9, STA-2"], ops)], ["ops-9"]);
+  const feat = "feat: y\n\nRefs: OPS-9";
+  assert.deepEqual(checkLane({ commits: [feat], specKeys: new Set(["ops-9"]), scheme: ops }), []);
+  assert.match(
+    checkLane({ commits: [feat], specKeys: new Set(["sta-9"]), scheme: ops }).join(),
+    /OPS-9/,
+  );
+  assert.deepEqual(checkBug("ops-44-crash", "/** @covers ops-44:BUG */", ops), []);
+  assert.match(checkBug("sta-44-crash", "", ops).join(), /not `<key>-<slug>`/);
+  assert.match(
+    checkStage("ops-12-x", "**Status**: Draft\n**Issue**: OPS-13\n", { keys: ops }).join(),
+    /OPS-13 does not match the folder key OPS-12/,
+  );
+  assert.deepEqual(
+    checkStage("ops-12-x", "**Status**: Draft\n**Issue**: OPS-12\n", { keys: ops }),
+    [],
+  );
+  const gh = keyScheme({ kind: "github-issues", branchPrefix: "work" });
+  const root = mkdtempSync(join(tmpdir(), "spec-dir-gh-"));
+  try {
+    assert.deepEqual(specDir({ root, branch: "work/gh-7-foo", slug: "foo", keys: gh }), {
+      dir: ".agents/specs/gh-7-foo",
+    });
+    assert.deepEqual(specDir({ root, key: "#7", slug: "foo", keys: gh }), {
+      dir: ".agents/specs/gh-7-foo",
+    });
+    assert.match(specDir({ root, branch: "figentra/sta-7-foo", keys: gh }).error, /no issue key/);
   } finally {
     rmSync(root, { recursive: true });
   }

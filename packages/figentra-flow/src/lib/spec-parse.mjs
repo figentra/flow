@@ -34,7 +34,9 @@ export function definedLines(text, prefix) {
 const list = (s) =>
   s ? [...s.matchAll(/\b(?:FR|SC|EC|AC|P)-\d+\b|\bT\d{3}\b/g)].map((m) => m[0]) : [];
 const field = (rest, name) =>
-  rest.match(new RegExp(`\\b${name}:\\s*([^—\\[]*?)\\s*(?:—|\\[STA-|$)`))?.[1]?.trim();
+  rest
+    .match(new RegExp(`\\b${name}:\\s*([^—\\[]*?)\\s*(?:—|\\[[A-Za-z][A-Za-z0-9]*-\\d|$)`))?.[1]
+    ?.trim();
 
 /** Task lines of tasks.md, with their phase heading. */
 export function parseTasks(text) {
@@ -59,7 +61,7 @@ export function parseTasks(text) {
       route: field(rest, "route"),
       deps: list(field(rest, "deps")),
       paths: [...rest.matchAll(/`([^`]+)`/g)].map((p) => p[1]),
-      key: rest.match(/\[(STA-\d+)\]\s*$/)?.[1],
+      key: rest.match(/\[([A-Za-z][A-Za-z0-9]*-\d+)\]\s*$/)?.[1],
       phase,
     });
   }
@@ -85,12 +87,13 @@ export function routes(yaml) {
   return new Set([...block.matchAll(/^ {2}([a-z][a-z0-9-]*):/gm)].map((m) => m[1]));
 }
 
-/** `@covers sta-163:FR-001 sta-163:P-002` tags in a test file → the IDs for spec `key` (`163`). */
+/** `@covers sta-163:FR-001 sta-163:P-002` tags in a test file → the IDs for spec `key` (`sta-163`, any case). */
 export function coversTags(text, key) {
   const out = [];
-  for (const m of text.matchAll(/@covers\s+((?:sta-\d+:[A-Z]+(?:-\d+)?[\s,]*)+)/gi))
-    for (const t of m[1].matchAll(/sta-(\d+):([A-Z]+(?:-\d+)?)/gi))
-      if (t[1] === String(key)) out.push(t[2].toUpperCase());
+  const own = String(key).toLowerCase();
+  for (const m of text.matchAll(/@covers\s+((?:[a-z][a-z0-9]*-\d+:[A-Z]+(?:-\d+)?[\s,]*)+)/gi))
+    for (const t of m[1].matchAll(/([a-z][a-z0-9]*-\d+):([A-Z]+(?:-\d+)?)/gi))
+      if (t[1].toLowerCase() === own) out.push(t[2].toUpperCase());
   return out;
 }
 

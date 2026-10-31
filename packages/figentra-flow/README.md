@@ -73,7 +73,9 @@ setting you have not made refuses and names it.
   - `github-issues` with `branchPrefix`, which uses keys `gh-<n>` for the repository's own issue `#<n>`.
 
   Issue keys are `<prefix>-<n>`. `figentra-flow start <key>` makes branch `<branchPrefix>/<key>-<slug>` and worktree
-  `<key>-<slug>`. `start`, `clean`, `land` and the spec gate's stage comments read and move issues through the
+  `<key>-<slug>`; `otherBranchPrefixes` (e.g. `["delegate"]`) names further prefixes the branch check accepts. The
+  spec gate and trace read the same scheme: spec folders are `<key>-<slug>`, a spec's `**Linear**:` or `**Issue**:`
+  line names its key, and tests tag `@covers <key>:<ID>`. `start`, `clean`, `land` and the spec gate's stage comments read and move issues through the
   tracker. A tracker failure is a warning, never silent and never an exit code. Without a config file, the Linear
   `STA` scheme used before is kept, with a warning, until the next minor version.
 
