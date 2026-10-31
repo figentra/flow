@@ -12,7 +12,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { drift, trace, traceProblems } from "../commands/trace.mjs";
-import { coversTags } from "../lib/spec-parse.mjs";
+import { keyScheme } from "../adapters/tracker/index.mjs";
+import { coversTags, parseTasks } from "../lib/spec-parse.mjs";
 
 const FIX = join(dirname(fileURLToPath(import.meta.url)), "__fixtures__/sdd/sta-901-widget");
 const read = (n) => readFileSync(join(FIX, n), "utf8");
@@ -24,10 +25,24 @@ const base = {
 };
 
 test("coversTags reads only the spec's own key", () => {
-  assert.deepEqual(coversTags("/** @covers sta-901:FR-001 sta-7:FR-002, sta-901:P-001 */", "901"), [
-    "FR-001",
-    "P-001",
-  ]);
+  assert.deepEqual(
+    coversTags("/** @covers sta-901:FR-001 sta-7:FR-002, sta-901:P-001 */", "sta-901"),
+    ["FR-001", "P-001"],
+  );
+});
+
+test("another scheme: trace keys the folder and the tags by it; tasks keep any tracker's key", () => {
+  const gh = keyScheme({ kind: "github-issues", branchPrefix: "work" });
+  const t = trace({ ...base, folder: "gh-901-widget", tests: "@covers gh-901:P-001", keys: gh });
+  assert.equal(t.key, "gh-901");
+  assert.equal(t.ps[0].tested, true);
+  assert.match(
+    traceProblems(trace({ ...base, folder: "gh-901-widget", keys: gh })).join(),
+    /`@covers gh-901:/,
+  );
+  assert.deepEqual(coversTags("@covers GH-901:FR-001 sta-901:FR-002", "gh-901"), ["FR-001"]);
+  const [task] = parseTasks("- [ ] T001 Do it — covers: FR-001 [GH-12]\n");
+  assert.deepEqual([task.key, task.covers], ["GH-12", ["FR-001"]]);
 });
 
 test("trace: an FR is covered directly or through a tested P; struck IDs drop out", () => {
