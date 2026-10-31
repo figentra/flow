@@ -3,12 +3,12 @@
 One pnpm workspace, one package: `packages/vellum` (`@stackra/vellum`, binary `vellum`). Published only to the Stackra
 registry (ADR 0453); never npmjs.
 
-| Path                             | What                                                                                                                                               |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/vellum/bin/vellum.mjs` | the dispatcher: `vellum <command>` runs `src/commands/<command>.mjs`'s `run(args)`                                                                 |
-| `packages/vellum/src/commands`   | `init`, `sync`, `gate`, `trace`, `parse`, `linear`, `start`, `clean`, `guard`, plus `gate-run` (the `run` mode of `gate`); each exports `run(args)` → exit code                                |
-| `packages/vellum/src/lib`        | `spec-parse` (pure parsers), `linear` and `net` (the Linear client), `git` and `workspace` (worktrees), `gate-post` (the box poster, copied into each gate job)                                             |
-| `packages/vellum/assets`         | `specify/` (what `init` installs), `presets/stackra` (the preset source), the rendered `claude/skills/speckit-*` and `opencode/commands/speckit.*` |
+| Path                             | What                                                                                                                                                            |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/vellum/bin/vellum.mjs` | the dispatcher: `vellum <command>` runs `src/commands/<command>.mjs`'s `run(args)`                                                                              |
+| `packages/vellum/src/commands`   | `init`, `sync`, `gate`, `trace`, `parse`, `linear`, `start`, `clean`, `guard`, plus `gate-run` (the `run` mode of `gate`); each exports `run(args)` → exit code |
+| `packages/vellum/src/lib`        | `spec-parse` (pure parsers), `linear` and `net` (the Linear client), `git` and `workspace` (worktrees), `gate-post` (the box poster, copied into each gate job) |
+| `packages/vellum/assets`         | `specify/` (what `init` installs), `presets/stackra` (the preset source), the rendered `claude/skills/speckit-*` and `opencode/commands/speckit.*`              |
 
 ## Rules
 
