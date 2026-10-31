@@ -696,18 +696,24 @@ Figentra's configuration, as core will carry it:
 
 Each step lands green on f4's box. Phase 4 follows A6.
 
-### Phase A decisions to confirm at the plan stop
+### Decisions at the plan stop (leader, 2026-10-31)
 
-1. **`vellum.config.json` (JSON with a shipped schema, no dependency) or `vellum.config.mjs`** (code, more power,
-   harder to validate)?
-2. **The testbed is a `command` runner in our config, not a plug-in package.** That keeps the core free of a plug-in
-   loader. Are plug-ins wanted later?
-3. **`github-actions` as the outsiders' default runner**, via the dispatched workflow that `vellum init` writes. Is
-   that acceptable, given ADR 0503's "GitHub keeps only Release plus `vellum/gate`" for us? We keep `command`.
-4. **`app create` is human-only**, refusing agents. With Infisical as our secrets adapter, the key goes to
-   `infisical secrets set`, run by the owner, which matches ADR 0257's rule that nobody but the owner sets a value.
-5. **Jira in A2, or later?** It is untested without a Jira site.
-6. **Deprecation window:** keep reading `package.json` `"vellum"` keys for one minor version.
+1. **`vellum.config.json` with the shipped schema; unknown keys refused.** No `.mjs` config, so a config never runs
+   code.
+2. **The testbed is a `command` runner.** There is no plug-in loader; plug-ins come only if an outside user needs
+   something `command` cannot do.
+3. **`github-actions` is the outsiders' default.** ADR 0503's "GitHub keeps only Release plus `vellum/gate`" is our
+   policy, expressed by our config choosing `command`.
+4. **`app create` is human-only.** The key goes through the secrets port in the owner's one hand-off (ADR 0257);
+   agents never see it.
+5. **Jira later.** A2 ships `linear` and `github-issues`, with the port shaped for Jira, which comes when there is a
+   site to test against.
+6. **Old `package.json` `"vellum"` keys** keep working with a deprecation warning for one minor version.
+7. **A tracker failure in `gate plan`** is reported as a warning, never swallowed (A2 tests it).
+8. **The product name stays in `product.mjs`.** Nothing is renamed until the owner picks the new name.
+9. **The artifact guard (leader, 2026-10-31, AC-043).** `gate run` and `land` refuse a diff that adds paths under
+   `.cache/`, `node_modules/`, `dist/`, `.turbo/` or `coverage/`, or any one file over 5 MB. Both the list and the size
+   are `vellum.config.json`'s `artifacts`.
 
 A finding outside this design: `gate.mjs` calls `pnpm --silent linear …`, and pnpm 12 refused `-s` (37f62ef). The
 tracker port removes the call. Until then, Linear stage comments from `vellum gate plan` may fail quietly, because
