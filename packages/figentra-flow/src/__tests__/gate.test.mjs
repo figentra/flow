@@ -69,7 +69,10 @@ const impact = (v = "none") =>
 const ROOT = mkdtempSync(join(tmpdir(), "flow-root-"));
 init(ROOT);
 installSkills(ROOT);
-cpSync(join(ASSETS, "presets"), join(ROOT, ".agents/speckit/presets"), { recursive: true });
+// The source holds the preset init installed (stackra), not every bundled one.
+cpSync(join(ASSETS, "presets/stackra"), join(ROOT, ".agents/speckit/presets/stackra"), {
+  recursive: true,
+});
 process.on("exit", () => rmSync(ROOT, { recursive: true, force: true }));
 const spec = ({ status = "complete", linear = "STA-12", body = impact(), stage = "Draft" } = {}) =>
   `# Feature Specification: X\n\n**Status**: ${stage}\n\n**Linear**: ${linear}\n\n**Clarifications status**: ${status}\n\n## Impact\n\n${body}\n\n## Requirements\n\n## Status history\n\n- d · Draft → ${stage}\n`;
@@ -380,7 +383,7 @@ test("tripwire: the repository passes, and an upgrade that drops the wrap or res
     writeFileSync(join(root, ".specify/scripts/bash/setup-plan.sh"), "#!/bin/sh\n");
     const problems = tripwire(root).join("\n");
     assert.match(problems, /feature_numbering/);
-    assert.match(problems, /speckit\.specify\.md lost the Stackra wrap/);
+    assert.match(problems, /speckit\.specify\.md lost the preset's wrap/);
     assert.match(problems, /as-is/);
     assert.match(problems, /setup-plan\.sh/);
     // The replaced commands keep their markers, and the bundled workflow stays disabled.
@@ -390,7 +393,7 @@ test("tripwire: the repository passes, and an upgrade that drops the wrap or res
       '{"workflows":{"speckit":{"source":"bundled"}}}',
     );
     const more = tripwire(root).join("\n");
-    assert.match(more, /speckit\.taskstoissues\.md lost the Stackra wrap/);
+    assert.match(more, /speckit\.taskstoissues\.md lost the preset's wrap/);
     assert.match(more, /workflow is enabled/);
     // The installed preset must equal its source.
     for (const p of [

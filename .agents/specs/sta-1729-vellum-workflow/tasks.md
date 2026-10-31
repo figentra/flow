@@ -44,7 +44,7 @@ Phase 1 is designed and approved; the later phases are placeholders, refined whe
 - [x] T087 The spec gate, trace and parser read issue keys, branches and folders from the key scheme instead of `sta-` and `figentra/`, in `packages/figentra-flow/src/commands/gate.mjs`, `packages/figentra-flow/src/commands/trace.mjs` and `packages/figentra-flow/src/lib/spec-parse.mjs` — covers: FR-11, AC-037 — route: spec-task — deps: T081
 - [x] T082 The runner port: `ssh`, `local`, `command` and `github-actions` with its workflow, in `packages/figentra-flow/src/adapters/runner/github-actions.mjs` — covers: FR-11, AC-038 — route: spec-task — deps: T080
 - [x] T083 Gate and review identities from the configuration and `vellum app create`, in `packages/figentra-flow/src/adapters/apps.mjs` and `packages/figentra-flow/src/commands/app.mjs` — covers: FR-11, AC-039 — route: spec-task — deps: T080
-- [ ] T084 The `neutral` preset and preset selection, in `packages/figentra-flow/assets/presets/neutral/preset.yml` and `packages/figentra-flow/src/commands/sync.mjs` — covers: FR-11, AC-041 — route: spec-task — deps: T080
+- [x] T084 The `neutral` preset and preset selection, in `packages/figentra-flow/assets/presets/neutral/preset.yml` and `packages/figentra-flow/src/commands/sync.mjs` — covers: FR-11, AC-041 — route: spec-task — deps: T080
 - [ ] T085 `vellum.config.json` in our repositories (core first), in `vellum.config.json` — covers: FR-11, AC-036, AC-045 — route: spec-task — deps: T081, T082, T083, T084
 
 ## Phase 4: status, MCP and metrics (design approved 2026-10-31)

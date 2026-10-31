@@ -43,9 +43,10 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { schemeFor, trackerFor } from "../adapters/tracker/index.mjs";
-import { DISPLAY_NAME, ENV_PREFIX, NAME, PACKAGE } from "../lib/product.mjs";
+import { loadConfig } from "../lib/config.mjs";
+import { CONFIG_FILE, DISPLAY_NAME, ENV_PREFIX, NAME, PACKAGE } from "../lib/product.mjs";
 
-/** The preset this package ships, installed when a repository keeps no `.agents/speckit/presets` of its own. */
+/** The presets this package ships (`stackra`, `neutral`), installed when a repository keeps none of its own. */
 const BUNDLED_PRESETS = fileURLToPath(new URL("../../assets/presets", import.meta.url));
 import {
   definedIds,
@@ -82,6 +83,33 @@ let scheme;
  * Keys are full and lower-cased: `sta-163`, `gh-7`.
  */
 export const repoScheme = () => (scheme ??= schemeFor(ROOT, { warn: () => {} }));
+/**
+ * The preset a repository uses: its configuration's `preset`; `neutral` for a configuration without one; `stackra`
+ * (the transitional default) for a repository with no config file.
+ * @param {string} [root]
+ */
+export function presetOf(root = ROOT) {
+  const preset = loadConfig(root).config.preset;
+  if (preset) return preset;
+  return existsSync(join(root, CONFIG_FILE)) ? "neutral" : "stackra";
+}
+
+/**
+ * The rules each preset's templates satisfy. `stackra` adds its Impact questionnaire, Constitution Check, deploy
+ * modes, correctness properties, task routes and path floors to what every preset keeps (the issue key, the
+ * clarifications marker, statuses, tiers, approvals, EARS criteria and the design sections). A repository's own
+ * preset folder is held to the neutral rules.
+ * @typedef {{ impact: boolean, constitution: boolean, properties: boolean, routes: boolean, floors: boolean }} Rules
+ * @type {Record<string, Rules>}
+ */
+export const RULES = {
+  stackra: { impact: true, constitution: true, properties: true, routes: true, floors: true },
+  neutral: { impact: false, constitution: false, properties: false, routes: false, floors: false },
+};
+/** @type {Rules | undefined} */
+let rules;
+export const repoRules = () => (rules ??= RULES[presetOf()] ?? RULES.neutral);
+
 /** The `**Linear**:` (or `**Issue**:`) line's key, lower-cased. */
 const issueLine = (/** @type {string} */ body, /** @type {KeyScheme} */ keys) =>
   body
@@ -102,8 +130,9 @@ export const STATUSES = [
 /**
  * @param {string} text
  * @param {KeyScheme} [keys]
+ * @param {Rules} [rules]
  */
-export function checkSpec(text, keys = repoScheme()) {
+export function checkSpec(text, keys = repoScheme(), rules = repoRules()) {
   const body = text.replaceAll(/<!--[\s\S]*?-->/g, "");
   const problems = [];
   if (!/^\*\*Clarifications status\*\*:\s*complete\s*$/im.test(body))
@@ -115,6 +144,7 @@ export function checkSpec(text, keys = repoScheme()) {
   if (/\[NEEDS CLARIFICATION/i.test(body)) problems.push("a `[NEEDS CLARIFICATION` marker remains");
 
   const impact = body.match(/^## Impact\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1];
+  if (!rules.impact) return problems;
   if (impact === undefined) {
     problems.push("the `## Impact` section is missing");
   } else {
@@ -151,7 +181,7 @@ const tableRows = (text) =>
     );
 
 /** Planned rules for plan.md against its spec. */
-export function checkPlan(plan, spec) {
+export function checkPlan(plan, spec, rules = repoRules()) {
   const problems = [];
   const body = strip(plan);
   if (/\[NEEDS CLARIFICATION/i.test(body))
@@ -159,6 +189,8 @@ export function checkPlan(plan, spec) {
   const section = (name) =>
     body.match(new RegExp(`^## ${name}\\b[^\\n]*\\n([\\s\\S]*?)(?=^## |(?![\\s\\S]))`, "m"))?.[1];
   const constitution = section("Constitution Check");
+  if (!rules.constitution)
+    return [...problems, ...(rules.properties ? unvalidated(plan, spec) : [])];
   if (constitution === undefined)
     problems.push("plan.md: the `## Constitution Check` table is missing");
   for (const [law, result, note] of tableRows(constitution)) {
@@ -172,16 +204,24 @@ export function checkPlan(plan, spec) {
   const modes = new Set(tableRows(section("Deploy modes")).map(([m]) => m.toLowerCase()));
   for (const mode of ["saas", "on-prem", "air-gapped"])
     if (!modes.has(mode)) problems.push(`plan.md: Deploy modes has no \`${mode}\` row`);
-  const validated = new Set([...properties(plan).values()].flat());
-  const frLines = definedLines(spec, "FR");
-  for (const fr of definedIds(spec, "FR").live)
-    if (!validated.has(fr) && !/example-only/i.test(frLines.get(fr) ?? ""))
-      problems.push(`plan.md: ${fr} is validated by no P-### (or mark it example-only in spec.md)`);
+  if (rules.properties) problems.push(...unvalidated(plan, spec));
   return problems;
 }
 
+/** FRs that no `P-###` property of plan.md validates (and that spec.md does not mark example-only). */
+function unvalidated(/** @type {string} */ plan, /** @type {string} */ spec) {
+  const validated = new Set([...properties(plan).values()].flat());
+  const frLines = definedLines(spec, "FR");
+  return [...definedIds(spec, "FR").live]
+    .filter((fr) => !validated.has(fr) && !/example-only/i.test(frLines.get(fr) ?? ""))
+    .map((fr) => `plan.md: ${fr} is validated by no P-### (or mark it example-only in spec.md)`);
+}
+
 /** Tasks lint for tasks.md against its spec and plan; `known` holds the routing.yaml task types. */
-export function checkTasks(tasksText, { spec = "", plan = "", known = new Set() } = {}) {
+export function checkTasks(
+  tasksText,
+  { spec = "", plan = "", known = new Set(), rules = repoRules() } = {},
+) {
   const problems = [];
   const tasks = parseTasks(tasksText);
   if (!tasks.length) return ["tasks.md: no `- [ ] T###` task lines"];
@@ -199,7 +239,9 @@ export function checkTasks(tasksText, { spec = "", plan = "", known = new Set() 
     for (const id of t.covers)
       if (!ids.has(id))
         problems.push(`${at} covers ${id}, which spec.md and plan.md do not define`);
-    if (!t.route) problems.push(`${at} has no \`route:\``);
+    if (!rules.routes) {
+      // the neutral preset's tasks name no route
+    } else if (!t.route) problems.push(`${at} has no \`route:\``);
     else if (known.size && !known.has(t.route))
       problems.push(`${at} route \`${t.route}\` is not a task type in .agents/routing.yaml`);
     for (const d of t.deps)
@@ -236,12 +278,13 @@ export function checkTasks(tasksText, { spec = "", plan = "", known = new Set() 
  * Problems for a spec at its declared `**Status**`; `files` lists the names in its folder.
  * @param {string} folder
  * @param {string} text
- * @param {{ files?: string[], tasks?: string, plan?: string, known?: Set<string>, keys?: KeyScheme }} [options]
+ * @param {{ files?: string[], tasks?: string, plan?: string, known?: Set<string>, keys?: KeyScheme,
+ *           rules?: Rules }} [options]
  */
 export function checkStage(
   folder,
   text,
-  { files = [], tasks = "", plan = "", known, keys = repoScheme() } = {},
+  { files = [], tasks = "", plan = "", known, keys = repoScheme(), rules = repoRules() } = {},
 ) {
   const body = strip(text);
   const key = keys.folderKey(folder);
@@ -256,7 +299,7 @@ export function checkStage(
       `the spec's key ${keys.display(linear)} does not match the folder key ${keys.display(key)}`,
     );
   if (status === "draft") return problems;
-  problems.push(...checkSpec(text, keys));
+  problems.push(...checkSpec(text, keys, rules));
   problems.push(...checkApproval(text));
   const tier = tierOf(text);
   if (tier !== undefined && tier !== "trivial") problems.push(...checkCriteria(text));
@@ -292,11 +335,11 @@ export function checkStage(
     problems.push(...checkTraceTasks(tasks, text, "tasks.md"));
   if (atLeast(status, "planned")) {
     if (!files.includes("plan.md")) problems.push(`status ${status} needs plan.md`);
-    else problems.push(...checkPlan(plan, text));
+    else problems.push(...checkPlan(plan, text, rules));
   }
   if (atLeast(status, "tasked")) {
     if (!files.includes("tasks.md")) problems.push(`status ${status} needs tasks.md`);
-    else problems.push(...checkTasks(tasks, { spec: text, plan, known }));
+    else problems.push(...checkTasks(tasks, { spec: text, plan, known, rules }));
   }
   const live = parseTasks(tasks).filter((t) => !t.struck);
   if (atLeast(status, "implementing") && !live.some((t) => t.done))
@@ -374,10 +417,13 @@ const NEUTRAL = /^\.agents\/specs\/|^\.changeset\/|^apps\/docs\/|\.mdx?$|\/__tes
 /**
  * The lowest tier a diff allows, with the paths that set it (ADR 0502).
  * @param {{ status: string, path: string }[]} changes  `git diff --name-status` rows
+ * @param {Rules} [rules]
  * @returns {{ tier: string, reasons: string[] }}
  */
-export function computedTier(changes) {
+export function computedTier(changes, rules = repoRules()) {
   let tier = "trivial";
+  // The floors read the Stackra layout (members, migrations, contracts); other presets keep the declared tier.
+  if (!rules.floors) return { tier, reasons: [] };
   /** @type {string[]} */
   const reasons = [];
   for (const floor of FLOORS) {
@@ -637,7 +683,7 @@ export function specDir({ root = ROOT, branch = "", key, slug, keys = repoScheme
   return { dir: `${SPECS_DIR}/${name}` };
 }
 
-/** Commands whose rendered copies must carry the Stackra feature-directory wrap. */
+/** Commands whose rendered copies must carry the preset's feature-directory wrap. */
 export const WRAPPED = [
   "specify",
   "clarify",
@@ -649,7 +695,13 @@ export const WRAPPED = [
   "converge",
 ];
 
-/** Core commands the preset replaces outright, with the marker their rendered copies must keep (ADR 0121). */
+/** The feature-directory marker each bundled preset's wrap carries. */
+export const MARKERS = {
+  stackra: "## Stackra: feature directory",
+  neutral: "## Workflow: feature directory",
+};
+
+/** Core commands the `stackra` preset replaces outright, with the marker their rendered copies must keep (ADR 0121). */
 export const REPLACED = {
   taskstoissues: "## Stackra: tasks to Linear issues",
   constitution: "## Stackra: the constitution is generated",
@@ -659,7 +711,7 @@ export const REPLACED = {
  * spec-kit upgrade tripwire (ADR 0120 D1): keeping specs in `.agents/specs` rests on core text and scripts that
  * `specify integration upgrade` or `specify init --force` can change or wipe. Each problem names what broke.
  */
-export function tripwire(root = ROOT) {
+export function tripwire(root = ROOT, preset = presetOf(root)) {
   const problems = [];
   const read = (p) => (existsSync(join(root, p)) ? readFileSync(join(root, p), "utf8") : null);
   const plan = read(".specify/scripts/bash/setup-plan.sh");
@@ -682,8 +734,12 @@ export function tripwire(root = ROOT) {
     problems.push(
       "init-options.json `feature_numbering` is not `linear-key` (an init or upgrade reset it)",
     );
-  for (const name of [...WRAPPED, ...Object.keys(REPLACED)]) {
-    const marker = REPLACED[name] ?? "## Stackra: feature directory";
+  const replaced = preset === "stackra" ? REPLACED : {};
+  // A repository's own preset folder may carry either bundled wrap.
+  const markers =
+    preset in MARKERS ? [MARKERS[/** @type {"stackra"} */ (preset)]] : Object.values(MARKERS);
+  for (const name of [...WRAPPED, ...Object.keys(replaced)]) {
+    const wanted = replaced[name] ? [replaced[name]] : markers;
     for (const p of [
       `.claude/skills/speckit-${name}/SKILL.md`,
       `.opencode/commands/speckit.${name}.md`,
@@ -694,8 +750,8 @@ export function tripwire(root = ROOT) {
         if (existsSync(join(root, dirname(dirname(p))))) problems.push(`${p} is missing`);
         continue;
       }
-      if (!text.includes(marker))
-        problems.push(`${p} lost the Stackra wrap (re-register the preset for that integration)`);
+      if (!wanted.some((m) => text.includes(m)))
+        problems.push(`${p} lost the preset's wrap (re-register the preset for that integration)`);
       // Anchor on the core's own resolution rule; the wrap's prose says "use it as-is" too.
       if (
         name === "specify" &&
@@ -712,8 +768,15 @@ export function tripwire(root = ROOT) {
     );
   const own = join(root, ".agents/speckit/presets");
   const source = existsSync(own) ? own : BUNDLED_PRESETS;
-  if (source === own || existsSync(join(root, ".specify/presets")))
-    for (const file of walk(source)) {
+  // Bundled presets are compared only where installed: a repository uses one of them, not both.
+  const ids =
+    source === own
+      ? [""]
+      : existsSync(join(root, ".specify/presets"))
+        ? readdirSync(join(root, ".specify/presets")).filter((id) => existsSync(join(source, id)))
+        : [];
+  for (const id of ids)
+    for (const file of walk(join(source, id))) {
       const rel = relative(source, file);
       const installed = `.specify/presets/${rel}`;
       if (read(installed) !== readFileSync(file, "utf8"))
