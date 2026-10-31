@@ -6,6 +6,9 @@
  *   On a box with no login and no `.infisical.yaml`, `auth: "universal-auth"` logs in from the box's own
  *   `INFISICAL_UNIVERSAL_AUTH_CLIENT_ID` and `INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET`, and `projectId`, `env` and
  *   `domain` name the project, environment and instance (without `domain`, the CLI's own `INFISICAL_API_URL`).
+ *   A box whose ssh shell has neither the CLI on PATH nor that identity in its environment names them: `bin` (the
+ *   CLI's path) and `envFile` (a file of `INFISICAL_UNIVERSAL_AUTH_CLIENT_ID=` and `_SECRET=` lines, read in a
+ *   subshell for this one command; only those two lines are taken, and only the login sees them).
  * Boundary: builds command strings for a POSIX shell on the box; runs nothing; reads no value. The access token is a
  *   command substitution assigned to `INFISICAL_TOKEN` for the `infisical run` process alone (AC-044): never an
  *   argument (a process list shows those), never in this process, the command text or a log.
@@ -23,6 +26,12 @@ import { ConfigError } from "../lib/config.mjs";
 /** A value safe to put in a shell word unquoted: a project id or an environment slug. */
 const SAFE = /^[\w.-]+$/;
 
+/** A file on the box: absolute, or under `~` or `$HOME`. */
+const BOX_PATH = /^(?:~|\$HOME)?\/[\w./-]+$/;
+
+/** The identity lines `envFile` may contribute, with any `export ` dropped so they stay unexported. */
+const IDENTITY = "s/^(export[[:space:]]+)?(INFISICAL_UNIVERSAL_AUTH_CLIENT_(ID|SECRET)=)/\\2/p";
+
 /**
  * The secrets the block names; `env` when the configuration sets none.
  * @param {any} block the configuration's `secrets`
@@ -39,10 +48,22 @@ export function secretsPort(block) {
       !/^https:\/\/[\w.-]+(?::\d+)?(?:\/[\w./-]*)?$/.test(block.domain)
     )
       throw new ConfigError(`secrets "infisical": domain is not an https URL: ${block.domain}`);
+    for (const key of ["bin", "envFile"])
+      if (block[key] !== undefined && !BOX_PATH.test(block[key]))
+        throw new ConfigError(`secrets "infisical": ${key} is not a box path: ${block[key]}`);
+    if (block.envFile !== undefined && block.auth !== "universal-auth")
+      throw new ConfigError(`secrets "infisical": envFile needs "auth": "universal-auth"`);
+    const quoted = (/** @type {string} */ p) => `"${p.replace(/^~(?=\/)/, "$HOME")}"`;
+    const cli = block.bin ? quoted(block.bin) : "infisical";
+    // The identity reaches the login's substitution subshell alone, never the run or the wrapped command.
+    const identity = block.envFile
+      ? "export INFISICAL_UNIVERSAL_AUTH_CLIENT_ID INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET; "
+      : "";
+    const load = block.envFile ? `eval "$(sed -nE '${IDENTITY}' ${quoted(block.envFile)})"; ` : "";
     const domain = block.domain ? ` --domain=${block.domain}` : "";
     const login =
       block.auth === "universal-auth"
-        ? `INFISICAL_TOKEN="$(infisical login --method=universal-auth --silent --plain${domain})" `
+        ? `INFISICAL_TOKEN="$(${identity}${cli} login --method=universal-auth --silent --plain${domain})" `
         : "";
     const project = block.projectId ? ` --projectId=${block.projectId}` : "";
     const env = block.env ? ` --env=${block.env}` : "";
@@ -52,7 +73,8 @@ export function secretsPort(block) {
         if (!path) throw new ConfigError(`secrets "infisical": set paths.${scope}`);
         if (!/^\/[\w./-]*$/.test(path))
           throw new ConfigError(`secrets "infisical": paths.${scope} is not a path: ${path}`);
-        return `${login}infisical run --silent${domain}${project}${env} --path=${path} -- ${command}`;
+        const run = `${login}${cli} run --silent${domain}${project}${env} --path=${path} -- ${command}`;
+        return load ? `( ${load}${run} )` : run;
       },
     };
   }

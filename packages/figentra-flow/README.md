@@ -63,7 +63,9 @@ setting you have not made refuses and names it.
   `paths` per scope, e.g. `"gate": "/ci/gate"`. On a box with no login, `"auth": "universal-auth"` logs in
   from the box's `INFISICAL_UNIVERSAL_AUTH_CLIENT_ID` and `INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET` inside the wrapped
   command, and `projectId`, `env` and `domain` name the project, environment and instance. The token goes only into the run
-  process's environment, never onto a command line. Figentra Flow wraps the command and never reads a
+  process's environment, never onto a command line. When the box's ssh shell lacks the CLI or the identity, `bin` names the CLI
+  (`"~/.local/bin/infisical"`) and `envFile` a file holding the two `INFISICAL_UNIVERSAL_AUTH_CLIENT_*` lines, read
+  in a subshell for that one command and seen only by the login. There is no default for either. Figentra Flow wraps the command and never reads a
   value.
 - `gate.check` is the check command (default `pnpm verify`).
 

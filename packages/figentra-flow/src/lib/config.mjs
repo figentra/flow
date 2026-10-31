@@ -76,6 +76,8 @@ export const SCHEMA = {
           env: str,
           domain: str,
           auth: { enum: ["universal-auth"] },
+          bin: str,
+          envFile: str,
         },
       },
       { infisical: ["paths"] },
