@@ -109,6 +109,7 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - **AC-027**: IF a running process (a session, a dev server, a shell) has its working folder inside a worktree, or running processes cannot be listed THEN THE CLI SHALL neither remove nor adopt it, and SHALL adopt a stray tree only after it has been idle for 2 hours
 - **AC-028**: IF a repository keeps no preset source of its own and its installed `.specify` preset differs from the one bundled in Vellum THEN THE spec gate (`vellum gate ci`) SHALL fail and name the drifted file
 - **AC-029**: WHEN `vellum land` has squash-merged a branch THE CLI SHALL record its merge commit, and `vellum clean` SHALL count that branch's worktree as saved once the merge commit is on the default branch
+- **AC-030**: IF the default branch's ruleset does not require `vellum/gate` and `--manual-ok` is not passed THEN THE CLI SHALL refuse to land and name phase 6
 - **AC-023**: WHEN a spec carries a `**Session**` line THE CLI SHALL read it as the spec's assigned session and show it in `vellum status`
 - **AC-024**: WHEN `vellum status` runs THE CLI SHALL list each session with its spec, worktree and the `vellum/gate` result of the worktree's head
 - **AC-025**: IF a feature- or big-tier spec past Clarified has no `**Session**` THEN THE CLI SHALL report it in `vellum gate check` as a finding
@@ -154,3 +155,4 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - 2026-10-31: Tasked (revised) — Approved by leader 2026-10-31 (AC-027: never remove or adopt a tree a live session works in; adopt only after 2 h idle)
 - 2026-10-31: phase 2 Planned — Approved by leader 2026-10-31 (the gate design: a dedicated Stackra Gate App, `vellum gate ci` where Vellum is installed, `--box` now, no secret in any log)
 - 2026-10-31: Tasked (revised) — Approved by leader 2026-10-31 (AC-028: the tripwire compares the installed preset with Vellum's bundled one once core keeps no copy, W2)
+- 2026-10-31: phase 3 Planned — Approved by leader 2026-10-31 (land: merge-updated stacks, `stackra-gate[bot]` as defence in depth, any session, `--manual-ok` until phase 6 (AC-030), AC-029 kept)

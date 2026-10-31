@@ -28,9 +28,9 @@ Phase 1 is designed and approved; the later phases are placeholders, refined whe
 - [x] T022 Tests in `packages/vellum/src/__tests__/gate-run.test.mjs` and `packages/vellum/src/__tests__/gate-post.test.mjs`, the README and a changeset — covers: FR-5, AC-008, AC-009 — route: spec-task — deps: T020, T021
 - [x] T023 The tripwire compares the installed preset with Vellum's bundled one when the repository keeps no source, in `packages/vellum/src/commands/gate.mjs` — covers: FR-3, AC-028 — route: spec-task
 
-## Phase 3: land (design written; plan stop pending)
+## Phase 3: land (design approved 2026-10-31)
 
-- [ ] T030 `vellum land` and `--stack` in `packages/vellum/src/commands/land.mjs`, `packages/vellum/src/lib/github.mjs` and `packages/vellum/src/commands/clean.mjs` — covers: FR-6, AC-010, AC-011, AC-017, AC-029 — route: spec-task
+- [ ] T030 `vellum land` and `--stack` in `packages/vellum/src/commands/land.mjs`, `packages/vellum/src/lib/github.mjs` and `packages/vellum/src/commands/clean.mjs` — covers: FR-6, AC-010, AC-011, AC-017, AC-029, AC-030 — route: spec-task
 
 ## Phase 4: status (design pending)
 

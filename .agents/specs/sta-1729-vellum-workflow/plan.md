@@ -449,11 +449,14 @@ the branch when `clean` deletes the branch.
 3. Then f4 uses `vellum land` instead of hand landing, one repository at a time. Phase 6 makes the required check bind
    to the gate App.
 
-### Phase 3 decisions to confirm at the plan stop
+### Decisions at the plan stop (leader, 2026-10-31)
 
-1. **Updating a stack:** merge, not rebase, because the owner forbids force-pushing. A stacked branch therefore carries a
-   merge commit until it is squashed. Is that acceptable?
-2. **The trusted creator:** the gate App's login, `stackra-gate[bot]` by default. Is that the name to use?
-3. **Who may run `land`:** any session, with GitHub's rules as the guarantee. Or should it refuse unless the session
-   is the named lander, through `VELLUM_LANDER` in the environment? That would be a convention, not a security
-   boundary.
+1. **Stacks are updated by merge.** The no-force rule wins, and the squash on land flattens the history anyway.
+2. **`stackra-gate[bot]` is the trusted creator.** GitHub reserves the `[bot]` suffix for Apps. This check is defence in
+   depth only; the guarantee is the ruleset requiring `vellum/gate` from the App's integration id (phase 6).
+3. **Any session may run `land`.** There is no `VELLUM_LANDER` convention: the required check plus `checkApproval` is
+   the guarantee.
+4. **Before phase 6** switches a repository's ruleset, `land` refuses there unless `--manual-ok` is passed (AC-030).
+   It reads `GET /repos/{r}/rules/branches/{default}` and looks for a `required_status_checks` rule naming
+   `vellum/gate`. Only stackra-f4 passes `--manual-ok`, during the transition. The flag is printed in the PR comment.
+5. AC-029 stays.
