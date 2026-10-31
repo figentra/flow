@@ -67,11 +67,22 @@ setting you have not made refuses and names it.
   value.
 - `gate.check` is the check command (default `pnpm verify`).
 
+- `tracker` names the issue tracker:
+  - `linear` with `team` and `branchPrefix`, and optionally `token`, the names of the environment variables holding
+    the token;
+  - `github-issues` with `branchPrefix`, which uses keys `gh-<n>` for the repository's own issue `#<n>`.
+
+  Issue keys are `<prefix>-<n>`. `vellum start <key>` makes branch `<branchPrefix>/<key>-<slug>` and worktree
+  `<key>-<slug>`. `start`, `clean`, `land` and the spec gate's stage comments read and move issues through the
+  tracker. A tracker failure is a warning, never silent and never an exit code. Without a config file, the Linear
+  `STA` scheme used before is kept, with a warning, until the next minor version.
+
+- `clean.keep` lists worktree names `clean` never removes or adopts. These are globs such as `*-gate`.
 - `artifacts` is the guard `gate run` and `land` apply to a change. `paths` defaults to `.cache/`, `node_modules/`,
   `dist/`, `.turbo/` and `coverage/`, where a trailing `/` matches the folder at any depth and other entries are globs.
   `maxBytes` defaults to 5 MB. A change that adds or changes such a file is refused, with each file named.
 
-The tracker, runner, apps, preset, `clean.keep` and `review.required` keys follow in the next steps of
+The runner, apps, preset and `review.required` keys follow in the next steps of
 the same phase. The older `package.json` `"vellum"` keys (`credentials`, `gate`, `gateApp`) are still read, with a
 warning, until the next minor version.
 

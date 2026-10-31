@@ -16,21 +16,13 @@
 import { checkApproval, statusOf, tierOf } from "./gate.mjs";
 import { clean } from "./clean.mjs";
 import { gateRun } from "./gate-run.mjs";
-import { client, linear } from "../lib/linear.mjs";
+import { trackerFor } from "../adapters/tracker/index.mjs";
 import { github } from "../lib/github.mjs";
 import { aiReview, REVIEWER } from "../lib/review.mjs";
 import { artifactProblems } from "../lib/artifacts.mjs";
 import { loadConfig } from "../lib/config.mjs";
 import { NAME, STATUS_CONTEXT } from "../lib/product.mjs";
-import {
-  defaultBranch,
-  fetch,
-  git,
-  issueKey,
-  mainCheckout,
-  remote,
-  worktrees,
-} from "../lib/git.mjs";
+import { defaultBranch, fetch, git, mainCheckout, remote, worktrees } from "../lib/git.mjs";
 
 /** The status creator `land` trusts by default (defence in depth; the ruleset is the guarantee). */
 export const GATE_APP = "stackra-gate[bot]";
@@ -141,7 +133,8 @@ function specAt(
 
 /**
  * @typedef {{ api: import("../lib/github.mjs").Api, done: (key: string, url: string) => Promise<void>,
- *             log: (s: string) => void, warn: (s: string) => void }} LandDeps
+ *             log: (s: string) => void, warn: (s: string) => void,
+ *             scheme?: import("../adapters/tracker/index.mjs").KeyScheme }} LandDeps
  */
 
 /**
@@ -174,7 +167,8 @@ export async function landOne({
         (/** @type {any} */ c) => c.context === STATUS_CONTEXT,
       ),
   );
-  const key = issueKey(branch);
+  const scheme = deps.scheme ?? trackerFor(root, { warn: () => {} }).scheme;
+  const key = scheme.parse(branch);
   const spec = specAt(api, repo, head, key);
   const commit = api("GET", `/repos/${repo}/commits/${head}`).json ?? {};
   const review = aiReview(
@@ -229,7 +223,7 @@ export async function landOne({
     }
   };
   if (key)
-    await step(`Linear ${key.toUpperCase()} Done`, () =>
+    await step(`tracker ${scheme.display(key)} Done`, () =>
       deps.done(key, `https://github.com/${repo}/commit/${sha}`),
     );
   // AC-029: `clean` counts a squashed branch as saved by this commit (a squash has its own patch id).
@@ -332,15 +326,6 @@ export async function landStack({ root, repo, base, number, manualOk = false, ga
   return { code: 0 };
 }
 
-/** The default Linear step: Done, with a comment naming the merge commit. */
-async function linearDone(/** @type {string} */ key, /** @type {string} */ url) {
-  const api = linear(client({ env: process.env }));
-  const issue = await api.issue(key.toUpperCase());
-  if (!issue) throw new Error(`${key.toUpperCase()} not found`);
-  await api.setState(issue, "Done");
-  await api.comment(issue, `Landed: ${url} (vellum land).`);
-}
-
 /** `vellum land [<pr>] [--stack] [--dry-run] [--manual-ok]`. */
 export async function run(/** @type {string[]} */ args) {
   const cwd = process.cwd();
@@ -381,9 +366,12 @@ export async function run(/** @type {string[]} */ args) {
       return 2;
     }
   }
+  const { scheme, tracker, problem } = trackerFor(root);
   const deps = {
     api,
-    done: linearDone,
+    scheme,
+    done: (/** @type {string} */ key, /** @type {string} */ url) =>
+      tracker ? tracker.done(scheme.display(key), url) : Promise.reject(new Error(problem)),
     log: console.log,
     warn: console.error,
     gate: async (/** @type {string} */ dir) => (await gateRun({ cwd: dir })).code,

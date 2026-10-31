@@ -2,7 +2,7 @@
  * Vellum file contract:
  * Purpose: `vellum gate` (core's `spec-gate`, moved unchanged) — the stage gates for spec-kit specs in `.agents/specs/sta-<n>-<slug>/` (ADR 0120 D1, owner
  *          decision OR12).
- * Boundary: reads the spec folders, git and, through `pnpm linear`, comments on Linear (best-effort); writes no spec
+ * Boundary: reads the spec folders, git and, through the tracker port, comments on the issue (best-effort); writes no spec
  *           file.
  * Runtime: node
  * Governing contract: ADR 0120 (SDLC spec location, lanes and change risk); ADR 0121; ADR 0065 (rule 7).
@@ -35,14 +35,16 @@
  *   Tasked        tasks.md passes `tasks`
  *   Implementing  at least one task ticked
  *   Done          every live task ticked (spec-trace adds test coverage)
- * Linear: `plan` and `stage` comment the stage on the spec's issue through `pnpm linear`; best-effort, never part of
- * the exit code (ADR 0065 rule 7). `ci` never calls Linear. STACKRA_LINEAR=off disables the calls. Dependency-free.
+ * Tracker: `plan` and `stage` comment the stage on the spec's issue through the tracker port; a failure warns, never part of
+ * the exit code (ADR 0065 rule 7). `ci` never calls it. VELLUM_TRACKER=off (or STACKRA_LINEAR=off) disables it.
  */
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { trackerFor } from "../adapters/tracker/index.mjs";
 import { BRANCH_RE } from "../lib/linear.mjs";
+import { ENV_PREFIX, NAME } from "../lib/product.mjs";
 
 /** The preset this package ships, installed when a repository keeps no `.agents/speckit/presets` of its own. */
 const BUNDLED_PRESETS = fileURLToPath(new URL("../../assets/presets", import.meta.url));
@@ -717,18 +719,43 @@ export function tripwire(root = ROOT) {
   return problems;
 }
 
-/** Best-effort stage report to the spec's Linear issue; output and failures are swallowed. */
-function linearStage(file, stage) {
-  const key = readFileSync(file, "utf8").match(/^\*\*Linear\*\*:\s*(STA-\d+)\b/m)?.[1];
-  if (!key || process.env.STACKRA_LINEAR === "off") return;
-  const linear = (args) =>
-    spawnSync("pnpm", ["--silent", "linear", ...args], {
-      cwd: ROOT,
-      stdio: "ignore",
-      timeout: 20_000,
-    });
-  linear(["comment", key, `Spec stage: ${stage} (${file.replace(`${ROOT}/`, "")})`]);
-  if (stage === "implementing") linear(["start", key]);
+/**
+ * Reports a spec's stage to its issue through the tracker port: a comment, and In Progress at `implementing`. A
+ * tracker that is missing or fails is a warning on stderr, never swallowed and never the gate's exit code (ADR 0065
+ * rule 7). `<PREFIX>TRACKER=off` (or the older `STACKRA_LINEAR=off`) turns it off.
+ * @param {string} file the spec.md
+ * @param {string} stage
+ * @param {{ root?: string, scheme?: import("../adapters/tracker/index.mjs").KeyScheme,
+ *           tracker?: import("../adapters/tracker/index.mjs").Tracker, warn?: (s: string) => void }} [options]
+ */
+export async function trackerStage(file, stage, options = {}) {
+  const { root = ROOT, warn = console.error } = options;
+  if (process.env[`${ENV_PREFIX}TRACKER`] === "off" || process.env.STACKRA_LINEAR === "off") return;
+  let { scheme, tracker } = options;
+  let problem;
+  if (!scheme) {
+    try {
+      ({ scheme, tracker, problem } = trackerFor(root, { warn: () => {} }));
+    } catch (error) {
+      warn(
+        `${NAME} gate: warning: the tracker was not told the stage (${/** @type {Error} */ (error).message})`,
+      );
+      return;
+    }
+  }
+  const raw = readFileSync(file, "utf8").match(/^\*\*(?:Linear|Issue)\*\*:\s*(\S+)/m)?.[1];
+  const key = raw && scheme.parse(raw);
+  if (!key) return;
+  const shown = scheme.display(key);
+  try {
+    if (!tracker) throw new Error(problem ?? "no tracker");
+    await tracker.comment(shown, `Spec stage: ${stage} (${file.replace(`${root}/`, "")})`);
+    if (stage === "implementing") await tracker.inProgress(shown, "");
+  } catch (error) {
+    warn(
+      `${NAME} gate: warning: ${shown} was not told the stage ${stage} (${/** @type {Error} */ (error).message})`,
+    );
+  }
 }
 
 function gate(file) {
@@ -869,12 +896,10 @@ export function run([mode, ...args]) {
   const [arg, stage] = args;
   if (mode === "plan" && arg) {
     if (gate(arg)) return 1;
-    linearStage(arg, "clarified");
-    return 0;
+    return trackerStage(arg, "clarified").then(() => 0);
   }
   if (mode === "stage" && arg && STAGES.includes(stage)) {
-    linearStage(arg, stage);
-    return 0;
+    return trackerStage(arg, stage).then(() => 0);
   }
   if (mode === "dir") {
     const opt = (name) =>
