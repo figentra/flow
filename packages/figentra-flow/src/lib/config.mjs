@@ -69,7 +69,7 @@ export const SCHEMA = {
         "github-actions": { workflow: str },
         ssh: { host: str },
         local: {},
-        command: { run: strs },
+        command: { run: strs, secrets: { type: "boolean" } },
       },
       { ssh: ["host"], command: ["run"] },
     ),
