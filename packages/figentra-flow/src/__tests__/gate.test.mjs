@@ -43,6 +43,7 @@ import { keyScheme } from "../adapters/tracker/index.mjs";
 import { labelsFor, specLinks, unlinkedTasks } from "../commands/linear.mjs";
 import { init } from "../commands/init.mjs";
 import { ASSETS, installSkills } from "../commands/sync.mjs";
+import { PACKAGE } from "../lib/product.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BIN = join(HERE, "../../bin/figentra-flow.mjs");
@@ -392,7 +393,7 @@ test("tripwire: the repository passes, and an upgrade that drops the wrap or res
       '{"workflows":{"speckit":{"source":"bundled"}}}',
     );
     const more = tripwire(root).join("\n");
-    assert.match(more, /speckit\.taskstoissues\.md lost the Stackra wrap/);
+    assert.match(more, /speckit\.taskstoissues\.md lost the preset's wrap/);
     assert.match(more, /workflow is enabled/);
     // The installed preset must equal its source.
     for (const p of [
@@ -418,9 +419,12 @@ test("tripwire: without its own preset source a repository's installed preset mu
       join(root, ".specify/presets/stackra/templates/spec-template.md"),
       "an old template\n",
     );
-    assert.match(
-      tripwire(root).join(),
-      /\.specify\/presets\/stackra\/templates\/spec-template\.md differs from the preset bundled in figentra-flow/,
+    assert.ok(
+      tripwire(root)
+        .join()
+        .includes(
+          `.specify/presets/stackra/templates/spec-template.md differs from the preset bundled in ${PACKAGE}`,
+        ),
     );
   } finally {
     rmSync(root, { recursive: true });

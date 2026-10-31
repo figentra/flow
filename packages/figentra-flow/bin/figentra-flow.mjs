@@ -20,6 +20,7 @@ const COMMANDS = [
   "clean",
   "guard",
   "land",
+  "app",
 ];
 const [command, ...args] = process.argv.slice(2);
 if (!COMMANDS.includes(command)) {

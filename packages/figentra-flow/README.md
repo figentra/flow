@@ -6,7 +6,7 @@ preset, renders the `speckit-*` skills for Claude Code and OpenCode, and holds t
 its tasks and its tests in step. It is one package, `figentra-flow`, with two binaries, `figentra-flow` and its alias `fflow`, published publicly on npmjs.
 
 ```sh
-pnpm add -D figentra-flow
+pnpm add -D @figentra-oss/flow             # from the Figentra registry: @figentra-oss:registry in .npmrc
 pnpm exec figentra-flow init         # .specify/ with the Stackra preset
 pnpm exec figentra-flow sync         # install the preset and render the speckit skills (needs the pinned `specify`)
 ```
@@ -94,6 +94,17 @@ setting you have not made refuses and names it.
 
   There are no defaults. Without a gate App `land` refuses, and without a review App no verdict counts.
 
+  `figentra-flow app create gate|review [--org <login>] [--name <name>] [--key-file <path>]` creates either App by
+  GitHub's App-manifest flow, for a human at a terminal only (an agent or CI session is refused). It opens a local
+  page that sends the manifest to GitHub (no webhook; the gate gets `contents: read`, `statuses` and
+  `pull_requests: write`, the review App `contents: read`, `pull_requests` and `issues: write`), then hands the private
+  key and the App id to the secrets port: with `infisical`, `infisical secrets set NAME=@<file>` under the role's path,
+  so the key is on no command line; with `env`, a new 0600 file at `--key-file`. It prints the slug and login to set
+  under `apps`.
+
+- `review.required` lists the spec tiers whose changes need the AI review before `land` (default `small`,
+  `feature`, `big`; a spec with no tier counts as `small`).
+
 - `runner` says where `gate run`'s checks run:
   - `ssh` with `host`, the same as `--box <host>` for one run;
   - `local`, the caller's machine;
@@ -122,7 +133,7 @@ setting you have not made refuses and names it.
   `neutral` and a path need `specify` on PATH to render; without a config file, `stackra` (or the repository's
   `.agents/speckit/presets/`) is kept until the next minor version.
 
-The `review.required` key follows in the next step of the same phase. Only
+Only
 `figentra-flow.config.json` is read; no other file stands in for it.
 
 ## The gate

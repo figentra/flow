@@ -11,8 +11,11 @@
 
 import { readFileSync } from "node:fs";
 
-/** The package's own name, from its `package.json` (`@scope/name`). */
 const MANIFEST = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
+/**
+ * The npm name, from `package.json`: `@figentra-oss/flow` on the Figentra registry for now, `figentra-flow` on npmjs
+ * later (owner, 2026-10-31). Only the package name changes; the CLI stays `NAME`.
+ */
 export const PACKAGE = MANIFEST.name;
 
 /** This package's version: the one a written gate workflow pins its poster to. */

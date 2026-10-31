@@ -113,6 +113,12 @@ test("rules: a change with a spec needs the AI review PASS on its head (AC-031);
     }).join(),
     /counted verdict: FAIL.*ignored: x is not the stackra-reviewer app/,
   );
+  // `review.required` narrows the tiers: a small change passes when only feature and big need the review.
+  assert.deepEqual(landRules({ ...base, spec: small, reviewTiers: ["feature", "big"] }), []);
+  assert.equal(
+    landRules({ ...base, spec: "# Spec\n\n**Tier**: trivial\n", reviewTiers: ["trivial"] }).length,
+    1,
+  );
   assert.deepEqual(landRules({ ...base, spec: small, review: PASSED }), []);
 });
 
