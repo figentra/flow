@@ -45,6 +45,7 @@ export function repo(files = {}) {
   // `land --stack`), so the repository carries its own.
   sh(root, "config", "user.name", "t");
   sh(root, "config", "user.email", "t@t");
+  sh(root, "config", "commit.gpgsign", "false");
   writeFileSync(join(root, "README.md"), "x\n");
   for (const [path, text] of Object.entries(files)) writeFileSync(join(root, path), text);
   sh(root, "add", "-A");
