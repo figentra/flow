@@ -18,10 +18,13 @@ export const PACKAGE = MANIFEST.name;
 /** This package's version: the one a written gate workflow pins its poster to. */
 export const VERSION = MANIFEST.version;
 
+/** The registry the package is published to (`publishConfig.registry`), or undefined for npm's default. */
+export const REGISTRY = MANIFEST.publishConfig?.registry;
+
 /** The product's name, as people read it. */
 export const DISPLAY_NAME = "Figentra Flow";
 
-/** The CLI's name, as users type it (also the npm package and the binary). */
+/** The CLI's name, as users type it (the binary; the npm name is `PACKAGE`). */
 export const NAME = "figentra-flow";
 
 /** The binary's short alias. */

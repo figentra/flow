@@ -20,7 +20,7 @@ import { GATE_WORKFLOW, githubActionsRunner } from "../adapters/runner/github-ac
 import { initGithubActions } from "../commands/init.mjs";
 import { ConfigError } from "../lib/config.mjs";
 import { gateWorkflow } from "../lib/gate-workflow.mjs";
-import { CONFIG_FILE, ENV_PREFIX } from "../lib/product.mjs";
+import { CONFIG_FILE, ENV_PREFIX, PACKAGE } from "../lib/product.mjs";
 
 const SHA = "a".repeat(40);
 const JOB = {
@@ -136,7 +136,9 @@ test("workflow: the change's job holds no secret and no credential; the post job
   assert.equal(/actions\/checkout/.test(post), false, "the post job runs no repository code");
   assert.match(head, /persist-credentials: false/);
   assert.match(yaml, /run-name: figentra-flow gate \$\{\{ inputs\.sha \}\}/);
-  assert.match(post, /figentra-flow@1\.2\.3/);
+  assert.ok(post.includes(`${PACKAGE}@1.2.3`), "the post job pins the poster's package");
+  // npx names the binary: the package carries two (figentra-flow and fflow)
+  assert.ok(head.includes(`--package=${PACKAGE}@1.2.3 figentra-flow gate command`));
   for (const [, ref] of yaml.matchAll(/uses: [\w/-]+@(\S+)/g)) assert.match(ref, /^[0-9a-f]{40}$/);
   assert.match(yaml, /^permissions: \{\}$/m);
 });
@@ -146,9 +148,10 @@ test("init --runner github-actions: writes the workflow and a starter config; re
   t.after(() => rmSync(root, { recursive: true }));
   const first = initGithubActions(root, { version: "1.2.3" });
   assert.equal(first.problem, undefined);
-  assert.match(
-    readFileSync(join(root, ".github/workflows", GATE_WORKFLOW), "utf8"),
-    /figentra-flow@1\.2\.3/,
+  assert.ok(
+    readFileSync(join(root, ".github/workflows", GATE_WORKFLOW), "utf8").includes(
+      `${PACKAGE}@1.2.3`,
+    ),
   );
   assert.deepEqual(JSON.parse(readFileSync(join(root, CONFIG_FILE), "utf8")).runner, {
     kind: "github-actions",

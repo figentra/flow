@@ -12,7 +12,15 @@
  * Governing contract: STA-1729 phase A (A3).
  * Secrets: names the repository secrets `<ENV_PREFIX>GATE_APP_ID` and `<ENV_PREFIX>GATE_PRIVATE_KEY`; holds no value.
  */
-import { ENV_PREFIX, GATE_DIR, GATE_MARKER, NAME, PACKAGE, STATUS_CONTEXT } from "./product.mjs";
+import {
+  ENV_PREFIX,
+  GATE_DIR,
+  GATE_MARKER,
+  NAME,
+  PACKAGE,
+  REGISTRY,
+  STATUS_CONTEXT,
+} from "./product.mjs";
 
 const CHECKOUT = "actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0";
 const SETUP_NODE = "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0";
@@ -25,6 +33,9 @@ const DOWNLOAD = "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef
  */
 export function gateWorkflow({ version }) {
   const pkg = `${PACKAGE}@${version}`;
+  // A scoped package resolves from the registry it is published to; npm's default otherwise.
+  const scope =
+    PACKAGE.startsWith("@") && REGISTRY ? ` --${PACKAGE.split("/")[0]}:registry=${REGISTRY}` : "";
   const job = JSON.stringify({
     context: STATUS_CONTEXT,
     marker: GATE_MARKER,
@@ -69,7 +80,7 @@ jobs:
         run: |
           mkdir -p ${GATE_DIR}
           date -u +%Y-%m-%dT%H:%M:%SZ > ${GATE_DIR}/started
-          npx --yes ${pkg} gate command > "$RUNNER_TEMP/check.sh"
+          npx --yes${scope} --package=${pkg} ${NAME} gate command > "$RUNNER_TEMP/check.sh"
           set +e
           bash "$RUNNER_TEMP/check.sh" 2>&1 | tee ${GATE_DIR}/log.txt
           code=\${PIPESTATUS[0]}
@@ -107,7 +118,7 @@ jobs:
           BRANCH: \${{ inputs.branch }}
           REPOSITORY: \${{ github.repository }}
         run: |
-          npm install --no-save --ignore-scripts --prefix "$RUNNER_TEMP/flow" ${pkg}
+          npm install --no-save --ignore-scripts${scope} --prefix "$RUNNER_TEMP/flow" ${pkg}
           cp "$RUNNER_TEMP/flow/node_modules/${PACKAGE}/src/lib/gate-post.mjs" ${GATE_DIR}/post.mjs
           node -e 'const j = ${job}; require("fs").writeFileSync(process.argv[1], JSON.stringify({ ...j, sha: process.env.SHA, branch: process.env.BRANCH, repository: process.env.REPOSITORY, startedAt: require("fs").readFileSync(process.argv[2], "utf8").trim() }))' ${GATE_DIR}/job.json ${GATE_DIR}/started
           set +e
