@@ -1,5 +1,6 @@
 {
   "$schema": "./packages/figentra-flow/schema/figentra-flow.config.schema.json",
+  "version": 1,
   "credentials": { "kind": "gh-user" },
   "secrets": {
     "kind": "infisical",
