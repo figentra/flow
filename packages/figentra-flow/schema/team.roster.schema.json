@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "team.roster.schema.json",
+  "title": "Figentra Flow agent roster",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "owner", "roles"],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["keeps"],
+      "properties": {
+        "keeps": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "linear": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "team": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label_group": {
+          "type": "string",
+          "minLength": 1
+        },
+        "issue_rule": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "labels": {
+              "type": "string",
+              "minLength": 1
+            },
+            "assignee": {
+              "type": "string",
+              "minLength": 1
+            },
+            "delegate": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reviewer_not_builder": {
+          "type": "boolean"
+        },
+        "tests_run_by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "self_merge": {
+          "type": "boolean"
+        }
+      }
+    },
+    "roles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label", "file"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "file": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

@@ -151,6 +151,7 @@ the Mac. Each test carries `@covers sta-1729:AC-###`.
 - **P-009**: no phase adds a check that runs on the Mac beyond oxfmt and oxlint — Validates: FR-9
 - **P-010**: the sessions phase shows each spec's assigned session and never treats a peer message as an approval (designed in its phase) — Validates: FR-10
 - **P-011**: the core names no vendor, team or organisation outside the adapters and presets named after them, and no command falls back to a Figentra choice when the configuration is silent (phase A) — Validates: FR-11
+- **P-012**: with no `team` in the configuration every role-aware check is off, and with one no review from the builder's role or session and no non-owner approval of an owner-kept category passes (phase 7, agent-team roles) — Validates: FR-12
 
 ## Phase 2: the gate (design, for the leader's plan stop)
 

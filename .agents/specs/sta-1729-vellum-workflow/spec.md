@@ -91,6 +91,9 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - **FR-11** The core names no vendor, team or organisation: credentials, issue tracker, runner, gate and review
   identities, secrets and spec preset are adapters chosen per repository in `vellum.config.json`, and the product name
   lives in one module.
+- **FR-12** A repository may name an agent roster in `team` (roles in its own files, none shipped by Flow): specs and
+  tasks carry a role, `status` groups by it, a review from the builder's role or session is refused, and an approval
+  in a category the owner keeps needs the owner, whatever a role file says.
 
 ## Acceptance criteria
 
@@ -139,6 +142,14 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - **AC-024**: WHEN `vellum status` runs THE CLI SHALL list each session with its spec, worktree and the `vellum/gate` result of the worktree's head
 - **AC-025**: IF a feature- or big-tier spec past Clarified has no `**Session**` THEN THE CLI SHALL report it in `vellum gate check` as a finding
 - **AC-026**: WHILE more than two build sessions hold an In Progress spec and the owner has not raised the cap THE CLI SHALL report the excess in `vellum status`
+- **AC-046**: WHEN the configuration names a roster in `team` THE CLI SHALL read it and its role files with no new dependency, refuse YAML outside the supported subset by line, and publish `schema/team.roster.schema.json` and `schema/team.role.schema.json`
+- **AC-047**: WHEN `figentra-flow team check` or `gate ci` runs on a repository with a roster THE CLI SHALL report duplicate ids, a label other than `role:<id>`, a role file whose id differs, an unknown or self `reviewed_by`, an unknown `rules.tests_run_by`, and an `approves` entry that names a category in `owner.keeps` as a whole word
+- **AC-048**: IF a roster exists and a spec's `**Role**` or a task's `role:` names no known role, or a feature- or big-tier spec past Clarified has no `**Role**` THEN THE CLI SHALL report it as a gate finding; a task with no role SHALL be listed for the lead, never given one
+- **AC-049**: WHEN `figentra-flow start` runs with a roster and a tracker THE CLI SHALL set the spec's `role:<id>` label and, for Linear, the roster's issue rule (assignee and delegate), and SHALL only warn when the tracker refuses
+- **AC-050**: WHEN `figentra-flow status --by role [--role <id>]` runs THE CLI SHALL group the snapshot's specs by role with each role's sessions, in-progress, in-review and blocked counts and owner stops waiting, and SHALL add the same as `byRole` to the JSON snapshot
+- **AC-051**: IF a review verdict's `role=` is the builder's role or not in the builder role's `reviewed_by`, or its `session=` is the builder's session THEN THE CLI SHALL refuse it in `figentra-flow land` as `REVIEWER_IS_BUILDER`
+- **AC-052**: IF a change in a repository a role's `changes` names touches a path outside that role's `paths` THEN THE CLI SHALL warn at `start` and report a finding at `gate run` and `land`
+- **AC-053**: IF a feature- or big-tier spec's `**Owner stops**` names a category the owner keeps THEN THE CLI SHALL accept its stage approvals only from the owner; and IF its Impact names money, security, legal, brand, pricing, secrets or public content while `**Owner stops**` says none THEN the plan gate SHALL report the mismatch
 
 ## Clarifications (the leader's answers at the spec stop, 2026-10-31)
 
@@ -178,6 +189,7 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - 2026-10-31: Planned → Tasked (tasks for phase 1; later phases are placeholders)
 - 2026-10-31: Tasked (scope added) — Approved by owner 2026-10-31 ("Yes, record it", relayed by the leader): the sessions phase, FR-10 and AC-023 to AC-026; designed at its own plan stop
 - 2026-10-31: Tasked (revised) — Approved by leader 2026-10-31 (AC-027: never remove or adopt a tree a live session works in; adopt only after 2 h idle)
+- 2026-11-01: phase 7 agent-team roles Planned — Approved by leader 2026-11-01 (FR-12, AC-046 to AC-053; decisions A to D as recommended, plus the Impact mismatch check)
 - 2026-10-31: phase 2 Planned — Approved by leader 2026-10-31 (the gate design: a dedicated Stackra Gate App, `vellum gate ci` where Vellum is installed, `--box` now, no secret in any log)
 - 2026-10-31: Tasked (revised) — Approved by leader 2026-10-31 (AC-028: the tripwire compares the installed preset with Vellum's bundled one once core keeps no copy, W2)
 - 2026-10-31: phase 3 Planned — Approved by leader 2026-10-31 (land: merge-updated stacks, `stackra-gate[bot]` as defence in depth, any session, `--manual-ok` until phase 6 (AC-030), AC-029 kept)
