@@ -32,7 +32,7 @@ export function definedLines(text, prefix) {
 }
 
 const list = (s) =>
-  s ? [...s.matchAll(/\b(?:FR|SC|EC|P)-\d+\b|\bT\d{3}\b/g)].map((m) => m[0]) : [];
+  s ? [...s.matchAll(/\b(?:FR|SC|EC|AC|P)-\d+\b|\bT\d{3}\b/g)].map((m) => m[0]) : [];
 const field = (rest, name) =>
   rest.match(new RegExp(`\\b${name}:\\s*([^—\\[]*?)\\s*(?:—|\\[STA-|$)`))?.[1]?.trim();
 

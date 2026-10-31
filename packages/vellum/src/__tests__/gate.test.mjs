@@ -18,6 +18,10 @@ import { fileURLToPath } from "node:url";
 import {
   approvedAt,
   checkApproval,
+  checkCriteria,
+  checkDesign,
+  checkTraceTasks,
+  DESIGN_SECTIONS,
   checkBranch,
   checkBug,
   checkForeignStatus,
@@ -483,4 +487,58 @@ test("approval stops: feature before Tasked, big before Planned and Tasked", () 
   assert.match(checkApproval(tiered("Planned", "big", approver)).join(), /Clarified approval/);
   assert.match(checkApproval(tiered("Planned", "feature")).join(), /Approver/);
   assert.deepEqual(checkApproval(tiered("Tasked", "small")), []);
+});
+
+// ADR 0502 decision 7: Kiro depth (EARS criteria, the nine design sections, tasks traced to criteria and files).
+const CRITERIA =
+  "## Acceptance criteria\n\n- **AC-001**: WHEN a pass is issued THE wallet SHALL show it\n";
+const TASK = "- [ ] T001 Show the pass in `src/wallet.ts` — covers: AC-001 — route: spec-task";
+const DESIGN = (level) =>
+  `${level === "###" ? "## Design\n\n" : ""}${DESIGN_SECTIONS.map((n) => `${level} ${n}\n\nnone\n`).join("\n")}`;
+
+test("criteria: EARS lines with AC ids", () => {
+  assert.deepEqual(checkCriteria(CRITERIA), []);
+  for (const ok of [
+    "IF the card is declined THEN THE checkout SHALL show the reason",
+    "WHILE the device is offline THE queue SHALL keep the call",
+    "WHERE loyalty is enabled THE receipt SHALL show the points",
+    "THE ledger SHALL never change a posted line",
+  ])
+    assert.deepEqual(checkCriteria(`## Acceptance criteria\n\n- **AC-001**: ${ok}\n`), []);
+  assert.match(checkCriteria("## Impact\n").join(), /## Acceptance criteria/);
+  assert.match(
+    checkCriteria("## Acceptance criteria\n\n- **AC-001**: the wallet shows it\n").join(),
+    /AC-001 is not EARS/,
+  );
+});
+
+test("design: nine sections, each with something under it", () => {
+  assert.deepEqual(checkDesign(DESIGN("##"), "plan.md", "##"), []);
+  assert.deepEqual(checkDesign(DESIGN("##").replace("## Rollout\n\nnone\n", ""), "plan.md", "##"), [
+    "plan.md: the design has no `## Rollout` section (ADR 0502)",
+  ]);
+  assert.match(
+    checkDesign(
+      DESIGN("##").replace("## Contracts\n\nnone\n", "## Contracts\n\n"),
+      "plan.md",
+      "##",
+    ).join(),
+    /`## Contracts` is empty/,
+  );
+});
+
+test("trace: each task covers an AC and names a file; each AC is covered", () => {
+  assert.deepEqual(checkTraceTasks(TASK, CRITERIA, "tasks.md"), []);
+  assert.deepEqual(
+    checkTraceTasks(
+      "- [ ] T001 Write it — covers: FR-001 — route: spec-task",
+      CRITERIA,
+      "tasks.md",
+    ),
+    [
+      "tasks.md:1: T001 covers no acceptance criterion (AC-###) of spec.md (ADR 0502)",
+      "tasks.md:1: T001 names no file in backticks (ADR 0502)",
+      "tasks.md: AC-001 is covered by no task",
+    ],
+  );
 });

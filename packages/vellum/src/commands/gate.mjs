@@ -162,7 +162,7 @@ export function checkTasks(tasksText, { spec = "", plan = "", known = new Set() 
   const problems = [];
   const tasks = parseTasks(tasksText);
   if (!tasks.length) return ["tasks.md: no `- [ ] T###` task lines"];
-  const ids = new Set(definedIds(spec, "(?:FR|SC|EC)").live);
+  const ids = new Set(definedIds(spec, "(?:FR|SC|EC|AC)").live);
   for (const p of properties(plan).keys()) ids.add(p);
   const seen = new Map();
   for (const t of tasks) {
@@ -229,20 +229,38 @@ export function checkStage(folder, text, { files = [], tasks = "", plan = "", kn
   if (status === "draft") return problems;
   problems.push(...checkSpec(text));
   problems.push(...checkApproval(text));
+  const tier = tierOf(text);
+  if (tier !== undefined && tier !== "trivial") problems.push(...checkCriteria(text));
   const history =
     body.match(/^## Status history\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
   if (!new RegExp(`→\\s*${status}\\b`, "i").test(history))
     problems.push(
       `\`## Status history\` has no "→ ${status[0].toUpperCase()}${status.slice(1)}" line`,
     );
-  // ADR 0502: a small spec's plan and tasks are sections of spec.md, not files.
-  if (tierOf(text) === "small") {
-    if (atLeast(status, "planned") && !/^## Plan\b/m.test(body))
-      problems.push(`status ${status} needs a \`## Plan\` section in a small spec`);
-    if (atLeast(status, "tasked") && !/^## Tasks\b/m.test(body))
-      problems.push(`status ${status} needs a \`## Tasks\` section in a small spec`);
+  // ADR 0502: a small spec's design and tasks are sections of spec.md, not files.
+  if (tier === "small") {
+    /** @param {string} name */
+    const part = (name) =>
+      body.match(new RegExp(`^## ${name}\\b[^\\n]*\\n([\\s\\S]*?)(?=^## |(?![\\s\\S]))`, "m"))?.[1];
+    const design = part("Design");
+    const steps = part("Tasks");
+    if (atLeast(status, "planned")) {
+      if (design === undefined)
+        problems.push(`status ${status} needs a \`## Design\` section in a small spec`);
+      else problems.push(...checkDesign(design, "spec.md ## Design", "###"));
+    }
+    if (atLeast(status, "tasked")) {
+      if (steps === undefined)
+        problems.push(`status ${status} needs a \`## Tasks\` section in a small spec`);
+      else problems.push(...checkTraceTasks(steps, text, "spec.md ## Tasks"));
+    }
     return problems;
   }
+  const tiered = tier === "feature" || tier === "big";
+  if (tiered && atLeast(status, "planned") && files.includes("plan.md"))
+    problems.push(...checkDesign(plan, "plan.md", "##"));
+  if (tiered && atLeast(status, "tasked") && files.includes("tasks.md"))
+    problems.push(...checkTraceTasks(tasks, text, "tasks.md"));
   if (atLeast(status, "planned")) {
     if (!files.includes("plan.md")) problems.push(`status ${status} needs plan.md`);
     else problems.push(...checkPlan(plan, text));
@@ -406,6 +424,94 @@ export function checkApproval(text) {
         `status ${status} needs the ${stop[0].toUpperCase()}${stop.slice(1)} approval of a ${tier} spec: "Approved by <who> <YYYY-MM-DD>" on that stage (ADR 0502)`,
       );
   }
+  return problems;
+}
+
+/** The design's sections, in order (ADR 0502 decision 7). */
+export const DESIGN_SECTIONS = [
+  "Architecture overview",
+  "Components and responsibilities",
+  "Files and folders",
+  "Data models and migrations",
+  "Contracts",
+  "Error handling",
+  "Security and tenancy",
+  "Testing strategy",
+  "Rollout",
+];
+
+/** The EARS forms of an acceptance criterion. */
+const EARS =
+  /^(?:WHEN \S.*? THE \S.*? SHALL \S|IF \S.*? THEN THE \S.*? SHALL \S|WHILE \S.*? THE \S.*? SHALL \S|WHERE \S.*? THE \S.*? SHALL \S|THE \S.*? SHALL \S)/;
+
+/**
+ * A tiered spec's acceptance criteria: an `## Acceptance criteria` section of `- **AC-###**:` lines in an EARS form.
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function checkCriteria(text) {
+  if (!/^## Acceptance criteria\b/m.test(strip(text)))
+    return [
+      "spec.md: a tiered spec has an `## Acceptance criteria` section of EARS criteria (ADR 0502)",
+    ];
+  const lines = definedLines(text, "AC");
+  if (lines.size === 0)
+    return ["spec.md: `## Acceptance criteria` has no `- **AC-###**:` criterion (ADR 0502)"];
+  const problems = [];
+  for (const [id, rest] of lines)
+    if (!EARS.test(rest.replace(/^\s*:\s*/, "").trim()))
+      problems.push(
+        `spec.md: ${id} is not EARS ("WHEN <event> THE <system> SHALL <response>", or the IF ... THEN, WHILE, WHERE or THE ... SHALL form)`,
+      );
+  return problems;
+}
+
+/**
+ * A design's sections: each DESIGN_SECTIONS name is a heading of `level` with something under it.
+ * @param {string} text
+ * @param {string} where
+ * @param {"##" | "###"} level
+ * @returns {string[]}
+ */
+export function checkDesign(text, where, level) {
+  const body = strip(text);
+  const problems = [];
+  for (const name of DESIGN_SECTIONS) {
+    const section = new RegExp(
+      `^${level} ${name}\\b[^\\n]*\\n([\\s\\S]*?)(?=^#{2,3} |(?![\\s\\S]))`,
+      "m",
+    ).exec(body);
+    if (section === null)
+      problems.push(`${where}: the design has no \`${level} ${name}\` section (ADR 0502)`);
+    else if ((section[1] ?? "").trim() === "")
+      problems.push(
+        `${where}: \`${level} ${name}\` is empty (write "none" when it does not apply)`,
+      );
+  }
+  return problems;
+}
+
+/**
+ * Each live task covers an acceptance criterion and names a file; every criterion is covered.
+ * @param {string} tasks
+ * @param {string} spec
+ * @param {string} where
+ * @returns {string[]}
+ */
+export function checkTraceTasks(tasks, spec, where) {
+  const criteria = definedIds(spec, "AC").live;
+  const live = parseTasks(tasks).filter((t) => !t.struck);
+  if (live.length === 0) return [`${where}: no \`- [ ] T###\` task lines`];
+  const problems = [];
+  for (const t of live) {
+    const at = `${where}:${t.line}: ${t.id}`;
+    if (!t.covers.some((id) => criteria.has(id)))
+      problems.push(`${at} covers no acceptance criterion (AC-###) of spec.md (ADR 0502)`);
+    if (t.paths.length === 0) problems.push(`${at} names no file in backticks (ADR 0502)`);
+  }
+  const covered = new Set(live.flatMap((t) => t.covers));
+  for (const ac of criteria)
+    if (!covered.has(ac)) problems.push(`${where}: ${ac} is covered by no task`);
   return problems;
 }
 

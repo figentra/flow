@@ -88,6 +88,16 @@
 
 - **[Entity 1]**: [What it represents, key attributes without implementation]
 
+## Acceptance criteria _(mandatory for a tiered spec, ADR 0502)_
+
+<!-- EARS, one per line, each with an id that tasks (`covers: AC-001`) and tests (`@covers sta-n:AC-001`) trace to:
+     WHEN <event> THE <system> SHALL <response> · IF <condition> THEN THE <system> SHALL <response>
+     WHILE <state> THE <system> SHALL <response> · WHERE <feature> THE <system> SHALL <response> · THE <system> SHALL <response>
+     A small spec keeps a short form of the design in this file (`## Design` with the nine `###` sections of the plan
+     template, one line each) and its `## Tasks` checklist, instead of plan.md and tasks.md. -->
+
+- **AC-001**: WHEN [event] THE [system] SHALL [response]
+
 ## Success Criteria _(mandatory)_
 
 <!-- Measurable and technology-agnostic. Each SC names how it is verified: unit, e2e, k6 or manual. -->

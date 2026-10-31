@@ -13,6 +13,8 @@ description: "Task list template (Stackra v2): every task covers spec IDs and na
 - Line format: `- [ ] T012 [P] [US1] <description> in <path> — covers: FR-003, P-002 — route: spec-task — deps: T010`
   - `T###` ids are unique and permanent; an amendment strikes a task (`~~T012~~ (A-001)`), never renumbers.
   - `covers:` names spec or plan IDs (FR-###, SC-###, EC-##, P-###) that exist; every FR is covered by a task.
+  - In a tiered spec (ADR 0502) every task also covers at least one acceptance criterion (AC-###) and names at least
+    one file in backticks, and every AC is covered by a task.
   - `route:` is a task type in `.agents/routing.yaml`.
   - `deps:` names earlier tasks; dependencies are acyclic.
   - `[P]` tasks in one phase are a wave: they never share a backticked path.
@@ -23,7 +25,7 @@ description: "Task list template (Stackra v2): every task covers spec IDs and na
 
 ## Phase 1: Setup
 
-- [ ] T001 [description] in `path` — covers: FR-001 — route: spec-task
+- [ ] T001 [description] in `path` — covers: FR-001, AC-001 — route: spec-task
 
 ## Phase 2: User Story 1 - [Title] (Priority: P1)
 
