@@ -228,7 +228,7 @@ test("land: a refused merge changes nothing after it; a failed Linear call only 
     },
   });
   assert.equal(warned.code, 3);
-  assert.match(warnings.join(), /Linear STA-5 Done: Linear down/);
+  assert.match(warnings.join(), /tracker STA-5 Done: Linear down/);
   assert.ok(flaky.calls.some((c) => c.method === "DELETE"));
 });
 

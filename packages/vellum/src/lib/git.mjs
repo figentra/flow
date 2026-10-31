@@ -39,12 +39,6 @@ export const CACHES = [
   /(^|\/)\.DS_Store$/,
 ];
 
-/** Tester worktree names: never cleaned, never adopted. */
-export const TESTER = /^(?:g-.*|.*-gate|land-.*|tpl-core|c6-lock.*|template-wt-lean)$/;
-
-/** The issue key a branch or folder carries (`sta-12`), lower-cased, or undefined. */
-export const issueKey = (name = "") => name.match(/\bsta-(\d+)\b/i)?.[0]?.toLowerCase();
-
 /**
  * Runs `git args` in `cwd`.
  * @param {string} cwd

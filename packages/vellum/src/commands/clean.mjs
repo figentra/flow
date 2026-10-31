@@ -21,7 +21,10 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { basename, join, resolve, sep } from "node:path";
 
-import { client, linear } from "../lib/linear.mjs";
+import { trackerFor } from "../adapters/tracker/index.mjs";
+import { matches } from "../lib/artifacts.mjs";
+import { loadConfig } from "../lib/config.mjs";
+import { CONFIG_FILE } from "../lib/product.mjs";
 import {
   busyFolders,
   defaultBranch,
@@ -30,11 +33,9 @@ import {
   inUse,
   isClean,
   isSaved,
-  issueKey,
   mainCheckout,
   preciousIgnored,
   sizeKb,
-  TESTER,
   worktrees,
 } from "../lib/git.mjs";
 import { readWorkspace } from "../lib/workspace.mjs";
@@ -46,19 +47,15 @@ export const IDLE_HOURS = 2;
 const FINISHED = new Set(["Done", "Canceled", "Cancelled", "Duplicate"]);
 
 /**
- * The issue tracker `clean` reads: an issue's state name. The default is Linear; tests pass their own.
+ * The issue tracker `clean` reads: an issue's state name (the tracker port's `state`; tests pass their own).
  * @typedef {{ state: (key: string) => Promise<string | undefined> }} Issues
  */
 
-/** @returns {Issues} */
-export function linearStates(env = process.env) {
-  const api = linear(client({ env }));
-  return {
-    async state(key) {
-      return (await api.issue(key))?.state?.name;
-    },
-  };
-}
+/**
+ * The tester's worktree names that repositories used before `vellum.config.json`'s `clean.keep`, applied for one minor
+ * version only where no config file exists.
+ */
+export const LEGACY_KEEP = ["g-*", "*-gate", "land-*", "tpl-core", "c6-lock*", "template-wt-lean"];
 
 /**
  * Whether `.gitignore` at `root` ignores `.claude/worktrees/`.
@@ -104,14 +101,18 @@ export async function clean(options) {
   if (!root) return report;
   const inside = join(resolve(root), ".claude", "worktrees") + sep;
   const base = defaultBranch(root);
-  let issues = options.issues;
+  const { scheme, tracker } = trackerFor(root, { warn: () => {} });
+  const issues = options.issues ?? tracker;
+  const loaded = loadConfig(root);
+  const keepNames =
+    loaded.config.clean?.keep ?? (existsSync(join(root, CONFIG_FILE)) ? [] : LEGACY_KEEP);
   /** @type {Map<string, string | undefined>} */
   const states = new Map();
   const stateOf = async (/** @type {string} */ key) => {
     if (!states.has(key)) {
       try {
-        issues ??= linearStates();
-        states.set(key, await issues.state(key.toUpperCase()));
+        if (!issues) throw new Error("no tracker");
+        states.set(key, await issues.state(scheme.display(key)));
       } catch {
         states.set(key, undefined);
       }
@@ -124,7 +125,7 @@ export async function clean(options) {
   for (const tree of worktrees(root).filter((t) => !only || only.includes(resolve(t.path)))) {
     const name = basename(tree.path);
     const keep = (/** @type {string} */ reason) => report.kept.push({ path: tree.path, reason });
-    if (TESTER.test(name)) {
+    if (keepNames.some((pattern) => matches(name, pattern))) {
       if (!resolve(tree.path).startsWith(inside)) report.forTester.push(tree.path);
       keep("a tester worktree");
       continue;
@@ -186,15 +187,15 @@ export async function clean(options) {
       keep("unsaved: commits on no remote and not landed");
       continue;
     }
-    const key = issueKey(tree.branch ?? "") ?? issueKey(name);
+    const key = scheme.parse(tree.branch ?? "") ?? scheme.parse(name);
     if (key !== undefined) {
       const state = await stateOf(key);
       if (state === undefined) {
-        keep(`${key.toUpperCase()}'s state is unknown (Linear unavailable)`);
+        keep(`${scheme.display(key)}'s state is unknown (tracker unavailable)`);
         continue;
       }
       if (!FINISHED.has(state)) {
-        keep(`${key.toUpperCase()} is ${state}`);
+        keep(`${scheme.display(key)} is ${state}`);
         continue;
       }
     } else {

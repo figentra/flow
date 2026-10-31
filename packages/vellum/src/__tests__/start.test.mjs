@@ -126,5 +126,5 @@ test("start: a Linear failure warns after the worktree exists", async (t) => {
     warn: (s) => warnings.push(s),
   });
   assert.equal(result.ok, true);
-  assert.match(warnings.join(), /Linear not updated/);
+  assert.match(warnings.join(), /the tracker was not updated/);
 });
