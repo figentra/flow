@@ -26,10 +26,11 @@ Phase 1 is designed and approved; the later phases are placeholders, refined whe
 - [x] T020 `vellum gate run`: refusals, the exported clone, the box command, testbed or `--box`, in `packages/vellum/src/commands/gate-run.mjs` and `packages/vellum/src/lib/git.mjs` — covers: FR-5, FR-9, AC-008, AC-009 — route: spec-task
 - [x] T021 The box poster: the App token, the tip check, the `vellum/gate` status, the PR comment, redaction, in `packages/vellum/src/lib/gate-post.mjs` — covers: FR-5, AC-008, AC-009 — route: spec-task
 - [x] T022 Tests in `packages/vellum/src/__tests__/gate-run.test.mjs` and `packages/vellum/src/__tests__/gate-post.test.mjs`, the README and a changeset — covers: FR-5, AC-008, AC-009 — route: spec-task — deps: T020, T021
+- [x] T023 The tripwire compares the installed preset with Vellum's bundled one when the repository keeps no source, in `packages/vellum/src/commands/gate.mjs` — covers: FR-3, AC-028 — route: spec-task
 
-## Phase 3: land (design pending)
+## Phase 3: land (design approved 2026-10-31)
 
-- [ ] T030 `vellum land` and `--stack` in `packages/vellum/src/commands/land.mjs` — covers: FR-6, AC-010, AC-011, AC-017 — route: spec-task
+- [ ] T030 `vellum land` and `--stack` in `packages/vellum/src/commands/land.mjs`, `packages/vellum/src/lib/github.mjs` and `packages/vellum/src/commands/clean.mjs` — covers: FR-6, AC-010, AC-011, AC-017, AC-029, AC-030 — route: spec-task
 
 ## Phase 4: status (design pending)
 

@@ -298,3 +298,165 @@ result.
 The exported tree is a local clone of the repository at `<sha>`, not a `git archive`. It carries
 `refs/remotes/origin/<default>` and the GitHub `origin` URL, because `vellum gate ci` diffs against the default
 branch. Nothing uncommitted or untracked is in it.
+
+## Phase 3: land (design, for the leader's plan stop)
+
+Phase 3 turns the lander's checklist, done by hand by stackra-f4 today, into `vellum land`. It covers FR-6, AC-010,
+AC-011, AC-017 and P-006, and adds AC-029.
+
+### Architecture overview
+
+`vellum land [<pr>] [--stack] [--dry-run]` runs where the lander runs: the tester's session, or any session the
+leader names. Its guarantee rests on GitHub, not on who runs it:
+
+1. **Check:** every rule below is checked against GitHub's live state. Every failing rule is reported, not only the
+   first (AC-011).
+2. **Squash-merge** through the API, with `sha` set to the gated head. GitHub refuses the merge if the head moved
+   after the check.
+3. **After the merge:**
+   - Linear Done;
+   - record the merge commit on the branch;
+   - remove the worktree through `clean`'s rules;
+   - delete the remote branch;
+   - comment on the PR.
+
+```text
+vellum land ──► GitHub: PR, statuses, mergeability ──► rules ──► PUT /pulls/{n}/merge {squash, sha: head}
+                                     ▲                                │
+                     spec on disk (tier, approvals)                   ├─► Linear Done (key from the branch)
+                                                                      ├─► git config branch.<b>.vellumLanded <merge sha>
+                                                                      ├─► clean (that worktree only, AC-027 applies)
+                                                                      └─► DELETE refs/heads/<b>; PR comment
+```
+
+GitHub calls go through `gh api`, through the repository's own `bot:gh` wrapper when it has one, the same way network
+git goes through `bot:git`. Vellum never handles a token.
+
+### Components and responsibilities
+
+- `src/commands/land.mjs`: `vellum land`:
+  - `landRules(pr, ctx)`: a pure function from the PR, the head's statuses and the spec text to a list of problems;
+  - `land()`: the merge and the steps after it;
+  - `landStack()`: the `--stack` loop.
+- **Rules**, each one line in the refusal:
+  1. The PR is open, not a draft, and not conflicting (`mergeable_state` is not `dirty`).
+  2. Its base is the default branch. Otherwise: "stacked on `<base>`: land that first, or use `--stack`".
+  3. `vellum/gate` on the **head** sha is `success`, is the newest status of that context, and was posted by the gate
+     App (the status creator equals `vellum.gateApp`, default `stackra-gate[bot]`). Each failure is named: "no
+     gate", "gate red", "gate on an older commit", or "gate posted by `<login>`, not the gate App" (AC-011).
+  4. The PR title is a conventional commit header (`type(scope)?: subject`, at most 100 characters). It becomes the
+     squash commit's title.
+  5. The spec (from the branch's key, `.agents/specs/sta-<n>-*`), when there is one:
+     - `checkApproval` passes (ADR 0502);
+     - its status is Tasked or later (a feature or big spec needs its last stop approved).
+     - A branch without a spec relies on the gate's lane check, which already refuses a `feat` without one.
+- **Merge:** squash with `commit_title` "`<title> (#<n>)`".
+  - `commit_message` carries one `Refs: STA-n` and the `Co-authored-by` trailers collected from the PR's commits.
+  - `sha` is the checked head.
+- **After the merge.** Each step warns on failure and never undoes the merge:
+  - Linear Done, with a comment naming the merge commit (ADR 0065 rule 7);
+  - `git config branch.<b>.vellumLanded <merge sha>` in the main checkout;
+  - `clean({ only: [worktree] })`, so the in-use, dirty and precious-file rules still hold. A kept tree is printed
+    with its reason, and a later `vellum clean` takes it;
+  - delete the remote branch;
+  - a PR comment: "Landed by vellum land as `<merge sha>`".
+- **`clean` change (AC-029):** a tree whose branch carries `vellumLanded`, with that commit on `origin/<default>`,
+  counts as saved. A squash commit has a different patch id from the branch's commits, so `git cherry` alone would
+  call a landed multi-commit branch unsaved forever.
+- **`--stack` (AC-017):**
+  - From the given PR, it walks the bases down to the default branch.
+  - It lands the bottom PR by the rules.
+  - It then brings the next PR up to date by **merging** `origin/<default>` into its branch in its own worktree and
+    pushing normally (no rebase, no force: the owner's rule). GitHub retargets it to the default branch when the
+    landed branch is deleted.
+  - It runs `vellum gate run` there, and continues only on green.
+  - It stops at the first PR that fails a rule, or has no local worktree, and names it.
+
+### Files and folders
+
+- `packages/vellum/src/commands/land.mjs`, with `land` on the dispatcher in `bin/vellum.mjs`.
+- `packages/vellum/src/lib/github.mjs`: `gh(root, args)` through `bot:gh` when present, and `api(root, method, path, body?)`
+  returning parsed JSON.
+- `packages/vellum/src/commands/clean.mjs`: the `only` option and the `vellumLanded` saved rule.
+- `packages/vellum/src/lib/git.mjs`: `isSaved` reads `branch.<b>.vellumLanded`.
+- Tests: `land.test.mjs` (the rules, the merge request and the steps after it, with the GitHub calls injected),
+  `land-stack.test.mjs`, and a `clean.test.mjs` case for AC-029.
+
+### Data models and migrations
+
+None. The one piece of state is the git config key `branch.<b>.vellumLanded`, in the main checkout. It is removed with
+the branch when `clean` deletes the branch.
+
+### Contracts
+
+- CLI: `vellum land [<pr>] [--stack] [--dry-run]`.
+  - Exit codes: 0 landed (or would land, with `--dry-run`), 1 refused (every reason printed), 2 usage or no PR, 3
+    merged with a follow-up step that only warned.
+- `package.json` `"vellum": { "gateApp": "<login>" }` overrides the trusted status creator.
+- GitHub calls:
+  - `GET /repos/{r}/pulls/{n}` and `/pulls/{n}/commits`;
+  - `GET /repos/{r}/commits/{sha}/statuses`;
+  - `PUT /repos/{r}/pulls/{n}/merge`;
+  - `DELETE /repos/{r}/git/refs/heads/{b}`;
+  - `POST /repos/{r}/issues/{n}/comments`.
+
+### Error handling
+
+- Rules: all failures are collected and printed, then exit 1. Nothing changes.
+- Merge refused by GitHub (head moved, a branch rule, or a conflict found late): exit 1, with GitHub's message.
+  Nothing after the merge runs.
+- After the merge, each step's failure is a warning: exit 3, with the steps left to do. The merge is never undone.
+- `--stack`:
+  - a merge conflict when updating the next PR aborts that merge (`git merge --abort`) and stops, naming the PR;
+  - a red gate stops the stack;
+  - the landed PRs stay landed.
+
+### Security and tenancy
+
+- **No new trust:** branch protection's required `vellum/gate`, bound to the gate App in phase 6, is what GitHub
+  enforces. `land`'s own check of the status creator is the same rule, applied before the merge.
+- **No token handling:** `gh` gets its token from the `bot:gh` wrapper (Infisical). Vellum never reads, prints or
+  stores it.
+- **Owner-only stops:** `land` never records an approval, and refuses a spec whose stop is not recorded. Production
+  promote stays `runway promote`, owner-only (phase 5).
+
+### Testing strategy
+
+- `landRules` is pure, with one case per rule:
+  - draft, conflict, stacked base;
+  - no gate, red gate, stale gate, gate from another creator;
+  - bad title;
+  - a feature spec missing `Approved by`, a big spec at Planned;
+  - a green PR, which has no problems.
+- `land()` with an injected `api`:
+  - the merge body (`squash`, `sha`, the title with `(#n)`, the `Refs` and co-author trailers);
+  - the order of the steps after the merge;
+  - a failed Linear call gives exit 3 and still deletes the branch;
+  - a GitHub 405 on the merge gives exit 1 with no steps after it.
+- `--stack` over a temporary repository with a local bare origin, with the gate and the API injected:
+  - the bottom PR lands;
+  - the next PR is updated by a merge commit, never a rewrite;
+  - a red gate stops the stack.
+- `clean`: a branch with `vellumLanded` on `origin/main` is removed even though `git cherry` shows `+`.
+
+### Rollout
+
+1. Land after phase 2. `land` trusts only what the phase 2 poster writes.
+2. f4's acceptance on vellum PRs:
+   - a scratch PR with no gate, a red gate and a stale gate is refused, each with its reason;
+   - a feature spec missing `Approved by` is refused;
+   - a green PR lands as one squash commit, and its worktree is gone.
+3. Then f4 uses `vellum land` instead of hand landing, one repository at a time. Phase 6 makes the required check bind
+   to the gate App.
+
+### Decisions at the plan stop (leader, 2026-10-31)
+
+1. **Stacks are updated by merge.** The no-force rule wins, and the squash on land flattens the history anyway.
+2. **`stackra-gate[bot]` is the trusted creator.** GitHub reserves the `[bot]` suffix for Apps. This check is defence in
+   depth only; the guarantee is the ruleset requiring `vellum/gate` from the App's integration id (phase 6).
+3. **Any session may run `land`.** There is no `VELLUM_LANDER` convention: the required check plus `checkApproval` is
+   the guarantee.
+4. **Before phase 6** switches a repository's ruleset, `land` refuses there unless `--manual-ok` is passed (AC-030).
+   It reads `GET /repos/{r}/rules/branches/{default}` and looks for a `required_status_checks` rule naming
+   `vellum/gate`. Only stackra-f4 passes `--manual-ok`, during the transition. The flag is printed in the PR comment.
+5. AC-029 stays.
