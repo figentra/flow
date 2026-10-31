@@ -106,6 +106,7 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - **AC-021**: WHEN `vellum clean` removes worktrees THE CLI SHALL report the disk space it freed
 - **AC-022**: IF a worktree holds an ignored file outside the usual caches (such as `.env`, `ios/` or `android/`) THEN THE CLI SHALL keep it and name the files
 - **AC-017**: WHEN `vellum land --stack` runs on a stack of PRs THE CLI SHALL land them bottom-up in order, each only after its own green `vellum/gate` on its rebased head
+- **AC-027**: IF a running process (a session, a dev server, a shell) has its working folder inside a worktree, or running processes cannot be listed THEN THE CLI SHALL neither remove nor adopt it, and SHALL adopt a stray tree only after it has been idle for 2 hours
 - **AC-023**: WHEN a spec carries a `**Session**` line THE CLI SHALL read it as the spec's assigned session and show it in `vellum status`
 - **AC-024**: WHEN `vellum status` runs THE CLI SHALL list each session with its spec, worktree and the `vellum/gate` result of the worktree's head
 - **AC-025**: IF a feature- or big-tier spec past Clarified has no `**Session**` THEN THE CLI SHALL report it in `vellum gate check` as a finding
@@ -148,3 +149,4 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - 2026-10-31: Clarified → Planned — Approved by leader 2026-10-31 (phase 1, with three revisions to `vellum clean`: AC-018 to AC-022)
 - 2026-10-31: Planned → Tasked (tasks for phase 1; later phases are placeholders)
 - 2026-10-31: Tasked (scope added) — Approved by owner 2026-10-31 ("Yes, record it", relayed by the leader): the sessions phase, FR-10 and AC-023 to AC-026; designed at its own plan stop
+- 2026-10-31: Tasked (revised) — Approved by leader 2026-10-31 (AC-027: never remove or adopt a tree a live session works in; adopt only after 2 h idle)

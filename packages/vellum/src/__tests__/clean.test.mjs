@@ -11,7 +11,8 @@
  */
 // @covers sta-1729:FR-3 sta-1729:FR-4 sta-1729:P-003 sta-1729:P-004
 // @covers sta-1729:AC-004 sta-1729:AC-005 sta-1729:AC-006 sta-1729:AC-007 sta-1729:AC-018 sta-1729:AC-019
-// @covers sta-1729:AC-020 sta-1729:AC-021 sta-1729:AC-022
+// @covers sta-1729:AC-020 sta-1729:AC-021 sta-1729:AC-022 sta-1729:AC-027
+import { spawn } from "node:child_process";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -147,9 +148,13 @@ test("clean --adopt moves a stray tree inside and lists a tester's for stackra-f
   const outside = realpathSync(mkdtempSync(join(tmpdir(), "vellum-stray-")));
   const stray = join(outside, "sta-9-stray");
   sh(r.root, "worktree", "add", "-q", "-b", "figentra/sta-9-stray", stray, "main");
+  age(stray, 3);
+  const fresh = join(outside, "sta-10-fresh");
+  sh(r.root, "worktree", "add", "-q", "-b", "figentra/sta-10-fresh", fresh, "main");
   const gate = join(outside, "pro-gate");
   sh(r.root, "worktree", "add", "-q", "--detach", gate, "main");
   const report = await clean({ cwd: r.root, adopt: true, issues: states() });
+  assert.match(report.kept.find((k) => k.path === fresh)?.reason ?? "", /not adopted yet/);
   assert.deepEqual(
     report.adopted,
     [`${stray} → ${join(r.root, ".claude", "worktrees", "sta-9-stray")}`],
@@ -173,4 +178,40 @@ test("clean --fix-ignore adds .claude/worktrees/ once", async (t) => {
     readFileSync(join(r.root, ".gitignore"), "utf8"),
     "node_modules/\n.claude/worktrees/\n",
   );
+});
+
+test("clean: never removes or adopts a tree a running process works in", async (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  const path = tree(r.root, "sta-11-session");
+  sh(path, "push", "-q", "origin", "HEAD");
+  mkdirSync(join(path, "deep"));
+  const child = spawn("sleep", ["30"], { cwd: join(path, "deep"), stdio: "ignore" });
+  t.after(() => child.kill());
+  await new Promise((done) => child.once("spawn", done));
+  const report = await clean({ cwd: r.root, issues: states(["STA-11"]) });
+  assert.deepEqual(report.removed, []);
+  assert.match(report.kept.find((k) => k.path === path)?.reason ?? "", /in use/);
+  assert.equal(existsSync(path), true);
+});
+
+test("clean: an in-use folder matches by path prefix, not by a shared name start", async (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  const path = tree(r.root, "sta-12-done");
+  sh(path, "push", "-q", "origin", "HEAD");
+  const sibling = await clean({
+    cwd: r.root,
+    dry: true,
+    issues: states(["STA-12"]),
+    busy: [`${path}-other`],
+  });
+  assert.deepEqual(sibling.removed, [path]);
+  const inside = await clean({
+    cwd: r.root,
+    dry: true,
+    issues: states(["STA-12"]),
+    busy: [join(path, "src")],
+  });
+  assert.match(inside.kept[0]?.reason ?? "", /in use/);
 });

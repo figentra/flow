@@ -2,16 +2,24 @@
  * Vellum file contract:
  * Purpose: the git facts the worktree commands need: the repository's main checkout, its default branch, its
  *   worktrees, whether a worktree is clean, saved (its head on a remote ref, or every commit landed by patch), how long
- *   it has been idle, which ignored files it holds outside the usual caches, and its size.
- * Boundary: runs `git` (and `du`) synchronously in the folder it is given; never writes. Network git goes through
+ *   it has been idle, which ignored files it holds outside the usual caches, its size, and which folders running
+ *   processes work in.
+ * Boundary: runs `git` (and `du`, `lsof` or `/proc`) synchronously in the folder it is given; never writes. Network git goes through
  *   `fetch`, which uses the repository's own `bot:git` wrapper when it has one.
  * Runtime: node
  * Governing contract: Stackra ADR 0503 (worktrees live inside their repository); STA-1729.
  * Secrets: none.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
+import { basename, dirname, join, resolve, sep } from "node:path";
 
 /** Ignored paths a worktree may hold and still be removed: dependency, build and tool caches. */
 export const CACHES = [
@@ -168,4 +176,44 @@ export function preciousIgnored(path) {
 export function sizeKb(path) {
   const r = spawnSync("du", ["-sk", path], { encoding: "utf8" });
   return Number.parseInt(r.stdout ?? "", 10) || 0;
+}
+
+/**
+ * The working folders of every running process: `lsof -a -d cwd -Fn`, else Linux's `/proc/<pid>/cwd`; undefined when
+ * neither can be read, so a caller keeps every worktree rather than guess.
+ * @returns {string[] | undefined}
+ */
+export function busyFolders() {
+  const r = spawnSync("lsof", ["-a", "-d", "cwd", "-Fn"], { encoding: "utf8" });
+  if (r.status === 0 || (r.stdout ?? "").includes("\nn"))
+    return r.stdout
+      .split("\n")
+      .filter((l) => l.startsWith("n"))
+      .map((l) => l.slice(1));
+  if (!existsSync("/proc")) return undefined;
+  /** @type {string[]} */
+  const cwds = [];
+  for (const pid of readdirSync("/proc").filter((d) => /^\d+$/.test(d))) {
+    try {
+      cwds.push(readlinkSync(`/proc/${pid}/cwd`));
+    } catch {
+      // a process that ended, or one we may not read
+    }
+  }
+  return cwds;
+}
+
+/**
+ * Whether a running process works inside `path` (a session's working folder, a dev server, a shell).
+ * @param {string} path
+ * @param {string[]} cwds
+ */
+export function inUse(path, cwds) {
+  const roots = [resolve(path)];
+  try {
+    roots.push(realpathSync(path));
+  } catch {
+    // a missing folder has no real path
+  }
+  return cwds.some((cwd) => roots.some((root) => cwd === root || cwd.startsWith(root + sep)));
 }
