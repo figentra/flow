@@ -1,4 +1,4 @@
-# Vellum file contract:
+# Figentra Flow file contract:
 # Purpose: git hooks — pre-commit format and lint on staged files, pre-push typecheck and tests. Advisory; CI is the
 #          gate. Installed by `pnpm install` (prepare).
 # Owner: release-operations

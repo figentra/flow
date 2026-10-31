@@ -28,7 +28,7 @@ pnpm exec figentra-flow sync         # install the preset and render the speckit
 | `figentra-flow start <STA-n> [--slug s] [--install]`               | branch `figentra/sta-n-<slug>` from `origin/<default>` into `.claude/worktrees/sta-n-<slug>`; issue In Progress                                        |
 | `figentra-flow clean [--dry-run] [--adopt] [--fix-ignore] [--all]` | removes finished worktrees (clean, saved, issue Done or idle 2 h), reports what it kept and the space freed                                            |
 | `figentra-flow guard [--print-settings]`                           | the PreToolUse hook that denies `git worktree add` outside `.claude/worktrees/`                                                                        |
-| `figentra-flow init --workspace <dir>…`                            | writes the workspace list (`~/.config/vellum/workspace.yaml`) that `--all` acts on                                                                     |
+| `figentra-flow init --workspace <dir>…`                            | writes the workspace list (`~/.config/figentra-flow/workspace.yaml`) that `--all` acts on                                                              |
 
 A repository keeps one-line aliases: `"spec:gate": "figentra-flow gate"`, `"spec:trace": "figentra-flow trace"`,
 `"speckit:sync": "figentra-flow sync"`, and `"spec:linear": "infisical run --env=dev --path=/agents --silent -- figentra-flow linear"`.
@@ -62,7 +62,8 @@ setting you have not made refuses and names it.
 - `secrets` says how secrets reach the gate's poster on a box: `env` (the box's environment), or `infisical` with
   `paths` per scope, e.g. `"gate": "/ci/gate"`. On a box with no login, `"auth": "universal-auth"` logs in
   from the box's `INFISICAL_UNIVERSAL_AUTH_CLIENT_ID` and `INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET` inside the wrapped
-  command, and `projectId` and `env` name the project and environment. Figentra Flow wraps the command and never reads a
+  command, and `projectId`, `env` and `domain` name the project, environment and instance. The token goes only into the run
+  process's environment, never onto a command line. Figentra Flow wraps the command and never reads a
   value.
 - `gate.check` is the check command (default `pnpm verify`).
 
@@ -81,18 +82,24 @@ setting you have not made refuses and names it.
   `dist/`, `.turbo/` and `coverage/`, where a trailing `/` matches the folder at any depth and other entries are globs.
   `maxBytes` defaults to 5 MB. A change that adds or changes such a file is refused, with each file named.
 
-The runner, apps, preset and `review.required` keys follow in the next steps of
-the same phase. The older `package.json` `"vellum"` keys (`credentials`, `gate`, `gateApp`) are still read, with a
-warning, until the next minor version.
+- `apps` names the GitHub Apps Flow trusts:
+  - `gate.login`: the gate App whose status `land` trusts;
+  - `review.slug`: the review App whose verdict counts;
+  - `owner`: the owner whose `owner-approval` review also counts.
+
+  There are no defaults. Without a gate App `land` refuses, and without a review App no verdict counts.
+
+The runner, preset and `review.required` keys follow in the next steps of the same phase. Only
+`figentra-flow.config.json` is read; no other file stands in for it.
 
 ## The gate
 
 `figentra-flow gate run` checks the pushed head of the current branch, never anything uncommitted. It clones that commit into
 a temporary folder with a small poster beside it and runs `pnpm install --frozen-lockfile && <check>` on a testbed box
-(`stackra testbed run`, Stackra ADR 0484), or on `--box <ssh host>` until testbed lands. `<check>` is `package.json`
-`"vellum": { "gate": "…" }`, else `pnpm verify`, then `figentra-flow gate ci` where Figentra Flow is installed. On the box, the
-poster posts the `figentra-flow/gate` commit status and one PR comment as the "Stackra Gate" GitHub App. Its key lives only in
-Infisical `/ci/gate`. The poster posts only while that commit is still the branch tip, and never `success` unless the
+(`stackra testbed run`, Stackra ADR 0484), or on `--box <ssh host>` until testbed lands. `<check>` is the configuration's
+`gate.check`, else `pnpm verify`, then `figentra-flow gate ci` where Figentra Flow is installed. On the box, the
+poster posts the `figentra-flow/gate` commit status and one PR comment as the gate App the configuration names. Its key reaches only
+the box, through the secrets port (for us, a dedicated Infisical project only the box identity reads). The poster posts only while that commit is still the branch tip, and never `success` unless the
 check exited 0. Nothing secret reaches the comment or the log. Exit codes: 0 green, 1 red, 2 refused, 4 not posted,
 5 stale, 73 every box busy, 75 no healthy box.
 
@@ -101,8 +108,7 @@ check exited 0. Nothing secret reaches the comment or the log. Exit codes: 0 gre
 `figentra-flow land` is the lander's checklist as code. The PR must be:
 
 - open, not a draft and not conflicting, and based on the default branch (`--stack` lands a stack bottom-up);
-- green on `figentra-flow/gate` on its exact head, posted by `stackra-gate[bot]` (`"vellum": { "gateApp": "…" }` overrides
-  it);
+- green on `figentra-flow/gate` on its exact head, posted by the configuration's `apps.gate.login`;
 - titled with a conventional commit header;
 - approved as its spec's tier requires (ADR 0502), and at Tasked or later for a feature or big spec.
 - for a change with a spec: reviewed. The `stackra-reviewer` App's unedited `AI-REVIEW: PASS <head> base=<base>`
@@ -117,9 +123,8 @@ It lists every failing rule. Then it squash-merges with GitHub's `sha` guard, so
 4. deletes the remote branch;
 5. comments on the PR.
 
-GitHub calls use only the credentials the repository names in `package.json`. `"vellum": { "credentials":
-"wrapper:bot:gh" }` runs a script that gives `gh` a bot's token. `"gh-user"` uses your own `gh` login, and only
-because you said so. With neither, `land` refuses: Figentra Flow never falls back to a personal login.
+GitHub calls use only the credentials the configuration names in `credentials`. `wrapper` runs your own command
+that gives `gh` a bot's token, and `gh-user` uses your own `gh` login, only because you said so. With neither, `land` refuses: Figentra Flow never falls back to a personal login.
 
 Until a repository's ruleset requires `figentra-flow/gate` (phase 6), `land` refuses there without `--manual-ok`, which only
 the tester passes. A stack's next PR is brought up to date by merging the default branch and pushing: no rebase, no

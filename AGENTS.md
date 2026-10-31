@@ -1,14 +1,14 @@
 # Figentra Flow: agent guide
 
-One pnpm workspace, one package: `packages/vellum` (`figentra-flow`, binaries `figentra-flow` and `fflow`). Published only to the Stackra
-registry (ADR 0453); never npmjs.
+One pnpm workspace, one package: `packages/figentra-flow` (`figentra-flow`, binaries `figentra-flow` and `fflow`). Published publicly on npmjs as
+`figentra-flow` from `.github/workflows/release.yml` (the owner's decision of 2026-10-31).
 
-| Path                             | What                                                                                                                                                                                                  |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/vellum/bin/vellum.mjs` | the dispatcher: `figentra-flow <command>` runs `src/commands/<command>.mjs`'s `run(args)`                                                                                                             |
-| `packages/vellum/src/commands`   | `init`, `sync`, `gate`, `trace`, `parse`, `linear`, `start`, `clean`, `guard`, `land`, plus `gate-run` (the `run` mode of `gate`); each exports `run(args)` → exit code                               |
-| `packages/vellum/src/lib`        | `spec-parse` (pure parsers), `linear` and `net` (the Linear client), `git` and `workspace` (worktrees), `gate-post` (the box poster, copied into each gate job), `github` (`gh api` through `bot:gh`) |
-| `packages/vellum/assets`         | `specify/` (what `init` installs), `presets/stackra` (the preset source), the rendered `claude/skills/speckit-*` and `opencode/commands/speckit.*`                                                    |
+| Path                                           | What                                                                                                                                                                                                  |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/figentra-flow/bin/figentra-flow.mjs` | the dispatcher: `figentra-flow <command>` runs `src/commands/<command>.mjs`'s `run(args)`                                                                                                             |
+| `packages/figentra-flow/src/commands`          | `init`, `sync`, `gate`, `trace`, `parse`, `linear`, `start`, `clean`, `guard`, `land`, plus `gate-run` (the `run` mode of `gate`); each exports `run(args)` → exit code                               |
+| `packages/figentra-flow/src/lib`               | `spec-parse` (pure parsers), `linear` and `net` (the Linear client), `git` and `workspace` (worktrees), `gate-post` (the box poster, copied into each gate job), `github` (`gh api` through `bot:gh`) |
+| `packages/figentra-flow/assets`                | `specify/` (what `init` installs), `presets/stackra` (the preset source), the rendered `claude/skills/speckit-*` and `opencode/commands/speckit.*`                                                    |
 
 ## Rules
 

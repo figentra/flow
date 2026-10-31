@@ -21,7 +21,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/figentra/flow.git",
-    "directory": "packages/vellum"
+    "directory": "packages/figentra-flow"
   },
   "bin": {
     "fflow": "./bin/figentra-flow.mjs",
@@ -83,6 +83,6 @@
     "runtimes": [
       "node"
     ],
-    "summary": "Use it for spec-driven work in a Stackra repository: `vellum init` and `vellum sync` install spec-kit with the Stackra preset and skills; `vellum gate`, `trace`, `parse` and `linear` run the stage gates, traceability and Linear links."
+    "summary": "Use it for spec-driven work: `figentra-flow init` and `sync` install spec-kit with a preset and skills; `gate`, `trace`, `start`, `clean` and `land` run the stage gates, traceability, worktrees, the gate and landing."
   }
 }

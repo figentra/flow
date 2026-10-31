@@ -145,7 +145,7 @@ test("clean --dry-run changes nothing", async (t) => {
 test("clean --adopt moves a stray tree inside and lists a tester's for stackra-f4", async (t) => {
   const r = repo();
   t.after(r.dispose);
-  const outside = realpathSync(mkdtempSync(join(tmpdir(), "vellum-stray-")));
+  const outside = realpathSync(mkdtempSync(join(tmpdir(), "flow-stray-")));
   const stray = join(outside, "sta-9-stray");
   sh(r.root, "worktree", "add", "-q", "-b", "figentra/sta-9-stray", stray, "main");
   age(stray, 3);

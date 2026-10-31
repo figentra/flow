@@ -14,7 +14,7 @@ import { init } from "../commands/init.mjs";
 import { ASSETS } from "../commands/sync.mjs";
 
 test("init installs .specify/ with the preset, a template constitution and runnable scripts", () => {
-  const root = mkdtempSync(join(tmpdir(), "vellum-init-"));
+  const root = mkdtempSync(join(tmpdir(), "flow-init-"));
   try {
     assert.equal(init(root), true);
     for (const p of [

@@ -1,10 +1,10 @@
 #:schema https://mise.jdx.dev/schema/mise.json
-# Vellum file contract:
+# Figentra Flow file contract:
 # Purpose: pins the toolchain, matching Stackra core. `pnpm` here must match `packageManager` in package.json.
 # Owner: release-operations
 # Secrets: forbidden
 [tools]
 node = "24.22.0"
 pnpm = "12.6.0"
-# spec-kit's `specify`, which `vellum sync` drives; bump together with assets/specify/init-options.json.
+# spec-kit's `specify`, which `figentra-flow sync` drives; bump together with assets/specify/init-options.json.
 "pipx:specify-cli" = "1.0.10"

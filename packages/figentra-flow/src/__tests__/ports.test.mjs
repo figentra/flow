@@ -12,7 +12,8 @@
 // @covers sta-1729:FR-11 sta-1729:AC-034 sta-1729:AC-036 sta-1729:AC-040
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -23,7 +24,7 @@ import { remote } from "../lib/git.mjs";
 import { repo, sh } from "./__fixtures__/repo.mjs";
 
 test("credentials: env needs a token, gh-user is by choice, a wrapper needs its script, none refuses", (t) => {
-  const dir = mkdtempSync(join(tmpdir(), "vellum-cred-"));
+  const dir = mkdtempSync(join(tmpdir(), "flow-cred-"));
   t.after(() => rmSync(dir, { recursive: true }));
   writeFileSync(
     join(dir, "package.json"),
@@ -79,11 +80,16 @@ test("secrets: env leaves the command alone; infisical wraps with the scope's pa
     auth: "universal-auth",
     projectId: "abc-123",
     env: "prod",
+    domain: "https://eu.infisical.com/api",
     paths: { gate: "/ci/gate" },
   });
   assert.equal(
     box.wrap("node post.mjs", "gate"),
-    'infisical run --silent --token="$(infisical login --method=universal-auth --silent --plain)" --projectId=abc-123 --env=prod --path=/ci/gate -- node post.mjs',
+    'INFISICAL_TOKEN="$(infisical login --method=universal-auth --silent --plain --domain=https://eu.infisical.com/api)" infisical run --silent --domain=https://eu.infisical.com/api --projectId=abc-123 --env=prod --path=/ci/gate -- node post.mjs',
+  );
+  assert.throws(
+    () => secretsPort({ kind: "infisical", domain: "http://x;y", paths: {} }),
+    /not an https URL/,
   );
   assert.throws(
     () => secretsPort({ kind: "infisical", projectId: "x; y", paths: {} }),
@@ -92,5 +98,53 @@ test("secrets: env leaves the command alone; infisical wraps with the scope's pa
   assert.throws(
     () => secretsPort({ kind: "infisical", paths: { gate: "/ci; rm -rf /" } }).wrap("x", "gate"),
     /is not a path/,
+  );
+});
+
+test("secrets: the universal-auth token reaches only the run process's environment, never output or argv (AC-044)", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "flow-infisical-"));
+  t.after(() => rmSync(dir, { recursive: true }));
+  const bin = join(dir, "bin");
+  mkdirSync(bin);
+  const token = "tok-fake-1234567890";
+  // A stand-in for the infisical CLI: `login` prints a token; `run` records its argv, checks the token arrived in
+  // its environment, and runs the wrapped command.
+  writeFileSync(
+    join(bin, "infisical"),
+    [
+      "#!/bin/sh",
+      'printf "%s\\n" "$*" >> "$ARGV_LOG"',
+      'if [ "$1" = login ]; then printf "%s" "' + token + '"; exit 0; fi',
+      'if [ "$1" = run ]; then',
+      '  [ "$INFISICAL_TOKEN" = "' +
+        token +
+        '" ] || { echo "no token in the environment" >&2; exit 9; }',
+      '  while [ "$1" != "--" ]; do shift; done; shift',
+      '  exec "$@"',
+      "fi",
+      "exit 2",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(bin, "infisical"), 0o755);
+  const log = join(dir, "argv.log");
+  const wrapped = secretsPort({
+    kind: "infisical",
+    auth: "universal-auth",
+    projectId: "p1",
+    env: "prod",
+    paths: { gate: "/ci/gate" },
+  }).wrap("echo poster-ran", "gate");
+  const r = spawnSync("sh", ["-c", wrapped], {
+    encoding: "utf8",
+    env: { PATH: `${bin}:${process.env.PATH}`, ARGV_LOG: log },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, "poster-ran\n");
+  for (const text of [r.stdout, r.stderr, readFileSync(log, "utf8"), wrapped])
+    assert.equal(text.includes(token), false, "the token leaked");
+  assert.match(
+    readFileSync(log, "utf8"),
+    /^login --method=universal-auth --silent --plain\nrun --silent --projectId=p1 --env=prod --path=\/ci\/gate -- echo poster-ran$/m,
   );
 });

@@ -74,6 +74,7 @@ export const SCHEMA = {
           paths: { type: "object", additionalProperties: str },
           projectId: str,
           env: str,
+          domain: str,
           auth: { enum: ["universal-auth"] },
         },
       },

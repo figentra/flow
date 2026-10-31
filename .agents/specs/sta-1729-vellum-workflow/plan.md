@@ -14,7 +14,7 @@ the hook check that refuses `git worktree add` anywhere else. Then the six repos
 ## Technical Context
 
 - **Language**: plain ESM JavaScript with JSDoc, checked by `tsc` (`checkJs`); Node 24; no runtime dependencies
-- **Members**: figentra/vellum `packages/vellum` (`@stackra/vellum`, binary `vellum`)
+- **Members**: figentra/vellum `packages/figentra-flow` (`@stackra/vellum`, binary `vellum`)
 - **Testing**: `node:test` in `src/__tests__/`, against temporary git repositories with a local bare remote; no
   network, no real Linear call (the client is injected)
 - **Storage**: none (git and `~/.config/vellum/workspace.yaml`)
@@ -66,11 +66,11 @@ never blocks (ADR 0065 rule 7).
 
 ## Files and folders
 
-- `packages/vellum/bin/vellum.mjs`: add `start`, `clean` and `guard` to the commands
-- `packages/vellum/src/commands/start.mjs`, `clean.mjs`, `guard.mjs` (new); `init.mjs` (the `--workspace` option)
-- `packages/vellum/src/lib/git.mjs`, `workspace.mjs` (new)
-- `packages/vellum/src/__tests__/start.test.mjs`, `clean.test.mjs`, `guard.test.mjs`, `workspace.test.mjs` (new)
-- `packages/vellum/README.md`, `AGENTS.md`; `.changeset/vellum-worktree-rule.md`; `.gitignore` (`.claude/worktrees/`)
+- `packages/figentra-flow/bin/vellum.mjs`: add `start`, `clean` and `guard` to the commands
+- `packages/figentra-flow/src/commands/start.mjs`, `clean.mjs`, `guard.mjs` (new); `init.mjs` (the `--workspace` option)
+- `packages/figentra-flow/src/lib/git.mjs`, `workspace.mjs` (new)
+- `packages/figentra-flow/src/__tests__/start.test.mjs`, `clean.test.mjs`, `guard.test.mjs`, `workspace.test.mjs` (new)
+- `packages/figentra-flow/README.md`, `AGENTS.md`; `.changeset/vellum-worktree-rule.md`; `.gitignore` (`.claude/worktrees/`)
 - In billing, invoicing, brand, stackra/notes and stackra/pro: `.gitignore` gains `.claude/worktrees/` (one trivial
   commit each, after the commands land)
 
@@ -210,11 +210,11 @@ App's integration id), so a status posted with any other token, the agents' `bot
 
 ### Files and folders
 
-- `packages/vellum/src/commands/gate-run.mjs`: the `run` mode, wired in `gate.mjs`'s `run([mode, ...])` switch.
-- `packages/vellum/src/lib/gate-post.mjs`: the box-side poster; no imports outside `node:`.
-- `packages/vellum/src/lib/github-app.mjs`: the App JWT (RS256 with `node:crypto`), the installation token, and the
+- `packages/figentra-flow/src/commands/gate-run.mjs`: the `run` mode, wired in `gate.mjs`'s `run([mode, ...])` switch.
+- `packages/figentra-flow/src/lib/gate-post.mjs`: the box-side poster; no imports outside `node:`.
+- `packages/figentra-flow/src/lib/github-app.mjs`: the App JWT (RS256 with `node:crypto`), the installation token, and the
   status and comment calls over `fetch`. Used only by `gate-post.mjs`, which inlines it when copied.
-- Tests in `packages/vellum/src/__tests__/gate-run.test.mjs` and `gate-post.test.mjs`.
+- Tests in `packages/figentra-flow/src/__tests__/gate-run.test.mjs` and `gate-post.test.mjs`.
 
 ### Data models and migrations
 
@@ -375,11 +375,11 @@ git goes through `bot:git`. Vellum never handles a token.
 
 ### Files and folders
 
-- `packages/vellum/src/commands/land.mjs`, with `land` on the dispatcher in `bin/vellum.mjs`.
-- `packages/vellum/src/lib/github.mjs`: `gh(root, args)` through `bot:gh` when present, and `api(root, method, path, body?)`
+- `packages/figentra-flow/src/commands/land.mjs`, with `land` on the dispatcher in `bin/vellum.mjs`.
+- `packages/figentra-flow/src/lib/github.mjs`: `gh(root, args)` through `bot:gh` when present, and `api(root, method, path, body?)`
   returning parsed JSON.
-- `packages/vellum/src/commands/clean.mjs`: the `only` option and the `vellumLanded` saved rule.
-- `packages/vellum/src/lib/git.mjs`: `isSaved` reads `branch.<b>.vellumLanded`.
+- `packages/figentra-flow/src/commands/clean.mjs`: the `only` option and the `vellumLanded` saved rule.
+- `packages/figentra-flow/src/lib/git.mjs`: `isSaved` reads `branch.<b>.vellumLanded`.
 - Tests: `land.test.mjs` (the rules, the merge request and the steps after it, with the GitHub calls injected),
   `land-stack.test.mjs`, and a `clean.test.mjs` case for AC-029.
 
@@ -534,10 +534,10 @@ file (an owner step).
 
 ### Files and folders
 
-- New: `packages/vellum/src/lib/snapshot.mjs`, `packages/vellum/src/lib/metrics.mjs`,
-  `packages/vellum/src/commands/status.mjs` and `packages/vellum/src/commands/mcp.mjs`. `status` and `mcp` join the
+- New: `packages/figentra-flow/src/lib/snapshot.mjs`, `packages/figentra-flow/src/lib/metrics.mjs`,
+  `packages/figentra-flow/src/commands/status.mjs` and `packages/figentra-flow/src/commands/mcp.mjs`. `status` and `mcp` join the
   dispatcher.
-- Changed: `packages/vellum/src/lib/workspace.mjs` reads the optional top-level `sessionCap:`.
+- Changed: `packages/figentra-flow/src/lib/workspace.mjs` reads the optional top-level `sessionCap:`.
 - Tests:
   - `status.test.mjs`: the snapshot over temporary repositories with GitHub injected, and the rendering;
   - `metrics.test.mjs`: the arithmetic from fixed PR, status and comment fixtures;

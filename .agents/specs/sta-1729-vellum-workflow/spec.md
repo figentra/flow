@@ -29,7 +29,7 @@ branch protection stays on. Land squashes. Worktrees live only at `<repo>/.claud
 
 - **Apps touched**: none
 - **Services touched**: none
-- **Packages touched**: Vellum's `packages/vellum` (figentra/vellum); in Stackra core, the ADR, and later the
+- **Packages touched**: Vellum's `packages/figentra-flow` (figentra/vellum); in Stackra core, the ADR, and later the
   `stackra testbed` entry point Vellum calls
 - **Cross-service events**: none
 - **Tenancy and data**: none
@@ -133,6 +133,8 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - **AC-041**: WHEN `vellum sync` runs THE CLI SHALL install the configured preset: `neutral`, `stackra` or a repository path
 - **AC-042**: THE package SHALL keep the product's name in one module, so a rename changes that module, `package.json` and the docs
 - **AC-043**: IF a branch's diff against the default branch adds a path matching the configured artifact patterns (default `.cache/`, `node_modules/`, `dist/`, `.turbo/`, `coverage/`) or a file larger than the configured size (default 5 MB) THEN THE CLI SHALL refuse it in `vellum gate run` and `vellum land` and name each file
+- **AC-044**: WHEN the `infisical` secrets adapter logs in by universal auth THE CLI SHALL put the token only in the `infisical run` process's environment, never in an argument, the command text, the output or a log, and SHALL take the project, environment and domain from the configuration
+- **AC-045**: WHEN phase A's last step (A6) writes `figentra-flow.config.json` into our repositories THE CLI SHALL drop every transition for a repository without one (the `bot:git` lookup, the Linear `STA` tracker, the tester worktree names) in the same change
 - **AC-023**: WHEN a spec carries a `**Session**` line THE CLI SHALL read it as the spec's assigned session and show it in `vellum status`
 - **AC-024**: WHEN `vellum status` runs THE CLI SHALL list each session with its spec, worktree and the `vellum/gate` result of the worktree's head
 - **AC-025**: IF a feature- or big-tier spec past Clarified has no `**Session**` THEN THE CLI SHALL report it in `vellum gate check` as a finding
@@ -185,3 +187,4 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - 2026-10-31: phase A Planned — Approved by leader 2026-10-31 (JSON config with schema, testbed as a command runner, github-actions for outsiders, app create human-only, Jira later, one-minor deprecation, product name held; AC-043 artifact guard added)
 - 2026-10-31: phase 4 Planned — Approved by leader 2026-10-31 (metrics on demand, a hand-written MCP server with a conformance test, tracker state only with a tracker adapter, `sessionCap` in workspace.yaml; built after phase A)
 - 2026-10-31: Tasked (revised) — Approved by owner 2026-10-31 (relayed by the leader, confirmed by the owner in the build session): the product is Figentra Flow, published as `figentra-flow`; no compatibility with the old names
+- 2026-10-31: Tasked (revised) — Approved by leader 2026-10-31 (AC-044: the Infisical token by environment only, with project, env and domain from config, after the gate key moved to its own project; AC-045: A6 removes the config-less transitions with the config files)

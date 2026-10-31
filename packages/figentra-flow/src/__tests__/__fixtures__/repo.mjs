@@ -36,7 +36,7 @@ export function sh(cwd, ...args) {
  * @returns {{ root: string, origin: string, dispose: () => void }}
  */
 export function repo(files = {}) {
-  const top = realpathSync(mkdtempSync(join(tmpdir(), "vellum-repo-")));
+  const top = realpathSync(mkdtempSync(join(tmpdir(), "flow-repo-")));
   const origin = join(top, "origin.git");
   const root = join(top, "main");
   sh(top, "init", "-q", "--bare", "-b", "main", origin);

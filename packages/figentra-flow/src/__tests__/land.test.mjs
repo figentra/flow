@@ -30,7 +30,7 @@ const pr = (over = {}) => ({
   state: "open",
   draft: false,
   mergeable_state: "clean",
-  title: "feat(vellum): land",
+  title: "feat(flow): land",
   base: { ref: "main" },
   head: { sha: SHA, ref: "figentra/sta-5-land" },
   ...over,
@@ -190,7 +190,7 @@ test("land: a green PR squash-merges on its head, then Done, the record, the wor
   assert.deepEqual(merge?.body, {
     merge_method: "squash",
     sha: w.head,
-    commit_title: "feat(vellum): land (#7)",
+    commit_title: "feat(flow): land (#7)",
     commit_message: "Refs: STA-5",
   });
   assert.deepEqual(done, ["sta-5"]);

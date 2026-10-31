@@ -81,7 +81,7 @@ test("gate run: the job is a clean clone at the head, with the poster and the jo
     marker: GATE_MARKER,
     envPrefix: ENV_PREFIX,
   });
-  assert.match(seen.label, /^figentra-flow gate figentra\/vellum@[0-9a-f]{12}$/);
+  assert.match(seen.label, /^figentra-flow gate figentra\/flow@[0-9a-f]{12}$/);
   assert.equal(existsSync(seen.dir), false);
 });
 

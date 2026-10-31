@@ -18,7 +18,7 @@ import { repo, sh } from "./__fixtures__/repo.mjs";
 
 test("workspace: round trip through FIGENTRA_FLOW_WORKSPACE, and empty when the file is missing", () => {
   const file = join(
-    realpathSync(mkdtempSync(join(tmpdir(), "vellum-ws-"))),
+    realpathSync(mkdtempSync(join(tmpdir(), "flow-ws-"))),
     "nested",
     "workspace.yaml",
   );

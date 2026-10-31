@@ -64,7 +64,7 @@ const impact = (v = "none") =>
     .map((f) => `- **${f}**: ${v}`)
     .join("\n");
 /** A repository as `figentra-flow init` and the skill fallback of `figentra-flow sync` leave it, with the preset source in place. */
-const ROOT = mkdtempSync(join(tmpdir(), "vellum-root-"));
+const ROOT = mkdtempSync(join(tmpdir(), "flow-root-"));
 init(ROOT);
 installSkills(ROOT);
 cpSync(join(ASSETS, "presets"), join(ROOT, ".agents/speckit/presets"), { recursive: true });

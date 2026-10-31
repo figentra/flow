@@ -236,6 +236,10 @@
               "type": "string",
               "minLength": 1
             },
+            "domain": {
+              "type": "string",
+              "minLength": 1
+            },
             "auth": {
               "enum": ["universal-auth"]
             }

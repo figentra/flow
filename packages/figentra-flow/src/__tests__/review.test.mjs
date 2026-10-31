@@ -90,15 +90,15 @@ test("review: a FAIL for the head beats a PASS, a sloppy FAIL still counts, an o
 });
 
 test("review: the owner's APPROVED review with owner-approval on the head counts, unless the owner wrote the change", () => {
-  const review = {
+  const approval = {
     user: { login: OWNER, type: "User" },
     state: "APPROVED",
     commit_id: SHA,
     body: "ok owner-approval",
   };
-  assert.equal(review([], [review]).verdict, "PASS");
-  assert.equal(review([], [{ ...review, commit_id: "b".repeat(40) }]).verdict, null);
-  assert.equal(review([], [review], [OWNER]).verdict, null);
+  assert.equal(review([], [approval]).verdict, "PASS");
+  assert.equal(review([], [{ ...approval, commit_id: "b".repeat(40) }]).verdict, null);
+  assert.equal(review([], [approval], [OWNER]).verdict, null);
 });
 
 test("actor: app/, [bot] and case fold to one login", () => {

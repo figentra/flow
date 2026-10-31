@@ -48,7 +48,7 @@ test("trackerFor: no config file keeps the Linear STA scheme with a warning; a c
   assert.equal(legacy.scheme.prefix, "sta");
   assert.equal(legacy.scheme.branch("sta-3", "x"), "figentra/sta-3-x");
   assert.match(warnings.join(), /deprecated/);
-  const dir = mkdtempSync(join(tmpdir(), "vellum-tracker-"));
+  const dir = mkdtempSync(join(tmpdir(), "flow-tracker-"));
   t.after(() => rmSync(dir, { recursive: true }));
   writeFileSync(join(dir, CONFIG_FILE), JSON.stringify({ version: 1 }));
   const none = trackerFor(dir, { warn: () => assert.fail("no warning expected") });
@@ -96,7 +96,7 @@ test("github-issues: title, states, In Progress as a label and Done as closing, 
 });
 
 test("gate plan's stage report: a tracker failure is a warning, never swallowed; a success comments", async (t) => {
-  const dir = mkdtempSync(join(tmpdir(), "vellum-stage-"));
+  const dir = mkdtempSync(join(tmpdir(), "flow-stage-"));
   t.after(() => rmSync(dir, { recursive: true }));
   const spec = join(dir, "spec.md");
   writeFileSync(spec, "# Spec\n\n**Linear**: OPS-12\n");

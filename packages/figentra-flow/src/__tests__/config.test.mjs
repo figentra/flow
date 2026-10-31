@@ -46,7 +46,7 @@ const FIGENTRA = {
 
 /** A folder holding `files`. */
 function folder(/** @type {Record<string, string>} */ files) {
-  const dir = mkdtempSync(join(tmpdir(), "vellum-config-"));
+  const dir = mkdtempSync(join(tmpdir(), "flow-config-"));
   for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
   return dir;
 }

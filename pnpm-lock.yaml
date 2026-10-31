@@ -218,7 +218,7 @@ importers:
         specifier: catalog:build
         version: 2.11.9
 
-  packages/vellum:
+  packages/figentra-flow:
     dependencies:
       undici:
         specifier: 'catalog:'

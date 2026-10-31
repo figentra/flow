@@ -29,7 +29,7 @@ test("words: splits simple commands and honours quotes", () => {
 test("guard: allows a worktree inside .claude/worktrees and denies one outside, however it is written", (t) => {
   const r = repo();
   t.after(r.dispose);
-  const outside = realpathSync(mkdtempSync(join(tmpdir(), "vellum-guard-")));
+  const outside = realpathSync(mkdtempSync(join(tmpdir(), "flow-guard-")));
   assert.equal(
     decide("git worktree add -b figentra/sta-1-a .claude/worktrees/sta-1-a origin/main", r.root),
     undefined,
@@ -47,7 +47,7 @@ test("guard: allows a worktree inside .claude/worktrees and denies one outside, 
 test("guard: other git commands and commands outside a repository pass", (t) => {
   const r = repo();
   t.after(r.dispose);
-  const outside = realpathSync(mkdtempSync(join(tmpdir(), "vellum-guard-")));
+  const outside = realpathSync(mkdtempSync(join(tmpdir(), "flow-guard-")));
   assert.equal(decide("git worktree list", r.root), undefined);
   assert.equal(decide("git worktree remove ../sibling", r.root), undefined);
   assert.equal(decide("echo git worktree add ../x", r.root), undefined);
