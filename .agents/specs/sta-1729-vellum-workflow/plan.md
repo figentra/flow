@@ -469,6 +469,152 @@ the branch when `clean` deletes the branch.
    patch-id survival, because land merges the exact head. `vellum review`, run by a different agent than the builder
    and posting through `pnpm bot:review`, is designed after land (T035).
 
+## Phase 4: status, the MCP server and metrics (design, for the leader's plan stop)
+
+Phase 4 gives one place that shows what is in flight. It covers FR-7, AC-012, AC-024, AC-026 and P-007, and adds
+AC-032 and AC-033. It also brings back, rewritten, the old Vellum's MCP server and metrics (owner decision D1). All
+three are read-only views of one snapshot of the repositories in `workspace.yaml`.
+
+### Architecture overview
+
+```text
+workspace.yaml ──► snapshot(repos) ──┬─► vellum status [--json]          (people)
+  (vellum init --workspace)          ├─► vellum mcp  (stdio, read-only)   (agents)
+                                     └─► vellum status --metrics          (delivery numbers)
+snapshot per repository:
+  git (local, no network) ── worktrees: branch, head, dirty, idle, in use, ahead/behind origin
+  specs (default branch and each worktree) ── status, tier, approvals, **Session**, gate check problems
+  GitHub through the repository's bot wrapper (skipped with --offline) ── open PRs: head, mergeable,
+                                                        vellum/gate on the head, the counted AI review, base
+```
+
+Nothing is stored. Each call rebuilds the snapshot from git, the spec files and GitHub, so it cannot drift from the
+truth the way a hand-kept state file does. Once it shows the same things as `notes/state-of-work.md`, it replaces that
+file (an owner step).
+
+### Components and responsibilities
+
+- `src/lib/snapshot.mjs` builds `snapshot({ repos, api, offline, now })`, which returns
+  `{ version: "vellum.status/1", takenAt, repos: [...] }`. Each repository entry carries:
+  - `specs`: `{ key, folder, status, tier, session, problems }`. Specs are read from the default branch and from each
+    worktree; a worktree's copy wins for its own key.
+  - `worktrees`: `{ path, branch, key, head, dirty, idleHours, inUse, ahead, behind }`.
+  - `prs`: `{ number, title, branch, head, base, draft, mergeable, gate, review, stacked }`, where:
+    - `gate` is `{ state, creator, stale }`;
+    - `review` is `aiReview`'s verdict;
+    - `stacked` means the base is not the default branch.
+  - `sessions`: `{ name, specs, worktrees, gates, building }`.
+    - A session is the `**Session**` value of a spec (AC-023).
+    - Its worktree is the one whose branch carries the spec's key, and its gate is that worktree head's gate (AC-024).
+    - It is `building` when the spec is Tasked or Implementing.
+  - `warnings`: the excess when more building sessions exist than `cap` allows. `cap` is `workspace.yaml`'s
+    `sessionCap`, default 2, raised only by the owner (AC-026).
+- `src/commands/status.mjs` is `vellum status [--repo <path>] [--json] [--offline] [--metrics [--since 30d]]`. It
+  renders one block per repository with four sections: specs by status, worktrees, PRs and sessions. `--json` prints
+  the snapshot itself.
+- `src/lib/metrics.mjs` is `metrics({ repos, api, since })`. It covers the PRs merged in the window, per repository
+  and in total, using the old Vellum's numbers now that their data exists:
+  - lead time, from PR opened to merged (median and p90);
+  - cycle time, from the first commit to merged;
+  - gate runs per PR, and the share that were red (`vellum/gate` statuses over the PR's commits);
+  - rework: heads pushed after the first gate;
+  - review rounds: `AI-REVIEW: FAIL` verdicts before the PASS;
+  - approval latency: the dates in each merged spec's Status history, from Draft to its last approval;
+  - open-work age, from the snapshot.
+- `src/commands/mcp.mjs` is `vellum mcp`, a stdio MCP server.
+  - It speaks JSON-RPC 2.0 by hand (`initialize`, `tools/list`, `tools/call`), in keeping with the package having no
+    dependencies.
+  - It offers five read-only tools, each returning JSON text:
+    - `vellum_status` (`repo?`, `offline?`);
+    - `vellum_spec` (`repo`, `key`): the spec's status, tier, approvals and `vellum gate check` problems;
+    - `vellum_trace` (`repo`, `key`): the FR/AC → task → test matrix;
+    - `vellum_worktrees` (`repo?`);
+    - `vellum_metrics` (`since?`).
+  - No tool writes, merges, lands, starts or cleans (AC-033).
+
+### Files and folders
+
+- New: `packages/vellum/src/lib/snapshot.mjs`, `packages/vellum/src/lib/metrics.mjs`,
+  `packages/vellum/src/commands/status.mjs` and `packages/vellum/src/commands/mcp.mjs`. `status` and `mcp` join the
+  dispatcher.
+- Changed: `packages/vellum/src/lib/workspace.mjs` reads the optional top-level `sessionCap:`.
+- Tests:
+  - `status.test.mjs`: the snapshot over temporary repositories with GitHub injected, and the rendering;
+  - `metrics.test.mjs`: the arithmetic from fixed PR, status and comment fixtures;
+  - `mcp.test.mjs`: the JSON-RPC handler driven by request objects, with no process.
+
+### Data models and migrations
+
+There is no stored data and no migration. The snapshot schema is versioned (`vellum.status/1`) so MCP tools and
+`--json` readers can rely on it; a breaking change raises the version. `workspace.yaml` gains one optional key,
+`sessionCap`.
+
+### Contracts
+
+- CLI: `vellum status [--repo <path>] [--json] [--offline] [--metrics [--since <n>d]]`. It exits 0, or 1 when a
+  warning (AC-026) is present, so a script can alert.
+- `vellum mcp` speaks MCP over stdio. Each tool's input schema is JSON Schema, and each result is one text content
+  item holding JSON.
+- Registration: a repository's `.mcp.yaml` holds `vellum: { command: pnpm, args: [exec, vellum, mcp] }`, which
+  `stackra agents sync` renders into `.mcp.json`. Vellum documents this entry and never writes it itself.
+
+### Error handling
+
+- A repository that is missing or not a git repository is shown with the reason and skipped.
+- A GitHub failure for one repository marks its PRs `unknown (<error>)`. Its local facts still show, and the run goes
+  on. `--offline` skips GitHub on purpose.
+- A spec that cannot be parsed shows its parse problem in place of a status.
+- The MCP server answers a JSON-RPC error for an unknown method, an unknown tool or bad arguments. One bad request
+  never stops it.
+
+### Security and tenancy
+
+- Read-only: every path only reads. The MCP server has no write tool, and a test asserts that the tool list is exactly
+  the five read tools.
+- No tokens: GitHub goes through the repository's bot wrapper (see the decisions below). No token, no environment
+  value and no file outside the repositories reaches the output. Spec text and PR titles appear as they are, since
+  they are already in the repositories.
+- Sessions: a session is a name written in a spec. Vellum does not read the app's session list or anything outside the
+  repositories.
+
+### Testing strategy
+
+- Snapshot: two temporary repositories hold:
+  - a spec at Tasked with `**Session**: os-services-b` in a worktree with an open PR, a green gate and a review PASS;
+  - a stacked PR;
+  - a dirty worktree;
+  - an idle worktree with no key;
+  - three building sessions against a cap of 2.
+
+  The tests check that every section lists them, that AC-024's session row carries the spec, the worktree and the
+  gate, that the warning names the excess, and that `--offline` makes no GitHub call.
+
+- Metrics: fixed fixtures give known medians, red-gate shares, rework, review rounds and approval latency.
+- MCP:
+  - `initialize`, then `tools/list`, which must return exactly the five read tools;
+  - `tools/call` for each tool with a stub snapshot;
+  - an unknown tool and bad arguments each return a JSON-RPC error.
+
+### Rollout
+
+1. Lands after phase 3. `vellum init --workspace` (phase 1) already writes the repositories.
+2. f4's acceptance: on the Mac's workspace, `vellum status` lists every repository's specs, worktrees, gates and PRs.
+   These must match GitHub's open PR list and `git worktree list`, and for core they must agree with
+   `state-of-work.md`.
+3. The owner registers `vellum mcp` in the repositories' `.mcp.yaml` and decides when `state-of-work.md` retires.
+
+### Decisions at the plan stop (leader, 2026-10-31)
+
+1. **Metrics are computed on demand from GitHub and the specs, with no store.**
+2. **A hand-written, dependency-free MCP stdio server for now**, with the five read tools and the tool-list test, plus
+   a protocol conformance test against the current MCP specification's `initialize`, `tools/list` and `tools/call`
+   shapes. The official SDK may come later.
+3. **Tracker state is out of `status` by default**, and shown only when a tracker adapter is configured.
+4. **`sessionCap` is a `workspace.yaml` key the owner edits.**
+5. **GitHub calls never fall back to a personal `gh` login.** AC-034 landed as #14. Phase A's credentials port carries
+   it. `status --offline` makes no GitHub call.
+6. **Phase 4 is built after phase A.** Its GitHub and tracker reads go through the adapters.
+
 ## Phase A: a neutral core with adapters (design, for the leader's plan stop)
 
 Owner direction of 2026-10-31: Vellum becomes a product anyone can use, with no Stackra or Figentra coupling in its
