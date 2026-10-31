@@ -4,12 +4,13 @@
  *   repository (or of every workspace repository with `--all`), move stray ones inside, and make `.gitignore` ignore
  *   `.claude/worktrees/`. A worktree is removed only when it is
  *   - not a tester's (`g-*`, `*-gate`, `land-*`, `tpl-core`, `c6-lock*`, `template-wt-lean`);
+ *   - not in use: no running process (a session, a dev server, a shell) has its working folder inside it;
  *   - clean (no change, untracked files included);
  *   - saved: its head on a remote ref, or every commit landed by patch (`git cherry`), since core lands by cherry-pick;
  *   - finished: its issue Done or Canceled when its name carries a key, else idle for 2 hours or more by its HEAD
  *     reflog (a detached HEAD or a builder sub-agent tree);
  *   - free of ignored files outside the usual caches (`.env`, `ios/`, `android/` keep it).
- *   Every kept tree is reported with its reason, and the space freed is reported.
+ *   A stray tree is adopted only when it is not in use and idle for 2 hours. Every kept tree is reported with its reason, and the space freed is reported.
  * Boundary: `git worktree remove` (never `--force`), `git branch -D` of a removed tree's own branch, `git worktree
  *   move` with `--adopt`, and one appended `.gitignore` line with `--fix-ignore`. `--dry-run` changes nothing.
  * Runtime: node
@@ -21,9 +22,11 @@ import { basename, join, resolve, sep } from "node:path";
 
 import { client, linear } from "../lib/linear.mjs";
 import {
+  busyFolders,
   defaultBranch,
   git,
   idleHours,
+  inUse,
   isClean,
   isSaved,
   issueKey,
@@ -81,7 +84,8 @@ export function ignoresWorktrees(root) {
 
 /**
  * Cleans the repository at `cwd`.
- * @param {{ cwd: string, dry?: boolean, adopt?: boolean, fixIgnore?: boolean, issues?: Issues, now?: number }} options
+ * @param {{ cwd: string, dry?: boolean, adopt?: boolean, fixIgnore?: boolean, issues?: Issues, now?: number,
+ *           busy?: string[] }} options
  * @returns {Promise<Report>}
  */
 export async function clean(options) {
@@ -114,12 +118,21 @@ export async function clean(options) {
     return states.get(key);
   };
 
+  const busy = options.busy ?? busyFolders();
   for (const tree of worktrees(root)) {
     const name = basename(tree.path);
     const keep = (/** @type {string} */ reason) => report.kept.push({ path: tree.path, reason });
     if (TESTER.test(name)) {
       if (!resolve(tree.path).startsWith(inside)) report.forTester.push(tree.path);
       keep("a tester worktree");
+      continue;
+    }
+    if (busy === undefined) {
+      keep("running processes cannot be listed (no lsof or /proc)");
+      continue;
+    }
+    if (inUse(tree.path, busy)) {
+      keep("in use: a running process works inside it");
       continue;
     }
     if (tree.locked) {
@@ -137,6 +150,13 @@ export async function clean(options) {
     if (!resolve(tree.path).startsWith(inside)) {
       if (!options.adopt) {
         keep("outside .claude/worktrees (vellum clean --adopt moves it in)");
+        continue;
+      }
+      const idle = idleHours(tree.path, now);
+      if (idle < IDLE_HOURS) {
+        keep(
+          `outside .claude/worktrees, idle ${idle.toFixed(1)} h (< ${IDLE_HOURS} h) so not adopted yet`,
+        );
         continue;
       }
       const target = join(inside, name);
