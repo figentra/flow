@@ -1,0 +1,20 @@
+// Figentra Flow file contract:
+// Purpose: TypeScript over the plain-JS sources: `typecheck` checks them (checkJs), `build` emits their declarations
+//          for the `./gate`, `./trace` and `./parse` exports. Not strict: the sources moved from Stackra core as
+//          untyped JS and keep their logic unchanged.
+{
+  "compilerOptions": {
+    "target": "es2024",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "rootDir": "."
+  },
+  "include": ["bin", "src"],
+  "exclude": ["dist", "assets", "src/**/__tests__/__fixtures__"]
+}

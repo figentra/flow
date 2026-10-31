@@ -1,7 +1,7 @@
 {
-  "name": "vellum-workspace",
+  "name": "figentra-flow-workspace",
   "private": true,
-  "description": "Vellum: the spec CLI for Stackra repositories (spec-kit preset, stage gates, traceability, Linear links)",
+  "description": "Figentra Flow: spec-driven development from spec to landed change",
   "license": "MIT",
   "type": "module",
   "scripts": {

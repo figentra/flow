@@ -1,4 +1,4 @@
-# Vellum file contract:
+# Figentra Flow file contract:
 # Purpose: the Quality Gate: install, format check, lint, typecheck, test and build on every PR and push to main.
 # Owner: release-operations
 # Secrets: none; the @stackra scope's registry is read-only and public for this job.

@@ -1,0 +1,88 @@
+{
+  "name": "figentra-flow",
+  "version": "0.0.0",
+  "private": false,
+  "description": "Figentra Flow: spec-driven development from spec to landed change. Spec gates and traceability on spec-kit, worktrees, the gate on a box, land, and adapters for your tracker, runner, credentials and secrets",
+  "keywords": [
+    "linear",
+    "sdlc",
+    "spec-kit",
+    "specs",
+    "traceability",
+    "workflow",
+    "worktrees"
+  ],
+  "homepage": "https://github.com/figentra/flow#readme",
+  "bugs": {
+    "url": "https://github.com/figentra/flow/issues"
+  },
+  "license": "MIT",
+  "author": "Figentra (https://figentra.com)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/figentra/flow.git",
+    "directory": "packages/figentra-flow"
+  },
+  "bin": {
+    "fflow": "./bin/figentra-flow.mjs",
+    "figentra-flow": "./bin/figentra-flow.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "!src/**/__tests__",
+    "assets",
+    "schema",
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "exports": {
+    "./gate": {
+      "types": "./dist/src/commands/gate.d.mts",
+      "default": "./src/commands/gate.mjs"
+    },
+    "./trace": {
+      "types": "./dist/src/commands/trace.d.mts",
+      "default": "./src/commands/trace.mjs"
+    },
+    "./parse": {
+      "types": "./dist/src/lib/spec-parse.d.mts",
+      "default": "./src/lib/spec-parse.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.stackra.figentra.com/"
+  },
+  "scripts": {
+    "build": "tsc --noEmit false --declaration --emitDeclarationOnly --outDir dist",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint .",
+    "test": "node --test 'src/**/__tests__/*.test.mjs'",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "undici": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "oxlint": "catalog:quality",
+    "typescript": "catalog:build"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "stackra": {
+    "kind": "package",
+    "tier": "lib",
+    "category": "developer",
+    "runtimes": [
+      "node"
+    ],
+    "summary": "Use it for spec-driven work: `figentra-flow init` and `sync` install spec-kit with a preset and skills; `gate`, `trace`, `start`, `clean` and `land` run the stage gates, traceability, worktrees, the gate and landing."
+  }
+}

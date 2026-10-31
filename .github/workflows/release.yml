@@ -1,14 +1,14 @@
-# Vellum file contract:
-# Purpose: the Release workflow (Stackra ADR 0503 decision 4: the one workflow GitHub keeps besides `vellum/gate`).
+# Figentra Flow file contract:
+# Purpose: the Release workflow (Stackra ADR 0503 decision 4: the one workflow GitHub keeps besides `figentra-flow/gate`).
 #          On a push to main with pending changesets it opens or updates the "version packages" PR; when that PR
-#          merges it publishes `@stackra/vellum` to the Stackra registry with provenance, a tag and a GitHub release,
+#          merges it publishes `figentra-flow` to the Stackra registry with provenance, a tag and a GitHub release,
 #          then the signed SBOM and checksums. All of it is Stackra core's Runway npm provider, called, not copied.
 # Boundary: publishes only to https://npm.stackra.figentra.com/ (ADR 0453), never to npmjs. An agent never dispatches
 #           it: the owner merges the version PR and approves the `release` environment.
 # Runtime: GitHub Actions
 # Secrets: no registry token exists. Per package, the provider exchanges this job's GitHub ID token at the registry
 #          for a publish token bound to that one name; the registry's trusted-publisher row names this caller
-#          (figentra/vellum, `.github/workflows/release.yml`, `refs/heads/main`, environment `release`). The GitHub
+#          (figentra/flow, `.github/workflows/release.yml`, `refs/heads/main`, environment `release`). The GitHub
 #          App id and key the version PR is pushed with are repository secrets the owner sets.
 # Governing contract: Stackra ADR 0453 (decisions 6, 7), ADR 0500 (decision 2), ADR 0503; STA-1729 (W0).
 # Owner: release-operations
@@ -41,7 +41,7 @@ jobs:
     uses: figentra/stackra/.github/workflows/runway-npm.yml@31faaac481d2bed76bfe5f20976da1d40aa6a345
     with:
       environment: release
-      build-args: --filter=@stackra/vellum
+      build-args: --filter=figentra-flow
       dry-run: ${{ inputs.dry_run == true }}
       registry: https://npm.stackra.figentra.com/
     secrets:
