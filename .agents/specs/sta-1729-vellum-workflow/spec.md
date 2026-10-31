@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-31
 
-**Status**: Draft
+**Status**: Clarified — Approved by leader 2026-10-31
 
 **Tier**: big
 
@@ -13,7 +13,7 @@ stops under the owner's delegation
 
 **Linear**: STA-1729
 
-**Clarifications status**: pending <!-- the leader answers Q1 to Q8 at the spec stop -->
+**Clarifications status**: complete
 
 **Input**: Owner direction (2026-10-31), the approved plan `stackra/notes/plans/vellum-complete.md`: finish Vellum so all
 work runs through one workflow, from spec to release. Vellum moves the work (spec, approval, worktree, gate, land,
@@ -80,9 +80,9 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - **AC-002**: IF the worktree folder or the branch already exists THEN THE CLI SHALL refuse and name it, changing nothing
 - **AC-003**: WHEN an agent runs `git worktree add` to a path outside `<repo>/.claude/worktrees/` THE guard SHALL deny it and name `vellum start`
 - **AC-004**: WHEN `vellum clean` runs THE CLI SHALL remove each worktree that is clean, landed or abandoned, and pushed, and report every other one with the reason it stays
-- **AC-005**: IF a worktree is a tester gate worktree (`g-*`), is dirty, or holds unpushed commits THEN THE CLI SHALL keep it
+- **AC-005**: IF a worktree is a tester worktree (`g-*`, `*-gate`, `land-*`, `tpl-core`, `c6-lock*`, `template-wt-lean`), is dirty, or holds unpushed commits THEN THE CLI SHALL keep it
 - **AC-006**: WHEN `vellum clean --fix-ignore` runs in a repository whose `.gitignore` lacks `.claude/worktrees/` THE CLI SHALL add the line
-- **AC-007**: WHEN `vellum clean --adopt` runs THE CLI SHALL move each clean worktree outside `.claude/worktrees/` inside with `git worktree move`, and list the ones it cannot move
+- **AC-007**: WHEN `vellum clean --adopt` runs THE CLI SHALL move each clean, non-tester worktree outside `.claude/worktrees/` inside with `git worktree move`, and list the tester ones for stackra-f4 and the ones it cannot move
 - **AC-008**: WHEN `vellum gate` finishes on a box THE CLI SHALL post `vellum/gate` on the head commit with the result and the report link
 - **AC-009**: IF the gate's head commit is not the branch's current tip THEN THE CLI SHALL not post a success
 - **AC-010**: WHEN `vellum land` runs with a green `vellum/gate` and the approvals recorded THE CLI SHALL squash-merge, set Linear Done and remove the worktree
@@ -92,27 +92,39 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - **AC-014**: WHEN `vellum ship <env>` runs for dev or staging THE CLI SHALL call runway deploy for that environment
 - **AC-015**: IF `vellum ship production` is asked for THEN THE CLI SHALL refuse and name `runway promote` by the owner
 - **AC-016**: WHILE a repository is switched over THE repository SHALL require only `vellum/gate` on main and keep only the Release workflow
+- **AC-017**: WHEN `vellum land --stack` runs on a stack of PRs THE CLI SHALL land them bottom-up in order, each only after its own green `vellum/gate` on its rebased head
 
-## Questions for the spec stop (proposed answers)
+## Clarifications (the leader's answers at the spec stop, 2026-10-31)
 
 - **Q1. Worktree name.** `<repo>/.claude/worktrees/sta-n-<slug>` (the plan); the slug comes from the Linear title
-  unless `--slug` is given. Tester gate worktrees keep the `g-` prefix and are never cleaned by `vellum clean`.
+  unless `--slug` is given. **Answer: yes.** `vellum clean` and `--adopt` skip every tester worktree name: `g-*`,
+  `*-gate`, `land-*`, `tpl-core`, `c6-lock*` and `template-wt-lean`.
 - **Q2. Base and install.** `vellum start` branches from `origin/<default>` after a fetch through the repository's bot
-  wrapper, and does not run `pnpm install` (the Mac runs only oxfmt and oxlint; `--install` opts in).
+  wrapper, and does not run `pnpm install` (the Mac runs only oxfmt and oxlint; `--install` opts in). **Answer: yes.**
 - **Q3. The guard.** Vellum ships `vellum guard` (reads the agent's PreToolUse JSON, denies `git worktree add` outside
   `.claude/worktrees/`, allows everything else). Wiring it into each repository's `.claude/settings.json`, and the same
   rule into core's `.agents/hooks/_rules.mjs`, is guard configuration: the owner applies it, as with the STA-1721 hook
-  patch. Vellum prints the exact settings entry.
-- **Q4. Today's outside worktrees.** `vellum clean --adopt` moves the clean ones in (25 in os scratchpads, `os-lines-gate`,
-  `stackra/pro-gate`, `stackra/template-wt-lean`); a dirty one or one with unpushed work is listed for its owner.
+  patch. Vellum prints the exact settings entry. **Answer: yes;** the leader takes the wiring to the owner.
+- **Q4. Today's outside worktrees.** `vellum clean --adopt` moves the clean ones in; a dirty one or one with unpushed
+  work is listed for its owner. **Answer: yes, but** `os-lines-gate`, `stackra/pro-gate` and
+  `stackra/template-wt-lean` belong to the tester: `--adopt` lists them for stackra-f4 and never moves them. Only the
+  OS scratchpad worktrees and other non-tester ones move.
 - **Q5. Which repositories.** A workspace list in `~/.config/vellum/workspace.yaml` (path and GitHub slug per repo),
-  written once by `vellum init --workspace`; `vellum status` and `vellum clean --all` read it.
+  written once by `vellum init --workspace`; `vellum status` and `vellum clean --all` read it. **Answer: yes.**
 - **Q6. The gate bot.** `vellum gate` posts the status with the stackra-bot GitHub App token from the calling
   repository's wrapper (`pnpm bot:gh` today, the `figentra` CLI later). No human or agent token posts `vellum/gate`.
+  **Answer: yes.**
 - **Q7. Land on a stacked PR.** `vellum land` refuses a PR whose base is not the default branch; land the lower one
-  first.
+  first. **Answer: yes,** and a later `vellum land --stack` lands a stack bottom-up, each layer after its own green
+  gate (AC-017).
 - **Q8. Where the spec lives.** This spec and its plan stay in Vellum's `.agents/specs/`; the ADR is in core.
+  **Answer: yes.**
+- **Phase 1 also** adds `.claude/worktrees/` to `.gitignore` in billing, invoicing, brand, vellum, stackra/notes and
+  stackra/pro.
+- **Later phases** fold in stackra-f4's `notes/plans/vellum-final-plan.md` (ownership, the move list, old-Vellum
+  verdicts, the agent-config model) when it lands.
 
 ## Status history
 
 - 2026-10-31: Draft (questions sent to the leader for the spec stop)
+- 2026-10-31: Draft → Clarified — Approved by leader 2026-10-31 (technical stop under ADR 0502; Q1 to Q8 answered)
