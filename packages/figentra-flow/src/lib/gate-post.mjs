@@ -109,7 +109,8 @@ export async function post({ job, exit, log = "", env, fetch, now = Date.now() }
     token = (
       await call(`/app/installations/${installation.id}/access_tokens`, jwt, "POST", {
         repositories: [job.repository.split("/")[1]],
-        permissions: { statuses: "write", pull_requests: "write" },
+        // contents: read for the stale-head check (`git/ref/heads/<branch>`); nothing wider.
+        permissions: { contents: "read", statuses: "write", pull_requests: "write" },
       })
     ).token;
   } catch (error) {
