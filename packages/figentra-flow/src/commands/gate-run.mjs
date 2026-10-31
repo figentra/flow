@@ -85,6 +85,8 @@ export async function gateRun(options) {
       code: 2,
       problem: "the tree has uncommitted or untracked changes; commit and push first",
     };
+  const loaded = loadConfig(root);
+  if (loaded.errors.length) return { code: 2, problem: loaded.errors.join("; ") };
   const branch = options.ref ?? git(root, ["branch", "--show-current"]).out;
   if (!branch) return { code: 2, problem: "the head is detached; pass --ref <branch>" };
   const sha = git(root, ["rev-parse", "HEAD"]).out;
@@ -98,8 +100,6 @@ export async function gateRun(options) {
   const repository = slugOf(url);
   if (!repository) return { code: 2, problem: `origin (${url}) is not a GitHub repository` };
   const base = defaultBranch(root);
-  const loaded = loadConfig(root);
-  if (loaded.errors.length) return { code: 2, problem: loaded.errors.join("; ") };
   for (const w of loaded.warnings) console.error(w);
   const secrets = secretsPort(loaded.config.secrets);
   const found = options.runner

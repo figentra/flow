@@ -21,6 +21,7 @@ import { credentialsPort } from "../adapters/credentials.mjs";
 import { secretsPort } from "../adapters/secrets.mjs";
 import { ConfigError } from "../lib/config.mjs";
 import { remote } from "../lib/git.mjs";
+import { CONFIG_FILE } from "../lib/product.mjs";
 import { repo, sh } from "./__fixtures__/repo.mjs";
 
 test("credentials: env needs a token, gh-user is by choice, a wrapper needs its script, none refuses", (t) => {
@@ -64,6 +65,12 @@ test("network git: a local origin needs no credentials; a network origin without
   const refused = remote(r.root, ["fetch", "-q", "origin"]);
   assert.equal(refused.ok, false);
   assert.match(refused.err, /network git needs "credentials"/);
+  // An invalid configuration is reported as itself, not as a failed fetch or a missing tip.
+  writeFileSync(join(r.root, CONFIG_FILE), JSON.stringify({ credentials: { kind: "env" } }));
+  assert.throws(
+    () => remote(r.root, ["ls-remote", "origin"]),
+    (e) => e instanceof ConfigError && /version/.test(e.message),
+  );
 });
 
 test("secrets: env leaves the command alone; infisical wraps with the scope's path and refuses without one", () => {

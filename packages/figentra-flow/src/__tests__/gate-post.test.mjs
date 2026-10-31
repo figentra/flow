@@ -95,6 +95,11 @@ test("post: exit 0 posts success on the checked sha and comments on the PR", asy
     target_url: "https://c/new",
   });
   assert.equal(status?.auth, `Bearer ${TOKEN}`);
+  // The token is narrowed to this repository and to what the poster reads and writes, the branch ref included.
+  assert.deepEqual(calls.find((c) => c.url.endsWith("/access_tokens"))?.body, {
+    repositories: ["flow"],
+    permissions: { contents: "read", statuses: "write", pull_requests: "write" },
+  });
   assert.ok(
     calls
       .find((c) => c.method === "POST" && c.url.endsWith("/issues/7/comments"))
