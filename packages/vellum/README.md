@@ -68,6 +68,10 @@ It lists every failing rule. Then it squash-merges with GitHub's `sha` guard, so
 4. deletes the remote branch;
 5. comments on the PR.
 
+GitHub calls use only the credentials the repository names in `package.json`. `"vellum": { "credentials":
+"wrapper:bot:gh" }` runs a script that gives `gh` a bot's token. `"gh-user"` uses your own `gh` login, and only
+because you said so. With neither, `land` refuses: Vellum never falls back to a personal login.
+
 Until a repository's ruleset requires `vellum/gate` (phase 6), `land` refuses there without `--manual-ok`, which only
 the tester passes. A stack's next PR is brought up to date by merging the default branch and pushing: no rebase, no
 force push. The stack is gated again before that PR lands.
