@@ -1,7 +1,7 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow status [--repo <path>] [--json] [--offline] [--metrics [--since <n>d]]` (FR-7, AC-012,
- *   AC-024, AC-026, AC-032): one block per
+ * Purpose: `figentra-flow status [--repo <path>] [--json] [--offline] [--metrics [--since <n>d]] [--by role [--role <id>]]`
+ *   (FR-7, FR-12, AC-012, AC-024, AC-026, AC-032, AC-050): one block per
  *   repository of the workspace (or the one named, or the current one) with its specs by status, worktrees, open PRs
  *   and sessions; `--json` prints the snapshot itself. Exit 0, or 1 when a warning (more building sessions than the
  *   cap) is present, so a script can alert.
@@ -89,6 +89,29 @@ export function render(snap, color = false) {
 }
 
 /**
+ * The snapshot grouped by role, for the repositories with a roster; `only` keeps one role.
+ * @param {any} snap
+ * @param {string} [only]
+ * @returns {string}
+ */
+export function renderByRole(snap, only) {
+  /** @type {string[]} */
+  const out = [];
+  for (const repo of snap.repos) {
+    if (!repo.byRole) continue;
+    out.push(repo.github ?? repo.path);
+    for (const r of repo.byRole.filter((/** @type {any} */ x) => !only || x.role === only))
+      out.push(
+        `  ${r.role ?? "(no role)"}: ${r.specs.length} spec(s) — ${r.inProgress} in progress, ${r.inReview} in review, ${r.blocked} blocked, ${r.ownerWaiting} waiting on the owner`,
+        `    sessions: ${r.sessions.join(", ") || "none"}`,
+        ...(r.specs.length ? [`    specs: ${r.specs.join(", ")}`] : []),
+      );
+    out.push("");
+  }
+  return out.length ? out.join("\n") : 'no repository names a roster ("team")';
+}
+
+/**
  * The metrics as text.
  * @param {any} m
  * @returns {string}
@@ -163,10 +186,21 @@ export function run(/** @type {string[]} */ args) {
     busy: busyFolders(),
     api: offline ? undefined : (root) => github(root),
   });
+  const byRole = opt("by") === "role";
+  if (opt("role") !== undefined && !byRole) {
+    console.error(`${NAME} status: --role goes with --by role`);
+    return 2;
+  }
+  if (opt("by") !== undefined && !byRole) {
+    console.error(`${NAME} status: --by takes \`role\``);
+    return 2;
+  }
   console.log(
     args.includes("--json")
       ? JSON.stringify(snap, null, 2)
-      : render(snap, colorFor(process.stdout)),
+      : byRole
+        ? renderByRole(snap, opt("role"))
+        : render(snap, colorFor(process.stdout)),
   );
   if (snap.warnings.length && !args.includes("--json"))
     console.error(`${NAME} status: see the warning above`);
