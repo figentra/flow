@@ -9,7 +9,7 @@
  * Runtime: node
  * Governing contract: ADR 0022; STA-1729 phase A (A1).
  */
-// @covers sta-1729:FR-11 sta-1729:AC-034 sta-1729:AC-036 sta-1729:AC-040
+// @covers sta-1729:FR-11 sta-1729:AC-034 sta-1729:AC-036 sta-1729:AC-040 sta-1729:AC-044
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -99,6 +99,72 @@ test("secrets: env leaves the command alone; infisical wraps with the scope's pa
     () => secretsPort({ kind: "infisical", paths: { gate: "/ci; rm -rf /" } }).wrap("x", "gate"),
     /is not a path/,
   );
+  assert.throws(
+    () => secretsPort({ kind: "infisical", bin: "$(id)/x", paths: {} }),
+    /bin is not a box path/,
+  );
+  assert.throws(
+    () => secretsPort({ kind: "infisical", envFile: "~/.ci-env", paths: {} }),
+    /envFile needs "auth"/,
+  );
+});
+
+test("secrets: envFile's identity reaches only the login, never the run, the poster, argv or output", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "flow-envfile-"));
+  t.after(() => rmSync(dir, { recursive: true }));
+  const bin = join(dir, "bin");
+  mkdirSync(bin);
+  const id = "cid-fake-555";
+  const secret = "csec-fake-777";
+  const token = "tok-fake-999";
+  // The box's file: the identity among unrelated lines, one with `export `, none of which may be taken.
+  writeFileSync(
+    join(dir, "ci-env"),
+    `OTHER=keep-out\nINFISICAL_UNIVERSAL_AUTH_CLIENT_ID=${id}\nexport INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET=${secret}\n`,
+  );
+  // `login` prints a token only with both identity values; `run` must see neither of them, nor OTHER.
+  writeFileSync(
+    join(bin, "infisical"),
+    [
+      "#!/bin/sh",
+      'printf "%s\\n" "$*" >> "$ARGV_LOG"',
+      'if [ "$1" = login ]; then',
+      `  [ "$INFISICAL_UNIVERSAL_AUTH_CLIENT_ID" = "${id}" ] && [ "$INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET" = "${secret}" ] || exit 7`,
+      `  printf "%s" "${token}"; exit 0`,
+      "fi",
+      'if [ "$1" = run ]; then',
+      `  [ "$INFISICAL_TOKEN" = "${token}" ] || exit 9`,
+      '  [ -z "$INFISICAL_UNIVERSAL_AUTH_CLIENT_ID$INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET$OTHER" ] || exit 8',
+      '  while [ "$1" != "--" ]; do shift; done; shift',
+      '  exec "$@"',
+      "fi",
+      "exit 2",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(bin, "infisical"), 0o755);
+  const log = join(dir, "argv.log");
+  const wrapped = secretsPort({
+    kind: "infisical",
+    auth: "universal-auth",
+    bin: join(bin, "infisical"),
+    envFile: join(dir, "ci-env"),
+    paths: { gate: "/ci/gate" },
+  }).wrap("echo poster-ran", "gate");
+  // PATH without the fake CLI: `bin` alone finds it.
+  const r = spawnSync(
+    "sh",
+    ["-c", `${wrapped}; echo "after:$INFISICAL_UNIVERSAL_AUTH_CLIENT_ID"`],
+    {
+      encoding: "utf8",
+      env: { PATH: "/usr/bin:/bin", ARGV_LOG: log },
+    },
+  );
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, "poster-ran\nafter:\n", "the identity outlived the subshell");
+  for (const text of [r.stdout, r.stderr, readFileSync(log, "utf8"), wrapped])
+    for (const value of [id, secret, token])
+      assert.equal(text.includes(value), false, "a value leaked");
 });
 
 test("secrets: the universal-auth token reaches only the run process's environment, never output or argv (AC-044)", (t) => {
