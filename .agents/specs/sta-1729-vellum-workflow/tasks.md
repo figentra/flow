@@ -21,9 +21,11 @@ Phase 1 is designed and approved; the later phases are placeholders, refined whe
 
 - [ ] T015 The Release workflow calling Stackra core's Runway npm provider, and the `changeset:version` script, in `.github/workflows/release.yml` and `package.json` — covers: FR-8, AC-013 — route: spec-task
 
-## Phase 2: the gate (design pending)
+## Phase 2: the gate (design approved 2026-10-31)
 
-- [ ] T020 `vellum gate` over `stackra testbed`, posting `vellum/gate` in `packages/vellum/src/commands/gate.mjs` — covers: FR-5, FR-9, AC-008, AC-009 — route: spec-task
+- [x] T020 `vellum gate run`: refusals, the exported clone, the box command, testbed or `--box`, in `packages/vellum/src/commands/gate-run.mjs` and `packages/vellum/src/lib/git.mjs` — covers: FR-5, FR-9, AC-008, AC-009 — route: spec-task
+- [x] T021 The box poster: the App token, the tip check, the `vellum/gate` status, the PR comment, redaction, in `packages/vellum/src/lib/gate-post.mjs` — covers: FR-5, AC-008, AC-009 — route: spec-task
+- [x] T022 Tests in `packages/vellum/src/__tests__/gate-run.test.mjs` and `packages/vellum/src/__tests__/gate-post.test.mjs`, the README and a changeset — covers: FR-5, AC-008, AC-009 — route: spec-task — deps: T020, T021
 
 ## Phase 3: land (design pending)
 

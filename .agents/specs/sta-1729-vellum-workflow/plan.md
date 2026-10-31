@@ -278,11 +278,23 @@ None. The gate keeps no state: the commit status is the record, and the PR comme
 
 P-005 (above, made concrete for phase 2) and P-009's part: `vellum gate run` runs no check on the caller's machine.
 
-### Open questions for the plan stop
+### Decisions at the plan stop (leader, 2026-10-31)
 
-1. **The App:** a new "Stackra Gate" App, or reuse the release bot App? A separate App means a ruleset can trust
-   exactly the gate.
-2. **Spec checks on the box:** should `vellum gate ci` be part of the gated command in every repository, or only
-   where Vellum is installed?
-3. **Before testbed lands:** should phase 2 wait for `figentra/sta-1626-testbed`, or ship with a `--box <ssh host>`
-   escape hatch for f4?
+1. **A new "Stackra Gate" App**, used only to post `vellum/gate`. The ruleset trusts only that App.
+2. **`vellum gate ci` runs wherever Vellum is installed.** Phase 6 installs Vellum in every repository, so the
+   "when present" branch only covers the transition.
+3. **`--box <ssh host>` ships now** as f4's manual path. Once `stackra testbed` lands (STA-1626), testbed is the
+   default and `--box` stays as the override. On a `--box` host the poster runs under
+   `infisical run --path=/ci/gate`, so the host needs the gate identity logged in.
+4. **The poster logs nothing secret.** The App key, the JWT, the installation token and every value from the
+   environment whose name looks secret are kept out of the PR comment and the box log. A log tail is redacted
+   before it is posted.
+
+The box command is POSIX `sh`. The check runs in a group whose output is written to `.vellum-gate/log.txt` and
+whose exit code goes to `.vellum-gate/exit`. The poster reads both. Its exit code is 0 when it posted green, 1 when
+it posted red, 4 when it could not post, and 5 when the head went stale. So `vellum gate run` exits with the gate's
+result.
+
+The exported tree is a local clone of the repository at `<sha>`, not a `git archive`. It carries
+`refs/remotes/origin/<default>` and the GitHub `origin` URL, because `vellum gate ci` diffs against the default
+branch. Nothing uncommitted or untracked is in it.

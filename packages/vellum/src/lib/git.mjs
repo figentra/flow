@@ -74,11 +74,13 @@ export function defaultBranch(root) {
 }
 
 /**
- * Fetches `origin`, through the repository's `bot:git` wrapper when its package.json has one.
+ * Runs a network git command in `root`, through the repository's own `bot:git` wrapper when it has one (Figentra
+ * repositories refuse raw network git).
  * @param {string} root
- * @returns {{ ok: boolean, err: string }}
+ * @param {string[]} args
+ * @returns {{ ok: boolean, out: string, err: string }}
  */
-export function fetch(root) {
+export function remote(root, args) {
   let wrapped = false;
   try {
     wrapped = Boolean(
@@ -87,12 +89,26 @@ export function fetch(root) {
   } catch {
     wrapped = false;
   }
-  if (!wrapped) return git(root, ["fetch", "-q", "origin"]);
-  const r = spawnSync("pnpm", ["bot:git", "--", "fetch", "-q", "origin"], {
-    cwd: root,
-    encoding: "utf8",
-  });
-  return { ok: r.status === 0, err: (r.stderr ?? "").trim() };
+  if (!wrapped) return git(root, args);
+  const r = spawnSync("pnpm", ["bot:git", "--", ...args], { cwd: root, encoding: "utf8" });
+  return { ok: r.status === 0, out: (r.stdout ?? "").trim(), err: (r.stderr ?? "").trim() };
+}
+
+/** Fetches `origin` in `root`. */
+export const fetch = (root) => remote(root, ["fetch", "-q", "origin"]);
+
+/**
+ * The commit `origin`'s branch points at now, or undefined when it has none.
+ * @param {string} root
+ * @param {string} branch
+ */
+export function remoteTip(root, branch) {
+  const ref = `refs/heads/${branch}`;
+  for (const line of remote(root, ["ls-remote", "origin", ref]).out.split("\n")) {
+    const [sha, name] = line.split("\t");
+    if (name === ref && /^[0-9a-f]{40}$/.test(sha)) return sha;
+  }
+  return undefined;
 }
 
 /**

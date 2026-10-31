@@ -14,25 +14,37 @@ pnpm exec vellum sync         # install the preset and render the speckit skills
 
 ## Commands
 
-| Command                                                     | What it does                                                                                                    |
-| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `vellum init [--force]`                                     | installs `.specify/` (spec-kit 1.0.10, the Stackra preset, the gate in `setup-plan.sh`)                         |
-| `vellum sync`                                               | installs the preset through `specify`, keeps the bundled workflow off, renders OpenCode and Claude              |
-| `vellum gate plan <spec.md>`                                | exits 1 until the spec may be planned (run by `setup-plan.sh`)                                                  |
-| `vellum gate check <dir>` / `tasks <tasks.md>`              | the stage rules for the spec's `**Status**`; the tasks lint                                                     |
-| `vellum gate lane` / `branch` / `ci` / `dir`                | the lane check, the branch warning, the CI gate with the spec-kit tripwire, the spec folder                     |
-| `vellum trace trace <dir>` / `drift` / `ci`                 | the FR/P → task → `@covers` test matrix, spec-vs-diff drift, the Done rules                                     |
-| `vellum parse <file>`                                       | what the parsers read from a `spec.md`, `plan.md`, `tasks.md` or `routing.yaml`, as JSON                        |
-| `vellum linear issue <spec.md>` / `tasks <tasks.md>`        | the spec's Linear issue and one sub-issue per task; `--dry-run` needs no token                                  |
-| `vellum start <STA-n> [--slug s] [--install]`               | branch `figentra/sta-n-<slug>` from `origin/<default>` into `.claude/worktrees/sta-n-<slug>`; issue In Progress |
-| `vellum clean [--dry-run] [--adopt] [--fix-ignore] [--all]` | removes finished worktrees (clean, saved, issue Done or idle 2 h), reports what it kept and the space freed     |
-| `vellum guard [--print-settings]`                           | the PreToolUse hook that denies `git worktree add` outside `.claude/worktrees/`                                 |
-| `vellum init --workspace <dir>…`                            | writes the workspace list (`~/.config/vellum/workspace.yaml`) that `--all` acts on                              |
+| Command                                                     | What it does                                                                                                                  |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `vellum init [--force]`                                     | installs `.specify/` (spec-kit 1.0.10, the Stackra preset, the gate in `setup-plan.sh`)                                       |
+| `vellum sync`                                               | installs the preset through `specify`, keeps the bundled workflow off, renders OpenCode and Claude                            |
+| `vellum gate run [--ref b] [--box host]`                    | the repository's checks on a testbed box (or `--box`) at the pushed head; the box posts `vellum/gate` as the Stackra Gate App |
+| `vellum gate plan <spec.md>`                                | exits 1 until the spec may be planned (run by `setup-plan.sh`)                                                                |
+| `vellum gate check <dir>` / `tasks <tasks.md>`              | the stage rules for the spec's `**Status**`; the tasks lint                                                                   |
+| `vellum gate lane` / `branch` / `ci` / `dir`                | the lane check, the branch warning, the CI gate with the spec-kit tripwire, the spec folder                                   |
+| `vellum trace trace <dir>` / `drift` / `ci`                 | the FR/P → task → `@covers` test matrix, spec-vs-diff drift, the Done rules                                                   |
+| `vellum parse <file>`                                       | what the parsers read from a `spec.md`, `plan.md`, `tasks.md` or `routing.yaml`, as JSON                                      |
+| `vellum linear issue <spec.md>` / `tasks <tasks.md>`        | the spec's Linear issue and one sub-issue per task; `--dry-run` needs no token                                                |
+| `vellum start <STA-n> [--slug s] [--install]`               | branch `figentra/sta-n-<slug>` from `origin/<default>` into `.claude/worktrees/sta-n-<slug>`; issue In Progress               |
+| `vellum clean [--dry-run] [--adopt] [--fix-ignore] [--all]` | removes finished worktrees (clean, saved, issue Done or idle 2 h), reports what it kept and the space freed                   |
+| `vellum guard [--print-settings]`                           | the PreToolUse hook that denies `git worktree add` outside `.claude/worktrees/`                                               |
+| `vellum init --workspace <dir>…`                            | writes the workspace list (`~/.config/vellum/workspace.yaml`) that `--all` acts on                                            |
 
 A repository keeps one-line aliases: `"spec:gate": "vellum gate"`, `"spec:trace": "vellum trace"`,
 `"speckit:sync": "vellum sync"`, and `"spec:linear": "infisical run --env=dev --path=/agents --silent -- vellum linear"`.
 `vellum linear` reads its token from the environment only (`LINEAR_AGENT_TOKEN`, else `LINEAR_API_KEY`) and never
 prints it.
+
+## The gate
+
+`vellum gate run` checks the pushed head of the current branch, never anything uncommitted. It clones that commit into
+a temporary folder with a small poster beside it and runs `pnpm install --frozen-lockfile && <check>` on a testbed box
+(`stackra testbed run`, Stackra ADR 0484), or on `--box <ssh host>` until testbed lands. `<check>` is `package.json`
+`"vellum": { "gate": "…" }`, else `pnpm verify`, then `vellum gate ci` where Vellum is installed. On the box, the
+poster posts the `vellum/gate` commit status and one PR comment as the "Stackra Gate" GitHub App. Its key lives only in
+Infisical `/ci/gate`. The poster posts only while that commit is still the branch tip, and never `success` unless the
+check exited 0. Nothing secret reaches the comment or the log. Exit codes: 0 green, 1 red, 2 refused, 4 not posted,
+5 stale, 73 every box busy, 75 no healthy box.
 
 ## Worktrees
 
