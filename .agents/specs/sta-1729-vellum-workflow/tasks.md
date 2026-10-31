@@ -35,7 +35,17 @@ Phase 1 is designed and approved; the later phases are placeholders, refined whe
 - [x] T032 GitHub calls only with named credentials (`wrapper:<script>` or `gh-user`), refusing otherwise, in `packages/vellum/src/lib/github.mjs` and `packages/vellum/src/commands/land.mjs` — covers: FR-6, AC-034 — route: spec-task — deps: T030
 - [ ] T035 `vellum review`: a different agent from the builder reviews the PR's head and posts the verdict through `pnpm bot:review` (design after land), in `packages/vellum/src/commands/review.mjs` — covers: FR-6, AC-031 — route: spec-task — deps: T031
 
-## Phase 4: status, MCP and metrics (design written; plan stop pending)
+## Phase A: neutral core with adapters (design approved 2026-10-31)
+
+- [ ] T080 The product module, `vellum.config.json` with its schema, the credentials and secrets ports and the deprecation path, in `packages/vellum/src/lib/product.mjs`, `packages/vellum/src/lib/config.mjs` and `packages/vellum/src/adapters/credentials.mjs` — covers: FR-11, AC-035, AC-036, AC-040, AC-042 — route: spec-task
+- [ ] T086 The artifact guard in `vellum gate run` and `vellum land`, configured by `artifacts` in `vellum.config.json`, in `packages/vellum/src/lib/artifacts.mjs` — covers: FR-11, AC-043 — route: spec-task — deps: T080
+- [ ] T081 The tracker port: `linear` moved, `github-issues` and `jira` added, in `packages/vellum/src/adapters/tracker/linear.mjs` — covers: FR-11, AC-037 — route: spec-task — deps: T080
+- [ ] T082 The runner port: `ssh`, `local`, `command` and `github-actions` with its workflow, in `packages/vellum/src/adapters/runner/github-actions.mjs` — covers: FR-11, AC-038 — route: spec-task — deps: T080
+- [ ] T083 Gate and review identities from the configuration and `vellum app create`, in `packages/vellum/src/adapters/apps.mjs` and `packages/vellum/src/commands/app.mjs` — covers: FR-11, AC-039 — route: spec-task — deps: T080
+- [ ] T084 The `neutral` preset and preset selection, in `packages/vellum/assets/presets/neutral/preset.yml` and `packages/vellum/src/commands/sync.mjs` — covers: FR-11, AC-041 — route: spec-task — deps: T080
+- [ ] T085 `vellum.config.json` in our repositories (core first), in `vellum.config.json` — covers: FR-11, AC-036 — route: spec-task — deps: T081, T082, T083, T084
+
+## Phase 4: status, MCP and metrics (design approved 2026-10-31)
 
 - [ ] T040 The snapshot and `vellum status` (specs, worktrees, PRs with gate and review, sessions and the cap) in `packages/vellum/src/lib/snapshot.mjs` and `packages/vellum/src/commands/status.mjs` — covers: FR-7, AC-012, AC-024, AC-026 — route: spec-task — deps: T030
 - [ ] T041 Metrics from merged PRs, gate statuses, reviews and spec history in `packages/vellum/src/lib/metrics.mjs` — covers: FR-7, AC-032 — route: spec-task — deps: T040

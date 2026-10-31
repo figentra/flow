@@ -56,7 +56,10 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 6. **GitHub switch-over:** per-PR workflows off, `vellum/gate` required, the Release workflow kept; repo by repo.
 7. **Sessions (later, owner 2026-10-31, ADR 0503 decision 7):** a spec records its assigned session; `vellum status`
    shows each session's spec, worktree and gate; the two-build-session cap is reported.
-8. **Later:** `vellum migrate` from `.specify/` to `.vellum/`.
+8. **Neutral core with adapters (owner 2026-10-31, before phase 4):** credentials, tracker, runner, apps, secrets and
+   preset become adapters chosen in `vellum.config.json`; Figentra's choices live in our repositories' config; the
+   product name sits in one module (the product is being renamed).
+9. **Later:** `vellum migrate` from `.specify/` to `.vellum/`.
 
 ## Requirements
 
@@ -81,6 +84,9 @@ approved once and the plan is written per phase (each phase's design is a plan.m
   feature- and big-tier work runs in its own sub-session and `vellum start` worktree; the tester gates and lands; at
   most two build sessions run at once unless the owner says otherwise; a peer message is never the owner's approval. A
   spec records its session in `**Session**`, and `vellum status` shows it.
+- **FR-11** The core names no vendor, team or organisation: credentials, issue tracker, runner, gate and review
+  identities, secrets and spec preset are adapters chosen per repository in `vellum.config.json`, and the product name
+  lives in one module.
 
 ## Acceptance criteria
 
@@ -114,6 +120,15 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - **AC-032**: WHEN `vellum status --metrics` runs THE CLI SHALL report, for the PRs merged in the window, lead time, cycle time, gate runs and their red share, rework, review rounds and approval latency, computed from GitHub and the specs without stored state
 - **AC-033**: WHEN an agent connects to `vellum mcp` THE server SHALL offer only read-only tools (status, spec, trace, worktrees, metrics) and none that writes, merges, lands, starts or cleans
 - **AC-034**: IF a repository names no GitHub credentials (a wrapper script it has, or `gh-user` on purpose) THEN THE CLI SHALL refuse every GitHub call and never fall back to the caller's own `gh` login; `vellum status --offline` makes none
+- **AC-035**: WHEN a command starts THE CLI SHALL load `vellum.config.json`, validate it against the shipped schema, and refuse an unknown key or a wrong type naming its path
+- **AC-036**: IF a command needs a port the configuration does not set THEN THE CLI SHALL refuse and name the key, with no Figentra default anywhere in the core
+- **AC-037**: WHEN the tracker is `linear`, `github-issues` or `jira` THE CLI SHALL derive issue keys, branch names and spec folders from the adapter, and read and move issues through it
+- **AC-038**: WHEN `vellum gate run` starts THE CLI SHALL run the check through the configured runner (`github-actions`, `ssh`, `local` or `command`) and pass its result through
+- **AC-039**: WHEN `vellum land` or the AI review reads a gate status or a verdict THE CLI SHALL match it by the gate and review identities in the configuration, and `vellum app create` SHALL create an App by GitHub's manifest flow for a human only, handing its key straight to the secrets port
+- **AC-040**: WHILE a command needs a secret THE CLI SHALL get it only through the secrets port's wrapped command or the environment, never reading, printing or storing a value itself
+- **AC-041**: WHEN `vellum sync` runs THE CLI SHALL install the configured preset: `neutral`, `stackra` or a repository path
+- **AC-042**: THE package SHALL keep the product's name in one module, so a rename changes that module, `package.json` and the docs
+- **AC-043**: IF a branch's diff against the default branch adds a path matching the configured artifact patterns (default `.cache/`, `node_modules/`, `dist/`, `.turbo/`, `coverage/`) or a file larger than the configured size (default 5 MB) THEN THE CLI SHALL refuse it in `vellum gate run` and `vellum land` and name each file
 - **AC-023**: WHEN a spec carries a `**Session**` line THE CLI SHALL read it as the spec's assigned session and show it in `vellum status`
 - **AC-024**: WHEN `vellum status` runs THE CLI SHALL list each session with its spec, worktree and the `vellum/gate` result of the worktree's head
 - **AC-025**: IF a feature- or big-tier spec past Clarified has no `**Session**` THEN THE CLI SHALL report it in `vellum gate check` as a finding
@@ -162,3 +177,6 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - 2026-10-31: phase 3 Planned — Approved by leader 2026-10-31 (land: merge-updated stacks, `stackra-gate[bot]` as defence in depth, any session, `--manual-ok` until phase 6 (AC-030), AC-029 kept)
 - 2026-10-31: phase 3 Planned (revised) — Approved by leader 2026-10-31 (AC-031: the ADR 0230 AI review is a land rule for small, feature and big, ported from core's pr-merge.mjs; `vellum review` follows land)
 - 2026-10-31: Tasked (revised) — Approved by leader 2026-10-31 (AC-034: GitHub calls only with named credentials, never a silent personal `gh` fallback; the adapter phase moves the setting into `vellum.config`)
+- 2026-10-31: Tasked (scope added) — Approved by owner 2026-10-31 (relayed by the leader): the neutral core with adapters, FR-11 and AC-035 to AC-042; designed at its own plan stop before phase 4
+- 2026-10-31: phase A Planned — Approved by leader 2026-10-31 (JSON config with schema, testbed as a command runner, github-actions for outsiders, app create human-only, Jira later, one-minor deprecation, product name held; AC-043 artifact guard added)
+- 2026-10-31: phase 4 Planned — Approved by leader 2026-10-31 (metrics on demand, a hand-written MCP server with a conformance test, tracker state only with a tracker adapter, `sessionCap` in workspace.yaml; built after phase A)

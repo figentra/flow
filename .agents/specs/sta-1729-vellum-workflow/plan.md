@@ -150,6 +150,7 @@ the Mac. Each test carries `@covers sta-1729:AC-###`.
 - **P-008**: phase 5's release publishes only to the Stackra registry and ship never reaches production (designed in phase 5) — Validates: FR-8
 - **P-009**: no phase adds a check that runs on the Mac beyond oxfmt and oxlint — Validates: FR-9
 - **P-010**: the sessions phase shows each spec's assigned session and never treats a peer message as an approval (designed in its phase) — Validates: FR-10
+- **P-011**: the core names no vendor, team or organisation outside the adapters and presets named after them, and no command falls back to a Figentra choice when the configuration is silent (phase A) — Validates: FR-11
 
 ## Phase 2: the gate (design, for the leader's plan stop)
 
@@ -602,17 +603,264 @@ There is no stored data and no migration. The snapshot schema is versioned (`vel
    `state-of-work.md`.
 3. The owner registers `vellum mcp` in the repositories' `.mcp.yaml` and decides when `state-of-work.md` retires.
 
-### Phase 4 decisions to confirm at the plan stop
+### Decisions at the plan stop (leader, 2026-10-31)
 
-1. **Metrics are computed on demand from GitHub and the specs, with no store.** That costs one search plus a few
-   calls per merged PR in the window, which is fine for a 30-day window over about 20 repositories. Or keep a stored
-   cache?
-2. **A hand-written MCP stdio server with no dependency, as the package already works.** The alternative,
-   `@modelcontextprotocol/sdk`, is a catalog change for the owner.
-3. **Linear's issue state stays out of `status`.** It belongs to gate and land, and it needs a token. Or add one
-   batched query?
-4. **The session cap is a `workspace.yaml` key the owner edits** (`sessionCap`, default 2).
-5. **GitHub identity.** `lib/github.mjs` falls back to plain `gh` in a repository with no `bot:gh` script, which would
-   act as the owner's login; figentra/vellum itself has none. Proposed: `land` and `status` refuse when there is no
-   `bot:gh` wrapper. An exception is `status --offline`, which never calls GitHub. Each repository then gets a
-   `bot:gh` script in the W9 rollout, and Vellum gets one first.
+1. **Metrics are computed on demand from GitHub and the specs, with no store.**
+2. **A hand-written, dependency-free MCP stdio server for now**, with the five read tools and the tool-list test, plus
+   a protocol conformance test against the current MCP specification's `initialize`, `tools/list` and `tools/call`
+   shapes. The official SDK may come later.
+3. **Tracker state is out of `status` by default**, and shown only when a tracker adapter is configured.
+4. **`sessionCap` is a `workspace.yaml` key the owner edits.**
+5. **GitHub calls never fall back to a personal `gh` login.** AC-034 landed as #14. Phase A's credentials port carries
+   it. `status --offline` makes no GitHub call.
+6. **Phase 4 is built after phase A.** Its GitHub and tracker reads go through the adapters.
+
+## Phase A: a neutral core with adapters (design, for the leader's plan stop)
+
+Owner direction of 2026-10-31: Vellum becomes a product anyone can use, with no Stackra or Figentra coupling in its
+core. Every Figentra choice moves into a `vellum.config` file in our repositories. The product is being renamed (the
+new name comes later), so its name lives in one module. Phase A comes after the credentials fix (AC-034) and before
+phase 4, whose GitHub and tracker reads go through these adapters. It covers FR-11 and AC-035 to AC-042.
+
+### Architecture overview
+
+The core keeps the workflow: specs and their gates, worktrees, the gate, land, status and release. It reaches the
+outside world only through six ports. A repository chooses an adapter for each port in `vellum.config.json`.
+
+```text
+                    ┌────────────── vellum core (no vendor names) ──────────────┐
+ vellum.config.json │ spec gates · worktrees · gate · land · status · release │
+   (per repo)       └──┬────────┬──────────┬──────────┬──────────┬──────────┬──┘
+                       │        │          │          │          │          │
+                  credentials  tracker   runner     apps      secrets    preset
+                  env | gh-user linear   github-     gate and  env |      neutral |
+                  | wrapper     github-  actions |   review    infisical  stackra |
+                                issues   ssh |       identities           a path
+                                jira     local |     (from config)
+                                         command
+```
+
+Today's code becomes adapters in place:
+
+- `lib/linear.mjs` becomes the `linear` tracker.
+- `bot:gh` and `bot:git` become a `wrapper` credentials adapter.
+- `--box` becomes the `ssh` runner.
+- `stackra testbed run` becomes a `command` runner in our configuration. The core does not depend on it, and no
+  plug-in system is needed for it.
+- `infisical run --path=/ci/gate` becomes the `infisical` secrets adapter.
+- `assets/presets/stackra` becomes the `stackra` preset, beside a new `neutral` one.
+
+### Components and responsibilities
+
+- **The product module, `src/lib/product.mjs`.** It is the one place the product's name appears:
+  - the CLI name and the binary;
+  - the config file name (`vellum.config.json`);
+  - the status context (`vellum/gate`);
+  - the comment markers;
+  - the environment prefix (`VELLUM_`);
+  - the user config folder (`~/.config/vellum`).
+
+  Every other file imports from it. A rename then touches this module, `package.json` and the docs (AC-042).
+
+- **The config module, `src/lib/config.mjs`.**
+  - `loadConfig(root)` reads `vellum.config.json` from the repository root, validates it against the shipped JSON
+    schema (`schema/vellum.config.schema.json`), and refuses an unknown key or a wrong type, naming the path (AC-035).
+  - Each port's adapter is built from its block.
+  - A port with no block refuses when a command needs it, naming the key to set. There are no Figentra defaults: with
+    no config, `start` asks for a tracker, `land` asks for credentials, and `gate run` asks for a runner (AC-036).
+  - JSON keeps the package free of dependencies, and editors validate it through `$schema`.
+- **Credentials port** (AC-034, generalised):
+  - The interface is `gh(args)` for GitHub API calls and `git(args)` for network git, with no silent fallback.
+  - `env`: `gh` with `GH_TOKEN` from the environment, which must be set.
+  - `gh-user`: the caller's own `gh` login, chosen on purpose.
+  - `wrapper`: separate command prefixes for `gh` and `git`. Ours is `["pnpm","bot:gh","--"]` and
+    `["pnpm","bot:git","--"]`.
+  - `fetch`, `remoteTip` and `land` all use the port. Today's `remote()` fallback to plain `git` goes away.
+- **Tracker port:**
+  - The interface is `keyPattern`, `branchFor(key, slug)`, `issue(key) → { title, state, url }`,
+    `setState(key, state)` and `comment(key, body)`.
+  - `linear` takes `team`, `branchPrefix` and the token's environment names. It is today's client, with `STA` and
+    `figentra/` moved into config.
+  - `github-issues` uses keys `#123` and branches `<prefix>/123-<slug>`, through the credentials port.
+  - `jira` takes `site`, `project` and the token's environment names, and uses REST with a token from the environment.
+  - The spec folder name follows the key (`.agents/specs/<key>-<slug>/`). The gate's key and branch checks read the
+    adapter's patterns instead of `STA-` and `figentra/` (AC-037).
+- **Runner port** (`run({ dir, command, label, sha }) → exit code`, AC-038):
+  - `github-actions` is the default for outside users. `vellum init --runner github-actions` writes
+    `.github/workflows/vellum-gate.yml`, a `workflow_dispatch` with `sha` and `branch` inputs that checks out the
+    commit, runs the check and then the poster with the gate App's key from repository secrets. `gate run` dispatches
+    it through the credentials port, follows the run, and passes its conclusion through.
+  - `ssh` takes `host` and is today's `--box`.
+  - `local` runs on the caller's machine. Our config never chooses it (FR-9).
+  - `command` takes an argument list with `{label}`, `{dir}` and `{command}` placeholders. Ours is
+    `["stackra","testbed","run","{label}","{dir}","{command}"]`.
+- **Apps, gate and review identities** (AC-039):
+  - `apps.gate` holds `{ slug, login }` and `apps.review` holds `{ slug }`. Ours are `figentra-gate` /
+    `figentra-gate[bot]` and `figentra-review`.
+  - `apps.owner` names the owner login whose `owner-approval` review counts.
+  - `land` matches the gate status creator by `apps.gate.login`, and `aiReview` matches the reviewer by
+    `apps.review.slug`. Nothing is hard-coded: `stackra-gate[bot]`, `stackra-reviewer` and `figentra-usr` leave the
+    code.
+  - The poster reads `<PREFIX>GATE_APP_ID` and `<PREFIX>GATE_PRIVATE_KEY`.
+  - `vellum app create gate|review` runs GitHub's App-manifest flow, for a human only. It refuses when stdin is not a
+    terminal or an agent environment is detected.
+    1. It serves a one-page form on `127.0.0.1` that POSTs the manifest (name, permissions: statuses and pull requests
+       write for the gate, issues write for review, no webhook) to GitHub.
+    2. It receives the `code` on the local callback and exchanges it at `POST /app-manifests/{code}/conversions`.
+    3. It hands the private key straight to the secrets port's `store`, never to the screen or a log. With the `env`
+       adapter, that is a 0600 file at a path the human names.
+    4. It prints the App id and login to paste into `vellum.config.json`.
+- **Secrets port** (AC-040). It never reads a value into Vellum.
+  - The interface is `wrap(command, scope) → command`, for the runner and poster side, and `store(name, value)`, for
+    `app create` only.
+  - `env`: `wrap` returns the command unchanged, so values come from the environment the caller set; `store` writes
+    a 0600 file.
+  - `infisical` takes `paths` per scope, such as `gate: /ci/gate`. `wrap` returns
+    `infisical run --silent --path=<path> -- <command>`, and `store` runs `infisical secrets set` interactively, by
+    a human.
+- **Preset port** (AC-041):
+  - `preset: "neutral" | "stackra" | "<path>"`.
+  - `neutral` is new: spec-kit's commands with only the wrap the gates need (the spec location, the `plan` gate call,
+    the tier and approval fields). It mentions no ADR, team or product.
+  - `stackra` is today's preset, unchanged.
+  - A path names a repository's own preset folder, which replaces today's `.agents/speckit/presets` detection.
+- **Other keys:**
+  - `clean.keep` holds the tester's worktree name patterns (today's `TESTER` regex).
+  - `gate.check` holds the check command (today's `package.json` `vellum.gate`).
+  - `review.required` holds the tiers that need the AI review (default `small, feature, big`).
+
+### Files and folders
+
+- New:
+  - `src/lib/product.mjs` and `src/lib/config.mjs`;
+  - `src/adapters/credentials.mjs`, `tracker/{linear,github-issues,jira}.mjs`,
+    `runner/{github-actions,ssh,local,command}.mjs`, `secrets/{env,infisical}.mjs` and `apps.mjs`;
+  - `src/commands/app.mjs`;
+  - `schema/vellum.config.schema.json`;
+  - `assets/presets/neutral/`;
+  - `assets/workflows/vellum-gate.yml`.
+- Changed: every command reads `loadConfig(root)` and the product module, instead of a constant or `package.json`'s
+  `vellum` key. `lib/linear.mjs` moves to `adapters/tracker/linear.mjs`.
+- Our repositories gain `vellum.config.json` (W9). Core's carries the Figentra choices below.
+
+### Data models and migrations
+
+`vellum.config.json` is versioned as `{ "$schema": "…/vellum.config.schema.json", "version": 1, … }`. Today's
+`package.json` `"vellum"` keys (`credentials`, `gate`, `gateApp`) are read once more with a deprecation warning, then
+dropped in the next minor version. There is no other state.
+
+Figentra's configuration, as core will carry it:
+
+```json
+{
+  "version": 1,
+  "preset": "stackra",
+  "tracker": {
+    "kind": "linear",
+    "team": "STA",
+    "branchPrefix": "figentra",
+    "token": ["LINEAR_AGENT_TOKEN", "LINEAR_API_KEY"]
+  },
+  "credentials": {
+    "kind": "wrapper",
+    "gh": ["pnpm", "bot:gh", "--"],
+    "git": ["pnpm", "bot:git", "--"]
+  },
+  "runner": {
+    "kind": "command",
+    "run": ["stackra", "testbed", "run", "{label}", "{dir}", "{command}"]
+  },
+  "secrets": { "kind": "infisical", "paths": { "gate": "/ci/gate" } },
+  "apps": {
+    "gate": { "slug": "figentra-gate", "login": "figentra-gate[bot]" },
+    "review": { "slug": "figentra-review" },
+    "owner": "figentra-usr"
+  },
+  "gate": { "check": "pnpm verify" },
+  "clean": { "keep": ["g-*", "*-gate", "land-*", "tpl-core", "c6-lock*", "template-wt-lean"] }
+}
+```
+
+### Contracts
+
+- CLI:
+  - `vellum config check` validates the file and prints the resolved adapters, never a secret.
+  - `vellum init --runner <kind> --tracker <kind>` writes a starter config, plus the gate workflow for
+    `github-actions`.
+  - `vellum app create gate|review` is described above.
+- Adapters are plain ES modules exporting a factory `(block, context) → port`. The core imports only built-ins;
+  external plug-ins are a later decision.
+- The status context, the comment markers and the `AI-REVIEW:` line stay byte-compatible, so PRs gated before the
+  change still land.
+
+### Error handling
+
+- A config that is invalid fails every command with each error, before anything runs.
+- A port that is not configured refuses only the commands that need it, and names the key.
+- The `github-actions` runner treats a dispatch it cannot follow (cancelled, timed out) as not posted (exit 4), never
+  as green.
+- `app create` interrupted before the conversion leaves nothing behind. A key the secrets port cannot store is shown
+  only as the instruction to rerun it; it is never printed.
+
+### Security and tenancy
+
+- Secret values never enter Vellum's memory except in `app create`'s one hand-off from GitHub to the secrets port.
+  Everywhere else the secrets port wraps commands.
+- `app create` refuses in a non-interactive or agent session, because creating an identity is the owner's act.
+- Credentials never fall back to a personal login (AC-034 carries over).
+- Trust is by identity from config: the gate's login and the review App's slug. The ruleset's integration id (phase 6) remains the real guarantee.
+- The neutral core contains no Figentra name, path, team or login. A test greps the published package's files for
+  them, outside the `stackra` preset (AC-036).
+
+### Testing strategy
+
+- **Config:**
+  - the schema accepts the Figentra example and a minimal outside example (`github-actions` and `github-issues`);
+  - it rejects an unknown key, a wrong kind and a missing required field, each with its path;
+  - the deprecated `package.json` keys still work, with a warning.
+- **Each adapter**, with injected spawn and fetch:
+  - `wrapper`, `env` and `gh-user` command lines;
+  - the `linear` (today's tests, moved), `github-issues` and `jira` request shapes, key patterns and branch names;
+  - the `github-actions` dispatch, the run following and the conclusion mapping;
+  - `ssh` and `command` placeholder expansion;
+  - `infisical` `wrap`.
+- **`app create`**: the manifest JSON and the conversion call, with an injected `fetch` and HTTP server. The key goes
+  only to an injected store, and the test asserts it is absent from stdout and stderr.
+- **Neutrality**: no `stackra`, `figentra`, `STA-` or `infisical` outside `assets/presets/stackra` and the adapters
+  named after them, checked over `npm pack --dry-run`'s file list.
+- **Rename cost**: a test asserts that the product's name appears only in `product.mjs` among `src/**`.
+
+### Rollout
+
+1. **A1**: the product and config modules, the credentials and secrets ports, and the deprecation path.
+2. **A2**: the tracker port: `linear` moved, `github-issues` added, `jira` added.
+3. **A3**: the runner port: `ssh`, `local` and `command`, then `github-actions` with its workflow.
+4. **A4**: apps from config, and `vellum app create`.
+5. **A5**: the `neutral` preset.
+6. **A6**: our repositories get `vellum.config.json` (core first, then vellum itself, os, the products), and our Apps
+   are created as Figentra Gate and Figentra Review by the owner with `vellum app create`.
+
+Each step lands green on f4's box. Phase 4 follows A6.
+
+### Decisions at the plan stop (leader, 2026-10-31)
+
+1. **`vellum.config.json` with the shipped schema; unknown keys refused.** No `.mjs` config, so a config never runs
+   code.
+2. **The testbed is a `command` runner.** There is no plug-in loader; plug-ins come only if an outside user needs
+   something `command` cannot do.
+3. **`github-actions` is the outsiders' default.** ADR 0503's "GitHub keeps only Release plus `vellum/gate`" is our
+   policy, expressed by our config choosing `command`.
+4. **`app create` is human-only.** The key goes through the secrets port in the owner's one hand-off (ADR 0257);
+   agents never see it.
+5. **Jira later.** A2 ships `linear` and `github-issues`, with the port shaped for Jira, which comes when there is a
+   site to test against.
+6. **Old `package.json` `"vellum"` keys** keep working with a deprecation warning for one minor version.
+7. **A tracker failure in `gate plan`** is reported as a warning, never swallowed (A2 tests it).
+8. **The product name stays in `product.mjs`.** Nothing is renamed until the owner picks the new name.
+9. **The artifact guard (leader, 2026-10-31, AC-043).** `gate run` and `land` refuse a diff that adds paths under
+   `.cache/`, `node_modules/`, `dist/`, `.turbo/` or `coverage/`, or any one file over 5 MB. Both the list and the size
+   are `vellum.config.json`'s `artifacts`.
+
+A finding outside this design: `gate.mjs` calls `pnpm --silent linear …`, and pnpm 12 refused `-s` (37f62ef). The
+tracker port removes the call. Until then, Linear stage comments from `vellum gate plan` may fail quietly, because
+they are best-effort.
