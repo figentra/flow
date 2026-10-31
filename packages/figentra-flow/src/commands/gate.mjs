@@ -7,7 +7,7 @@
  * Runtime: node
  * Governing contract: ADR 0120 (SDLC spec location, lanes and change risk); ADR 0121; ADR 0065 (rule 7).
  *
- *   run [--ref b] [--box host]  the checks on a testbed box (or `--box`); the box posts `figentra-flow/gate` (STA-1729)
+ *   run [--ref b] [--box host] [-- flags]  the checks through the runner (or on `--box`); the box posts `figentra-flow/gate`
  *   plan <spec.md>              exit 1 unless the spec may be planned (run by setup-plan.sh)
  *   check <dir>                 the stage rules for the spec's declared `**Status**`
  *   tasks <tasks.md>            tasks lint: ids, covers, routes, deps, coverage, waves
@@ -971,7 +971,7 @@ export function run([mode, ...args]) {
     return failures ? 1 : 0;
   }
   console.error(
-    `usage: ${NAME} gate run [--ref <branch>] [--box <host>] [--no-wait] [--on-demand] | plan <spec.md> | check <dir> | tasks <tasks.md> | lane | branch | ci [--base=ref] | stage <spec.md> <${STAGES.join("|")}> | dir [--slug s] [--key STA-n]`,
+    `usage: ${NAME} gate run [--ref <branch>] [--box <host>] [-- <runner flags>] | plan <spec.md> | check <dir> | tasks <tasks.md> | lane | branch | ci [--base=ref] | stage <spec.md> <${STAGES.join("|")}> | dir [--slug s] [--key STA-n]`,
   );
   return 2;
 }

@@ -1,21 +1,23 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow gate run [--ref <branch>] [--box <ssh host>] [--no-wait] [--on-demand]`, the caller's side of the
+ * Purpose: `figentra-flow gate run [--ref <branch>] [--box <ssh host>] [-- <runner flags>]`, the caller's side of the
  *   gate: check that the head is committed and pushed, clone exactly that commit into a temporary folder with the
- *   box poster beside it, and run the repository's check command on a testbed box (`stackra testbed run`) or on a
- *   named host (`--box`). The box posts `figentra-flow/gate`; this side only passes its exit code through.
+ *   box poster beside it, and run the repository's check command through the runner port (`runner` in the
+ *   configuration, or `--box <host>` for one run). The box posts `figentra-flow/gate`; this side only passes its exit
+ *   code through.
  * Boundary: runs no check on the caller's machine (FR-9). Refuses a dirty tree, a detached head without `--ref`, a
- *   head that is not the remote branch tip, and a missing `stackra`, before any box is claimed. Removes its temporary
+ *   head that is not the remote branch tip, and a missing runner, before any box is claimed; a runner program that
+ *   is not installed is refused after. Removes its temporary
  *   folder when the run ends.
  * Runtime: node
  * Governing contract: Stackra ADR 0503 (decision 4), ADR 0484 (the testbed); STA-1729 phase 2.
  * Secrets: none here. The box reads the gate App's key through `infisical run` (`/ci/gate`); this side never sees it.
  */
-import { spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 
+import { runnerFor } from "../adapters/runner/index.mjs";
 import { secretsPort } from "../adapters/secrets.mjs";
 import { artifactProblems } from "../lib/artifacts.mjs";
 import { loadConfig } from "../lib/config.mjs";
@@ -67,64 +69,14 @@ export function boxCommand(check, { wrap = (command) => command } = {}) {
 export const slugOf = (url) => url.match(/github\.com[:/]+([^/]+\/[^/]+?)(?:\.git)?\/?$/)?.[1];
 
 /**
- * @typedef {(job: { dir: string, command: string, label: string, box?: string, noWait: boolean, onDemand: boolean }) => number} Runner
- */
-
-/** Runs the job on a testbed box, or rsyncs it to `box` and runs it there over ssh. */
-/** @type {Runner} */
-export function defaultRunner({ dir, command, label, box, noWait, onDemand }) {
-  if (box !== undefined) {
-    const remoteDir = `/tmp/${NAME}-gate/${basename(dir)}`;
-    const copied = spawnSync(
-      "rsync",
-      [
-        "-a",
-        "--delete",
-        "--rsync-path",
-        `mkdir -p ${remoteDir} && rsync`,
-        `${dir}/`,
-        `${box}:${remoteDir}/`,
-      ],
-      { stdio: "inherit" },
-    );
-    if (copied.status !== 0) return 2;
-    const r = spawnSync(
-      "ssh",
-      [box, `cd ${remoteDir} && ${command}; code=$?; cd / && rm -rf ${remoteDir}; exit $code`],
-      { stdio: "inherit" },
-    );
-    return r.status ?? 4;
-  }
-  const args = [
-    "testbed",
-    "run",
-    label,
-    dir,
-    command,
-    ...(noWait ? ["--no-wait"] : []),
-    ...(onDemand ? ["--on-demand"] : []),
-  ];
-  const r = spawnSync("stackra", args, { stdio: "inherit" });
-  if (r.error) return 127;
-  return r.status ?? 4;
-}
-
-/**
  * Runs the gate for the head of `cwd`.
- * @param {{ cwd: string, ref?: string, box?: string, noWait?: boolean, onDemand?: boolean, runner?: Runner,
+ * @param {{ cwd: string, ref?: string, box?: string, flags?: string[],
+ *           runner?: import("../adapters/runner/index.mjs").Runner,
  *           tip?: (root: string, branch: string) => string | undefined, now?: () => Date }} options
  * @returns {Promise<{ code: number, problem?: string, sha?: string }>}
  */
 export async function gateRun(options) {
-  const {
-    cwd,
-    box,
-    noWait = false,
-    onDemand = false,
-    runner = defaultRunner,
-    tip = remoteTip,
-    now = () => new Date(),
-  } = options;
+  const { cwd, box, flags = [], tip = remoteTip, now = () => new Date() } = options;
   const top = git(cwd, ["rev-parse", "--show-toplevel"]);
   if (!top.ok) return { code: 2, problem: `${cwd} is not in a git repository` };
   const root = top.out;
@@ -150,6 +102,11 @@ export async function gateRun(options) {
   if (loaded.errors.length) return { code: 2, problem: loaded.errors.join("; ") };
   for (const w of loaded.warnings) console.error(w);
   const secrets = secretsPort(loaded.config.secrets);
+  const found = options.runner
+    ? { runner: options.runner }
+    : runnerFor(root, loaded.config, { box });
+  if (!found.runner) return { code: 2, problem: found.problem };
+  const runner = found.runner;
   // AC-043: no build or tool output and no oversized file reaches a box, or main.
   const artifacts = artifactProblems(root, `origin/${base}`, sha, loaded.config.artifacts);
   if (artifacts.length)
@@ -178,23 +135,19 @@ export async function gateRun(options) {
       envPrefix: ENV_PREFIX,
     };
     writeFileSync(join(dir, GATE_DIR, "job.json"), `${JSON.stringify(job, null, 2)}\n`);
-    // A `--box` host runs the poster under the secrets port's `gate` scope; a testbed job brings its own (ADR 0484).
-    const wrap =
-      box === undefined ? undefined : (/** @type {string} */ c) => secrets.wrap(c, "gate");
+    // The poster runs under the secrets port's `gate` scope unless the runner brings its own (a testbed job, ADR 0484).
+    const wrap = runner.wraps ? (/** @type {string} */ c) => secrets.wrap(c, "gate") : undefined;
     const command = boxCommand(checkCommand(dir), { wrap });
-    const code = runner({
+    const code = runner.run({
       dir,
       command,
       label: `${NAME} gate ${repository}@${sha.slice(0, 12)}`,
-      box,
-      noWait,
-      onDemand,
+      flags,
     });
     if (code === 127)
       return {
         code: 2,
-        problem:
-          "`stackra` is not on PATH (stackra testbed, ADR 0484); pass --box <ssh host> meanwhile",
+        problem: `\`${runner.program}\` is not on PATH (the ${runner.kind} runner); install it, set "runner", or pass --box <ssh host>`,
         sha,
       };
     return { code, sha };
@@ -203,8 +156,12 @@ export async function gateRun(options) {
   }
 }
 
-/** `figentra-flow gate run [--ref <branch>] [--box <ssh host>] [--no-wait] [--on-demand]`. */
-export async function run(/** @type {string[]} */ args) {
+/** `figentra-flow gate run [--ref <branch>] [--box <ssh host>] [-- <runner flags>]`. */
+export async function run(/** @type {string[]} */ all) {
+  // Everything after `--` is the runner's own (a command runner's `{flags}`, e.g. the testbed's `--no-wait`).
+  const cut = all.indexOf("--");
+  const args = cut === -1 ? all : all.slice(0, cut);
+  const flags = cut === -1 ? [] : all.slice(cut + 1);
   const opt = (/** @type {string} */ name) =>
     args.includes(`--${name}`) ? args[args.indexOf(`--${name}`) + 1] : undefined;
   /** @type {{ code: number, problem?: string }} */
@@ -214,11 +171,10 @@ export async function run(/** @type {string[]} */ args) {
       cwd: process.cwd(),
       ref: opt("ref"),
       box: opt("box"),
-      noWait: args.includes("--no-wait"),
-      onDemand: args.includes("--on-demand"),
+      flags,
     });
   } catch (error) {
-    // a configuration the secrets or credentials port refuses
+    // a configuration the secrets or runner port refuses
     result = { code: 2, problem: /** @type {Error} */ (error).message };
   }
   if (result.problem) console.error(`${NAME} gate run: ${result.problem}`);

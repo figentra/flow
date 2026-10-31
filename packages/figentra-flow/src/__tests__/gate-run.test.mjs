@@ -1,7 +1,7 @@
 /**
  * Figentra Flow file contract:
  * Purpose: hold `figentra-flow gate run` to its contract: refusals before any box (dirty, detached, unpushed, no GitHub
- *   origin, no `stackra`); the job folder is a clean clone at the head with the default branch's ref and the poster
+ *   origin, no runner configured), and a runner program that is not installed; the job folder is a clean clone at the head with the default branch's ref and the poster
  *   beside it; the check command (default, `gate.check` in the configuration, the spec gate where Figentra Flow is installed); the box command
  *   keeps the log and the exit for the poster; the runner's exit code passes through.
  * Boundary: temporary repositories with a local bare origin; the runner and the remote tip injected; no network,
@@ -30,6 +30,12 @@ function ghRepo(/** @type {Record<string, string>} */ files = {}) {
   return r;
 }
 
+/**
+ * A runner that hands the job to `run`.
+ * @param {(job: import("../adapters/runner/index.mjs").Job) => number} run
+ */
+const fake = (run) => ({ kind: "command", wraps: false, program: "stackra", run });
+
 /** The local bare origin's tip, standing in for ls-remote against GitHub. */
 const tipOf =
   (/** @type {string} */ origin) => (/** @type {string} */ _root, /** @type {string} */ branch) => {
@@ -51,7 +57,7 @@ test("gate run: the job is a clean clone at the head, with the poster and the jo
     cwd: r.root,
     tip: tipOf(r.origin),
     now: () => new Date("2026-10-31T10:00:00Z"),
-    runner: (job) => {
+    runner: fake((job) => {
       const dir = job.dir;
       seen = {
         ...job,
@@ -63,7 +69,7 @@ test("gate run: the job is a clean clone at the head, with the poster and the jo
         job: JSON.parse(readFileSync(join(dir, ".figentra-flow-gate", "job.json"), "utf8")),
       };
       return 1;
-    },
+    }),
   });
   const sha = sh(r.root, "rev-parse", "HEAD");
   assert.deepEqual(result, { code: 1, sha });
@@ -89,7 +95,7 @@ test("gate run: refuses a dirty tree, an unpushed head, a detached head and a no
   const r = ghRepo();
   t.after(r.dispose);
   let ran = 0;
-  const runner = () => ++ran;
+  const runner = fake(() => ++ran);
   writeFileSync(join(r.root, "wip.txt"), "x\n");
   assert.match(
     (await gateRun({ cwd: r.root, tip: tipOf(r.origin), runner })).problem ?? "",
@@ -116,12 +122,35 @@ test("gate run: refuses a dirty tree, an unpushed head, a detached head and a no
   assert.equal(ran, 0);
 });
 
-test("gate run: a missing stackra is a refusal naming --box", async (t) => {
+test("gate run: a runner program that is not installed is a refusal naming it and --box", async (t) => {
   const r = ghRepo();
   t.after(r.dispose);
-  const result = await gateRun({ cwd: r.root, tip: tipOf(r.origin), runner: () => 127 });
+  const result = await gateRun({ cwd: r.root, tip: tipOf(r.origin), runner: fake(() => 127) });
   assert.equal(result.code, 2);
-  assert.match(result.problem ?? "", /--box/);
+  assert.match(result.problem ?? "", /`stackra` is not on PATH \(the command runner\).*--box/);
+});
+
+test("gate run: a config without a runner is refused before any box; the runner's flags and wrap reach the job (AC-038)", async (t) => {
+  const r = ghRepo({ [CONFIG_FILE]: JSON.stringify({ version: 1 }) });
+  t.after(r.dispose);
+  sh(r.root, "push", "-q", "origin", "main");
+  assert.match(
+    (await gateRun({ cwd: r.root, tip: tipOf(r.origin) })).problem ?? "",
+    /needs "runner".*--box/,
+  );
+  /** @type {any} */
+  let seen;
+  const wrapping = { ...fake((job) => ((seen = job), 0)), wraps: true };
+  const result = await gateRun({
+    cwd: r.root,
+    tip: tipOf(r.origin),
+    runner: wrapping,
+    flags: ["--no-wait"],
+  });
+  assert.equal(result.code, 0);
+  assert.deepEqual(seen.flags, ["--no-wait"]);
+  // no `secrets` block: the env port leaves the poster as it is, but the wrap point is taken
+  assert.match(seen.command, /node \.figentra-flow-gate\/post\.mjs$/);
 });
 
 test("check command: pnpm verify by default, the repository's own, and the spec gate where Figentra Flow is installed", (t) => {
