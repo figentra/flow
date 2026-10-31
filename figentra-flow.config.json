@@ -1,0 +1,17 @@
+{
+  "$schema": "./packages/figentra-flow/schema/figentra-flow.config.schema.json",
+  "secrets": {
+    "kind": "infisical",
+    "auth": "universal-auth",
+    "projectId": "86c297d4-ce42-4e94-b4b3-810a715812f2",
+    "env": "prod",
+    "domain": "https://eu.infisical.com",
+    "bin": "~/.local/bin/infisical",
+    "envFile": "~/.ci-env",
+    "paths": { "gate": "/ci/gate" }
+  },
+  "apps": {
+    "gate": { "login": "figentra-gate[bot]" },
+    "review": { "slug": "stackra-reviewer" }
+  }
+}
