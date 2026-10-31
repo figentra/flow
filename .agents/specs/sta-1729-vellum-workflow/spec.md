@@ -111,6 +111,8 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - **AC-029**: WHEN `vellum land` has squash-merged a branch THE CLI SHALL record its merge commit, and `vellum clean` SHALL count that branch's worktree as saved once the merge commit is on the default branch
 - **AC-030**: IF the default branch's ruleset does not require `vellum/gate` and `--manual-ok` is not passed THEN THE CLI SHALL refuse to land and name phase 6
 - **AC-031**: IF a PR whose spec is small, feature or big has no counted `AI-REVIEW: PASS <head> base=<base>` from the `stackra-reviewer` App (by App identity, unedited, not by the PR's author or the head commit's author or committer) THEN THE CLI SHALL refuse to land it and name the ignored verdicts
+- **AC-032**: WHEN `vellum status --metrics` runs THE CLI SHALL report, for the PRs merged in the window, lead time, cycle time, gate runs and their red share, rework, review rounds and approval latency, computed from GitHub and the specs without stored state
+- **AC-033**: WHEN an agent connects to `vellum mcp` THE server SHALL offer only read-only tools (status, spec, trace, worktrees, metrics) and none that writes, merges, lands, starts or cleans
 - **AC-023**: WHEN a spec carries a `**Session**` line THE CLI SHALL read it as the spec's assigned session and show it in `vellum status`
 - **AC-024**: WHEN `vellum status` runs THE CLI SHALL list each session with its spec, worktree and the `vellum/gate` result of the worktree's head
 - **AC-025**: IF a feature- or big-tier spec past Clarified has no `**Session**` THEN THE CLI SHALL report it in `vellum gate check` as a finding
