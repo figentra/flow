@@ -6,6 +6,7 @@
  * Runtime: node
  * Secrets: none.
  */
+import { ConfigError } from "../src/lib/config.mjs";
 import { NAME } from "../src/lib/product.mjs";
 
 const COMMANDS = [
@@ -26,4 +27,11 @@ if (!COMMANDS.includes(command)) {
   process.exit(command === undefined || command === "--help" ? 0 : 2);
 }
 const { run } = await import(`../src/commands/${command}.mjs`);
-process.exit(await run(args));
+try {
+  process.exit(await run(args));
+} catch (error) {
+  // An invalid or missing configuration is a refusal (2) naming the key, not a crash.
+  if (!(error instanceof ConfigError)) throw error;
+  console.error(`${NAME} ${command}: ${error.message}`);
+  process.exit(2);
+}

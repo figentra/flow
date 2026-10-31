@@ -108,6 +108,17 @@ test("gate run: refuses a dirty tree, an unpushed head, a detached head and a no
     /--ref/,
   );
   sh(r.root, "checkout", "-q", "main");
+  writeFileSync(join(r.root, CONFIG_FILE), "{}");
+  sh(r.root, "add", CONFIG_FILE);
+  sh(r.root, "commit", "-q", "-m", "config");
+  assert.match(
+    (await gateRun({ cwd: r.root, tip: tipOf(r.origin), runner })).problem ?? "",
+    /version/,
+    "an invalid configuration is reported as itself, not as an unpushed head",
+  );
+  sh(r.root, "rm", "-q", CONFIG_FILE);
+  sh(r.root, "commit", "-q", "-m", "no config");
+  sh(r.root, "push", "-q", "origin", "main");
   sh(r.root, "remote", "set-url", "origin", r.origin);
   assert.match(
     (await gateRun({ cwd: r.root, tip: tipOf(r.origin), runner })).problem ?? "",
