@@ -107,6 +107,8 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - **AC-022**: IF a worktree holds an ignored file outside the usual caches (such as `.env`, `ios/` or `android/`) THEN THE CLI SHALL keep it and name the files
 - **AC-017**: WHEN `vellum land --stack` runs on a stack of PRs THE CLI SHALL land them bottom-up in order, each only after its own green `vellum/gate` on its rebased head
 - **AC-027**: IF a running process (a session, a dev server, a shell) has its working folder inside a worktree, or running processes cannot be listed THEN THE CLI SHALL neither remove nor adopt it, and SHALL adopt a stray tree only after it has been idle for 2 hours
+- **AC-028**: IF a repository keeps no preset source of its own and its installed `.specify` preset differs from the one bundled in Vellum THEN THE spec gate (`vellum gate ci`) SHALL fail and name the drifted file
+- **AC-029**: WHEN `vellum land` has squash-merged a branch THE CLI SHALL record its merge commit, and `vellum clean` SHALL count that branch's worktree as saved once the merge commit is on the default branch
 - **AC-023**: WHEN a spec carries a `**Session**` line THE CLI SHALL read it as the spec's assigned session and show it in `vellum status`
 - **AC-024**: WHEN `vellum status` runs THE CLI SHALL list each session with its spec, worktree and the `vellum/gate` result of the worktree's head
 - **AC-025**: IF a feature- or big-tier spec past Clarified has no `**Session**` THEN THE CLI SHALL report it in `vellum gate check` as a finding
@@ -151,3 +153,4 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - 2026-10-31: Tasked (scope added) — Approved by owner 2026-10-31 ("Yes, record it", relayed by the leader): the sessions phase, FR-10 and AC-023 to AC-026; designed at its own plan stop
 - 2026-10-31: Tasked (revised) — Approved by leader 2026-10-31 (AC-027: never remove or adopt a tree a live session works in; adopt only after 2 h idle)
 - 2026-10-31: phase 2 Planned — Approved by leader 2026-10-31 (the gate design: a dedicated Stackra Gate App, `vellum gate ci` where Vellum is installed, `--box` now, no secret in any log)
+- 2026-10-31: Tasked (revised) — Approved by leader 2026-10-31 (AC-028: the tripwire compares the installed preset with Vellum's bundled one once core keeps no copy, W2)
