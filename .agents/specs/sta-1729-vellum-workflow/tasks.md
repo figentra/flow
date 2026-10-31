@@ -71,7 +71,7 @@ the owner's kept categories always needing the owner. It extends AC-023 to AC-02
 session's design note, and Figentra's own roster stays in figentra/figentra `.agents/team/`.
 
 - [x] T075 The roster reader (the YAML subset), its schemas and `team check`, also run by `gate ci`, in `packages/figentra-flow/src/lib/yaml.mjs`, `packages/figentra-flow/src/lib/team.mjs` and `packages/figentra-flow/src/commands/team.mjs` — covers: FR-12, AC-046, AC-047 — route: spec-task
-- [ ] T076 `**Role**`, task `role:` and `**Owner stops**` with their gate findings and the Impact mismatch, in `packages/figentra-flow/src/commands/gate.mjs` — covers: FR-12, AC-048, AC-053 — route: spec-task — deps: T075
+- [x] T076 `**Role**`, task `role:` and `**Owner stops**` with their gate findings and the Impact mismatch, in `packages/figentra-flow/src/commands/gate.mjs` — covers: FR-12, AC-048, AC-053 — route: spec-task — deps: T075
 - [ ] T077 Role labels and the Linear issue rule at `start`, in `packages/figentra-flow/src/adapters/tracker/linear.mjs` and `packages/figentra-flow/src/commands/start.mjs` — covers: FR-12, AC-049 — route: spec-task — deps: T076
 - [ ] T078 `status --by role` and `byRole`, in `packages/figentra-flow/src/lib/snapshot.mjs` and `packages/figentra-flow/src/commands/status.mjs` — covers: FR-12, AC-050 — route: spec-task — deps: T076
 - [ ] T079 `REVIEWER_IS_BUILDER`, role path findings and owner-only approvals, in `packages/figentra-flow/src/lib/review.mjs`, `packages/figentra-flow/src/commands/land.mjs` and `packages/figentra-flow/src/commands/gate.mjs` — covers: FR-12, AC-051, AC-052, AC-053 — route: spec-task — deps: T076
