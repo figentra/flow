@@ -56,7 +56,8 @@
   },
   "publishConfig": {
     "access": "public",
-    "registry": "https://npm.stackra.figentra.com/"
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
     "build": "tsc --noEmit false --declaration --emitDeclarationOnly --outDir dist",

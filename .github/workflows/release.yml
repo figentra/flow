@@ -1,16 +1,17 @@
 # Figentra Flow file contract:
-# Purpose: the Release workflow (Stackra ADR 0503 decision 4: the one workflow GitHub keeps besides `figentra-flow/gate`).
-#          On a push to main with pending changesets it opens or updates the "version packages" PR; when that PR
-#          merges it publishes `figentra-flow` to the Stackra registry with provenance, a tag and a GitHub release,
-#          then the signed SBOM and checksums. All of it is Stackra core's Runway npm provider, called, not copied.
-# Boundary: publishes only to https://npm.stackra.figentra.com/ (ADR 0453), never to npmjs. An agent never dispatches
-#           it: the owner merges the version PR and approves the `release` environment.
+# Purpose: the Release workflow. On a push to main with pending changesets it opens or updates the "version packages"
+#          PR; when that PR merges it publishes `figentra-flow` to npmjs with provenance through npm trusted publishing
+#          (OIDC), creates the tag and the GitHub release, then signs the CycloneDX SBOM keylessly and attaches it, with a
+#          `sha256sums.txt` of the published tarball, to the release.
+# Boundary: publishes `figentra-flow` only, only to https://registry.npmjs.org/ (the owner's decision of 2026-10-31,
+#           confirmed in the build session). A version already on npmjs is skipped, never replaced. An agent never
+#           dispatches it: the owner merges the version PR and approves the `release` environment.
 # Runtime: GitHub Actions
-# Secrets: no registry token exists. Per package, the provider exchanges this job's GitHub ID token at the registry
-#          for a publish token bound to that one name; the registry's trusted-publisher row names this caller
-#          (figentra/flow, `.github/workflows/release.yml`, `refs/heads/main`, environment `release`). The GitHub
-#          App id and key the version PR is pushed with are repository secrets the owner sets.
-# Governing contract: Stackra ADR 0453 (decisions 6, 7), ADR 0500 (decision 2), ADR 0503; STA-1729 (W0).
+# Secrets: no npm token exists. npm exchanges this job's GitHub ID token for a short-lived publish credential; the
+#          npmjs trusted publisher names figentra/flow, `.github/workflows/release.yml` and the `release` environment
+#          (the owner configures it). The GitHub App id and key the version PR is pushed with are repository secrets
+#          the owner sets (a PR pushed with GITHUB_TOKEN would not trigger the Quality Gate).
+# Governing contract: Stackra ADR 0500 (as amended 2026-10-31), ADR 0503; STA-1729 (W0).
 # Owner: release-operations
 name: Release
 
@@ -20,7 +21,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Run `pnpm -r publish --dry-run` (no version PR, no publish) in the release environment"
+        description: "Pack and run `npm publish --dry-run` (no version PR, no publish) in the release environment"
         type: boolean
         default: false
 
@@ -32,18 +33,142 @@ permissions: {}
 jobs:
   release:
     name: Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The owner keeps this environment protected and restricted to main; every run waits for the owner's approval.
+    environment: release
     permissions:
-      contents: write
-      pull-requests: write
-      id-token: write
-    # Stackra core's Runway npm provider at a pinned commit (fd71e95d's CHANGESETS_OUTPUT fix included, so tags and
-    # GitHub releases are created). Bump the SHA deliberately, never to a branch.
-    uses: figentra/stackra/.github/workflows/runway-npm.yml@31faaac481d2bed76bfe5f20976da1d40aa6a345
-    with:
-      environment: release
-      build-args: --filter=figentra-flow
-      dry-run: ${{ inputs.dry_run == true }}
-      registry: https://npm.stackra.figentra.com/
-    secrets:
-      app-id: ${{ secrets.STACKRA_BOT_APP_ID }}
-      app-private-key: ${{ secrets.STACKRA_BOT_PRIVATE_KEY }}
+      contents: write # push the version-PR branch and the tag
+      pull-requests: write # open and update the version PR
+      id-token: write # npm trusted publishing and the provenance attestation
+    outputs:
+      published: ${{ steps.changesets.outputs.published }}
+      packages: ${{ steps.changesets.outputs.publishedPackages }}
+    steps:
+      - name: App token
+        id: bot
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.STACKRA_BOT_APP_ID }}
+          private-key: ${{ secrets.STACKRA_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          token: ${{ steps.bot.outputs.token }}
+          fetch-depth: 0
+
+      - name: Toolchain (mise)
+        uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+        with:
+          install_args: node pnpm
+
+      # A critical vulnerability with a released fix blocks the publish (Stackra ADR 0174).
+      - name: Vulnerability scan (Trivy)
+        run: >-
+          mise exec aqua:aquasecurity/trivy@0.76.1 --
+          trivy fs --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1 --no-progress .
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm turbo run build --filter=figentra-flow
+
+      # The script changesets runs in place of its own publish. npm 11.5+ performs the trusted-publishing exchange itself
+      # when it runs in Actions with an ID token, so no credential is ever written.
+      - name: Publish script
+        run: |
+          cat > "$RUNNER_TEMP/npm-publish.sh" <<'SH'
+          set -euo pipefail
+          # changesets/action v2 reads the published tags from the NDJSON file named in CHANGESETS_OUTPUT.
+          : > "$CHANGESETS_OUTPUT"
+          name="$(jq -r .name packages/figentra-flow/package.json)"
+          version="$(jq -r .version packages/figentra-flow/package.json)"
+          if npm view "${name}@${version}" version --registry https://registry.npmjs.org/ >/dev/null 2>&1; then
+            echo "skip ${name}@${version}: already on npmjs"
+            exit 0
+          fi
+          (cd packages/figentra-flow && npx --yes npm@11.6.2 publish --provenance --access public --registry https://registry.npmjs.org/)
+          git rev-parse -q --verify "refs/tags/${name}@${version}" >/dev/null || git tag -a "${name}@${version}" -m "${name}@${version}"
+          jq -nc --arg tag "${name}@${version}" --arg name "$name" '{type: "git-tag", tag: $tag, packageName: $name}' \
+            >> "$CHANGESETS_OUTPUT"
+          echo "New tag: ${name}@${version}"
+          SH
+
+      - name: Publish dry run
+        if: inputs.dry_run
+        working-directory: packages/figentra-flow
+        run: npx --yes npm@11.6.2 publish --dry-run --access public --registry https://registry.npmjs.org/
+
+      - name: Version PR / publish
+        id: changesets
+        if: ${{ !inputs.dry_run }}
+        uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
+        with:
+          version-script: pnpm changeset:version
+          publish-script: bash ${{ runner.temp }}/npm-publish.sh
+          pr-title: "chore(release): version packages"
+          commit-message: "chore(release): version packages"
+          github-token: ${{ steps.bot.outputs.token }}
+
+  # After a publish only: the SBOM of what was installed, signed keylessly with this job's OIDC identity, attached
+  # with the tarball's SHA-256 to the release. No App token and no npm credential here.
+  sbom:
+    name: SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: release
+    if: needs.release.outputs.published == 'true'
+    permissions:
+      contents: write # attach the SBOM, its signature and the checksums to the release
+      id-token: write # cosign keyless signing
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Toolchain (mise)
+        uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+        with:
+          install_args: node pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate SBOM (CycloneDX)
+        run: npx --yes @cyclonedx/cyclonedx-npm@6.0.1 --ignore-npm-errors --output-format JSON --output-file sbom.cdx.json
+
+      - name: Sign SBOM (cosign)
+        run: >-
+          mise exec aqua:sigstore/cosign@3.1.4 --
+          cosign sign-blob --yes --bundle sbom.cdx.json.sigstore.json sbom.cdx.json
+
+      # The tarball exactly as npmjs serves it, checked against the integrity npmjs recorded, then listed by SHA-256.
+      - name: Checksums (sha256sums.txt)
+        env:
+          PACKAGES: ${{ needs.release.outputs.packages }}
+        run: |
+          set -euo pipefail
+          mkdir tarballs
+          jq -r '.[] | [.name, .version] | @tsv' <<< "$PACKAGES" | while IFS=$'\t' read -r name version; do
+            dist="$(npm view "${name}@${version}" dist --json --registry https://registry.npmjs.org/)"
+            file="tarballs/${name//\//-}-${version}.tgz"
+            curl -fsS --retry 4 -o "$file" "$(jq -r '.tarball' <<< "$dist")"
+            [ "sha512-$(openssl dgst -sha512 -binary "$file" | base64 -w0)" = "$(jq -r '.integrity' <<< "$dist")" ] || {
+              echo "::error title=Integrity::${name}@${version} differs from npmjs's integrity"; exit 1; }
+          done
+          (cd tarballs && sha256sum -- *.tgz) > sha256sums.txt
+          cat sha256sums.txt
+
+      - name: Attach SBOM and checksums to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGES: ${{ needs.release.outputs.packages }}
+        run: |
+          jq -r '.[] | "\(.name)@\(.version)"' <<< "$PACKAGES" | while read -r tag; do
+            gh release upload "$tag" sbom.cdx.json sbom.cdx.json.sigstore.json sha256sums.txt --clobber
+          done
