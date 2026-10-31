@@ -35,9 +35,11 @@ Phase 1 is designed and approved; the later phases are placeholders, refined whe
 - [x] T032 GitHub calls only with named credentials (`wrapper:<script>` or `gh-user`), refusing otherwise, in `packages/vellum/src/lib/github.mjs` and `packages/vellum/src/commands/land.mjs` — covers: FR-6, AC-034 — route: spec-task — deps: T030
 - [ ] T035 `vellum review`: a different agent from the builder reviews the PR's head and posts the verdict through `pnpm bot:review` (design after land), in `packages/vellum/src/commands/review.mjs` — covers: FR-6, AC-031 — route: spec-task — deps: T031
 
-## Phase 4: status (design pending)
+## Phase 4: status, MCP and metrics (design written; plan stop pending)
 
-- [ ] T040 `vellum status` in `packages/vellum/src/commands/status.mjs` — covers: FR-7, AC-012 — route: spec-task
+- [ ] T040 The snapshot and `vellum status` (specs, worktrees, PRs with gate and review, sessions and the cap) in `packages/vellum/src/lib/snapshot.mjs` and `packages/vellum/src/commands/status.mjs` — covers: FR-7, AC-012, AC-024, AC-026 — route: spec-task — deps: T030
+- [ ] T041 Metrics from merged PRs, gate statuses, reviews and spec history in `packages/vellum/src/lib/metrics.mjs` — covers: FR-7, AC-032 — route: spec-task — deps: T040
+- [ ] T042 The read-only `vellum mcp` stdio server in `packages/vellum/src/commands/mcp.mjs` — covers: FR-7, AC-033 — route: spec-task — deps: T040, T041
 
 ## Phase 5: release and ship (design pending)
 
@@ -49,4 +51,4 @@ Phase 1 is designed and approved; the later phases are placeholders, refined whe
 
 ## Phase 7: sessions (design pending)
 
-- [ ] T070 `**Session**` in the spec gate and sessions in `vellum status` in `packages/vellum/src/commands/gate.mjs` and `packages/vellum/src/commands/status.mjs` — covers: FR-10, AC-023, AC-024, AC-025, AC-026 — route: spec-task — deps: T040
+- [ ] T070 `**Session**` in the spec gate in `packages/vellum/src/commands/gate.mjs` and `packages/vellum/src/commands/status.mjs` — covers: FR-10, AC-023, AC-025 — route: spec-task — deps: T040
