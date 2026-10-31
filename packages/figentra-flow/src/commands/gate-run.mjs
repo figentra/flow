@@ -143,6 +143,10 @@ export async function gateRun(options) {
       command,
       label: `${NAME} gate ${repository}@${sha.slice(0, 12)}`,
       flags,
+      sha,
+      branch,
+      repository,
+      base,
     });
     if (code === 127)
       return {

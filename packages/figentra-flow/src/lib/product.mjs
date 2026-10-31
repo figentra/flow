@@ -12,9 +12,11 @@
 import { readFileSync } from "node:fs";
 
 /** The package's own name, from its `package.json` (`@scope/name`). */
-export const PACKAGE = JSON.parse(
-  readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
-).name;
+const MANIFEST = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
+export const PACKAGE = MANIFEST.name;
+
+/** This package's version: the one a written gate workflow pins its poster to. */
+export const VERSION = MANIFEST.version;
 
 /** The product's name, as people read it. */
 export const DISPLAY_NAME = "Figentra Flow";
