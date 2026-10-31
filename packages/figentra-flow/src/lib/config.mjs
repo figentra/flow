@@ -44,9 +44,15 @@ export const SCHEMA = {
     preset: str,
     tracker: port(
       {
-        linear: { team: str, branchPrefix: str, token: strs },
-        "github-issues": { branchPrefix: str },
-        jira: { site: str, project: str, branchPrefix: str, token: strs },
+        linear: { team: str, branchPrefix: str, otherBranchPrefixes: strs, token: strs },
+        "github-issues": { branchPrefix: str, otherBranchPrefixes: strs },
+        jira: {
+          site: str,
+          project: str,
+          branchPrefix: str,
+          otherBranchPrefixes: strs,
+          token: strs,
+        },
       },
       {
         linear: ["team", "branchPrefix"],

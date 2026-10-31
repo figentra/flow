@@ -35,6 +35,14 @@
               "type": "string",
               "minLength": 1
             },
+            "otherBranchPrefixes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
+            },
             "token": {
               "type": "array",
               "items": {
@@ -56,6 +64,14 @@
             "branchPrefix": {
               "type": "string",
               "minLength": 1
+            },
+            "otherBranchPrefixes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
             }
           }
         },
@@ -78,6 +94,14 @@
             "branchPrefix": {
               "type": "string",
               "minLength": 1
+            },
+            "otherBranchPrefixes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
             },
             "token": {
               "type": "array",

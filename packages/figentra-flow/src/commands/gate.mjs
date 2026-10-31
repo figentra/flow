@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow gate` (core's `spec-gate`, moved unchanged) — the stage gates for spec-kit specs in `.agents/specs/sta-<n>-<slug>/` (ADR 0120 D1, owner
+ * Purpose: `figentra-flow gate` (core's `spec-gate`, moved unchanged) — the stage gates for spec-kit specs in `.agents/specs/<key>-<slug>/` (ADR 0120 D1, owner
  *          decision OR12).
  * Boundary: reads the spec folders, git and, through the tracker port, comments on the issue (best-effort); writes no spec
  *           file.
@@ -22,12 +22,12 @@
  *                               edit to another spec gets only `check`, and changing another spec's `**Status**`
  *                               line needs a commit whose `Refs:` names that spec's key. No branch check: check-pr
  *                               owns it.
- *   dir [--slug s] [--key STA-n]   print the spec folder for the branch's STA key and persist .specify/feature.json
+ *   dir [--slug s] [--key <key>]   print the spec folder for the branch's issue key and persist .specify/feature.json
  *   stage <spec.md> <stage>     best-effort Linear comment for a stage change
  *
  * States: Draft → Clarified → Planned → Tasked → Implementing → Done, or Abandoned / Superseded. A status may lag
  * its artifacts, never lead them (I5):
- *   Draft         folder `sta-<n>-<slug>`; a `**Linear**` key, when set, equals the folder's
+ *   Draft         folder `<key>-<slug>` (the tracker's key scheme); a `**Linear**` key, when set, equals the folder's
  *   Clarified     clarifications complete, real key, every Impact line answered, no NEEDS CLARIFICATION; a Status
  *                 history line for the current status
  *   Planned       plan.md: Constitution Check rows PASS or N/A with a reason, three deploy-mode rows, every live FR
@@ -42,8 +42,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { trackerFor } from "../adapters/tracker/index.mjs";
-import { BRANCH_RE } from "../lib/linear.mjs";
+import { schemeFor, trackerFor } from "../adapters/tracker/index.mjs";
 import { DISPLAY_NAME, ENV_PREFIX, NAME, PACKAGE } from "../lib/product.mjs";
 
 /** The preset this package ships, installed when a repository keeps no `.agents/speckit/presets` of its own. */
@@ -75,7 +74,19 @@ const IMPACT_FIELDS = [
   "Change risk",
 ];
 export const SPECS_DIR = ".agents/specs";
-const FOLDER_RE = /^sta-(\d+)-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** @typedef {import("../adapters/tracker/index.mjs").KeyScheme} KeyScheme */
+/** @type {KeyScheme | undefined} */
+let scheme;
+/**
+ * The repository's issue-key scheme (its tracker's; the transitional STA one, unannounced, without a config file).
+ * Keys are full and lower-cased: `sta-163`, `gh-7`.
+ */
+export const repoScheme = () => (scheme ??= schemeFor(ROOT, { warn: () => {} }));
+/** The `**Linear**:` (or `**Issue**:`) line's key, lower-cased. */
+const issueLine = (/** @type {string} */ body, /** @type {KeyScheme} */ keys) =>
+  body
+    .match(new RegExp(`^\\*\\*(?:Linear|Issue)\\*\\*:\\s*(${keys.pattern})(?![0-9])`, "mi"))?.[1]
+    .toLowerCase();
 export const STATUSES = [
   "draft",
   "clarified",
@@ -88,13 +99,19 @@ export const STATUSES = [
 ];
 
 /** Problems that stop a spec from being planned; empty means it may be. */
-export function checkSpec(text) {
+/**
+ * @param {string} text
+ * @param {KeyScheme} [keys]
+ */
+export function checkSpec(text, keys = repoScheme()) {
   const body = text.replaceAll(/<!--[\s\S]*?-->/g, "");
   const problems = [];
   if (!/^\*\*Clarifications status\*\*:\s*complete\s*$/im.test(body))
     problems.push("`**Clarifications status**` is not `complete` (run /speckit.clarify)");
-  if (!/^\*\*Linear\*\*:\s*STA-\d+\b/m.test(body))
-    problems.push(`\`**Linear**\` has no STA-n key (${NAME} linear issue, or the Linear MCP)`);
+  if (!issueLine(body, keys))
+    problems.push(
+      `\`**Linear**\` (or \`**Issue**\`) has no issue key (${NAME} linear issue, or the tracker)`,
+    );
   if (/\[NEEDS CLARIFICATION/i.test(body)) problems.push("a `[NEEDS CLARIFICATION` marker remains");
 
   const impact = body.match(/^## Impact\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1];
@@ -112,7 +129,6 @@ export function checkSpec(text) {
 }
 
 export const STAGES = ["clarified", "planned", "tasked", "implementing", "done"];
-export const FOLDER = FOLDER_RE;
 const atLeast = (status, stage) => STATUSES.indexOf(status) >= STATUSES.indexOf(stage);
 
 /** The declared `**Status**`, lower-cased ("" when absent). */
@@ -220,21 +236,27 @@ export function checkTasks(tasksText, { spec = "", plan = "", known = new Set() 
  * Problems for a spec at its declared `**Status**`; `files` lists the names in its folder.
  * @param {string} folder
  * @param {string} text
- * @param {{ files?: string[], tasks?: string, plan?: string, known?: Set<string> }} [options]
+ * @param {{ files?: string[], tasks?: string, plan?: string, known?: Set<string>, keys?: KeyScheme }} [options]
  */
-export function checkStage(folder, text, { files = [], tasks = "", plan = "", known } = {}) {
+export function checkStage(
+  folder,
+  text,
+  { files = [], tasks = "", plan = "", known, keys = repoScheme() } = {},
+) {
   const body = strip(text);
-  const key = folder.match(FOLDER_RE)?.[1];
-  if (!key) return [`folder \`${folder}\` is not \`sta-<n>-<slug>\` (ADR 0120 D1)`];
+  const key = keys.folderKey(folder);
+  if (!key) return [`folder \`${folder}\` is not \`<key>-<slug>\` (ADR 0120 D1)`];
   const status = statusOf(text);
   if (!STATUSES.includes(status)) return [`\`**Status**\` is not one of ${STATUSES.join(", ")}`];
   if (status === "abandoned" || status === "superseded") return [];
   const problems = [];
-  const linear = body.match(/^\*\*Linear\*\*:\s*STA-(\d+)\b/m)?.[1];
+  const linear = issueLine(body, keys);
   if (linear && linear !== key)
-    problems.push(`\`**Linear**: STA-${linear}\` does not match the folder key STA-${key}`);
+    problems.push(
+      `the spec's key ${keys.display(linear)} does not match the folder key ${keys.display(key)}`,
+    );
   if (status === "draft") return problems;
-  problems.push(...checkSpec(text));
+  problems.push(...checkSpec(text, keys));
   problems.push(...checkApproval(text));
   const tier = tierOf(text);
   if (tier !== undefined && tier !== "trivial") problems.push(...checkCriteria(text));
@@ -528,22 +550,21 @@ export function checkLane({
   branch = "",
   specKeys = new Set(),
   taskKeys = new Set(),
+  scheme = repoScheme(),
 }) {
   const feats = commits.filter((c) => /^feat(\(|!|:)/.test(c));
   if (!feats.length) return [];
-  const keys = new Set(
-    [branch, ...feats].flatMap((t) => [...t.matchAll(/\bsta-(\d+)\b/gi)].map((m) => m[1])),
-  );
+  const keys = new Set([branch, ...feats].flatMap(scheme.keys));
   if ([...keys].some((k) => specKeys.has(k) || taskKeys.has(k))) return [];
   return [
-    `lane: ${feats.length} feat commit(s), but neither the branch nor their Refs keys (${[...keys].map((k) => `STA-${k}`).join(", ") || "none"}) reach a spec in ${SPECS_DIR} — new behaviour takes the lite or full lane; use chore/fix/docs for the others`,
+    `lane: ${feats.length} feat commit(s), but neither the branch nor their Refs keys (${[...keys].map(scheme.display).join(", ") || "none"}) reach a spec in ${SPECS_DIR} — new behaviour takes the lite or full lane; use chore/fix/docs for the others`,
   ];
 }
 
-/** The spec folder is the PR's own (keyed by the branch's STA key); only it must reach Tasked on a ready PR. */
-export function isOwnSpec(folder, branch) {
-  const n = branch.match(/(?:^|[/-])sta-(\d+)(?:-|$)/i)?.[1];
-  return Boolean(n) && folder.startsWith(`sta-${n}-`);
+/** The spec folder is the PR's own (keyed by the branch's issue key); only it must reach Tasked on a ready PR. */
+export function isOwnSpec(folder, branch, keys = repoScheme()) {
+  const key = keys.keys(branch)[0];
+  return Boolean(key) && keys.folderKey(folder) === key;
 }
 
 /** The spec's `**Status**:` line, trimmed ("" when absent). */
@@ -552,67 +573,67 @@ export const statusLine = (text) =>
     .match(/^\*\*Status\*\*:.*$/m)?.[0]
     .trim() ?? "";
 
-/** STA numbers named on the `Refs:` trailers of the commit messages. */
-export const refsKeys = (commits) =>
+/** The issue keys named on the `Refs:` trailers of the commit messages, lower-cased. */
+export const refsKeys = (commits, keys = repoScheme()) =>
   new Set(
-    commits.flatMap((c) =>
-      [...c.matchAll(/^Refs:[ \t]*(.*)$/gim)].flatMap((r) =>
-        [...r[1].matchAll(/\bSTA-(\d+)\b/gi)].map((m) => m[1]),
-      ),
-    ),
+    commits.flatMap((c) => [...c.matchAll(/^Refs:[ \t]*(.*)$/gim)].flatMap((r) => keys.keys(r[1]))),
   );
 
 /**
  * A PR may move another spec's `**Status**` only when one of its commits' `Refs:` names that spec's key, so a
  * spec's stage never changes as a side effect of unrelated work. The own spec and a newly added spec are exempt.
  */
-export function checkForeignStatus({ folder, before = "", after = "", branch = "", commits = [] }) {
-  if (isOwnSpec(folder, branch) || !before) return [];
+export function checkForeignStatus({
+  folder,
+  before = "",
+  after = "",
+  branch = "",
+  commits = [],
+  keys = repoScheme(),
+}) {
+  if (isOwnSpec(folder, branch, keys) || !before) return [];
   const [was, now] = [statusLine(before), statusLine(after)];
   if (was === now) return [];
-  const key = folder.match(FOLDER_RE)?.[1];
-  if (key && refsKeys(commits).has(key)) return [];
+  const key = keys.folderKey(folder);
+  if (key && refsKeys(commits, keys).has(key)) return [];
   return [
-    `${folder}: this PR changes another spec's Status line (\`${was || "(none)"}\` → \`${now || "(none)"}\`), but no commit has \`Refs: STA-${key ?? "?"}\``,
+    `${folder}: this PR changes another spec's Status line (\`${was || "(none)"}\` → \`${now || "(none)"}\`), but no commit has \`Refs: ${key ? keys.display(key) : "<its key>"}\``,
   ];
 }
 
-/** The branch is Linear-named (ADR 0065 decision 5) or allow-listed. */
-export function checkBranch(branch) {
+/** The branch has the tracker's shape (ADR 0065 decision 5) or is allow-listed. */
+export function checkBranch(branch, keys = repoScheme()) {
   if (!branch || branch === "HEAD" || branch === "main") return [];
   if (/^(renovate\/|changeset-release\/main$)/.test(branch)) return [];
-  return BRANCH_RE.test(branch)
+  return keys.isBranch(branch)
     ? []
-    : [
-        `branch \`${branch}\` is not \`figentra/sta-<n>-<slug>\` (Linear's "Copy git branch name") or delegate/sta-<n>-…`,
-      ];
+    : [`branch \`${branch}\` is not \`${keys.branchShape}\` (the tracker's branch name)`];
 }
 
-/** Bug lane: `.specify/bugs/sta-<n>-<slug>/` with a regression test tagged `@covers sta-<n>:BUG`. */
-export function checkBug(folder, tests) {
-  const key = folder.match(FOLDER_RE)?.[1];
-  if (!key) return [`.specify/bugs/${folder}: folder is not \`sta-<n>-<slug>\``];
-  return new RegExp(`@covers[^\\n]*\\bsta-${key}:BUG\\b`, "i").test(tests)
+/** Bug lane: `.specify/bugs/<key>-<slug>/` with a regression test tagged `@covers <key>:BUG`. */
+export function checkBug(folder, tests, keys = repoScheme()) {
+  const key = keys.folderKey(folder);
+  if (!key) return [`.specify/bugs/${folder}: folder is not \`<key>-<slug>\``];
+  return new RegExp(`@covers[^\\n]*(?<![a-z0-9])${key}:BUG\\b`, "i").test(tests)
     ? []
-    : [`.specify/bugs/${folder}: no regression test carries \`@covers sta-${key}:BUG\``];
+    : [`.specify/bugs/${folder}: no regression test carries \`@covers ${key}:BUG\``];
 }
 
 /**
- * The repo-relative spec folder for a key: its existing `sta-<n>-*` folder, else one named from `slug`.
- * @param {{ root?: string, branch?: string, key?: string, slug?: string }} [options]
+ * The repo-relative spec folder for a key: its existing `<key>-*` folder, else one named from `slug`.
+ * @param {{ root?: string, branch?: string, key?: string, slug?: string, keys?: KeyScheme }} [options]
  */
-export function specDir({ root = ROOT, branch = "", key, slug } = {}) {
-  const n = (key ?? branch).match(/(?:^|[/-])sta-(\d+)(?:-|$)/i)?.[1];
-  if (!n) return { error: `no STA key in ${key ? `--key ${key}` : `branch \`${branch}\``}` };
+export function specDir({ root = ROOT, branch = "", key, slug, keys = repoScheme() } = {}) {
+  const k = key === undefined ? keys.keys(branch)[0] : keys.parse(key);
+  if (!k) return { error: `no issue key in ${key ? `--key ${key}` : `branch \`${branch}\``}` };
   const base = join(root, SPECS_DIR);
-  const existing = existsSync(base)
-    ? readdirSync(base).filter((d) => d.startsWith(`sta-${n}-`))
-    : [];
-  if (existing.length > 1) return { error: `several folders for STA-${n}: ${existing.join(", ")}` };
+  const existing = existsSync(base) ? readdirSync(base).filter((d) => keys.folderKey(d) === k) : [];
+  if (existing.length > 1)
+    return { error: `several folders for ${keys.display(k)}: ${existing.join(", ")}` };
   if (existing.length) return { dir: `${SPECS_DIR}/${existing[0]}` };
-  const name = `sta-${n}-${slug ?? ""}`;
-  if (!FOLDER_RE.test(name))
-    return { error: `no folder for STA-${n} yet; pass --slug <kebab-case short name>` };
+  const name = keys.folder(k, slug ?? "");
+  if (keys.folderKey(name) !== k)
+    return { error: `no folder for ${keys.display(k)} yet; pass --slug <kebab-case short name>` };
   return { dir: `${SPECS_DIR}/${name}` };
 }
 
@@ -821,14 +842,16 @@ const git = (...a) => {
 };
 const currentBranch = () => process.env.STACKRA_BRANCH || git("branch", "--show-current").trim();
 
-/** Spec keys that exist, and the `[STA-n]` keys in any tasks.md (phase and task sub-issues). */
+/** Spec keys that exist, and the `[<KEY>]` keys in any tasks.md (phase and task sub-issues). */
 function specIndex() {
+  const keys = repoScheme();
   const base = join(ROOT, SPECS_DIR);
   const folders = existsSync(base) ? readdirSync(base) : [];
-  const specKeys = new Set(folders.flatMap((f) => f.match(FOLDER_RE)?.[1] ?? []));
+  const specKeys = new Set(folders.flatMap((f) => keys.folderKey(f) ?? []));
+  const task = new RegExp(`\\[(${keys.pattern})\\]`, "gi");
   const taskKeys = new Set(
     folders.flatMap((f) =>
-      [...readIf(join(base, f, "tasks.md")).matchAll(/\[STA-(\d+)\]/g)].map((m) => m[1]),
+      [...readIf(join(base, f, "tasks.md")).matchAll(task)].map((m) => m[1].toLowerCase()),
     ),
   );
   return { specKeys, taskKeys };
@@ -953,7 +976,7 @@ export function run([mode, ...args]) {
     }
     const { dirs, legacy, bugs } = changedSpecs(base);
     for (const p of legacy) {
-      console.error(`spec-gate: ${p}: specs live in ${SPECS_DIR}/sta-<n>-<slug>/, not specs/`);
+      console.error(`spec-gate: ${p}: specs live in ${SPECS_DIR}/<key>-<slug>/, not specs/`);
       failures++;
     }
     const requireReady = process.env.SPEC_GATE_REQUIRE_READY === "1";
@@ -971,7 +994,7 @@ export function run([mode, ...args]) {
     return failures ? 1 : 0;
   }
   console.error(
-    `usage: ${NAME} gate run [--ref <branch>] [--box <host>] [-- <runner flags>] | plan <spec.md> | check <dir> | tasks <tasks.md> | lane | branch | ci [--base=ref] | stage <spec.md> <${STAGES.join("|")}> | dir [--slug s] [--key STA-n]`,
+    `usage: ${NAME} gate run [--ref <branch>] [--box <host>] [-- <runner flags>] | plan <spec.md> | check <dir> | tasks <tasks.md> | lane | branch | ci [--base=ref] | stage <spec.md> <${STAGES.join("|")}> | dir [--slug s] [--key <key>]`,
   );
   return 2;
 }
