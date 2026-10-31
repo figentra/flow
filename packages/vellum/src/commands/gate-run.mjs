@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
 import { secretsPort } from "../adapters/secrets.mjs";
+import { artifactProblems } from "../lib/artifacts.mjs";
 import { loadConfig } from "../lib/config.mjs";
 import { defaultBranch, git, isClean, remoteTip } from "../lib/git.mjs";
 import {
@@ -149,6 +150,10 @@ export async function gateRun(options) {
   if (loaded.errors.length) return { code: 2, problem: loaded.errors.join("; ") };
   for (const w of loaded.warnings) console.error(w);
   const secrets = secretsPort(loaded.config.secrets);
+  // AC-043: no build or tool output and no oversized file reaches a box, or main.
+  const artifacts = artifactProblems(root, `origin/${base}`, sha, loaded.config.artifacts);
+  if (artifacts.length)
+    return { code: 2, problem: `the change carries artifacts:\n  ${artifacts.join("\n  ")}` };
 
   const dir = mkdtempSync(join(tmpdir(), `${NAME}-gate-`));
   try {

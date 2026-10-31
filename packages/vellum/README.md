@@ -64,7 +64,11 @@ setting you have not made refuses and names it.
   `paths` per scope, e.g. `"gate": "/ci/gate"`. Vellum wraps the command and never reads a value.
 - `gate.check` is the check command (default `pnpm verify`).
 
-The tracker, runner, apps, preset, `clean.keep`, `review.required` and `artifacts` keys follow in the next steps of
+- `artifacts` is the guard `gate run` and `land` apply to a change. `paths` defaults to `.cache/`, `node_modules/`,
+  `dist/`, `.turbo/` and `coverage/`, where a trailing `/` matches the folder at any depth and other entries are globs.
+  `maxBytes` defaults to 5 MB. A change that adds or changes such a file is refused, with each file named.
+
+The tracker, runner, apps, preset, `clean.keep` and `review.required` keys follow in the next steps of
 the same phase. The older `package.json` `"vellum"` keys (`credentials`, `gate`, `gateApp`) are still read, with a
 warning, until the next minor version.
 

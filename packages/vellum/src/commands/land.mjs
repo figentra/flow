@@ -19,6 +19,7 @@ import { gateRun } from "./gate-run.mjs";
 import { client, linear } from "../lib/linear.mjs";
 import { github } from "../lib/github.mjs";
 import { aiReview, REVIEWER } from "../lib/review.mjs";
+import { artifactProblems } from "../lib/artifacts.mjs";
 import { loadConfig } from "../lib/config.mjs";
 import { NAME, STATUS_CONTEXT } from "../lib/product.mjs";
 import {
@@ -41,7 +42,8 @@ export const CONVENTIONAL =
 /**
  * Every reason the PR may not land; empty means it may.
  * @param {{ pr: any, statuses: any[], base: string, spec?: string, gateApp?: string, required: boolean,
- *           manualOk?: boolean, stack?: boolean, review?: { verdict: string | null, ignored: string[] } }} input
+ *           manualOk?: boolean, stack?: boolean, review?: { verdict: string | null, ignored: string[] },
+ *           artifacts?: string[] }} input
  * @returns {string[]}
  */
 export function landRules({
@@ -54,8 +56,9 @@ export function landRules({
   manualOk = false,
   stack = false,
   review,
+  artifacts = [],
 }) {
-  const problems = [];
+  const problems = [...artifacts];
   const head = String(pr.head?.sha ?? "").slice(0, 12);
   if (pr.state !== "open") problems.push(`the PR is ${pr.merged ? "already merged" : pr.state}`);
   if (pr.draft) problems.push("the PR is a draft");
@@ -180,12 +183,18 @@ export async function landOne({
     list(api("GET", `/repos/${repo}/pulls/${number}/reviews?per_page=100`)),
     [pr.json.user?.login, commit.author?.login, commit.committer?.login],
   );
+  // AC-043: the head must be here to check its files; fetch it when it is not.
+  if (!git(root, ["cat-file", "-e", `${head}^{commit}`]).ok) fetch(root);
+  const artifacts = git(root, ["cat-file", "-e", `${head}^{commit}`]).ok
+    ? artifactProblems(root, `origin/${base}`, head, loadConfig(root).config.artifacts)
+    : [`cannot read the head ${head.slice(0, 12)} to check its files (fetch failed)`];
   const problems = landRules({
     pr: pr.json,
     statuses,
     base,
     spec,
     review,
+    artifacts,
     gateApp,
     required,
     manualOk,
