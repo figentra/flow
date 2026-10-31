@@ -1,9 +1,0 @@
-{
-  "$schema": "./schemas/models.schema.json",
-  "tiers": {
-    "draft": "sonnet",
-    "verify": "sonnet",
-    "implement": "sonnet",
-    "review": "sonnet"
-  }
-}

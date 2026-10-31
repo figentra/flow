@@ -1,34 +1,31 @@
 {
-  "name": "vellum-monorepo",
+  "name": "vellum-workspace",
   "private": true,
-  "version": "0.0.0",
-  "description": "Vellum — Specification lifecycle enforcement for AI-assisted development",
-  "packageManager": "pnpm@10.16.0",
-  "engines": {
-    "node": ">=22.0.0"
-  },
+  "description": "Vellum: the spec CLI for Stackra repositories (spec-kit preset, stage gates, traceability, Linear links)",
+  "license": "MIT",
+  "type": "module",
   "scripts": {
+    "prepare": "lefthook install",
     "build": "turbo run build",
-    "lint": "turbo run lint",
-    "check:boundaries": "node scripts/check-boundaries.mjs",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "test:unit": "turbo run test:unit",
-    "clean": "turbo run clean && rm -rf node_modules",
-    "format": "oxlint --fix && prettier --write .",
-    "changeset": "changeset",
-    "version": "changeset version",
-    "release": "turbo run build && changeset publish",
-    "check:marketplace": "node scripts/marketplace.mjs --check"
+    "lint": "turbo run lint",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "verify": "pnpm format:check && turbo run lint typecheck test build",
+    "changeset": "changeset"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.29.5",
-    "@types/node": "^22.15.21",
-    "oxlint": "^1.5.0",
-    "prettier": "^3.5.3",
-    "tsup": "^8.5.0",
-    "turbo": "^2.5.5",
-    "typescript": "^5.9.2",
-    "vitest": "catalog:"
-  }
+    "@changesets/changelog-git": "catalog:release",
+    "@changesets/cli": "catalog:release",
+    "lefthook": "catalog:release",
+    "oxfmt": "catalog:quality",
+    "oxlint": "catalog:quality",
+    "turbo": "catalog:build"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=12.0.0"
+  },
+  "packageManager": "pnpm@12.6.0"
 }

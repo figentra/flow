@@ -1,0 +1,17 @@
+// Vellum file contract:
+// Purpose: the task graph (Turborepo) for the one package. `pnpm build|typecheck|test|lint` fan out through here.
+// Owner: release-operations
+// Secrets: forbidden
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "envMode": "strict",
+  "globalDependencies": ["mise.toml", "pnpm-workspace.yaml"],
+  "globalEnv": ["NODE_ENV", "CI"],
+  "globalPassThroughEnv": ["HOME", "PATH"],
+  "tasks": {
+    "build": { "outputs": ["dist/**"] },
+    "typecheck": { "outputs": [] },
+    "test": { "outputs": [] },
+    "lint": { "outputs": [] },
+  },
+}

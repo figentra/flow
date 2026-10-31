@@ -1,31 +1,20 @@
-# lefthook.yml — Git hooks for Vellum monorepo
-# https://github.com/evilmartians/lefthook
-
+# Vellum file contract:
+# Purpose: git hooks — pre-commit format and lint on staged files, pre-push typecheck and tests. Advisory; CI is the
+#          gate. Installed by `pnpm install` (prepare).
+# Owner: release-operations
+# Secrets: forbidden
 pre-commit:
   parallel: true
-  commands:
-    lint:
-      glob: "*.{ts,tsx,js,jsx,json,md,yml,yaml}"
-      run: "pnpm turbo run lint --filter=HEAD"
-
-    typecheck:
-      run: "pnpm turbo run typecheck --filter=HEAD"
-
-commit-msg:
-  commands:
-    conventional:
-      run: |
-        # Check conventional commit format
-        message=$(head -n1 {1})
-        if ! echo "$message" | grep -qE "^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\([^)]+\))?!?: .+"; then
-          echo "Commit message must follow conventional commits format"
-          echo "Example: feat(scope): description"
-          exit 1
-        fi
+  jobs:
+    - name: oxfmt
+      glob: "*.{js,mjs,ts,json,jsonc,yaml,yml,md}"
+      # oxfmt exits 2 when every staged file is ignored: that is not a finding.
+      run: sh -c 'pnpm exec oxfmt --check "$@"; s=$?; [ $s -eq 2 ] && exit 0; exit $s' -- {staged_files}
+    - name: oxlint
+      glob: "*.{js,mjs,ts}"
+      run: pnpm exec oxlint {staged_files}
 
 pre-push:
-  commands:
-    test:
-      run: "pnpm turbo run test"
-
-CI: false
+  jobs:
+    - name: typecheck-test
+      run: pnpm exec turbo run typecheck test

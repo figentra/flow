@@ -1,16 +1,12 @@
-name: CI
-
-# No job in this workflow reads a secret: nothing here needs a token, a
-# registry credential or a signing key, except the Turborepo remote cache
-# values the verify job reads from Infisical over OIDC (STA-1393). The
-# end-to-end suite generates its own throwaway SSH signing keys inside a temp
-# directory per run. Publishing
-# lives only in release.yml, behind a human-pushed tag and OIDC.
+# Vellum file contract:
+# Purpose: the Quality Gate: install, format check, lint, typecheck, test and build on every PR and push to main.
+# Owner: release-operations
+# Secrets: none; the @stackra scope's registry is read-only and public for this job.
+name: Quality Gate
 
 on:
-  push:
-    branches: [main]
   pull_request:
+  push:
     branches: [main]
 
 permissions:
@@ -18,108 +14,19 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  # A newer push to a pull request supersedes the running check; pushes to
-  # main each run to completion.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   verify:
-    name: Build, typecheck, lint, test (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      id-token: write # the Infisical login for the Turborepo remote cache (STA-1393)
-    strategy:
-      fail-fast: false
-      matrix:
-        # 22 is the engines floor (package.json) and mise's pin; 24 is current.
-        node: ["22", "24"]
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
+          fetch-depth: 0
+      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
         with:
-          node-version: ${{ matrix.node }}
-          cache: pnpm
-
-      # The storage signature tests and the e2e suite shell out to these;
-      # ubuntu-latest ships all of them. Printed so a failure names the version.
-      - name: Tools the tests shell out to
-        run: |
-          git --version
-          ssh -V
-          gpg --version | head -n 1
-          script --version
-          npm --version
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      # STA-1393: Turborepo remote cache (turbo.stackra.figentra.com). The job's GitHub OIDC token is
-      # exchanged with Infisical (Stackra project, EU) for TURBO_API, TURBO_TOKEN, TURBO_TEAM and
-      # TURBO_REMOTE_CACHE_SIGNATURE_KEY from prod /ci/turbo. Skipped while the org variable
-      # INFISICAL_TURBO_IDENTITY_ID is unset; turbo then uses its local cache only. Node 22 leg only:
-      # turbo's task hash ignores the Node version, so a shared cache would let the Node 24 leg replay
-      # Node 22 results instead of running its tests.
-      - name: Turborepo remote cache (Infisical OIDC)
-        if: vars.INFISICAL_TURBO_IDENTITY_ID != '' && matrix.node == '22'
-        uses: Infisical/secrets-action@d2e351f16c6ca20d17c85e6c992e04bdeb64e87d # v1.0.18
-        with:
-          method: oidc
-          identity-id: ${{ vars.INFISICAL_TURBO_IDENTITY_ID }}
-          domain: https://eu.infisical.com
-          project-id: dd4724f4-7b9a-46ae-a899-b34af2d626b2
-          env-slug: prod
-          secret-path: /ci/turbo
-          export-type: env
-
-      # One command, the same one release.yml gates on:
-      #   build     every package, the @figentra/vellum bundle and the three plugins
-      #   typecheck every TypeScript member
-      #   lint      oxlint per member; its turbo task depends on
-      #             //#check:boundaries (scripts/check-boundaries.mjs)
-      #   test      every unit and integration suite, @figentra/vellum's
-      #             npm pack -> offline install test and its size budget, the
-      #             CLI/MCP parity suite, and @vellum/e2e: the packed tarball
-      #             driven through the whole spec lifecycle in temp git
-      #             repositories (packages/e2e/README.md). That suite replaces
-      #             the placeholder "conformance" job this workflow had.
-      - name: Build, typecheck, lint and test
-        run: pnpm turbo run build typecheck lint test
-
-  audit:
-    name: Audit dependencies
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      # Fails on any moderate-or-worse advisory anywhere in the tree,
-      # development tooling included: a compromised test runner or bundler runs
-      # with the same access as the code it builds. @figentra/vellum bundles the
-      # workspace and has no runtime dependency of its own.
-      #
-      # One low advisory stays open and below this level: GHSA-g7r4-m6w7-qqqr,
-      # esbuild >=0.27.3 <0.28.1 serving arbitrary files from its development
-      # server on Windows. It reaches the tree only through tsup, whose latest
-      # release (8.5.1) pins esbuild ^0.27.0, so no fixed tsup exists yet. tsup
-      # calls esbuild's build API and never starts its server.
-      - name: pnpm audit
-        run: pnpm audit --audit-level=moderate
+          install_args: node pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm verify

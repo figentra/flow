@@ -1,0 +1,7 @@
+// Vellum file contract:
+// Purpose: oxfmt settings, matching Stackra core's line width. The bundled spec-kit assets are copies of what
+//          `specify` renders and are kept byte for byte, so they are not formatted.
+{
+  "printWidth": 100,
+  "ignorePatterns": ["packages/vellum/assets/**", "pnpm-lock.yaml", "**/CHANGELOG.md"],
+}

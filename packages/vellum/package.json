@@ -1,52 +1,85 @@
 {
-  "name": "@figentra/vellum",
-  "version": "0.1.2",
-  "type": "module",
-  "description": "Vellum — specification lifecycle enforcement: the vellum CLI and the read-only vellum-mcp server, bundled with no runtime dependencies",
-  "license": "MIT",
-  "publishConfig": {
-    "registry": "https://npm.figentra.com/",
-    "access": "public"
+  "name": "@stackra/vellum",
+  "version": "0.0.0",
+  "private": false,
+  "description": "Vellum: the spec CLI for Stackra repositories. Installs spec-kit's .specify/ with the Stackra preset, syncs the speckit skills, and runs the stage gates, traceability and Linear links",
+  "keywords": [
+    "linear",
+    "sdlc",
+    "spec-kit",
+    "specs",
+    "stackra",
+    "traceability"
+  ],
+  "homepage": "https://github.com/figentra/vellum#readme",
+  "bugs": {
+    "url": "https://github.com/figentra/vellum/issues"
   },
-  "engines": {
-    "node": ">=22.0.0"
+  "license": "MIT",
+  "author": "Figentra (https://figentra.com)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/figentra/vellum.git",
+    "directory": "packages/vellum"
   },
   "bin": {
-    "vellum": "./dist/cli.js",
-    "vellum-mcp": "./dist/server.js"
+    "vellum": "./bin/vellum.mjs"
   },
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "files": [
+    "bin",
+    "src",
+    "!src/**/__tests__",
+    "assets",
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "type": "module",
   "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+    "./gate": {
+      "types": "./dist/src/commands/gate.d.mts",
+      "default": "./src/commands/gate.mjs"
     },
-    "./cli": {
-      "import": "./dist/cli.js"
+    "./trace": {
+      "types": "./dist/src/commands/trace.d.mts",
+      "default": "./src/commands/trace.mjs"
     },
-    "./mcp": {
-      "import": "./dist/server.js"
+    "./parse": {
+      "types": "./dist/src/lib/spec-parse.d.mts",
+      "default": "./src/lib/spec-parse.mjs"
     },
     "./package.json": "./package.json"
   },
-  "files": [
-    "dist/*.js",
-    "dist/*.js.map",
-    "dist/index.d.ts"
-  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.stackra.figentra.com/"
+  },
   "scripts": {
-    "build": "tsup",
+    "build": "tsc --noEmit false --declaration --emitDeclarationOnly --outDir dist",
     "typecheck": "tsc --noEmit",
-    "lint": "oxlint src/",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "clean": "rm -rf dist .tsbuildinfo coverage"
+    "lint": "oxlint .",
+    "test": "node --test 'src/**/__tests__/*.test.mjs'",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "undici": "catalog:"
   },
   "devDependencies": {
-    "@vellum/cli": "workspace:*",
-    "@vellum/mcp": "workspace:*",
-    "@vellum/tsconfig": "workspace:*",
-    "@vellum/vitest-config": "workspace:*"
+    "@types/node": "catalog:",
+    "oxlint": "catalog:quality",
+    "typescript": "catalog:build"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "stackra": {
+    "kind": "package",
+    "tier": "lib",
+    "category": "developer",
+    "runtimes": [
+      "node"
+    ],
+    "summary": "Use it for spec-driven work in a Stackra repository: `vellum init` and `vellum sync` install spec-kit with the Stackra preset and skills; `vellum gate`, `trace`, `parse` and `linear` run the stage gates, traceability and Linear links."
   }
 }

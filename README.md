@@ -1,107 +1,70 @@
-# Vellum — Specification Lifecycle Enforcement
+# Vellum
 
-**Vellum** keeps a specification's requirements, design and tasks honest while AI assistants
-help implement them: an approval counts only when a human's signing key made it, task
-completion is recorded from a command Vellum ran itself, and the record of both is a
-hash-chained ledger in git beside the spec.
+Vellum is the spec CLI for Stackra repositories. It runs spec-driven development on
+[GitHub spec-kit](https://github.com/github/spec-kit): it installs spec-kit's `.specify/` folder with the Stackra
+preset, renders the `speckit-*` skills for Claude Code and OpenCode, and holds the gates that keep each spec, its plan,
+its tasks and its tests in step. It is one package, `@stackra/vellum`, with one binary, `vellum`, published only to
+the Stackra registry (`npm.stackra.figentra.com`, ADR 0453).
 
-The monorepo is pre-release. Nothing is published to npm yet (`@figentra/vellum` is
-`private`), and several capabilities the specs describe are not built. This README lists what
-works today; any other command exits 2 with `not implemented`.
-
-## What works
-
-- **Signed approvals.** `vellum approve` writes an Approval Record bound to the artifact's
-  current checksum. It counts only once the commit that adds it to the ledger changes nothing
-  but the ledger and is signed by a key the Approval Policy (`.sdlc/policy.json`) lists for the
-  approver. SSH and GPG signatures are verified against the policy's own public keys, not the
-  host's keyring. Editing the artifact afterwards voids the approval.
-- **Evidence Vellum records itself.** `vellum task complete <spec> <task> --command=<cmd>` runs
-  the command, records its real exit status, timestamps, duration, HEAD commit and an output
-  digest (never the output), and marks the task `[x]` only on exit 0 at a clean HEAD.
-- **A tamper-evident ledger.** `.sdlc/ledger.jsonl` is hash-chained (ids from 1, each entry
-  carrying the SHA-256 of its predecessor's canonical JSON); `.sdlc/ledger.head.json` records
-  the last entry, so truncating the tail or editing the last entry is detected too.
-- **Strict verification.** `vellum verify` fails on a broken ledger; an approval that is
-  unsigned, signed by a key the policy does not list for the approver, or bound to changed
-  text; an uncovered criterion; an uncited property; or a required task without passing
-  evidence.
-- **A read-only MCP server.** `vellum-mcp` serves `vellum_status`, `vellum_lint`,
-  `vellum_verify` and `vellum_check` (the documents the CLI's `--json` output holds), `vellum_trace` and
-  `vellum_get_artifact` over stdio. It refuses approvals and task completion by name; those
-  stay with the CLI.
-
-- **Managed specs from plain Markdown.** The method's skills write each document as bare
-  Markdown; `vellum adopt <spec>` adds the Lifecycle Frontmatter (bodies unchanged, no
-  approval) and the first ledger entry, and `vellum stamp <spec>` records the next version and
-  checksum after every edit. A stamp never makes an approval of earlier text count.
-
-Not implemented: `vellum sync` (projection) and the doctor categories reported as
-`NOT_CHECKED`. See the [CLI reference](docs/cli/README.md).
-
-## Architecture
-
-```
-@figentra/vellum        # The bundle to be published: bins vellum and vellum-mcp, no runtime deps
-├── @vellum/cli         # Command-line interface
-├── @vellum/mcp         # MCP server for AI assistants
-├── @vellum/engine      # Pure logic engine (no I/O)
-├── @vellum/protocol    # Type definitions, schemas, canonical hashing
-├── @vellum/storage     # File system, git, ledger and signature adapters
-└── @vellum/renderers   # Output formatters
+```sh
+pnpm add -D @stackra/vellum   # with @stackra:registry=https://npm.stackra.figentra.com/ in .npmrc
+pnpm exec vellum init         # .specify/ with the Stackra preset
+pnpm exec vellum sync         # install the preset and render the speckit skills (needs the pinned `specify`)
 ```
 
-Principles: one version for the bundle; the engine is pure (it imports only
-`@vellum/protocol`); deterministic output; git is the database.
+## Commands
 
-## Documentation
+| Command                                              | What it does                                                                                       |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `vellum init [--force]`                              | installs `.specify/` (spec-kit 1.0.10, the Stackra preset, the gate in `setup-plan.sh`)            |
+| `vellum sync`                                        | installs the preset through `specify`, keeps the bundled workflow off, renders OpenCode and Claude |
+| `vellum gate plan <spec.md>`                         | exits 1 until the spec may be planned (run by `setup-plan.sh`)                                     |
+| `vellum gate check <dir>` / `tasks <tasks.md>`       | the stage rules for the spec's `**Status**`; the tasks lint                                        |
+| `vellum gate lane` / `branch` / `ci` / `dir`         | the lane check, the branch warning, the CI gate with the spec-kit tripwire, the spec folder        |
+| `vellum trace trace <dir>` / `drift` / `ci`          | the FR/P → task → `@covers` test matrix, spec-vs-diff drift, the Done rules                        |
+| `vellum parse <file>`                                | what the parsers read from a `spec.md`, `plan.md`, `tasks.md` or `routing.yaml`, as JSON           |
+| `vellum linear issue <spec.md>` / `tasks <tasks.md>` | the spec's Linear issue and one sub-issue per task; `--dry-run` needs no token                     |
 
-- [Getting started](docs/guides/getting-started.md) — the approve, start, complete, verify loop
-- [CLI reference](docs/cli/README.md)
-- [Architecture overview](docs/architecture.md)
-- [Troubleshooting](docs/troubleshooting.md)
+A repository keeps one-line aliases: `"spec:gate": "vellum gate"`, `"spec:trace": "vellum trace"`,
+`"speckit:sync": "vellum sync"`, and `"spec:linear": "infisical run --env=dev --path=/agents --silent -- vellum linear"`.
+`vellum linear` reads its token from the environment only (`LINEAR_AGENT_TOKEN`, else `LINEAR_API_KEY`) and never
+prints it.
 
-## Installing
+## The flow
 
-`@figentra/vellum` is published to Figentra's private npm registry, `https://npm.figentra.com/`
-(npflared), never to the public npm registry. Route the scope there and authenticate in your
-user-level `~/.npmrc`:
+Every spec lives in `.agents/specs/sta-<n>-<slug>/`, named by its Linear issue. spec-kit has no project-wide setting
+for the folder, so each wrapped command first runs `vellum gate dir`, which reads the key from the branch name and
+writes `.specify/feature.json`.
 
-```ini
-@figentra:registry=https://npm.figentra.com/
-//npm.figentra.com/:_authToken=${NPFLARED_AUTH_TOKEN}
-```
+States: **Draft → Clarified → Planned → Tasked → Implementing → Done**, or Abandoned / Superseded. A status may lag
+behind its artifacts, never run ahead of them.
 
-The file names the variable, never the token; npm expands it from the environment. Keep the
-token in your secret vault and inject it into the environment (for example
-`infisical run --path=/agents -- <command>`); never write the value into a file.
+| Status       | `vellum gate check` requires                                                                                    |
+| ------------ | --------------------------------------------------------------------------------------------------------------- |
+| Draft        | folder `sta-<n>-<slug>`; a `**Linear**` key, when set, equal to the folder's                                    |
+| Clarified    | clarifications complete, a real key, every Impact line answered, no `[NEEDS CLARIFICATION`, a history line      |
+| Planned      | `plan.md`: Constitution Check rows PASS or N/A with a reason, three deploy-mode rows, every FR validated by a P |
+| Tasked       | `tasks.md` passes `vellum gate tasks`: ids, `covers:`, `route:`, acyclic `deps:`, full coverage, safe waves     |
+| Implementing | at least one task ticked; `vellum trace drift`: the diff only touches members Impact names                      |
+| Done         | every live task ticked; every FR and P covered by a test tagged `@covers sta-<n>:FR-001`; every SC has a method |
 
-```bash
-npm install --save-dev @figentra/vellum
-npx vellum doctor
-```
+Lanes: **full** (a design PR, then one PR per user-story phase), **lite** (a small R0–R1 feature in one PR), **bug**
+(`.specify/bugs/sta-<n>-<slug>/` with a regression test tagged `@covers sta-<n>:BUG`) and **chore** (no spec).
+`vellum gate lane` fails a `feat` commit that no lite or full spec reaches through the branch key or a `Refs:` key.
 
-The package has no runtime dependencies and needs Node.js 22 or later. It provides two bins:
-`vellum` (the CLI) and `vellum-mcp` (the read-only MCP server the assistant plugins start).
+Traceability runs FR/SC → P-### (plan properties, `Validates: FR-003`) → T### (`covers:`, `route:`, `deps:`) →
+tests (`@covers`) → commits (`Refs: STA-n`) → PR. `vellum trace ci` makes it a gate.
 
-Releases: a maintainer pushes a `vX.Y.Z` tag, and `.github/workflows/release.yml` runs the full
-gate and publishes that version, taking the registry token from Infisical over GitHub OIDC.
+The tripwire in `vellum gate ci` catches a spec-kit upgrade that breaks the Stackra wrap: the gate call in
+`setup-plan.sh`, `common.sh` resolving `SPECIFY_FEATURE_DIRECTORY`, `linear-key` numbering, the wrap markers in every
+rendered command, the installed preset equal to its source, and the bundled `speckit` workflow kept disabled.
 
-## Development
+`.specify/` keeps its name because spec-kit's `specify` CLI and the skills expect it. A later `vellum migrate` moves it
+to `.vellum/` once Vellum replaces spec-kit rather than wrapping it.
 
-```bash
-pnpm install
-pnpm build
-pnpm test
-pnpm lint
-pnpm typecheck
-```
+## Develop
 
-## Requirements
+`pnpm install`, then `pnpm verify` (format, lint, typecheck, test, build). Release notes go in `.changeset/`. See
+[AGENTS.md](AGENTS.md).
 
-- Node.js >= 22.0.0
-- Git >= 2.34 (to verify SSH-signed commits); `ssh-keygen` for SSH keys, `gpg` for GPG keys
-
-## License
-
-MIT
+MIT licence.

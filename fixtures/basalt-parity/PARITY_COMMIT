@@ -1,8 +1,0 @@
-# Parity Commit Record
-# This file records the commit SHA of basalt against which parity is measured.
-# Update this file when running a Parity Update.
-
-PLACEHOLDER_COMMIT=HEAD
-
-# When Wave 1-4 complete, this will be updated to the actual Parity Commit:
-# PARITY_COMMIT=<actual-sha>
