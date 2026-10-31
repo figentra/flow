@@ -21,6 +21,7 @@ import {
   checkTasks,
   computedTier,
   MARKERS,
+  presetId,
   presetOf,
   RULES,
   tripwire,
@@ -99,4 +100,21 @@ test("tripwire: a neutral repository's rendered commands carry the neutral wrap"
   }
   assert.deepEqual(tripwire(root, "neutral"), []);
   assert.match(tripwire(root, "stackra").join(), /lost the preset's wrap/);
+});
+
+test("presetId: a bundled preset is its name; a repository's own folder is the id its preset.yml declares", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "flow-preset-id-"));
+  t.after(() => rmSync(root, { recursive: true }));
+  assert.equal(presetId("neutral", root), "neutral");
+  mkdirSync(join(root, "presets/ours"), { recursive: true });
+  writeFileSync(
+    join(root, "presets/ours/preset.yml"),
+    'schema_version: "1.0"\npreset:\n  id: "stackra"\n',
+  );
+  assert.equal(
+    presetId("presets/ours", root),
+    "stackra",
+    "a copy of stackra keeps Stackra's rules",
+  );
+  assert.equal(presetId("presets/missing", root), undefined);
 });

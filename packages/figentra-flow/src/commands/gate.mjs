@@ -104,10 +104,22 @@ export const repoScheme = () => (scheme ??= schemeFor(ROOT));
 export const presetOf = (root = ROOT) => loadConfig(root).config.preset ?? "neutral";
 
 /**
+ * The id a preset declares: a bundled one's name, or the `id:` in a preset folder's `preset.yml` (a repository's own
+ * copy of `stackra` keeps Stackra's rules). Undefined when the folder declares none.
+ * @param {string} preset
+ * @param {string} [root]
+ */
+export function presetId(preset, root = ROOT) {
+  if (preset in MARKERS) return preset;
+  const yml = readIf(join(resolve(root, preset), "preset.yml"));
+  return yml.match(/^\s+id:\s*["']?([\w-]+)["']?\s*$/m)?.[1];
+}
+
+/**
  * The rules each preset's templates satisfy. `stackra` adds its Impact questionnaire, Constitution Check, deploy
  * modes, correctness properties, task routes and path floors to what every preset keeps (the issue key, the
  * clarifications marker, statuses, tiers, approvals, EARS criteria and the design sections). A repository's own
- * preset folder is held to the neutral rules.
+ * preset folder is held to the rules of the id it declares, else the neutral ones.
  * @typedef {{ impact: boolean, constitution: boolean, properties: boolean, routes: boolean, floors: boolean }} Rules
  * @type {Record<string, Rules>}
  */
@@ -117,7 +129,8 @@ export const RULES = {
 };
 /** @type {Rules | undefined} */
 let rules;
-export const repoRules = () => (rules ??= RULES[presetOf()] ?? RULES.neutral);
+export const repoRules = () =>
+  (rules ??= RULES[presetId(presetOf()) ?? "neutral"] ?? RULES.neutral);
 
 /** The `**Linear**:` (or `**Issue**:`) line's key, lower-cased. */
 const issueLine = (/** @type {string} */ body, /** @type {KeyScheme} */ keys) =>
@@ -743,7 +756,7 @@ export function tripwire(root = ROOT, preset = presetOf(root)) {
     problems.push(
       "init-options.json `feature_numbering` is not `linear-key` (an init or upgrade reset it)",
     );
-  const replaced = preset === "stackra" ? REPLACED : {};
+  const replaced = presetId(preset, root) === "stackra" ? REPLACED : {};
   // A repository's own preset folder may carry either bundled wrap.
   const markers =
     preset in MARKERS ? [MARKERS[/** @type {"stackra"} */ (preset)]] : Object.values(MARKERS);
