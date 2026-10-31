@@ -184,7 +184,8 @@ branch, key, dirty state, idle hours, whether a process works in them, and ahead
 `figentra-flow/gate` on the head, the counted AI review and whether they are stacked; and the sessions, each a
 spec's `**Session**:` with the worktree carrying its key and that head's gate. More building sessions (a spec at
 Tasked or Implementing) than `sessionCap:` in the workspace file (default 2) is a warning, and the exit code is 1.
-`--json` prints the snapshot (`figentra-flow.status/1`); `--offline` makes no GitHub call.
+`--json` prints the snapshot (`figentra-flow.status/1`); `--offline` makes no GitHub call. `--web [--port 4747]` serves the same
+snapshot as a local page on 127.0.0.1 that refreshes every 30 seconds (read-only; GET only; no external assets).
 
 `figentra-flow status --metrics [--since 30d]` reports, for the PRs merged in the window, per repository and in total:
 lead time (opened to merged) and cycle time (first commit to merged) as median and p90 hours, `figentra-flow/gate`
