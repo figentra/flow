@@ -220,6 +220,9 @@
                 "minLength": 1
               },
               "minItems": 1
+            },
+            "secrets": {
+              "type": "boolean"
             }
           }
         }

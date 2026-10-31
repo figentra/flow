@@ -17,7 +17,7 @@ pnpm exec figentra-flow sync         # install the preset and render the speckit
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `figentra-flow init [--force]`                                     | installs `.specify/` (spec-kit 1.0.10, the Stackra preset, the gate in `setup-plan.sh`)                                                                |
 | `figentra-flow sync`                                               | installs the preset through `specify`, keeps the bundled workflow off, renders OpenCode and Claude                                                     |
-| `figentra-flow gate run [--ref b] [--box host]`                    | the repository's checks on a testbed box (or `--box`) at the pushed head; the box posts `figentra-flow/gate` as the Stackra Gate App                   |
+| `figentra-flow gate run [--ref b] [--box host] [-- flags]`         | the repository's checks through the configured runner (or on `--box`) at the pushed head; the box posts `figentra-flow/gate` as the gate App           |
 | `figentra-flow land [<pr>] [--stack] [--dry-run] [--manual-ok]`    | squash-merges a PR that is green on `figentra-flow/gate` from the gate App on its head and has its approvals; Linear Done, worktree and branch removed |
 | `figentra-flow gate plan <spec.md>`                                | exits 1 until the spec may be planned (run by `setup-plan.sh`)                                                                                         |
 | `figentra-flow gate check <dir>` / `tasks <tasks.md>`              | the stage rules for the spec's `**Status**`; the tasks lint                                                                                            |
@@ -93,14 +93,25 @@ setting you have not made refuses and names it.
 
   There are no defaults. Without a gate App `land` refuses, and without a review App no verdict counts.
 
-The runner, preset and `review.required` keys follow in the next steps of the same phase. Only
+- `runner` says where `gate run`'s checks run:
+  - `ssh` with `host`, the same as `--box <host>` for one run;
+  - `local`, the caller's machine;
+  - `command` with `run`, an argument list where `{label}`, `{dir}` and `{command}` are replaced and `{flags}` takes
+    the arguments after `gate run --`. Ours is `["stackra", "testbed", "run", "{label}", "{dir}", "{command}", "{flags}"]`.
+    A command runner brings its own secrets; `"secrets": true` wraps the poster with the secrets port as `ssh` and
+    `local` do.
+
+  `github-actions` follows. With a config file but no runner, `gate run` refuses; without a config file, the testbed
+  command is kept, with a warning, until the next minor version.
+
+The preset and `review.required` keys follow in the next steps of the same phase. Only
 `figentra-flow.config.json` is read; no other file stands in for it.
 
 ## The gate
 
 `figentra-flow gate run` checks the pushed head of the current branch, never anything uncommitted. It clones that commit into
-a temporary folder with a small poster beside it and runs `pnpm install --frozen-lockfile && <check>` on a testbed box
-(`stackra testbed run`, Stackra ADR 0484), or on `--box <ssh host>` until testbed lands. `<check>` is the configuration's
+a temporary folder with a small poster beside it and runs `pnpm install --frozen-lockfile && <check>` through the
+configured runner, or on `--box <ssh host>`. `<check>` is the configuration's
 `gate.check`, else `pnpm verify`, then `figentra-flow gate ci` where Figentra Flow is installed. On the box, the
 poster posts the `figentra-flow/gate` commit status and one PR comment as the gate App the configuration names. Its key reaches only
 the box, through the secrets port (for us, a dedicated Infisical project only the box identity reads). The poster posts only while that commit is still the branch tip, and never `success` unless the
