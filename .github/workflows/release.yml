@@ -59,6 +59,9 @@ jobs:
         with:
           token: ${{ steps.bot.outputs.token }}
           fetch-depth: 0
+          # Nothing is left in .git/config: changesets/action authenticates its own pushes (the version branch, the
+          # tags) with the github-token below.
+          persist-credentials: false
 
       - name: Toolchain (mise)
         uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
