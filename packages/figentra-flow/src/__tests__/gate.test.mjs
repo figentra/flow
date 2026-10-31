@@ -43,6 +43,7 @@ import { keyScheme } from "../adapters/tracker/index.mjs";
 import { labelsFor, specLinks, unlinkedTasks } from "../commands/linear.mjs";
 import { init } from "../commands/init.mjs";
 import { ASSETS, installSkills } from "../commands/sync.mjs";
+import { PACKAGE } from "../lib/product.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BIN = join(HERE, "../../bin/figentra-flow.mjs");
@@ -415,9 +416,12 @@ test("tripwire: without its own preset source a repository's installed preset mu
       join(root, ".specify/presets/stackra/templates/spec-template.md"),
       "an old template\n",
     );
-    assert.match(
-      tripwire(root).join(),
-      /\.specify\/presets\/stackra\/templates\/spec-template\.md differs from the preset bundled in figentra-flow/,
+    assert.ok(
+      tripwire(root)
+        .join()
+        .includes(
+          `.specify/presets/stackra/templates/spec-template.md differs from the preset bundled in ${PACKAGE}`,
+        ),
     );
   } finally {
     rmSync(root, { recursive: true });
