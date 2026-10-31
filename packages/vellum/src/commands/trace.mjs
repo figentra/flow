@@ -54,7 +54,12 @@ export function trace({ folder, spec, plan = "", tasks = "", tests = "" }) {
       .match(/verified by:\s*([a-z0-9/ -]+)/i)?.[1]
       ?.trim(),
   }));
-  return { key, frs, ps, scs };
+  const acs = [...definedIds(spec, "AC").live].map((id) => ({
+    id,
+    tasks: tasksFor(id),
+    tested: covered.has(id),
+  }));
+  return { key, frs, ps, scs, acs };
 }
 
 /** Done rules over a trace: every live FR and P tested, every SC with a method. */
@@ -67,6 +72,9 @@ export function traceProblems(t) {
       );
   for (const p of t.ps)
     if (!p.tested) problems.push(`${p.id} has no test carrying \`@covers sta-${t.key}:${p.id}\``);
+  for (const ac of t.acs ?? [])
+    if (!ac.tested)
+      problems.push(`${ac.id} has no test carrying \`@covers sta-${t.key}:${ac.id}\` (ADR 0502)`);
   for (const sc of t.scs)
     if (!sc.method)
       problems.push(`${sc.id} names no verification method ("— verified by: unit|e2e|k6|manual")`);

@@ -49,13 +49,44 @@
 
 - **P-001**: [property] — Validates: FR-001
 
-## Contracts and events
+<!-- ADR 0502: for a feature or big spec plan.md is the design, and the gate requires these nine sections in this order
+(write "none" under one that does not apply). The approval stop presents it to the owner as "the design". -->
 
-[Exports, endpoints, event names and versions, or none]
+## Architecture overview
 
-## Data and tenancy
+[How the pieces fit: members, modules and the flow between them]
 
-[Tables, RLS, migrations, or none]
+## Components and responsibilities
+
+[Each class or module this adds or changes, and what it owns]
+
+## Files and folders
+
+[The exact paths to add or change, by member]
+
+## Data models and migrations
+
+[Models, tables, RLS and migrations, or none]
+
+## Contracts
+
+[Actions and queries with their keys, events with their names and versions, exports and API, or none]
+
+## Error handling
+
+[Refusals and their codes, retries, what a failure leaves behind]
+
+## Security and tenancy
+
+[Permissions, tenant isolation, personal data, secrets by name, or none]
+
+## Testing strategy
+
+[Which tiers prove which acceptance criteria (AC-###), and the fixtures]
+
+## Rollout
+
+[Flags, migrations order, backfills, release notes, or none]
 
 ## Delegation and risk plan
 
@@ -68,10 +99,6 @@
 ## Docs
 
 [Pages from Impact "Docs to update"]
-
-## Project structure
-
-[The real paths this plan creates or changes]
 
 ## Complexity tracking
 

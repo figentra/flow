@@ -16,6 +16,12 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  approvedAt,
+  checkApproval,
+  checkCriteria,
+  checkDesign,
+  checkTraceTasks,
+  DESIGN_SECTIONS,
   checkBranch,
   checkBug,
   checkForeignStatus,
@@ -23,10 +29,13 @@ import {
   checkSpec,
   checkStage,
   checkTasks,
+  checkTier,
+  computedTier,
   isOwnSpec,
   refsKeys,
   REPLACED,
   specDir,
+  tierOf,
   tripwire,
   WRAPPED,
 } from "../commands/gate.mjs";
@@ -427,5 +436,109 @@ test("the v2 templates carry the state machine, Impact v2, Amendments, Status hi
   assert.match(
     presetTemplate("tasks-template.md"),
     /— covers: FR-003, P-002 — route: spec-task — deps: T010/,
+  );
+});
+
+// ADR 0502: tiers, the diff's floor and the approval stops (the same rules as core's @stackra/repo-checks).
+const tiered = (status, tier, extra = "") =>
+  `**Status**: ${status}\n\n**Tier**: ${tier}\n\n**Linear**: STA-901\n\n${extra}`;
+
+test("tiers: the declared tier, the diff's floor and the tier rule", () => {
+  assert.equal(tierOf("**Tier**: Big"), "big");
+  assert.equal(tierOf("**Status**: Draft"), undefined);
+  assert.equal(computedTier([{ status: "M", path: "packages/data/x/src/a.ts" }]).tier, "trivial");
+  assert.equal(
+    computedTier([
+      { status: "A", path: "services/o/src/modules/o/database/migrations/0002-x.migration.ts" },
+    ]).tier,
+    "feature",
+  );
+  assert.equal(
+    computedTier([{ status: "M", path: "services/o/src/modules/o/access/o.permissions.ts" }]).tier,
+    "feature",
+  );
+  assert.equal(
+    computedTier([{ status: "M", path: "packages/commerce/ledger/src/a.ts" }]).tier,
+    "feature",
+  );
+  assert.equal(computedTier([{ status: "A", path: "services/pay/package.json" }]).tier, "big");
+  assert.equal(
+    computedTier([{ status: "M", path: "apps/docs/src/docs/payments.mdx" }]).tier,
+    "trivial",
+  );
+  assert.deepEqual(checkTier({ declared: "feature", computed: "feature" }), []);
+  assert.match(
+    checkTier({ declared: "small", computed: "feature", reasons: ["a migration: m"] }).join(),
+    /spec declares small/,
+  );
+  assert.match(checkTier({ computed: "big" }).join(), /branch has no spec \(trivial\)/);
+});
+
+test("approval stops: feature before Tasked, big before Planned and Tasked", () => {
+  assert.deepEqual(approvedAt("**Status**: Planned — Approved by owner 2026-10-31", "planned"), {
+    who: "owner",
+    date: "2026-10-31",
+  });
+  const approver = "**Approver**: leader";
+  const planned = `${approver}\n\n## Status history\n\n- 2026-10-31: Clarified → Planned — Approved by leader 2026-10-31\n`;
+  assert.deepEqual(checkApproval(tiered("Planned", "feature", approver)), []);
+  assert.match(checkApproval(tiered("Tasked", "feature", approver)).join(), /Planned approval/);
+  assert.deepEqual(checkApproval(tiered("Tasked", "feature", planned)), []);
+  assert.match(checkApproval(tiered("Planned", "big", approver)).join(), /Clarified approval/);
+  assert.match(checkApproval(tiered("Planned", "feature")).join(), /Approver/);
+  assert.deepEqual(checkApproval(tiered("Tasked", "small")), []);
+});
+
+// ADR 0502 decision 7: Kiro depth (EARS criteria, the nine design sections, tasks traced to criteria and files).
+const CRITERIA =
+  "## Acceptance criteria\n\n- **AC-001**: WHEN a pass is issued THE wallet SHALL show it\n";
+const TASK = "- [ ] T001 Show the pass in `src/wallet.ts` — covers: AC-001 — route: spec-task";
+const DESIGN = (level) =>
+  `${level === "###" ? "## Design\n\n" : ""}${DESIGN_SECTIONS.map((n) => `${level} ${n}\n\nnone\n`).join("\n")}`;
+
+test("criteria: EARS lines with AC ids", () => {
+  assert.deepEqual(checkCriteria(CRITERIA), []);
+  for (const ok of [
+    "IF the card is declined THEN THE checkout SHALL show the reason",
+    "WHILE the device is offline THE queue SHALL keep the call",
+    "WHERE loyalty is enabled THE receipt SHALL show the points",
+    "THE ledger SHALL never change a posted line",
+  ])
+    assert.deepEqual(checkCriteria(`## Acceptance criteria\n\n- **AC-001**: ${ok}\n`), []);
+  assert.match(checkCriteria("## Impact\n").join(), /## Acceptance criteria/);
+  assert.match(
+    checkCriteria("## Acceptance criteria\n\n- **AC-001**: the wallet shows it\n").join(),
+    /AC-001 is not EARS/,
+  );
+});
+
+test("design: nine sections, each with something under it", () => {
+  assert.deepEqual(checkDesign(DESIGN("##"), "plan.md", "##"), []);
+  assert.deepEqual(checkDesign(DESIGN("##").replace("## Rollout\n\nnone\n", ""), "plan.md", "##"), [
+    "plan.md: the design has no `## Rollout` section (ADR 0502)",
+  ]);
+  assert.match(
+    checkDesign(
+      DESIGN("##").replace("## Contracts\n\nnone\n", "## Contracts\n\n"),
+      "plan.md",
+      "##",
+    ).join(),
+    /`## Contracts` is empty/,
+  );
+});
+
+test("trace: each task covers an AC and names a file; each AC is covered", () => {
+  assert.deepEqual(checkTraceTasks(TASK, CRITERIA, "tasks.md"), []);
+  assert.deepEqual(
+    checkTraceTasks(
+      "- [ ] T001 Write it — covers: FR-001 — route: spec-task",
+      CRITERIA,
+      "tasks.md",
+    ),
+    [
+      "tasks.md:1: T001 covers no acceptance criterion (AC-###) of spec.md (ADR 0502)",
+      "tasks.md:1: T001 names no file in backticks (ADR 0502)",
+      "tasks.md: AC-001 is covered by no task",
+    ],
   );
 });

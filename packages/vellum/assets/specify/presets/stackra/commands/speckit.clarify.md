@@ -24,3 +24,11 @@ When it is complete, set `**Status**: Clarified`, append `<date> · Draft → Cl
 `## Status history`, and verify with `pnpm spec:gate plan <spec.md>` and
 `pnpm spec:gate check <folder>`. A missing Linear issue is created with
 `pnpm spec:linear issue <spec.md>`.
+
+## Stackra: approval stop of a big spec (ADR 0502)
+
+A `feature` spec stops once, after the spec and plan; a `big` spec stops after the spec (before planning) and after
+the plan (before tasks). At a stop, ask the approver named in `**Approver**` with the question tool: Approve, Revise
+with notes, Reject; to the owner, plan.md is "the design" (its nine sections, ADR 0502). On Approve, add `— Approved by <who> <YYYY-MM-DD>` to the `**Status**` line and to its Status
+history line. On Revise, apply the notes and ask again. On Reject, set `**Status**: Abandoned`. Never record an
+approval nobody gave; the gate and the plan-gate hook read it before tasks and code.
