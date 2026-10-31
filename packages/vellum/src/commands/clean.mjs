@@ -6,7 +6,8 @@
  *   - not a tester's (`g-*`, `*-gate`, `land-*`, `tpl-core`, `c6-lock*`, `template-wt-lean`);
  *   - not in use: no running process (a session, a dev server, a shell) has its working folder inside it;
  *   - clean (no change, untracked files included);
- *   - saved: its head on a remote ref, or every commit landed by patch (`git cherry`), since core lands by cherry-pick;
+ *   - saved: its head on a remote ref, or every commit landed by patch (`git cherry`), since core lands by cherry-pick,
+ *     or the squash commit `vellum land` recorded (`branch.<b>.vellumLanded`) on the default branch;
  *   - finished: its issue Done or Canceled when its name carries a key, else idle for 2 hours or more by its HEAD
  *     reflog (a detached HEAD or a builder sub-agent tree);
  *   - free of ignored files outside the usual caches (`.env`, `ios/`, `android/` keep it).
@@ -85,7 +86,7 @@ export function ignoresWorktrees(root) {
 /**
  * Cleans the repository at `cwd`.
  * @param {{ cwd: string, dry?: boolean, adopt?: boolean, fixIgnore?: boolean, issues?: Issues, now?: number,
- *           busy?: string[] }} options
+ *           busy?: string[], only?: string[] }} options   `only`: act on these worktree paths alone (`vellum land`)
  * @returns {Promise<Report>}
  */
 export async function clean(options) {
@@ -119,7 +120,8 @@ export async function clean(options) {
   };
 
   const busy = options.busy ?? busyFolders();
-  for (const tree of worktrees(root)) {
+  const only = options.only?.map((p) => resolve(p));
+  for (const tree of worktrees(root).filter((t) => !only || only.includes(resolve(t.path)))) {
     const name = basename(tree.path);
     const keep = (/** @type {string} */ reason) => report.kept.push({ path: tree.path, reason });
     if (TESTER.test(name)) {
@@ -175,7 +177,12 @@ export async function clean(options) {
       report.adopted.push(`${tree.path} → ${target}`);
       continue;
     }
-    if (!isSaved(tree.path, base)) {
+    // AC-029: a squash merge has its own patch id, so `vellum land` records the merge commit on the branch.
+    const landed =
+      tree.branch && git(root, ["config", "--get", `branch.${tree.branch}.vellumLanded`]).out;
+    const landedOnBase =
+      Boolean(landed) && git(root, ["merge-base", "--is-ancestor", landed, `origin/${base}`]).ok;
+    if (!landedOnBase && !isSaved(tree.path, base)) {
       keep("unsaved: commits on no remote and not landed");
       continue;
     }

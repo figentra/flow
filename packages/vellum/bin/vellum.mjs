@@ -6,7 +6,18 @@
  * Runtime: node
  * Secrets: none.
  */
-const COMMANDS = ["init", "sync", "gate", "trace", "parse", "linear", "start", "clean", "guard"];
+const COMMANDS = [
+  "init",
+  "sync",
+  "gate",
+  "trace",
+  "parse",
+  "linear",
+  "start",
+  "clean",
+  "guard",
+  "land",
+];
 const [command, ...args] = process.argv.slice(2);
 if (!COMMANDS.includes(command)) {
   console.error(`usage: vellum <${COMMANDS.join("|")}> …`);

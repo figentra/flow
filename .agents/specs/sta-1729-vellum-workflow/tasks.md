@@ -30,7 +30,7 @@ Phase 1 is designed and approved; the later phases are placeholders, refined whe
 
 ## Phase 3: land (design approved 2026-10-31)
 
-- [ ] T030 `vellum land` and `--stack` in `packages/vellum/src/commands/land.mjs`, `packages/vellum/src/lib/github.mjs` and `packages/vellum/src/commands/clean.mjs` — covers: FR-6, AC-010, AC-011, AC-017, AC-029, AC-030 — route: spec-task
+- [x] T030 `vellum land` and `--stack` in `packages/vellum/src/commands/land.mjs`, `packages/vellum/src/lib/github.mjs` and `packages/vellum/src/commands/clean.mjs` — covers: FR-6, AC-010, AC-011, AC-017, AC-029, AC-030 — route: spec-task
 
 ## Phase 4: status (design pending)
 
