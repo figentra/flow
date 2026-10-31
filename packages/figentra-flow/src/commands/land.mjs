@@ -315,11 +315,15 @@ export async function landStack({
       fetch(root);
       const merged = git(tree.path, ["merge", "--no-edit", "-q", `origin/${base}`]);
       if (!merged.ok) {
+        // A conflict leaves unmerged paths; anything else (no git identity, a hook) is reported as git said it.
+        const conflicted = git(tree.path, ["diff", "--name-only", "--diff-filter=U"]).out !== "";
         git(tree.path, ["merge", "--abort"]);
         return {
           code: 1,
           problems: [
-            `#${pr.number}: merging ${base} into ${pr.head.ref} conflicts; resolve it there, then land again`,
+            conflicted
+              ? `#${pr.number}: merging ${base} into ${pr.head.ref} conflicts; resolve it there, then land again`
+              : `#${pr.number}: merging ${base} into ${pr.head.ref} failed: ${merged.err || "git merge exited non-zero"}`,
           ],
         };
       }
