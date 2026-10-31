@@ -30,6 +30,7 @@ pnpm exec figentra-flow sync         # install the preset and render the speckit
 | `figentra-flow guard [--print-settings]`                           | the PreToolUse hook that denies `git worktree add` outside `.claude/worktrees/`                                                                        |
 | `figentra-flow init --workspace <dir>…`                            | writes the workspace list (`~/.config/figentra-flow/workspace.yaml`) that `--all` acts on                                                              |
 | `figentra-flow status [--repo p] [--json] [--offline]`             | specs by status, worktrees, open PRs with their gate and review, and sessions, for every repository of the workspace                                   |
+| `figentra-flow mcp`                                                | a read-only MCP server over stdio: status, spec, trace, worktrees and metrics                                                                          |
 | `figentra-flow init --runner github-actions [--force]`             | writes the gate workflow for the `github-actions` runner, and a starter config when there is none                                                      |
 
 A repository keeps one-line aliases: `"spec:gate": "figentra-flow gate"`, `"spec:trace": "figentra-flow trace"`,
@@ -190,6 +191,13 @@ lead time (opened to merged) and cycle time (first commit to merged) as median a
 runs per PR and their red share, rework (heads pushed after the first gate), review rounds (`AI-REVIEW: FAIL`
 verdicts) and approval latency (a merged spec's Draft line to its last approval), with the age of the open PRs. It
 is computed from GitHub and the specs on each call; nothing is stored.
+
+`figentra-flow mcp` is a read-only MCP server over stdio for agents. It offers five tools, each returning JSON:
+`figentra_flow_status` (`repo?`, `offline?`), `figentra_flow_spec` (`repo`, `key`: status, tier, session, approvals
+and gate problems), `figentra_flow_trace` (`repo`, `key`: the FR, AC and property to task to test matrix),
+`figentra_flow_worktrees` (`repo?`) and `figentra_flow_metrics` (`since?` days). None writes, merges, lands, starts
+or cleans. Register it in your MCP client as the command `figentra-flow mcp` (for example `pnpm exec figentra-flow
+mcp` in a repository's MCP configuration); Figentra Flow never writes that configuration itself.
 
 ## Worktrees
 
