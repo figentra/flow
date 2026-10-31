@@ -4,7 +4,7 @@
  *   and `{flags}` into the arguments after `--`, and reports a missing program as 127; `local` runs the command in the
  *   job folder; `ssh` copies the folder to the host and runs it there, refusing a host that is not one; `--box` wins
  *   over the configuration; a config without a runner is refused and a repository with no config file keeps the
- *   testbed with a warning; `github-actions` is refused until it ships.
+ *   testbed with a warning; `github-actions` is built from the block (its behaviour: github-actions.test).
  * Boundary: temporary folders; spawn injected for ssh and command; no network, no box.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1729 phase A (A3).
@@ -96,5 +96,6 @@ test("runnerFor: --box wins, then the config; without a runner it refuses, confi
   writeFileSync(join(dir, CONFIG_FILE), "{}");
   assert.match(runnerFor(dir, {}).problem ?? "", /needs "runner"/);
   assert.equal(runnerFor(dir, { runner: { kind: "local" } }).runner?.kind, "local");
-  assert.throws(() => runnerPort({ kind: "github-actions" }), ConfigError);
+  assert.equal(runnerPort({ kind: "github-actions" }).kind, "github-actions");
+  assert.throws(() => runnerPort({ kind: "nope" }), ConfigError);
 });

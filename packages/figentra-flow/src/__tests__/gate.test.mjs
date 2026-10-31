@@ -68,7 +68,10 @@ const impact = (v = "none") =>
 const ROOT = mkdtempSync(join(tmpdir(), "flow-root-"));
 init(ROOT);
 installSkills(ROOT);
-cpSync(join(ASSETS, "presets"), join(ROOT, ".agents/speckit/presets"), { recursive: true });
+// The source holds the preset init installed (stackra), not every bundled one.
+cpSync(join(ASSETS, "presets/stackra"), join(ROOT, ".agents/speckit/presets/stackra"), {
+  recursive: true,
+});
 process.on("exit", () => rmSync(ROOT, { recursive: true, force: true }));
 const spec = ({ status = "complete", linear = "STA-12", body = impact(), stage = "Draft" } = {}) =>
   `# Feature Specification: X\n\n**Status**: ${stage}\n\n**Linear**: ${linear}\n\n**Clarifications status**: ${status}\n\n## Impact\n\n${body}\n\n## Requirements\n\n## Status history\n\n- d · Draft → ${stage}\n`;

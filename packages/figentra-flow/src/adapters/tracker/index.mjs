@@ -89,14 +89,13 @@ function trackerBlock(root) {
 /**
  * The repository's key scheme alone (the offline commands: the spec gate, trace).
  * @param {string} root
- * @param {{ warn?: (s: string) => void }} [options]
  */
-export const schemeFor = (root, _options = {}) => keyScheme(trackerBlock(root));
+export const schemeFor = (/** @type {string} */ root) => keyScheme(trackerBlock(root));
 
 /**
  * The repository's key scheme and tracker adapter.
  * @param {string} root
- * @param {{ env?: Record<string, string | undefined>, warn?: (s: string) => void }} [options]
+ * @param {{ env?: Record<string, string | undefined>, warn?: (s: string) => void }} [options] `warn` is unused (no fallback left to announce)
  * @returns {{ scheme: KeyScheme, tracker: Tracker | undefined, problem: string | undefined }}
  */
 export function trackerFor(root, { env = process.env } = {}) {
