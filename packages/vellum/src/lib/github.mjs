@@ -1,12 +1,16 @@
 /**
  * Vellum file contract:
- * Purpose: GitHub REST calls for the commands that act on pull requests (`vellum land`), through the `gh` CLI, and
- *   through the repository's own `bot:gh` wrapper when it has one (Figentra repositories give `gh` its token there).
- * Boundary: one `gh api` process per call; no retries. Vellum never reads, prints or passes a GitHub token: `gh` holds
- *   it.
+ * Purpose: GitHub REST calls for the commands that act on pull requests (`vellum land`), through `gh`, with the
+ *   credentials the repository names: `"vellum": { "credentials": "wrapper:<script>" }` runs `pnpm <script> -- api …`
+ *   (a script that runs `gh` with a bot's token, such as Figentra's `bot:gh`), and `"credentials": "gh-user"` runs the
+ *   caller's own `gh` login, for a solo user who opts in.
+ * Boundary: one `gh api` process per call; no retries. Never falls back to a personal `gh` login: with no credentials
+ *   named, or a wrapper script the repository lacks, it refuses (AC-034). Vellum never reads, prints or passes a
+ *   token: `gh` or the wrapper holds it.
  * Runtime: node
- * Governing contract: Stackra ADR 0503; STA-1729 phase 3.
- * Secrets: none here; the token stays inside `gh` (or the `bot:gh` wrapper's `infisical run`).
+ * Governing contract: Stackra ADR 0503; STA-1729 (the leader's credentials rule of 2026-10-31; the adapter phase
+ *   moves this setting into `vellum.config`).
+ * Secrets: none here; the token stays inside `gh` or the wrapper's `infisical run`.
  */
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -15,6 +19,8 @@ import { join } from "node:path";
 /**
  * @typedef {{ ok: boolean, json: any, err: string }} ApiResult
  * @typedef {(method: string, path: string, body?: unknown) => ApiResult} Api
+ * @typedef {(command: string, args: string[], options: { cwd: string, encoding: "utf8", input?: string }) =>
+ *   { status: number | null, stdout?: string, stderr?: string, error?: Error }} Spawn
  */
 
 /** The JSON body in `gh api`'s output, skipping any lines a wrapper printed before it. */
@@ -28,22 +34,51 @@ export function bodyOf(/** @type {string} */ out) {
   }
 }
 
+/** Raised when the repository names no usable GitHub credentials. */
+export class CredentialsError extends Error {}
+
 /**
- * The GitHub API for the repository at `root`.
+ * The command that runs `gh` with the repository's credentials (the `api` arguments follow it), or a refusal naming
+ * the fix.
  * @param {string} root
+ * @returns {string[]}
+ */
+export function ghCommand(root) {
+  /** @type {any} */
+  let pkg = {};
+  try {
+    pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  } catch {
+    // no package.json: no credentials named
+  }
+  const credentials = pkg.vellum?.credentials;
+  if (credentials === "gh-user") return ["gh"];
+  const script =
+    typeof credentials === "string" ? credentials.match(/^wrapper:(\S+)$/)?.[1] : undefined;
+  if (script && pkg.scripts?.[script]) return ["pnpm", script, "--"];
+  if (script)
+    throw new CredentialsError(
+      `the credentials wrapper \`${script}\` is not a script in ${join(root, "package.json")}`,
+    );
+  throw new CredentialsError(
+    'no GitHub credentials named: set package.json "vellum": { "credentials": "wrapper:<script>" } (a script that runs gh with a bot\'s token, such as bot:gh), or "gh-user" to use your own gh login on purpose',
+  );
+}
+
+/**
+ * The GitHub API for the repository at `root`, with the credentials it names.
+ * @param {string} root
+ * @param {{ spawn?: Spawn }} [options]
  * @returns {Api}
  */
-export function github(root) {
-  let wrapped = false;
-  try {
-    wrapped = Boolean(
-      JSON.parse(readFileSync(join(root, "package.json"), "utf8")).scripts?.["bot:gh"],
-    );
-  } catch {
-    wrapped = false;
-  }
+export function github(
+  root,
+  { spawn = /** @type {Spawn} */ (/** @type {unknown} */ (spawnSync)) } = {},
+) {
+  const [command, ...prefix] = ghCommand(root);
   return (method, path, body) => {
     const args = [
+      ...prefix,
       "api",
       "-X",
       method,
@@ -52,17 +87,11 @@ export function github(root) {
       "Accept: application/vnd.github+json",
       ...(body === undefined ? [] : ["--input", "-"]),
     ];
-    const r = wrapped
-      ? spawnSync("pnpm", ["bot:gh", "--", ...args], {
-          cwd: root,
-          encoding: "utf8",
-          input: body === undefined ? undefined : JSON.stringify(body),
-        })
-      : spawnSync("gh", args, {
-          cwd: root,
-          encoding: "utf8",
-          input: body === undefined ? undefined : JSON.stringify(body),
-        });
+    const r = spawn(command, args, {
+      cwd: root,
+      encoding: "utf8",
+      input: body === undefined ? undefined : JSON.stringify(body),
+    });
     const err =
       (r.stderr ?? "")
         .split("\n")
