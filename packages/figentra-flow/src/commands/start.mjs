@@ -21,7 +21,9 @@ import { trackerFor } from "../adapters/tracker/index.mjs";
 import { SPECS_DIR } from "./gate.mjs";
 import { defaultBranch, fetch, git, mainCheckout } from "../lib/git.mjs";
 import { NAME } from "../lib/product.mjs";
-import { roleOf } from "../lib/roles.mjs";
+import { pathProblems, roleOf } from "../lib/roles.mjs";
+import { parseTasks } from "../lib/spec-parse.mjs";
+import { slugOf as repoSlug } from "./gate-run.mjs";
 import { loadTeam } from "../lib/team.mjs";
 
 /** The slug of an issue title: lower-case words, at most 5 words and 40 characters. */
@@ -151,6 +153,18 @@ export async function start(options) {
           `${NAME} start: warning: the role was not set (${/** @type {Error} */ (error).message})`,
         );
       }
+    if (role && team.roles.has(role)) {
+      // AC-052: the spec's planned files (its tasks' paths) against what the role may change here.
+      const tasks = join(path, SPECS_DIR, name, "tasks.md");
+      const planned = existsSync(tasks)
+        ? parseTasks(readFileSync(tasks, "utf8"))
+            .flatMap((t) => t.paths)
+            .filter((f) => /^[\w.@-]+(\/[\w.@*-]+)+$/.test(f))
+        : [];
+      const slug = repoSlug(git(root, ["remote", "get-url", "origin"]).out);
+      for (const p of pathProblems(team, role, slug, [...new Set(planned)]))
+        warn(`${NAME} start: warning: ${p}`);
+    }
   }
   if (install) {
     const r = spawnSync("pnpm", ["install"], { cwd: path, stdio: "inherit" });

@@ -11,8 +11,9 @@
  * Secrets: none.
  */
 
+// Optional `role=<id> session=<name>` (a quoted name may hold spaces) name the reviewer for a roster (AC-051).
 const VERDICT_LINE =
-  /^AI-REVIEW:\s*(PASS|FAIL)\s+([0-9a-f]{40})(?:\s+base=(\S+))?(?:\s+patch=([0-9a-f]{40}))?\s*$/i;
+  /^AI-REVIEW:\s*(PASS|FAIL)\s+([0-9a-f]{40})(?:\s+base=(\S+))?(?:\s+patch=([0-9a-f]{40}))?(?:\s+role=([\w.-]+))?(?:\s+session=("[^"]*"|\S+))?\s*$/i;
 const OWNER_TOKEN = /(?:^|\s)owner-approval\s*$/;
 // A FAIL is read loosely so a sloppy FAIL still blocks; only a 7+ hex token that is not a prefix of the head marks it
 // as a FAIL for an older commit, which a new commit clears.
@@ -55,11 +56,16 @@ export const ownerApproves = (
  * @param {(string | undefined)[]} authors
  * @param {{ reviewer: string | undefined, owner?: string }} identities the configuration's `apps.review.slug` and
  *   `apps.owner`; with no reviewer nothing counts, with no owner no owner review counts
- * @returns {{ verdict: "PASS" | "FAIL" | null, ignored: string[] }}
+ * @returns {{ verdict: "PASS" | "FAIL" | null, ignored: string[],
+ *            passes: { role: string | null, session: string | null }[] }} `passes`: who signed each counted reviewer PASS
  */
 export function aiReview(pr, comments, reviews, authors, { reviewer, owner }) {
   if (!reviewer)
-    return { verdict: null, ignored: ["no review App is configured (apps.review.slug)"] };
+    return {
+      verdict: null,
+      ignored: ["no review App is configured (apps.review.slug)"],
+      passes: [],
+    };
   const { sha, base: target } = pr;
   const self = new Set(authors.filter(Boolean).map((a) => actor(a)));
   /** @type {string[]} */
@@ -72,6 +78,8 @@ export function aiReview(pr, comments, reviews, authors, { reviewer, owner }) {
       .toSorted()
       .at(-1) ?? "";
   const verdicts = new Set();
+  /** @type {{ role: string | null, session: string | null }[]} */
+  const passes = [];
   for (const c of comments) {
     const line = String(c.body ?? "")
       .trim()
@@ -89,12 +97,16 @@ export function aiReview(pr, comments, reviews, authors, { reviewer, owner }) {
       ignored.push(`a ${reviewer} comment was edited after this verdict; post a new one`);
     else if (kind.toUpperCase() === "PASS" && base !== target)
       ignored.push(`a PASS names base ${base ?? "none"}, the PR targets ${target}`);
-    else verdicts.add(kind.toUpperCase());
+    else {
+      verdicts.add(kind.toUpperCase());
+      if (kind.toUpperCase() === "PASS" && match)
+        passes.push({ role: match[5] ?? null, session: match[6]?.replace(/^"|"$/g, "") ?? null });
+    }
   }
   const ownerOk =
     owner !== undefined &&
     !self.has(actor(owner)) &&
     reviews.some((r) => ownerApproves(r, sha, owner));
   const verdict = verdicts.has("FAIL") ? "FAIL" : verdicts.has("PASS") || ownerOk ? "PASS" : null;
-  return { verdict, ignored };
+  return { verdict, ignored, passes };
 }
