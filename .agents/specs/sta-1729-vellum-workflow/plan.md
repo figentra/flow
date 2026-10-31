@@ -149,3 +149,4 @@ the Mac. Each test carries `@covers sta-1729:AC-###`.
 - **P-007**: phase 4's status lists every workspace repository (designed in phase 4) — Validates: FR-7
 - **P-008**: phase 5's release publishes only to the Stackra registry and ship never reaches production (designed in phase 5) — Validates: FR-8
 - **P-009**: no phase adds a check that runs on the Mac beyond oxfmt and oxlint — Validates: FR-9
+- **P-010**: the sessions phase shows each spec's assigned session and never treats a peer message as an approval (designed in its phase) — Validates: FR-10

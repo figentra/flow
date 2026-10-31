@@ -54,7 +54,9 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 5. **`vellum release` and `vellum ship`:** changesets, the registry publish (with the 0.2.0 tag backfill), and runway
    deploy to dev and staging.
 6. **GitHub switch-over:** per-PR workflows off, `vellum/gate` required, the Release workflow kept; repo by repo.
-7. **Later:** `vellum migrate` from `.specify/` to `.vellum/`.
+7. **Sessions (later, owner 2026-10-31, ADR 0503 decision 7):** a spec records its assigned session; `vellum status`
+   shows each session's spec, worktree and gate; the two-build-session cap is reported.
+8. **Later:** `vellum migrate` from `.specify/` to `.vellum/`.
 
 ## Requirements
 
@@ -75,6 +77,10 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - **FR-8** `vellum release` versions with changesets and publishes to the Stackra registry only; `vellum ship` deploys
   with runway to dev and staging; production stays `runway promote` by the owner.
 - **FR-9** Builders run only oxfmt and oxlint on the Mac; every other check runs on a box.
+- **FR-10** Work follows ADR 0503 decision 7: a leader session plans, assigns, tracks and approves technical stops;
+  feature- and big-tier work runs in its own sub-session and `vellum start` worktree; the tester gates and lands; at
+  most two build sessions run at once unless the owner says otherwise; a peer message is never the owner's approval. A
+  spec records its session in `**Session**`, and `vellum status` shows it.
 
 ## Acceptance criteria
 
@@ -100,6 +106,10 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - **AC-021**: WHEN `vellum clean` removes worktrees THE CLI SHALL report the disk space it freed
 - **AC-022**: IF a worktree holds an ignored file outside the usual caches (such as `.env`, `ios/` or `android/`) THEN THE CLI SHALL keep it and name the files
 - **AC-017**: WHEN `vellum land --stack` runs on a stack of PRs THE CLI SHALL land them bottom-up in order, each only after its own green `vellum/gate` on its rebased head
+- **AC-023**: WHEN a spec carries a `**Session**` line THE CLI SHALL read it as the spec's assigned session and show it in `vellum status`
+- **AC-024**: WHEN `vellum status` runs THE CLI SHALL list each session with its spec, worktree and the `vellum/gate` result of the worktree's head
+- **AC-025**: IF a feature- or big-tier spec past Clarified has no `**Session**` THEN THE CLI SHALL report it in `vellum gate check` as a finding
+- **AC-026**: WHILE more than two build sessions hold an In Progress spec and the owner has not raised the cap THE CLI SHALL report the excess in `vellum status`
 
 ## Clarifications (the leader's answers at the spec stop, 2026-10-31)
 
@@ -137,3 +147,4 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - 2026-10-31: Draft → Clarified — Approved by leader 2026-10-31 (technical stop under ADR 0502; Q1 to Q8 answered)
 - 2026-10-31: Clarified → Planned — Approved by leader 2026-10-31 (phase 1, with three revisions to `vellum clean`: AC-018 to AC-022)
 - 2026-10-31: Planned → Tasked (tasks for phase 1; later phases are placeholders)
+- 2026-10-31: Tasked (scope added) — Approved by owner 2026-10-31 ("Yes, record it", relayed by the leader): the sessions phase, FR-10 and AC-023 to AC-026; designed at its own plan stop

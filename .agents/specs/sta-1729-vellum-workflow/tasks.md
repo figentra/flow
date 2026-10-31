@@ -36,3 +36,7 @@ Phase 1 is designed and approved; the later phases are placeholders, refined whe
 ## Phase 6: GitHub switch-over (design pending)
 
 - [ ] T060 Per-PR workflows off and `vellum/gate` required, repository by repository, in `.github/workflows/` — covers: FR-5, AC-016 — route: spec-task
+
+## Phase 7: sessions (design pending)
+
+- [ ] T070 `**Session**` in the spec gate and sessions in `vellum status` in `packages/vellum/src/commands/gate.mjs` and `packages/vellum/src/commands/status.mjs` — covers: FR-10, AC-023, AC-024, AC-025, AC-026 — route: spec-task — deps: T040
