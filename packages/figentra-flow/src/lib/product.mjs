@@ -12,7 +12,7 @@
 import { readFileSync } from "node:fs";
 
 /**
- * The npm name, from `package.json`: `@figentra/flow` on the Figentra registry for now, `figentra-flow` on npmjs
+ * The npm name, from `package.json`: `@figentra-oss/flow` on the Figentra registry for now, `figentra-flow` on npmjs
  * later (owner, 2026-10-31). Only the package name changes; the CLI stays `NAME`.
  */
 export const PACKAGE = JSON.parse(

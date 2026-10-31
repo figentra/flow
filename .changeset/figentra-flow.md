@@ -1,5 +1,5 @@
 ---
-"@figentra/flow": minor
+"@figentra-oss/flow": minor
 ---
 
 The first release of Figentra Flow (`figentra-flow`, alias `fflow`): spec-driven development from the spec to the landed change.

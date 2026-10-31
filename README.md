@@ -6,7 +6,7 @@ preset, renders the `speckit-*` skills for Claude Code and OpenCode, and holds t
 its tasks and its tests in step. It is one package, `figentra-flow`, with two binaries, `figentra-flow` and its alias `fflow`, published publicly on npmjs.
 
 ```sh
-pnpm add -D @figentra/flow             # from the Figentra registry: @figentra:registry in .npmrc
+pnpm add -D @figentra-oss/flow             # from the Figentra registry: @figentra-oss:registry in .npmrc
 pnpm exec figentra-flow init         # .specify/ with the Stackra preset
 pnpm exec figentra-flow sync         # install the preset and render the speckit skills (needs the pinned `specify`)
 ```

@@ -1,7 +1,7 @@
 # Figentra Flow file contract:
 # Purpose: the Release workflow (Stackra ADR 0503 decision 4: the one workflow GitHub keeps besides `figentra-flow/gate`).
 #          On a push to main with pending changesets it opens or updates the "version packages" PR; when that PR
-#          merges it publishes `@figentra/flow` to the Figentra registry with provenance, a tag and a GitHub release,
+#          merges it publishes `@figentra-oss/flow` to the Figentra registry's open scope with provenance, a tag and a GitHub release,
 #          then the signed SBOM and checksums. All of it is Stackra core's Runway npm provider, called, not copied.
 # Boundary: publishes only to https://npm.stackra.figentra.com/ (ADR 0453; the owner's decision of 2026-10-31: npmjs
 #           comes later, as `figentra-flow`, and its trusted-publishing workflow is in git history at 8f6e797). An
@@ -50,7 +50,7 @@ jobs:
           if [ "$HAS_APP_ID" = true ] && [ "$HAS_PRIVATE_KEY" = true ]; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::notice title=Release skipped::STACKRA_BOT_APP_ID and STACKRA_BOT_PRIVATE_KEY are not both set on figentra/flow; the owner's setup (the release environment, the bot secrets, the registry's trusted-publisher row for @figentra/flow) comes first"
+            echo "::notice title=Release skipped::STACKRA_BOT_APP_ID and STACKRA_BOT_PRIVATE_KEY are not both set on figentra/flow; the owner's setup (the release environment, the bot secrets, and Deploy registry once its @figentra-oss migration lands) comes first"
             echo "ok=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -67,7 +67,7 @@ jobs:
     uses: figentra/stackra/.github/workflows/runway-npm.yml@31faaac481d2bed76bfe5f20976da1d40aa6a345
     with:
       environment: release
-      build-args: --filter=@figentra/flow
+      build-args: --filter=@figentra-oss/flow
       dry-run: ${{ inputs.dry_run == true }}
       registry: https://npm.stackra.figentra.com/
     secrets:
