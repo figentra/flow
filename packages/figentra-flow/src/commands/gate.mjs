@@ -44,7 +44,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { schemeFor, trackerFor } from "../adapters/tracker/index.mjs";
 import { loadConfig } from "../lib/config.mjs";
-import { CONFIG_FILE, DISPLAY_NAME, ENV_PREFIX, NAME, PACKAGE } from "../lib/product.mjs";
+import { DISPLAY_NAME, ENV_PREFIX, NAME, PACKAGE } from "../lib/product.mjs";
 
 /** The presets this package ships (`stackra`, `neutral`), installed when a repository keeps none of its own. */
 const BUNDLED_PRESETS = fileURLToPath(new URL("../../assets/presets", import.meta.url));
@@ -57,8 +57,22 @@ import {
   strip,
 } from "../lib/spec-parse.mjs";
 
-/** The repository the command runs in: the working directory (a `package.json` script runs at the root). */
-const ROOT = process.cwd();
+/** The top of `dir`'s git checkout, else `dir` (a test or a script run below the root reads the root's config). */
+function topLevel(/** @type {string} */ dir) {
+  try {
+    return (
+      execFileSync("git", ["rev-parse", "--show-toplevel"], {
+        cwd: dir,
+        encoding: "utf8",
+      }).trim() || dir
+    );
+  } catch {
+    return dir;
+  }
+}
+
+/** The repository the command runs in: the top of the working directory's git checkout, else the directory. */
+const ROOT = topLevel(process.cwd());
 const IMPACT_FIELDS = [
   "Apps touched",
   "Services touched",
@@ -82,23 +96,30 @@ let scheme;
  * The repository's issue-key scheme (its tracker's; the transitional STA one, unannounced, without a config file).
  * Keys are full and lower-cased: `sta-163`, `gh-7`.
  */
-export const repoScheme = () => (scheme ??= schemeFor(ROOT, { warn: () => {} }));
+export const repoScheme = () => (scheme ??= schemeFor(ROOT));
 /**
- * The preset a repository uses: its configuration's `preset`; `neutral` for a configuration without one; `stackra`
- * (the transitional default) for a repository with no config file.
+ * The preset a repository uses: its configuration's `preset`, else `neutral`.
  * @param {string} [root]
  */
-export function presetOf(root = ROOT) {
-  const preset = loadConfig(root).config.preset;
-  if (preset) return preset;
-  return existsSync(join(root, CONFIG_FILE)) ? "neutral" : "stackra";
+export const presetOf = (root = ROOT) => loadConfig(root).config.preset ?? "neutral";
+
+/**
+ * The id a preset declares: a bundled one's name, or the `id:` in a preset folder's `preset.yml` (a repository's own
+ * copy of `stackra` keeps Stackra's rules). Undefined when the folder declares none.
+ * @param {string} preset
+ * @param {string} [root]
+ */
+export function presetId(preset, root = ROOT) {
+  if (preset in MARKERS) return preset;
+  const yml = readIf(join(resolve(root, preset), "preset.yml"));
+  return yml.match(/^\s+id:\s*["']?([\w-]+)["']?\s*$/m)?.[1];
 }
 
 /**
  * The rules each preset's templates satisfy. `stackra` adds its Impact questionnaire, Constitution Check, deploy
  * modes, correctness properties, task routes and path floors to what every preset keeps (the issue key, the
  * clarifications marker, statuses, tiers, approvals, EARS criteria and the design sections). A repository's own
- * preset folder is held to the neutral rules.
+ * preset folder is held to the rules of the id it declares, else the neutral ones.
  * @typedef {{ impact: boolean, constitution: boolean, properties: boolean, routes: boolean, floors: boolean }} Rules
  * @type {Record<string, Rules>}
  */
@@ -108,7 +129,8 @@ export const RULES = {
 };
 /** @type {Rules | undefined} */
 let rules;
-export const repoRules = () => (rules ??= RULES[presetOf()] ?? RULES.neutral);
+export const repoRules = () =>
+  (rules ??= RULES[presetId(presetOf()) ?? "neutral"] ?? RULES.neutral);
 
 /** The `**Linear**:` (or `**Issue**:`) line's key, lower-cased. */
 const issueLine = (/** @type {string} */ body, /** @type {KeyScheme} */ keys) =>
@@ -734,7 +756,7 @@ export function tripwire(root = ROOT, preset = presetOf(root)) {
     problems.push(
       "init-options.json `feature_numbering` is not `linear-key` (an init or upgrade reset it)",
     );
-  const replaced = preset === "stackra" ? REPLACED : {};
+  const replaced = presetId(preset, root) === "stackra" ? REPLACED : {};
   // A repository's own preset folder may carry either bundled wrap.
   const markers =
     preset in MARKERS ? [MARKERS[/** @type {"stackra"} */ (preset)]] : Object.values(MARKERS);
@@ -760,29 +782,28 @@ export function tripwire(root = ROOT, preset = presetOf(root)) {
         problems.push(`${p}: core specify no longer takes SPECIFY_FEATURE_DIRECTORY as-is`);
     }
   }
-  // The installed preset is what `pnpm speckit:sync` made of its source: the repository's own .agents/speckit/presets
-  // when it has one, else the preset bundled in Figentra Flow (Stackra ADR 0503: core keeps no copy since W2).
+  // The installed preset is what `sync` made of its source: the folder the configuration's `preset` names, else the
+  // preset bundled in Figentra Flow.
   const walk = (dir) =>
     readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
       e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)],
     );
-  const own = join(root, ".agents/speckit/presets");
-  const source = existsSync(own) ? own : BUNDLED_PRESETS;
+  const own = preset in MARKERS ? undefined : resolve(root, preset);
+  const source = own ? dirname(own) : BUNDLED_PRESETS;
   // Bundled presets are compared only where installed: a repository uses one of them, not both.
-  const ids =
-    source === own
-      ? [""]
-      : existsSync(join(root, ".specify/presets"))
-        ? readdirSync(join(root, ".specify/presets")).filter((id) => existsSync(join(source, id)))
-        : [];
+  const ids = own
+    ? [basename(own)]
+    : existsSync(join(root, ".specify/presets"))
+      ? readdirSync(join(root, ".specify/presets")).filter((id) => existsSync(join(source, id)))
+      : [];
   for (const id of ids)
     for (const file of walk(join(source, id))) {
       const rel = relative(source, file);
       const installed = `.specify/presets/${rel}`;
       if (read(installed) !== readFileSync(file, "utf8"))
         problems.push(
-          source === own
-            ? `${installed} differs from .agents/speckit/presets/${rel} (edit the source, then \`pnpm speckit:sync\`)`
+          own
+            ? `${installed} differs from ${preset}/${relative(own, file)} (edit the source, then \`${NAME} sync\`)`
             : `${installed} differs from the preset bundled in ${PACKAGE} (run \`pnpm speckit:sync\`; change the preset in ${DISPLAY_NAME})`,
         );
     }

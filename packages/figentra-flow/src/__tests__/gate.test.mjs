@@ -43,7 +43,7 @@ import { keyScheme } from "../adapters/tracker/index.mjs";
 import { labelsFor, specLinks, unlinkedTasks } from "../commands/linear.mjs";
 import { init } from "../commands/init.mjs";
 import { ASSETS, installSkills } from "../commands/sync.mjs";
-import { PACKAGE } from "../lib/product.mjs";
+import { CONFIG_FILE, PACKAGE } from "../lib/product.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BIN = join(HERE, "../../bin/figentra-flow.mjs");
@@ -352,7 +352,7 @@ test("another tracker's scheme: keys, branches, folders, lanes, bugs and specDir
 });
 
 test("tripwire: the repository passes, and an upgrade that drops the wrap or resets numbering fails", () => {
-  assert.deepEqual(tripwire(ROOT), []);
+  assert.deepEqual(tripwire(ROOT, "stackra"), []);
   const root = mkdtempSync(join(tmpdir(), "spec-trip-"));
   try {
     for (const p of [
@@ -365,7 +365,7 @@ test("tripwire: the repository passes, and an upgrade that drops the wrap or res
       ]),
     ])
       cpSync(join(ROOT, p), join(root, p), { recursive: true });
-    assert.deepEqual(tripwire(root), []);
+    assert.deepEqual(tripwire(root, "stackra"), []);
     // The wrap stays, but the core resolution rule changed.
     const skill = join(root, ".claude/skills/speckit-specify/SKILL.md");
     writeFileSync(
@@ -375,13 +375,13 @@ test("tripwire: the repository passes, and an upgrade that drops the wrap or res
         "set the dir",
       ),
     );
-    assert.match(tripwire(root).join(), /SKILL\.md: core specify/);
+    assert.match(tripwire(root, "stackra").join(), /SKILL\.md: core specify/);
     rmSync(join(root, ".claude/skills/speckit-plan"), { recursive: true });
-    assert.match(tripwire(root).join(), /speckit-plan\/SKILL\.md is missing/);
+    assert.match(tripwire(root, "stackra").join(), /speckit-plan\/SKILL\.md is missing/);
     writeFileSync(join(root, ".specify/init-options.json"), '{"feature_numbering":"sequential"}');
     writeFileSync(join(root, ".opencode/commands/speckit.specify.md"), "vanilla core text\n");
     writeFileSync(join(root, ".specify/scripts/bash/setup-plan.sh"), "#!/bin/sh\n");
-    const problems = tripwire(root).join("\n");
+    const problems = tripwire(root, "stackra").join("\n");
     assert.match(problems, /feature_numbering/);
     assert.match(problems, /speckit\.specify\.md lost the preset's wrap/);
     assert.match(problems, /as-is/);
@@ -392,18 +392,25 @@ test("tripwire: the repository passes, and an upgrade that drops the wrap or res
       join(root, ".specify/workflows/workflow-registry.json"),
       '{"workflows":{"speckit":{"source":"bundled"}}}',
     );
-    const more = tripwire(root).join("\n");
+    const more = tripwire(root, "stackra").join("\n");
     assert.match(more, /speckit\.taskstoissues\.md lost the preset's wrap/);
     assert.match(more, /workflow is enabled/);
-    // The installed preset must equal its source.
+    // The installed preset must equal its source: here the repository's own preset folder, named in the config.
     for (const p of [
       ".agents/speckit/presets/stackra/preset.yml",
       ".specify/presets/stackra/preset.yml",
     ])
       cpSync(join(ROOT, p), join(root, p), { recursive: true });
+    writeFileSync(
+      join(root, CONFIG_FILE),
+      JSON.stringify({ version: 1, preset: ".agents/speckit/presets/stackra" }),
+    );
     assert.doesNotMatch(tripwire(root).join(), /differs from/);
     writeFileSync(join(root, ".specify/presets/stackra/preset.yml"), "hand edit\n");
-    assert.match(tripwire(root).join(), /\.specify\/presets\/stackra\/preset\.yml differs from/);
+    assert.match(
+      tripwire(root).join(),
+      /\.specify\/presets\/stackra\/preset\.yml differs from \.agents\/speckit\/presets\/stackra\/preset\.yml/,
+    );
   } finally {
     rmSync(root, { recursive: true });
   }
@@ -414,13 +421,13 @@ test("tripwire: without its own preset source a repository's installed preset mu
   try {
     const bundled = fileURLToPath(new URL("../../assets/presets/stackra", import.meta.url));
     cpSync(bundled, join(root, ".specify/presets/stackra"), { recursive: true });
-    assert.doesNotMatch(tripwire(root).join(), /bundled/);
+    assert.doesNotMatch(tripwire(root, "stackra").join(), /bundled/);
     writeFileSync(
       join(root, ".specify/presets/stackra/templates/spec-template.md"),
       "an old template\n",
     );
     assert.ok(
-      tripwire(root)
+      tripwire(root, "stackra")
         .join()
         .includes(
           `.specify/presets/stackra/templates/spec-template.md differs from the preset bundled in ${PACKAGE}`,

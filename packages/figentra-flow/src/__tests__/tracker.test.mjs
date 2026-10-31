@@ -39,19 +39,19 @@ test("key scheme: linear by team, github-issues as gh-<n>, any prefix without a 
   assert.equal(any.parse("9"), undefined);
 });
 
-test("trackerFor: no config file keeps the Linear STA scheme with a warning; a config without a tracker has none", (t) => {
+test("trackerFor: the configured scheme; no config file or no tracker block has none, and no STA fallback (AC-045)", (t) => {
   const r = repo();
   t.after(r.dispose);
-  /** @type {string[]} */
-  const warnings = [];
-  const legacy = trackerFor(r.root, { warn: (s) => void warnings.push(s), env: {} });
-  assert.equal(legacy.scheme.prefix, "sta");
-  assert.equal(legacy.scheme.branch("sta-3", "x"), "figentra/sta-3-x");
-  assert.match(warnings.join(), /deprecated/);
+  const configured = trackerFor(r.root, { env: {} });
+  assert.equal(configured.scheme.prefix, "sta");
+  assert.equal(configured.scheme.branch("sta-3", "x"), "figentra/sta-3-x");
   const dir = mkdtempSync(join(tmpdir(), "flow-tracker-"));
   t.after(() => rmSync(dir, { recursive: true }));
+  const bare = trackerFor(dir);
+  assert.equal(bare.scheme.prefix, undefined, "no STA scheme without a config file");
+  assert.match(bare.problem ?? "", /needs "tracker"/);
   writeFileSync(join(dir, CONFIG_FILE), JSON.stringify({ version: 1 }));
-  const none = trackerFor(dir, { warn: () => assert.fail("no warning expected") });
+  const none = trackerFor(dir);
   assert.equal(none.tracker, undefined);
   assert.match(none.problem ?? "", /needs "tracker"/);
 });

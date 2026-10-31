@@ -16,7 +16,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { LEGACY_RUNNER, runnerFor, runnerPort } from "../adapters/runner/index.mjs";
+import { runnerFor, runnerPort } from "../adapters/runner/index.mjs";
 import { ConfigError } from "../lib/config.mjs";
 import { CONFIG_FILE } from "../lib/product.mjs";
 
@@ -88,19 +88,14 @@ test("ssh: rsync to the host, then the command there with the folder removed; a 
   assert.throws(() => runnerPort({ kind: "ssh", host: "h; rm -rf /" }), /not a host/);
 });
 
-test("runnerFor: --box wins, then the config; no config file keeps the testbed with a warning; a config without a runner refuses", (t) => {
+test("runnerFor: --box wins, then the config; without a runner it refuses, config file or not (AC-045)", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "flow-runner-"));
   t.after(() => rmSync(dir, { recursive: true }));
-  /** @type {string[]} */
-  const warnings = [];
-  const warn = (/** @type {string} */ s) => void warnings.push(s);
-  assert.equal(runnerFor(dir, {}, { box: "box-1", warn }).runner?.kind, "ssh");
-  const legacy = runnerFor(dir, {}, { warn });
-  assert.equal(legacy.runner?.program, LEGACY_RUNNER.run[0]);
-  assert.match(warnings.join(), /deprecated: set "runner"/);
+  assert.equal(runnerFor(dir, {}, { box: "box-1" }).runner?.kind, "ssh");
+  assert.match(runnerFor(dir, {}).problem ?? "", /needs "runner"/, "no testbed fallback");
   writeFileSync(join(dir, CONFIG_FILE), "{}");
-  assert.match(runnerFor(dir, {}, { warn }).problem ?? "", /needs "runner"/);
-  assert.equal(runnerFor(dir, { runner: { kind: "local" } }, { warn }).runner?.kind, "local");
+  assert.match(runnerFor(dir, {}).problem ?? "", /needs "runner"/);
+  assert.equal(runnerFor(dir, { runner: { kind: "local" } }).runner?.kind, "local");
   assert.equal(runnerPort({ kind: "github-actions" }).kind, "github-actions");
   assert.throws(() => runnerPort({ kind: "nope" }), ConfigError);
 });

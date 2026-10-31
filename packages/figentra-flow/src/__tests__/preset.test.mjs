@@ -1,7 +1,7 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold the preset port to AC-041: the configuration picks the preset (`neutral` without one, `stackra` for a
- *   repository with no config file, a path for the repository's own); the neutral preset names no ADR, product,
+ * Purpose: hold the preset port to AC-041 and AC-045: the configuration picks the preset (`neutral` without one or
+ *   without a config file, a path for the repository's own); the neutral preset names no ADR, product,
  *   tracker or script of ours; the gate holds a neutral spec to the shared rules only (no Impact, Constitution Check,
  *   deploy modes, properties, routes or path floors), while `stackra` keeps them; the tripwire reads the neutral wrap.
  * Boundary: temporary folders; no `specify`, no network.
@@ -21,6 +21,7 @@ import {
   checkTasks,
   computedTier,
   MARKERS,
+  presetId,
   presetOf,
   RULES,
   tripwire,
@@ -37,11 +38,11 @@ const walk = (/** @type {string} */ dir) =>
     e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)],
   );
 
-test("preset choice: the config's preset, neutral for a config without one, stackra with no config file, a path", (t) => {
+test("preset choice: the config's preset, else neutral (config file or not), or a path", (t) => {
   const root = mkdtempSync(join(tmpdir(), "flow-preset-"));
   t.after(() => rmSync(root, { recursive: true }));
-  assert.equal(presetOf(root), "stackra");
-  assert.deepEqual(presetSource(root).presets, ["stackra"]);
+  assert.equal(presetOf(root), "neutral", "no stackra fallback without a config file (AC-045)");
+  assert.deepEqual(presetSource(root).presets, ["neutral"]);
   writeFileSync(join(root, CONFIG_FILE), JSON.stringify({ version: 1 }));
   assert.equal(presetOf(root), "neutral");
   assert.deepEqual(presetSource(root), { dir: join(ASSETS, "presets"), presets: ["neutral"] });
@@ -99,4 +100,21 @@ test("tripwire: a neutral repository's rendered commands carry the neutral wrap"
   }
   assert.deepEqual(tripwire(root, "neutral"), []);
   assert.match(tripwire(root, "stackra").join(), /lost the preset's wrap/);
+});
+
+test("presetId: a bundled preset is its name; a repository's own folder is the id its preset.yml declares", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "flow-preset-id-"));
+  t.after(() => rmSync(root, { recursive: true }));
+  assert.equal(presetId("neutral", root), "neutral");
+  mkdirSync(join(root, "presets/ours"), { recursive: true });
+  writeFileSync(
+    join(root, "presets/ours/preset.yml"),
+    'schema_version: "1.0"\npreset:\n  id: "stackra"\n',
+  );
+  assert.equal(
+    presetId("presets/ours", root),
+    "stackra",
+    "a copy of stackra keeps Stackra's rules",
+  );
+  assert.equal(presetId("presets/missing", root), undefined);
 });

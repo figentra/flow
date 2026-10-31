@@ -4,8 +4,7 @@
  *   command runs there (`--box <host>` picks it for one run); `local`: the caller's machine; `command`: an argument
  *   list with `{label}`, `{dir}` and `{command}` placeholders, and `{flags}` for the arguments after `gate run --`
  *   (Figentra's is `stackra testbed run`). `runnerFor(root, config)` builds it from `figentra-flow.config.json`'s
- *   `runner`. A repository with no config file keeps the testbed command it used before, with a warning, until the
- *   config files land (AC-045); one with a config but no runner is refused, naming the key (AC-036).
+ *   `runner`. Without one, config file or not, it is refused, naming the key (AC-036, AC-045).
  *   `github-actions` dispatches the repository's gate workflow and follows it (`./github-actions.mjs`).
  * Boundary: spawns the runner's processes and returns their exit code; 127 when the program is not installed.
  * Runtime: node
@@ -14,8 +13,7 @@
  *   host holds no job secrets of its own, while a `command` runner brings its own unless it sets `"secrets": true`.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename } from "node:path";
 
 import { ConfigError } from "../../lib/config.mjs";
 import { CONFIG_FILE, NAME } from "../../lib/product.mjs";
@@ -26,12 +24,6 @@ import { githubActionsRunner } from "./github-actions.mjs";
  *             repository?: string, base?: string }} Job
  * @typedef {{ kind: string, wraps: boolean, program: string, run: (job: Job) => number }} Runner
  */
-
-/** The testbed command repositories used before `figentra-flow.config.json` (read until the config files land). */
-export const LEGACY_RUNNER = {
-  kind: "command",
-  run: ["stackra", "testbed", "run", "{label}", "{dir}", "{command}", "{flags}"],
-};
 
 /** An ssh destination safe to put on a command line: `[user@]host`. */
 const HOST = /^(?:[\w.-]+@)?[\w.-]+$/;
@@ -116,16 +108,11 @@ export function runnerPort(block, { spawn = spawnSync, root } = {}) {
  * The repository's runner: `--box <host>` for this run, else the configuration's `runner`.
  * @param {string} root
  * @param {any} config the loaded configuration
- * @param {{ box?: string, warn?: (s: string) => void, spawn?: typeof spawnSync }} [options]
+ * @param {{ box?: string, spawn?: typeof spawnSync }} [options]
  * @returns {{ runner?: Runner, problem?: string }}
  */
-export function runnerFor(root, config, { box, warn = console.error, spawn } = {}) {
+export function runnerFor(root, config, { box, spawn } = {}) {
   if (box !== undefined) return { runner: runnerPort({ kind: "ssh", host: box }, { spawn }) };
   if (config.runner) return { runner: runnerPort(config.runner, { spawn, root }) };
-  if (existsSync(join(root, CONFIG_FILE)))
-    return { problem: `gate run needs "runner" in ${CONFIG_FILE} (or --box <ssh host>)` };
-  warn(
-    `no ${CONFIG_FILE}: running on the stackra testbed for now (deprecated: set "runner" in ${CONFIG_FILE})`,
-  );
-  return { runner: runnerPort(LEGACY_RUNNER, { spawn }) };
+  return { problem: `gate run needs "runner" in ${CONFIG_FILE} (or --box <ssh host>)` };
 }

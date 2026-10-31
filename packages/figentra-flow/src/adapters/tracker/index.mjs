@@ -3,17 +3,13 @@
  * Purpose: the tracker port (AC-037): the key scheme a repository's issues use (the key in a branch, a worktree, a spec
  *   folder; the branch and folder names `start` makes) and the adapter that reads and moves issues: `linear` or
  *   `github-issues` (Jira later, same shape). `trackerFor(root)` builds both from `figentra-flow.config.json`'s `tracker`.
- *   A repository with a config file but no tracker gets a scheme that reads any `<letters>-<n>` key and no adapter,
- *   so offline commands work and the ones that move issues refuse naming the key (AC-036). For one minor version a
- *   repository with no config file keeps the Linear `STA` scheme it used before, with a warning.
+ *   A repository with no tracker block (or no config file) gets a scheme that reads any `<letters>-<n>` key and no
+ *   adapter, so offline commands work and the ones that move issues refuse naming the key (AC-036, AC-045).
  * Boundary: builds objects; the adapters make the network calls.
  * Runtime: node
  * Governing contract: STA-1729 phase A (A2).
  * Secrets: none here; each adapter reads its token from the environment or the credentials port.
  */
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-
 import { ConfigError, loadConfig } from "../../lib/config.mjs";
 import { CONFIG_FILE } from "../../lib/product.mjs";
 import { githubIssuesTracker } from "./github-issues.mjs";
@@ -80,47 +76,30 @@ export function keyScheme(block) {
   };
 }
 
-/** The Linear `STA` scheme repositories used before `figentra-flow.config.json` (read for one minor version). */
-export const LEGACY_TRACKER = {
-  kind: "linear",
-  team: "STA",
-  branchPrefix: "figentra",
-  otherBranchPrefixes: ["delegate"],
-};
-
 /**
- * The repository's tracker block (the Linear `STA` one, with a warning, when there is no config file).
+ * The repository's tracker block, or undefined when its configuration names none.
  * @param {string} root
- * @param {(s: string) => void} warn
  */
-function trackerBlock(root, warn) {
+function trackerBlock(root) {
   const loaded = loadConfig(root);
   if (loaded.errors.length) throw new ConfigError(loaded.errors.join("\n"));
-  if (loaded.config.tracker === undefined && !existsSync(join(root, CONFIG_FILE))) {
-    warn(
-      `no ${CONFIG_FILE}: using the Linear STA tracker for now (deprecated: set "tracker" in ${CONFIG_FILE})`,
-    );
-    return LEGACY_TRACKER;
-  }
   return loaded.config.tracker;
 }
 
 /**
  * The repository's key scheme alone (the offline commands: the spec gate, trace).
  * @param {string} root
- * @param {{ warn?: (s: string) => void }} [options]
  */
-export const schemeFor = (root, { warn = console.error } = {}) =>
-  keyScheme(trackerBlock(root, warn));
+export const schemeFor = (/** @type {string} */ root) => keyScheme(trackerBlock(root));
 
 /**
  * The repository's key scheme and tracker adapter.
  * @param {string} root
- * @param {{ env?: Record<string, string | undefined>, warn?: (s: string) => void }} [options]
+ * @param {{ env?: Record<string, string | undefined>, warn?: (s: string) => void }} [options] `warn` is unused (no fallback left to announce)
  * @returns {{ scheme: KeyScheme, tracker: Tracker | undefined, problem: string | undefined }}
  */
-export function trackerFor(root, { env = process.env, warn = console.error } = {}) {
-  const block = trackerBlock(root, warn);
+export function trackerFor(root, { env = process.env } = {}) {
+  const block = trackerBlock(root);
   const scheme = keyScheme(block);
   if (block === undefined)
     return {

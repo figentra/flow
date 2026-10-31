@@ -1,0 +1,47 @@
+{
+  "$schema": "./packages/figentra-flow/schema/figentra-flow.config.schema.json",
+  "version": 1,
+  "preset": "stackra",
+  "tracker": {
+    "kind": "linear",
+    "team": "STA",
+    "branchPrefix": "figentra",
+    "otherBranchPrefixes": ["delegate"],
+    "token": ["LINEAR_AGENT_TOKEN", "LINEAR_API_KEY"]
+  },
+  "credentials": {
+    "kind": "env"
+  },
+  "runner": {
+    "kind": "command",
+    "run": ["stackra", "testbed", "run", "{label}", "{dir}", "{command}", "{flags}"]
+  },
+  "secrets": {
+    "kind": "infisical",
+    "auth": "universal-auth",
+    "projectId": "86c297d4-ce42-4e94-b4b3-810a715812f2",
+    "env": "prod",
+    "domain": "https://eu.infisical.com",
+    "paths": {
+      "gate": "/ci/gate"
+    },
+    "bin": "~/.local/bin/infisical",
+    "envFile": "~/.ci-env"
+  },
+  "apps": {
+    "gate": {
+      "slug": "figentra-gate",
+      "login": "figentra-gate[bot]"
+    },
+    "review": {
+      "slug": "stackra-reviewer"
+    },
+    "owner": "figentra-usr"
+  },
+  "gate": {
+    "check": "pnpm verify"
+  },
+  "clean": {
+    "keep": ["g-*", "*-gate", "land-*", "tpl-core", "c6-lock*", "template-wt-lean"]
+  }
+}

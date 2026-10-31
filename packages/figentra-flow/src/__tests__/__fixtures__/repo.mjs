@@ -11,6 +11,20 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { CONFIG_FILE } from "../../lib/product.mjs";
+
+/** The configuration a test repository carries unless `files` names its own: our tracker and tester trees. */
+export const CONFIG = {
+  version: 1,
+  tracker: {
+    kind: "linear",
+    team: "STA",
+    branchPrefix: "figentra",
+    otherBranchPrefixes: ["delegate"],
+  },
+  clean: { keep: ["g-*", "*-gate", "land-*"] },
+};
+
 const ENV = {
   ...process.env,
   GIT_AUTHOR_NAME: "t",
@@ -47,6 +61,7 @@ export function repo(files = {}) {
   sh(root, "config", "user.email", "t@t");
   sh(root, "config", "commit.gpgsign", "false");
   writeFileSync(join(root, "README.md"), "x\n");
+  writeFileSync(join(root, CONFIG_FILE), `${JSON.stringify(CONFIG, null, 2)}\n`);
   for (const [path, text] of Object.entries(files)) writeFileSync(join(root, path), text);
   sh(root, "add", "-A");
   sh(root, "commit", "-q", "-m", "init");
