@@ -6,7 +6,7 @@
  * Runtime: node
  * Governing contract: ADR 0022 (tests live in tests folders); ADR 0182 (testing strategy).
  */
-// @covers sta-163:FR-001 sta-163:FR-002 sta-163:FR-003 sta-163:FR-004 sta-163:FR-005 sta-163:FR-008
+// @covers sta-1729:AC-028 sta-163:FR-001 sta-163:FR-002 sta-163:FR-003 sta-163:FR-004 sta-163:FR-005 sta-163:FR-008
 // @covers sta-163:P-001 sta-163:P-002 sta-163:P-003 sta-163:P-005 sta-163:P-006 sta-163:P-007
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -348,6 +348,25 @@ test("tripwire: the repository passes, and an upgrade that drops the wrap or res
     assert.doesNotMatch(tripwire(root).join(), /differs from/);
     writeFileSync(join(root, ".specify/presets/stackra/preset.yml"), "hand edit\n");
     assert.match(tripwire(root).join(), /\.specify\/presets\/stackra\/preset\.yml differs from/);
+  } finally {
+    rmSync(root, { recursive: true });
+  }
+});
+
+test("tripwire: without its own preset source a repository's installed preset must equal Vellum's bundled one", () => {
+  const root = mkdtempSync(join(tmpdir(), "spec-trip-bundled-"));
+  try {
+    const bundled = fileURLToPath(new URL("../../assets/presets/stackra", import.meta.url));
+    cpSync(bundled, join(root, ".specify/presets/stackra"), { recursive: true });
+    assert.doesNotMatch(tripwire(root).join(), /bundled/);
+    writeFileSync(
+      join(root, ".specify/presets/stackra/templates/spec-template.md"),
+      "an old template\n",
+    );
+    assert.match(
+      tripwire(root).join(),
+      /\.specify\/presets\/stackra\/templates\/spec-template\.md differs from the preset bundled in @stackra\/vellum/,
+    );
   } finally {
     rmSync(root, { recursive: true });
   }

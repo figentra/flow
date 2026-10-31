@@ -41,7 +41,11 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { BRANCH_RE } from "../lib/linear.mjs";
+
+/** The preset this package ships, installed when a repository keeps no `.agents/speckit/presets` of its own. */
+const BUNDLED_PRESETS = fileURLToPath(new URL("../../assets/presets", import.meta.url));
 import {
   definedIds,
   definedLines,
@@ -677,18 +681,23 @@ export function tripwire(root = ROOT) {
         problems.push(`${p}: core specify no longer takes SPECIFY_FEATURE_DIRECTORY as-is`);
     }
   }
-  // The preset's only source is .agents/speckit/presets; the installed copy is what `pnpm speckit:sync` made of it.
+  // The installed preset is what `pnpm speckit:sync` made of its source: the repository's own .agents/speckit/presets
+  // when it has one, else the preset bundled in Vellum (Stackra ADR 0503: core keeps no copy since W2).
   const walk = (dir) =>
-    readdirSync(join(root, dir), { withFileTypes: true }).flatMap((e) =>
-      e.isDirectory() ? walk(`${dir}/${e.name}`) : [`${dir}/${e.name}`],
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)],
     );
-  const sources = ".agents/speckit/presets";
-  if (existsSync(join(root, sources)))
-    for (const src of walk(sources)) {
-      const installed = `.specify/presets/${src.slice(sources.length + 1)}`;
-      if (read(installed) !== read(src))
+  const own = join(root, ".agents/speckit/presets");
+  const source = existsSync(own) ? own : BUNDLED_PRESETS;
+  if (source === own || existsSync(join(root, ".specify/presets")))
+    for (const file of walk(source)) {
+      const rel = relative(source, file);
+      const installed = `.specify/presets/${rel}`;
+      if (read(installed) !== readFileSync(file, "utf8"))
         problems.push(
-          `${installed} differs from ${src} (edit the source, then \`pnpm speckit:sync\`)`,
+          source === own
+            ? `${installed} differs from .agents/speckit/presets/${rel} (edit the source, then \`pnpm speckit:sync\`)`
+            : `${installed} differs from the preset bundled in @stackra/vellum (run \`pnpm speckit:sync\`; change the preset in Vellum)`,
         );
     }
   // The bundled `speckit` workflow skips clarify and analyze (ADR 0121 D19); it stays disabled.
