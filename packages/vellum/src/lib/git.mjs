@@ -4,8 +4,8 @@
  *   worktrees, whether a worktree is clean, saved (its head on a remote ref, or every commit landed by patch), how long
  *   it has been idle, which ignored files it holds outside the usual caches, its size, and which folders running
  *   processes work in.
- * Boundary: runs `git` (and `du`, `lsof` or `/proc`) synchronously in the folder it is given; never writes. Network git goes through
- *   `fetch`, which uses the repository's own `bot:git` wrapper when it has one.
+ * Boundary: runs `git` (and `du`, `lsof` or `/proc`) synchronously in the folder it is given; never writes. Network git
+ *   goes through `remote`, with the configuration's credentials (phase A).
  * Runtime: node
  * Governing contract: Stackra ADR 0503 (worktrees live inside their repository); STA-1729.
  * Secrets: none.
@@ -20,6 +20,9 @@ import {
   statSync,
 } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
+
+import { credentialsPort } from "../adapters/credentials.mjs";
+import { loadConfig, need } from "./config.mjs";
 
 /** Ignored paths a worktree may hold and still be removed: dependency, build and tool caches. */
 export const CACHES = [
@@ -73,24 +76,49 @@ export function defaultBranch(root) {
   return head.ok ? head.out.replace(/^origin\//, "") : "main";
 }
 
+/** A remote URL that is a local path (tests, mirrors) needs no credentials. */
+const isLocal = (/** @type {string} */ url) =>
+  url !== "" && !/^(?:[a-z][\w+.-]*:\/\/|[^/\s]+@[^:\s]+:)/i.test(url);
+
+/** Roots already warned about the deprecated `bot:git` lookup. */
+const warned = new Set();
+
 /**
- * Runs a network git command in `root`, through the repository's own `bot:git` wrapper when it has one (Figentra
- * repositories refuse raw network git).
+ * Runs a network git command in `root` with the credentials the configuration names (the credentials port's `git`
+ * prefix). A local origin needs none. For one minor version a repository with no `credentials` but a `bot:git` script
+ * still uses it, with a deprecation warning; otherwise it refuses, never falling back to a personal login.
  * @param {string} root
  * @param {string[]} args
  * @returns {{ ok: boolean, out: string, err: string }}
  */
 export function remote(root, args) {
-  let wrapped = false;
+  if (isLocal(git(root, ["remote", "get-url", "origin"]).out)) return git(root, args);
+  /** @type {string[] | undefined} */
+  let prefix;
   try {
-    wrapped = Boolean(
-      JSON.parse(readFileSync(join(root, "package.json"), "utf8")).scripts?.["bot:git"],
-    );
-  } catch {
-    wrapped = false;
+    prefix = credentialsPort(need(loadConfig(root), "credentials", "network git"), { root }).git;
+  } catch (error) {
+    let scripts = {};
+    try {
+      scripts = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).scripts ?? {};
+    } catch {
+      // no package.json: no scripts
+    }
+    if (!("bot:git" in scripts))
+      return { ok: false, out: "", err: /** @type {Error} */ (error).message };
+    if (!warned.has(root)) {
+      warned.add(root);
+      console.error(
+        `${error instanceof Error ? error.message : error}; using the bot:git script for now (deprecated: name it in credentials.git)`,
+      );
+    }
+    prefix = ["pnpm", "bot:git", "--"];
   }
-  if (!wrapped) return git(root, args);
-  const r = spawnSync("pnpm", ["bot:git", "--", ...args], { cwd: root, encoding: "utf8" });
+  if (!prefix)
+    return { ok: false, out: "", err: 'credentials: set "git" (the command for network git)' };
+  const [command, ...pre] = prefix;
+  if (command === "git") return git(root, [...pre, ...args]);
+  const r = spawnSync(command, [...pre, ...args], { cwd: root, encoding: "utf8" });
   return { ok: r.status === 0, out: (r.stdout ?? "").trim(), err: (r.stderr ?? "").trim() };
 }
 

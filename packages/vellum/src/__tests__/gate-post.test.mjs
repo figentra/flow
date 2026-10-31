@@ -13,7 +13,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createVerify, generateKeyPairSync } from "node:crypto";
 
-import { appJwt, CONTEXT, MARKER, post, redact } from "../lib/gate-post.mjs";
+import { appJwt, post, redact } from "../lib/gate-post.mjs";
+import { ENV_PREFIX, GATE_MARKER as MARKER, STATUS_CONTEXT as CONTEXT } from "../lib/product.mjs";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", {
   modulusLength: 2048,
@@ -26,11 +27,14 @@ const JOB = {
   sha: SHA,
   branch: "figentra/sta-1-x",
   repository: "figentra/vellum",
+  context: CONTEXT,
+  marker: MARKER,
+  envPrefix: ENV_PREFIX,
   startedAt: "2026-10-31T10:00:00Z",
 };
 const ENV = {
-  VELLUM_GATE_APP_ID: "4242",
-  VELLUM_GATE_PRIVATE_KEY: privateKey,
+  [`${ENV_PREFIX}GATE_APP_ID`]: "4242",
+  [`${ENV_PREFIX}GATE_PRIVATE_KEY`]: privateKey,
   HEROUI_AUTH_TOKEN: "heroui-secret-value",
 };
 const NOW = Date.parse("2026-10-31T10:03:07Z");

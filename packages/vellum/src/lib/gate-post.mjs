@@ -1,13 +1,14 @@
 /**
  * Vellum file contract:
- * Purpose: the box side of `vellum gate`: after the check ran, post the `vellum/gate` commit status on the head it
- *   checked, and one PR comment with the report, as the "Stackra Gate" GitHub App. `vellum gate run` copies this file
- *   into the job as `.vellum-gate/post.mjs`, so the box needs no Vellum install; it imports only `node:` modules.
+ * Purpose: the box side of the gate: after the check ran, post the gate's commit status on the head it checked, and
+ *   one PR comment with the report, as the configured gate App. `gate run` copies this file into the job's gate folder,
+ *   so the box needs no install; it imports only `node:` modules, and reads the status context, the comment marker
+ *   and the environment prefix from the job file (the product's name lives in `product.mjs`, AC-042).
  * Boundary: posts only while the branch tip is still the checked commit; never posts `success` unless the check
  *   exited 0; posts nothing when it cannot mint a token. Exit 0 posted green, 1 posted red, 4 could not post, 5 stale.
  * Runtime: node (on the testbed box or a `--box` host)
  * Governing contract: Stackra ADR 0503 (decision 4); STA-1729 phase 2 (the leader's plan stop of 2026-10-31).
- * Secrets: `VELLUM_GATE_APP_ID` and `VELLUM_GATE_PRIVATE_KEY` from the environment only (`infisical run`). The key,
+ * Secrets: `<prefix>GATE_APP_ID` and `<prefix>GATE_PRIVATE_KEY` from the environment only (`infisical run`). The key,
  *   the JWT and the installation token are never printed, logged, written or put in a comment; the log tail is
  *   redacted of every secret-looking environment value before it is posted.
  */
@@ -15,12 +16,6 @@ import { createSign } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-
-/** The status context the ruleset requires. */
-export const CONTEXT = "vellum/gate";
-
-/** The marker that finds the gate's own PR comment again. */
-export const MARKER = "<!-- vellum/gate -->";
 
 const API = "https://api.github.com";
 
@@ -62,7 +57,8 @@ export function appJwt(appId, privateKey, now) {
 }
 
 /**
- * @typedef {{ sha: string, branch: string, repository: string, startedAt?: string }} Job
+ * @typedef {{ sha: string, branch: string, repository: string, startedAt?: string, context: string, marker: string,
+ *             envPrefix: string }} Job
  * @typedef {{ ok: boolean, status: number, json: () => Promise<any> }} Res
  * @typedef {(url: string, init?: { method?: string, headers?: Record<string, string>, body?: string }) => Promise<Res>} Fetch
  */
@@ -74,13 +70,14 @@ export function appJwt(appId, privateKey, now) {
  */
 export async function post({ job, exit, log = "", env, fetch, now = Date.now() }) {
   const lines = [];
-  const appId = env.VELLUM_GATE_APP_ID;
-  const key = env.VELLUM_GATE_PRIVATE_KEY;
+  const { context, marker, envPrefix } = job;
+  const appId = env[`${envPrefix}GATE_APP_ID`];
+  const key = env[`${envPrefix}GATE_PRIVATE_KEY`];
   if (!appId || !key)
     return {
       code: 4,
       lines: [
-        "vellum gate: VELLUM_GATE_APP_ID or VELLUM_GATE_PRIVATE_KEY is not set; nothing posted",
+        `gate: ${envPrefix}GATE_APP_ID or ${envPrefix}GATE_PRIVATE_KEY is not set; nothing posted`,
       ],
     };
   /**
@@ -118,9 +115,7 @@ export async function post({ job, exit, log = "", env, fetch, now = Date.now() }
   } catch (error) {
     return {
       code: 4,
-      lines: [
-        `vellum gate: no App token (${/** @type {Error} */ (error).message}); nothing posted`,
-      ],
+      lines: [`gate: no App token (${/** @type {Error} */ (error).message}); nothing posted`],
     };
   }
 
@@ -131,7 +126,7 @@ export async function post({ job, exit, log = "", env, fetch, now = Date.now() }
       return {
         code: 5,
         lines: [
-          `vellum gate: stale: ${job.branch} is now ${tip.slice(0, 12)}, not ${job.sha.slice(0, 12)}; nothing posted`,
+          `gate: stale: ${job.branch} is now ${tip.slice(0, 12)}, not ${job.sha.slice(0, 12)}; nothing posted`,
         ],
       };
 
@@ -156,8 +151,8 @@ export async function post({ job, exit, log = "", env, fetch, now = Date.now() }
     if (prs.length) {
       const tail = redact(log, env).split("\n").slice(-TAIL_LINES).join("\n").trim();
       const body = [
-        MARKER,
-        `### ${green ? "✅" : "❌"} vellum/gate: ${green ? "green" : "red"} on \`${job.sha.slice(0, 12)}\``,
+        marker,
+        `### ${green ? "✅" : "❌"} ${context}: ${green ? "green" : "red"} on \`${job.sha.slice(0, 12)}\``,
         "",
         description,
         ...(green || !tail
@@ -177,7 +172,7 @@ export async function post({ job, exit, log = "", env, fetch, now = Date.now() }
         token,
       );
       const mine = comments.find(
-        (/** @type {any} */ c) => c.user?.type === "Bot" && c.body?.startsWith(MARKER),
+        (/** @type {any} */ c) => c.user?.type === "Bot" && c.body?.startsWith(marker),
       );
       const written = mine
         ? await call(`/repos/${job.repository}/issues/comments/${mine.id}`, token, "PATCH", {
@@ -190,18 +185,18 @@ export async function post({ job, exit, log = "", env, fetch, now = Date.now() }
     }
     await call(`/repos/${job.repository}/statuses/${job.sha}`, token, "POST", {
       state: green ? "success" : "failure",
-      context: CONTEXT,
+      context,
       description,
       ...(url ? { target_url: url } : {}),
     });
     lines.push(
-      `vellum gate: posted ${green ? "success" : "failure"} on ${job.sha.slice(0, 12)} (${job.repository})`,
+      `gate: posted ${green ? "success" : "failure"} on ${job.sha.slice(0, 12)} (${job.repository})`,
     );
     return { code: green ? 0 : 1, lines };
   } catch (error) {
     return {
       code: 4,
-      lines: [`vellum gate: posting failed (${/** @type {Error} */ (error).message})`],
+      lines: [`gate: posting failed (${/** @type {Error} */ (error).message})`],
     };
   }
 }

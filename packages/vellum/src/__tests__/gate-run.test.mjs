@@ -15,7 +15,9 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { secretsPort } from "../adapters/secrets.mjs";
 import { boxCommand, checkCommand, gateRun, slugOf } from "../commands/gate-run.mjs";
+import { ENV_PREFIX, GATE_MARKER, STATUS_CONTEXT } from "../lib/product.mjs";
 import { commit, repo, sh } from "./__fixtures__/repo.mjs";
 
 const GITHUB = "git@github.com:figentra/vellum.git";
@@ -75,6 +77,9 @@ test("gate run: the job is a clean clone at the head, with the poster and the jo
     branch: "main",
     repository: "figentra/vellum",
     startedAt: "2026-10-31T10:00:00.000Z",
+    context: STATUS_CONTEXT,
+    marker: GATE_MARKER,
+    envPrefix: ENV_PREFIX,
   });
   assert.match(seen.label, /^vellum gate figentra\/vellum@[0-9a-f]{12}$/);
   assert.equal(existsSync(seen.dir), false);
@@ -137,13 +142,15 @@ test("check command: pnpm verify by default, the repository's own, and the spec 
   );
 });
 
-test("box command: the check's log and exit are kept for the poster; --box wraps the poster in infisical", () => {
+test("box command: the check's log and exit are kept for the poster; the secrets port wraps the poster", () => {
   assert.equal(
     boxCommand("pnpm verify"),
     "{ pnpm verify; echo $? > .vellum-gate/exit; } 2>&1 | tee .vellum-gate/log.txt; node .vellum-gate/post.mjs",
   );
   assert.match(
-    boxCommand("x", { infisical: true }),
+    boxCommand("x", {
+      wrap: (c) => secretsPort({ kind: "infisical", paths: { gate: "/ci/gate" } }).wrap(c, "gate"),
+    }),
     /; infisical run --silent --path=\/ci\/gate -- node \.vellum-gate\/post\.mjs$/,
   );
 });

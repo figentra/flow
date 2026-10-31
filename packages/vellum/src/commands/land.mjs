@@ -19,6 +19,8 @@ import { gateRun } from "./gate-run.mjs";
 import { client, linear } from "../lib/linear.mjs";
 import { github } from "../lib/github.mjs";
 import { aiReview, REVIEWER } from "../lib/review.mjs";
+import { loadConfig } from "../lib/config.mjs";
+import { NAME, STATUS_CONTEXT } from "../lib/product.mjs";
 import {
   defaultBranch,
   fetch,
@@ -61,16 +63,16 @@ export function landRules({
   if (pr.base?.ref !== base && !stack)
     problems.push(`stacked on \`${pr.base?.ref}\`: land that first, or use --stack`);
   // GitHub lists a commit's statuses newest first; the newest of the context counts.
-  const gate = statuses.find((s) => s.context === "vellum/gate");
+  const gate = statuses.find((s) => s.context === STATUS_CONTEXT);
   if (!gate)
     problems.push(
-      `no vellum/gate on the head ${head} (run \`vellum gate run\`; an older commit's gate does not count)`,
+      `no ${STATUS_CONTEXT} on the head ${head} (run \`${NAME} gate run\`; an older commit's gate does not count)`,
     );
   else if (gate.state !== "success")
-    problems.push(`vellum/gate is ${gate.state} on the head ${head}`);
+    problems.push(`${STATUS_CONTEXT} is ${gate.state} on the head ${head}`);
   else if (gate.creator?.login !== gateApp)
     problems.push(
-      `vellum/gate on the head was posted by ${gate.creator?.login ?? "nobody"}, not ${gateApp}`,
+      `${STATUS_CONTEXT} on the head was posted by ${gate.creator?.login ?? "nobody"}, not ${gateApp}`,
     );
   const title = String(pr.title ?? "");
   if (!CONVENTIONAL.test(title) || title.length > 100)
@@ -96,7 +98,7 @@ export function landRules({
   }
   if (!required && !manualOk)
     problems.push(
-      `${base}'s ruleset does not require vellum/gate yet (phase 6); until then only the tester lands, with --manual-ok`,
+      `${base}'s ruleset does not require ${STATUS_CONTEXT} yet (phase 6); until then only the tester lands, with --manual-ok`,
     );
   return problems;
 }
@@ -166,7 +168,7 @@ export async function landOne({
     (/** @type {any} */ r) =>
       r.type === "required_status_checks" &&
       (r.parameters?.required_status_checks ?? []).some(
-        (/** @type {any} */ c) => c.context === "vellum/gate",
+        (/** @type {any} */ c) => c.context === STATUS_CONTEXT,
       ),
   );
   const key = issueKey(branch);
@@ -247,7 +249,7 @@ export async function landOne({
     "comment",
     () =>
       api("POST", `/repos/${repo}/issues/${number}/comments`, {
-        body: `Landed by \`vellum land\` as ${sha}.${manualOk ? " (`--manual-ok`: the ruleset does not require `vellum/gate` yet.)" : ""}`,
+        body: `Landed by \`${NAME} land\` as ${sha}.${manualOk ? ` (\`--manual-ok\`: the ruleset does not require \`${STATUS_CONTEXT}\` yet.)` : ""}`,
       }).ok,
   );
   return { code: warned ? 3 : 0, merged: sha };
@@ -341,7 +343,7 @@ export async function run(/** @type {string[]} */ args) {
   const url = git(root, ["remote", "get-url", "origin"]).out;
   const repo = url.match(/github\.com[:/]+([^/]+\/[^/]+?)(?:\.git)?\/?$/)?.[1];
   if (!repo) {
-    console.error(`vellum land: origin (${url}) is not a GitHub repository`);
+    console.error(`${NAME} land: origin (${url}) is not a GitHub repository`);
     return 2;
   }
   // AC-034: never a silent fallback to the caller's own gh login.
@@ -355,7 +357,7 @@ export async function run(/** @type {string[]} */ args) {
     }
   })();
   if (!api) {
-    console.error(`vellum land: ${refusal}`);
+    console.error(`${NAME} land: ${refusal}`);
     return 2;
   }
   let number = Number.parseInt(args.find((a) => /^#?\d+$/.test(a))?.replace("#", "") ?? "", 10);
@@ -366,16 +368,9 @@ export async function run(/** @type {string[]} */ args) {
       `/repos/${repo}/pulls?state=open&head=${repo.split("/")[0]}:${encodeURIComponent(branch)}`,
     ).json ?? [])[0]?.number;
     if (!number) {
-      console.error(`vellum land: no open PR for ${branch || "this head"}; pass its number`);
+      console.error(`${NAME} land: no open PR for ${branch || "this head"}; pass its number`);
       return 2;
     }
-  }
-  /** @type {any} */
-  let pkg = {};
-  try {
-    pkg = JSON.parse(git(root, ["show", "HEAD:package.json"]).out || "{}");
-  } catch {
-    // no package.json: the defaults
   }
   const deps = {
     api,
@@ -390,12 +385,12 @@ export async function run(/** @type {string[]} */ args) {
     base: defaultBranch(root),
     number,
     manualOk: args.includes("--manual-ok"),
-    gateApp: pkg.vellum?.gateApp ?? GATE_APP,
+    gateApp: loadConfig(root).config.apps?.gate?.login ?? GATE_APP,
     deps,
   };
   const result = args.includes("--stack")
     ? await landStack(options)
     : await landOne({ ...options, dry: args.includes("--dry-run") });
-  for (const p of result.problems ?? []) console.error(`vellum land: ${p}`);
+  for (const p of result.problems ?? []) console.error(`${NAME} land: ${p}`);
   return result.code;
 }

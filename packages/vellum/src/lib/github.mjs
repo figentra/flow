@@ -1,20 +1,17 @@
 /**
  * Vellum file contract:
- * Purpose: GitHub REST calls for the commands that act on pull requests (`vellum land`), through `gh`, with the
- *   credentials the repository names: `"vellum": { "credentials": "wrapper:<script>" }` runs `pnpm <script> -- api …`
- *   (a script that runs `gh` with a bot's token, such as Figentra's `bot:gh`), and `"credentials": "gh-user"` runs the
- *   caller's own `gh` login, for a solo user who opts in.
+ * Purpose: GitHub REST calls for the commands that act on pull requests (`vellum land`), through `gh` with the
+ *   credentials the repository's configuration names (the credentials port: `env`, `gh-user` or `wrapper`).
  * Boundary: one `gh api` process per call; no retries. Never falls back to a personal `gh` login: with no credentials
- *   named, or a wrapper script the repository lacks, it refuses (AC-034). Vellum never reads, prints or passes a
- *   token: `gh` or the wrapper holds it.
+ *   configured it refuses (AC-034, AC-036). Vellum never reads, prints or passes a token: `gh` or the wrapper holds it.
  * Runtime: node
- * Governing contract: Stackra ADR 0503; STA-1729 (the leader's credentials rule of 2026-10-31; the adapter phase
- *   moves this setting into `vellum.config`).
- * Secrets: none here; the token stays inside `gh` or the wrapper's `infisical run`.
+ * Governing contract: STA-1729 (AC-034; phase A, A1).
+ * Secrets: none here; the token stays inside `gh` or the wrapper.
  */
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+
+import { credentialsPort } from "../adapters/credentials.mjs";
+import { ConfigError, loadConfig, need } from "./config.mjs";
 
 /**
  * @typedef {{ ok: boolean, json: any, err: string }} ApiResult
@@ -34,48 +31,33 @@ export function bodyOf(/** @type {string} */ out) {
   }
 }
 
-/** Raised when the repository names no usable GitHub credentials. */
-export class CredentialsError extends Error {}
+/** Raised when the repository names no usable GitHub credentials (the configuration's error). */
+export const CredentialsError = ConfigError;
 
 /**
  * The command that runs `gh` with the repository's credentials (the `api` arguments follow it), or a refusal naming
  * the fix.
  * @param {string} root
+ * @param {{ env?: Record<string, string | undefined>, warn?: (s: string) => void }} [options]
  * @returns {string[]}
  */
-export function ghCommand(root) {
-  /** @type {any} */
-  let pkg = {};
-  try {
-    pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-  } catch {
-    // no package.json: no credentials named
-  }
-  const credentials = pkg.vellum?.credentials;
-  if (credentials === "gh-user") return ["gh"];
-  const script =
-    typeof credentials === "string" ? credentials.match(/^wrapper:(\S+)$/)?.[1] : undefined;
-  if (script && pkg.scripts?.[script]) return ["pnpm", script, "--"];
-  if (script)
-    throw new CredentialsError(
-      `the credentials wrapper \`${script}\` is not a script in ${join(root, "package.json")}`,
-    );
-  throw new CredentialsError(
-    'no GitHub credentials named: set package.json "vellum": { "credentials": "wrapper:<script>" } (a script that runs gh with a bot\'s token, such as bot:gh), or "gh-user" to use your own gh login on purpose',
-  );
+export function ghCommand(root, { env = process.env, warn = console.error } = {}) {
+  const loaded = loadConfig(root);
+  for (const w of loaded.warnings) warn(w);
+  return credentialsPort(need(loaded, "credentials", "a GitHub call"), { root, env }).gh;
 }
 
 /**
  * The GitHub API for the repository at `root`, with the credentials it names.
  * @param {string} root
- * @param {{ spawn?: Spawn }} [options]
+ * @param {{ spawn?: Spawn, env?: Record<string, string | undefined>, warn?: (s: string) => void }} [options]
  * @returns {Api}
  */
 export function github(
   root,
-  { spawn = /** @type {Spawn} */ (/** @type {unknown} */ (spawnSync)) } = {},
+  { spawn = /** @type {Spawn} */ (/** @type {unknown} */ (spawnSync)), env, warn } = {},
 ) {
-  const [command, ...prefix] = ghCommand(root);
+  const [command, ...prefix] = ghCommand(root, { env, warn });
   return (method, path, body) => {
     const args = [
       ...prefix,
