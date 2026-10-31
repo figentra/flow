@@ -41,6 +41,10 @@ export function repo(files = {}) {
   const root = join(top, "main");
   sh(top, "init", "-q", "--bare", "-b", "main", origin);
   sh(top, "init", "-q", "-b", "main", root);
+  // The code under test runs plain git, not sh(): a runner with no global identity must still commit (merges in
+  // `land --stack`), so the repository carries its own.
+  sh(root, "config", "user.name", "t");
+  sh(root, "config", "user.email", "t@t");
   writeFileSync(join(root, "README.md"), "x\n");
   for (const [path, text] of Object.entries(files)) writeFileSync(join(root, path), text);
   sh(root, "add", "-A");
