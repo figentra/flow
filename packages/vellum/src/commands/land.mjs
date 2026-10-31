@@ -344,7 +344,20 @@ export async function run(/** @type {string[]} */ args) {
     console.error(`vellum land: origin (${url}) is not a GitHub repository`);
     return 2;
   }
-  const api = github(root);
+  // AC-034: never a silent fallback to the caller's own gh login.
+  let refusal = "";
+  const api = (() => {
+    try {
+      return github(root);
+    } catch (error) {
+      refusal = /** @type {Error} */ (error).message;
+      return undefined;
+    }
+  })();
+  if (!api) {
+    console.error(`vellum land: ${refusal}`);
+    return 2;
+  }
   let number = Number.parseInt(args.find((a) => /^#?\d+$/.test(a))?.replace("#", "") ?? "", 10);
   if (Number.isNaN(number)) {
     const branch = git(cwd, ["branch", "--show-current"]).out;

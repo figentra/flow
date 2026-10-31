@@ -113,6 +113,7 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - **AC-031**: IF a PR whose spec is small, feature or big has no counted `AI-REVIEW: PASS <head> base=<base>` from the `stackra-reviewer` App (by App identity, unedited, not by the PR's author or the head commit's author or committer) THEN THE CLI SHALL refuse to land it and name the ignored verdicts
 - **AC-032**: WHEN `vellum status --metrics` runs THE CLI SHALL report, for the PRs merged in the window, lead time, cycle time, gate runs and their red share, rework, review rounds and approval latency, computed from GitHub and the specs without stored state
 - **AC-033**: WHEN an agent connects to `vellum mcp` THE server SHALL offer only read-only tools (status, spec, trace, worktrees, metrics) and none that writes, merges, lands, starts or cleans
+- **AC-034**: IF a repository names no GitHub credentials (a wrapper script it has, or `gh-user` on purpose) THEN THE CLI SHALL refuse every GitHub call and never fall back to the caller's own `gh` login; `vellum status --offline` makes none
 - **AC-023**: WHEN a spec carries a `**Session**` line THE CLI SHALL read it as the spec's assigned session and show it in `vellum status`
 - **AC-024**: WHEN `vellum status` runs THE CLI SHALL list each session with its spec, worktree and the `vellum/gate` result of the worktree's head
 - **AC-025**: IF a feature- or big-tier spec past Clarified has no `**Session**` THEN THE CLI SHALL report it in `vellum gate check` as a finding
@@ -160,3 +161,4 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - 2026-10-31: Tasked (revised) — Approved by leader 2026-10-31 (AC-028: the tripwire compares the installed preset with Vellum's bundled one once core keeps no copy, W2)
 - 2026-10-31: phase 3 Planned — Approved by leader 2026-10-31 (land: merge-updated stacks, `stackra-gate[bot]` as defence in depth, any session, `--manual-ok` until phase 6 (AC-030), AC-029 kept)
 - 2026-10-31: phase 3 Planned (revised) — Approved by leader 2026-10-31 (AC-031: the ADR 0230 AI review is a land rule for small, feature and big, ported from core's pr-merge.mjs; `vellum review` follows land)
+- 2026-10-31: Tasked (revised) — Approved by leader 2026-10-31 (AC-034: GitHub calls only with named credentials, never a silent personal `gh` fallback; the adapter phase moves the setting into `vellum.config`)
