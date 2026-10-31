@@ -11,18 +11,12 @@
  * Secrets: none.
  */
 import { spawnSync } from "node:child_process";
-import {
-  existsSync,
-  readdirSync,
-  readFileSync,
-  readlinkSync,
-  realpathSync,
-  statSync,
-} from "node:fs";
+import { existsSync, readdirSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 
 import { credentialsPort } from "../adapters/credentials.mjs";
-import { ConfigError, loadConfig, need } from "./config.mjs";
+import { ConfigError, loadConfig } from "./config.mjs";
+import { CONFIG_FILE } from "./product.mjs";
 
 /** Ignored paths a worktree may hold and still be removed: dependency, build and tool caches. */
 export const CACHES = [
@@ -74,13 +68,9 @@ export function defaultBranch(root) {
 const isLocal = (/** @type {string} */ url) =>
   url !== "" && !/^(?:[a-z][\w+.-]*:\/\/|[^/\s]+@[^:\s]+:)/i.test(url);
 
-/** Roots already warned about the deprecated `bot:git` lookup. */
-const warned = new Set();
-
 /**
  * Runs a network git command in `root` with the credentials the configuration names (the credentials port's `git`
- * prefix). A local origin needs none. For one minor version a repository with no `credentials` but a `bot:git` script
- * still uses it, with a deprecation warning; otherwise it refuses, never falling back to a personal login.
+ * prefix). A local origin needs none; otherwise a missing `credentials` block is refused, never a personal login.
  * @param {string} root
  * @param {string[]} args
  * @returns {{ ok: boolean, out: string, err: string }}
@@ -90,28 +80,9 @@ export function remote(root, args) {
   const loaded = loadConfig(root);
   // An invalid configuration is that error, never a failed git call (a missing tip read as "push it first").
   if (loaded.errors.length) throw new ConfigError(loaded.errors.join("\n"));
-  /** @type {string[] | undefined} */
-  let prefix;
-  try {
-    prefix = credentialsPort(need(loaded, "credentials", "network git"), { root }).git;
-  } catch (error) {
-    if (loaded.config.credentials !== undefined) throw error;
-    let scripts = {};
-    try {
-      scripts = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).scripts ?? {};
-    } catch {
-      // no package.json: no scripts
-    }
-    if (!("bot:git" in scripts))
-      return { ok: false, out: "", err: /** @type {Error} */ (error).message };
-    if (!warned.has(root)) {
-      warned.add(root);
-      console.error(
-        `${error instanceof Error ? error.message : error}; using the bot:git script for now (deprecated: name it in credentials.git)`,
-      );
-    }
-    prefix = ["pnpm", "bot:git", "--"];
-  }
+  if (loaded.config.credentials === undefined)
+    return { ok: false, out: "", err: `network git needs "credentials" in ${CONFIG_FILE}` };
+  const prefix = credentialsPort(loaded.config.credentials, { root }).git;
   if (!prefix)
     return { ok: false, out: "", err: 'credentials: set "git" (the command for network git)' };
   const [command, ...pre] = prefix;

@@ -14,8 +14,7 @@
  *   host holds no job secrets of its own, while a `command` runner brings its own unless it sets `"secrets": true`.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename } from "node:path";
 
 import { ConfigError } from "../../lib/config.mjs";
 import { CONFIG_FILE, NAME } from "../../lib/product.mjs";
@@ -24,12 +23,6 @@ import { CONFIG_FILE, NAME } from "../../lib/product.mjs";
  * @typedef {{ dir: string, command: string, label: string, flags: string[] }} Job
  * @typedef {{ kind: string, wraps: boolean, program: string, run: (job: Job) => number }} Runner
  */
-
-/** The testbed command repositories used before `figentra-flow.config.json` (read until the config files land). */
-export const LEGACY_RUNNER = {
-  kind: "command",
-  run: ["stackra", "testbed", "run", "{label}", "{dir}", "{command}", "{flags}"],
-};
 
 /** An ssh destination safe to put on a command line: `[user@]host`. */
 const HOST = /^(?:[\w.-]+@)?[\w.-]+$/;
@@ -120,13 +113,8 @@ export function runnerPort(block, { spawn = spawnSync } = {}) {
  * @param {{ box?: string, warn?: (s: string) => void, spawn?: typeof spawnSync }} [options]
  * @returns {{ runner?: Runner, problem?: string }}
  */
-export function runnerFor(root, config, { box, warn = console.error, spawn } = {}) {
+export function runnerFor(_root, config, { box, spawn } = {}) {
   if (box !== undefined) return { runner: runnerPort({ kind: "ssh", host: box }, { spawn }) };
   if (config.runner) return { runner: runnerPort(config.runner, { spawn }) };
-  if (existsSync(join(root, CONFIG_FILE)))
-    return { problem: `gate run needs "runner" in ${CONFIG_FILE} (or --box <ssh host>)` };
-  warn(
-    `no ${CONFIG_FILE}: running on the stackra testbed for now (deprecated: set "runner" in ${CONFIG_FILE})`,
-  );
-  return { runner: runnerPort(LEGACY_RUNNER, { spawn }) };
+  return { problem: `gate run needs "runner" in ${CONFIG_FILE} (or --box <ssh host>)` };
 }

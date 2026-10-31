@@ -22,7 +22,6 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { loadConfig } from "../lib/config.mjs";
-import { CONFIG_FILE } from "../lib/product.mjs";
 
 const ROOT = process.cwd();
 export const PRESETS = ".agents/speckit/presets";
@@ -65,11 +64,7 @@ export function presetSource(root) {
     return { dir: join(ASSETS, "presets"), presets: [preset] };
   if (preset)
     return { dir: dirname(resolve(root, preset)), presets: [basename(resolve(root, preset))] };
-  if (existsSync(join(root, CONFIG_FILE)))
-    return { dir: join(ASSETS, "presets"), presets: ["neutral"] };
-  if (existsSync(join(root, PRESETS)))
-    return { dir: PRESETS, presets: readdirSync(join(root, PRESETS)) };
-  return { dir: join(ASSETS, "presets"), presets: ["stackra"] };
+  return { dir: join(ASSETS, "presets"), presets: ["neutral"] };
 }
 
 export function run() {
@@ -80,7 +75,7 @@ export function run() {
     console.log(`$ specify ${args.join(" ")}`);
     const r = spawnSync("specify", args, { cwd: ROOT, stdio: "inherit" });
     if (/** @type {NodeJS.ErrnoException | undefined} */ (r.error)?.code === "ENOENT") {
-      if (presets.join() !== "stackra" && dir !== PRESETS) {
+      if (presets.join() !== "stackra") {
         console.error(
           `specify is not on PATH: the ${presets.join(", ")} preset renders through it (install spec-kit's specify)`,
         );

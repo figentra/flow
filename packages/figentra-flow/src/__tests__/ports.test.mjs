@@ -3,7 +3,7 @@
  * Purpose: hold the credentials and secrets ports to their contracts: `env` needs a token in the environment,
  *   `gh-user` is the caller's own login by choice, `wrapper` refuses a `pnpm` script the repository lacks, a missing
  *   block refuses; network git through a local origin needs no credentials, and a network origin without them is
- *   refused unless the deprecated `bot:git` script exists; the secrets port wraps only with `infisical`, and only with
+ *   refused (there is no `bot:git` fallback, AC-045); the secrets port wraps only with `infisical`, and only with
  *   a path for the scope.
  * Boundary: temporary folders and repositories; nothing reaches a network.
  * Runtime: node

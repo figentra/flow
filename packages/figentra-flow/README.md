@@ -78,8 +78,8 @@ setting you have not made refuses and names it.
   `<key>-<slug>`; `otherBranchPrefixes` (e.g. `["delegate"]`) names further prefixes the branch check accepts. The
   spec gate and trace read the same scheme: spec folders are `<key>-<slug>`, a spec's `**Linear**:` or `**Issue**:`
   line names its key, and tests tag `@covers <key>:<ID>`. `start`, `clean`, `land` and the spec gate's stage comments read and move issues through the
-  tracker. A tracker failure is a warning, never silent and never an exit code. Without a config file, the Linear
-  `STA` scheme used before is kept, with a warning, until the next minor version.
+  tracker. A tracker failure is a warning, never silent and never an exit code. Without a `tracker` block, keys of
+  any prefix are read and the commands that move issues refuse, naming the key.
 
 - `clean.keep` lists worktree names `clean` never removes or adopts. These are globs such as `*-gate`.
 - `artifacts` is the guard `gate run` and `land` apply to a change. `paths` defaults to `.cache/`, `node_modules/`,
@@ -101,8 +101,7 @@ setting you have not made refuses and names it.
     A command runner brings its own secrets; `"secrets": true` wraps the poster with the secrets port as `ssh` and
     `local` do.
 
-  `github-actions` follows. With a config file but no runner, `gate run` refuses; without a config file, the testbed
-  command is kept, with a warning, until the next minor version.
+  Without a runner, `gate run` refuses, naming the key (or pass `--box <ssh host>`).
 
 - `preset` picks the spec-kit preset `sync` installs and the rules the gate holds a spec to:
   - `neutral` (the default with a config file): spec-kit's commands with only what the gates need (the spec
@@ -112,8 +111,8 @@ setting you have not made refuses and names it.
     correctness properties, task routes and the path floors of the tier check.
   - a path to the repository's own preset folder, held to the neutral rules.
 
-  `neutral` and a path need `specify` on PATH to render; without a config file, `stackra` (or the repository's
-  `.agents/speckit/presets/`) is kept until the next minor version.
+  `neutral` and a path need `specify` on PATH to render. There is no other default: without a config file the
+  preset is `neutral`.
 
 The `review.required` key follows in the next step of the same phase. Only
 `figentra-flow.config.json` is read; no other file stands in for it.

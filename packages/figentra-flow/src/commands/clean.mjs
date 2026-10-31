@@ -24,7 +24,7 @@ import { basename, join, resolve, sep } from "node:path";
 import { trackerFor } from "../adapters/tracker/index.mjs";
 import { matches } from "../lib/artifacts.mjs";
 import { loadConfig } from "../lib/config.mjs";
-import { CONFIG_FILE, LANDED_KEY, NAME } from "../lib/product.mjs";
+import { LANDED_KEY, NAME } from "../lib/product.mjs";
 import {
   busyFolders,
   defaultBranch,
@@ -50,12 +50,6 @@ const FINISHED = new Set(["Done", "Canceled", "Cancelled", "Duplicate"]);
  * The issue tracker `clean` reads: an issue's state name (the tracker port's `state`; tests pass their own).
  * @typedef {{ state: (key: string) => Promise<string | undefined> }} Issues
  */
-
-/**
- * The tester's worktree names that repositories used before `figentra-flow.config.json`'s `clean.keep`, applied for one minor
- * version only where no config file exists.
- */
-export const LEGACY_KEEP = ["g-*", "*-gate", "land-*", "tpl-core", "c6-lock*", "template-wt-lean"];
 
 /**
  * Whether `.gitignore` at `root` ignores `.claude/worktrees/`.
@@ -104,8 +98,7 @@ export async function clean(options) {
   const { scheme, tracker } = trackerFor(root, { warn: () => {} });
   const issues = options.issues ?? tracker;
   const loaded = loadConfig(root);
-  const keepNames =
-    loaded.config.clean?.keep ?? (existsSync(join(root, CONFIG_FILE)) ? [] : LEGACY_KEEP);
+  const keepNames = loaded.config.clean?.keep ?? [];
   /** @type {Map<string, string | undefined>} */
   const states = new Map();
   const stateOf = async (/** @type {string} */ key) => {
