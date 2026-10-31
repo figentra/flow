@@ -32,11 +32,12 @@ test("workspace: round trip through VELLUM_WORKSPACE, and empty when the file is
   assert.deepEqual(readWorkspace(file), repos);
 });
 
-test("workspace: finds the repositories under a folder with their GitHub slug", (t) => {
+test("workspace: finds the repositories under a folder with their GitHub slug, not linked worktrees", (t) => {
   const r = repo();
   t.after(r.dispose);
   sh(r.root, "remote", "set-url", "origin", "git@github.com:figentra/vellum.git");
   const top = dirname(r.root);
   mkdirSync(join(top, ".hidden", ".git"), { recursive: true });
+  sh(r.root, "worktree", "add", "-q", "--detach", join(top, "linked"), "main");
   assert.deepEqual(findRepos([top]), [{ path: r.root, github: "figentra/vellum" }]);
 });

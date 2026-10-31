@@ -8,7 +8,7 @@
  * Governing contract: Stackra ADR 0503; STA-1729.
  * Secrets: none.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -58,7 +58,8 @@ export function writeWorkspace(repos, file = workspaceFile()) {
 }
 
 /**
- * The git repositories directly under each folder (and the folders themselves), with their GitHub slug.
+ * The git repositories directly under each folder (and the folders themselves), with their GitHub slug. A linked
+ * worktree (`.git` is a file) is not a repository.
  * @param {string[]} dirs
  * @returns {Repo[]}
  */
@@ -66,7 +67,8 @@ export function findRepos(dirs) {
   /** @type {Repo[]} */
   const repos = [];
   const add = (/** @type {string} */ path) => {
-    if (!existsSync(join(path, ".git")) || repos.some((r) => r.path === path)) return;
+    if (!existsSync(join(path, ".git")) || !statSync(join(path, ".git")).isDirectory()) return;
+    if (repos.some((r) => r.path === path)) return;
     const url = git(path, ["remote", "get-url", "origin"]).out;
     const github = url.match(/github\.com[:/]+(.+?)(?:\.git)?$/)?.[1] ?? "";
     repos.push({ path, github });
