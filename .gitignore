@@ -1,38 +1,9 @@
-# Dependencies
 node_modules/
-.pnpm-store/
-
-# Build outputs
 dist/
-*.tsbuildinfo
-.turbo/
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Test
 coverage/
-# ...but not source modules named coverage (packages/engine/src/coverage)
-!**/src/coverage/
-.nyc_output/
-
-# Temp
-*.tmp
-*.temp
-.cache/
-
-# Environment
-.env
-.env.local
-.env.*.local
-
-# Logs
+.turbo/
+*.tsbuildinfo
 *.log
-npm-debug.log*
+.DS_Store
+.env
+.env.*

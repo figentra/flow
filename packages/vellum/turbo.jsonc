@@ -1,0 +1,6 @@
+// Turborepo package configuration: extends the root turbo.jsonc and declares this member's tags.
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tags": ["tier:lib", "category:developer", "runtime:node"],
+}
