@@ -7,7 +7,8 @@
  *   key straight to the secrets port's `store`, and prints the App's slug and login for the configuration.
  * Boundary: refuses when stdin is not a terminal or an agent or CI session is detected: creating an identity is the
  *   owner's act. The manifest asks for no webhook and only the permissions the role needs. The local server listens
- *   on 127.0.0.1 only and closes after one callback or ten minutes.
+ *   on 127.0.0.1 only, on a random port, takes one valid callback (the one-time state is spent on it) and closes then
+ *   or after five minutes.
  * Runtime: node
  * Governing contract: STA-1729 phase A (A4).
  * Secrets: the conversion's private key passes from the response to `store` and nowhere else: never printed, logged
@@ -87,7 +88,7 @@ const formPage = (/** @type {string} */ target, /** @type {any} */ manifest) => 
  * @param {{ manifest: (redirect: string) => any, target: (state: string) => string, timeoutMs?: number }} options
  * @returns {Promise<{ url: string, code: Promise<string> }>}
  */
-export function serveManifest({ manifest, target, timeoutMs = 10 * 60_000 }) {
+export function serveManifest({ manifest, target, timeoutMs = 5 * 60_000 }) {
   const state = randomBytes(16).toString("hex");
   return new Promise((ready) => {
     /** @type {(code: string) => void} */
@@ -121,7 +122,7 @@ export function serveManifest({ manifest, target, timeoutMs = 10 * 60_000 }) {
     });
     const timer = setTimeout(() => {
       server.close();
-      reject(new Error("no callback from GitHub within ten minutes"));
+      reject(new Error("no callback from GitHub within five minutes"));
     }, timeoutMs);
     server.listen(0, "127.0.0.1", () => {
       const { port } = /** @type {import("node:net").AddressInfo} */ (server.address());
@@ -151,7 +152,8 @@ export async function convert(code, fetch) {
  * Creates the App and stores its id and key through the secrets port.
  * @param {{ role: "gate" | "review", root: string, org?: string, name?: string, keyFile?: string,
  *           env?: Record<string, string | undefined>, isTTY?: boolean, fetch?: any, open?: (url: string) => void,
- *           log?: (s: string) => void, secrets?: import("../adapters/secrets.mjs").Secrets }} options
+ *           log?: (s: string) => void, error?: (s: string) => void,
+ *           secrets?: import("../adapters/secrets.mjs").Secrets }} options
  * @returns {Promise<number>}
  */
 export async function createApp(options) {
@@ -163,11 +165,12 @@ export async function createApp(options) {
     isTTY = Boolean(process.stdin.isTTY),
     fetch = globalThis.fetch,
     log = console.log,
+    error = console.error,
   } = options;
   const refused = refusal(env, isTTY);
-  if (refused) return (console.error(`${NAME} app create: ${refused}`), 2);
+  if (refused) return (error(`${NAME} app create: ${refused}`), 2);
   const loaded = loadConfig(root);
-  if (loaded.errors.length) return (console.error(loaded.errors.join("\n")), 2);
+  if (loaded.errors.length) return (error(loaded.errors.join("\n")), 2);
   const secrets = options.secrets ?? secretsPort(loaded.config.secrets);
   const name = options.name ?? `${NAME}-${role}${org ? `-${org}` : ""}`;
   const url = org ? `https://github.com/${org}` : "https://github.com";
@@ -180,14 +183,22 @@ export async function createApp(options) {
   });
   log(`${NAME} app create: open ${served.url} to create the ${role} App on GitHub`);
   (options.open ?? openBrowser)(served.url);
-  const app = await convert(await served.code, fetch);
+  /** @type {{ id: number, slug: string, pem: string }} */
+  let app;
+  try {
+    app = await convert(await served.code, fetch);
+  } catch (failure) {
+    // Only our own messages reach here (never a response body), so nothing GitHub sent is printed.
+    error(`${NAME} app create: ${/** @type {Error} */ (failure).message}`);
+    return 1;
+  }
   const prefix = `${ENV_PREFIX}${role.toUpperCase()}_`;
   const key = secrets.store(`${prefix}PRIVATE_KEY`, app.pem, {
     scope: role,
     file: options.keyFile,
   });
   if (!key.ok) {
-    console.error(
+    error(
       `${NAME} app create: ${key.problem}. The App ${app.slug} exists without a stored key: generate a new key in its settings, or delete it and rerun.`,
     );
     return 1;

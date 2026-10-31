@@ -13,9 +13,11 @@
  *   command substitution assigned to `INFISICAL_TOKEN` for the `infisical run` process alone (AC-044): never an
  *   argument (a process list shows those), never in this process, the command text or a log.
  *   `store` is `app create`'s one hand-off of a new App's key, on the human's machine: `env` writes a new 0600 file
- *   at the path the human names; `infisical` writes the value to a 0600 file in a private temporary folder and runs
+ *   at the path the human names, refusing one inside a git work tree that git does not ignore (so the key cannot be
+ *   committed by accident); `infisical` writes the value to a 0600 file in a private (0700) temporary folder and runs
  *   `infisical secrets set <NAME>=@<file>` with the human's own login (the CLI reads the file, so the value is on no
- *   command line), discards the CLI's output (its table can echo values) and removes the folder.
+ *   command line), discards the CLI's output (its table can echo values) and removes the folder: in a `finally`, and
+ *   from a SIGINT or SIGTERM handler while the file exists.
  * Runtime: node
  * Governing contract: STA-1729 phase A (A1); Stackra ADR 0257 for our Infisical use.
  * Secrets: paths, ids and environment names only, never values.
@@ -23,7 +25,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 import { ConfigError } from "../lib/config.mjs";
 
@@ -35,6 +37,24 @@ import { ConfigError } from "../lib/config.mjs";
 
 /** A value safe to put in a shell word unquoted: a project id or an environment slug. */
 const SAFE = /^[\w.-]+$/;
+
+/**
+ * Why a key file may not be written at `file`: it lies inside a git work tree and git does not ignore it.
+ * @param {string} file
+ * @returns {string | undefined}
+ */
+export function trackable(file) {
+  const dir = dirname(resolve(file));
+  const inside = spawnSync("git", ["-C", dir, "rev-parse", "--is-inside-work-tree"], {
+    encoding: "utf8",
+  });
+  if (inside.status !== 0 || inside.stdout.trim() !== "true") return undefined;
+  // Relative to its own folder, so a symlinked temp path (/var vs /private/var) cannot confuse git.
+  const ignored = spawnSync("git", ["-C", dir, "check-ignore", "-q", "--", basename(file)]);
+  return ignored.status === 0
+    ? undefined
+    : `${file} is inside a git work tree and not ignored; write the key outside the repository`;
+}
 
 /** A file on the box: absolute, or under `~` or `$HOME`. */
 const BOX_PATH = /^(?:~|\$HOME)?\/[\w./-]+$/;
@@ -57,6 +77,8 @@ export function secretsPort(block) {
             ok: false,
             problem: `the env secrets port stores ${name} in a file: pass --key-file <path>`,
           };
+        const tracked = trackable(file);
+        if (tracked) return { ok: false, problem: tracked };
         try {
           // `wx`: never over an existing file; 0600: only its owner reads it.
           writeFileSync(file, value, { mode: 0o600, flag: "wx" });
@@ -106,7 +128,18 @@ export function secretsPort(block) {
         if (!/^[A-Z][A-Z0-9_]*$/.test(name))
           return { ok: false, problem: `${name} is not a secret name` };
         const path = pathOf(scope);
+        // mkdtemp makes the folder 0700; the file inside is 0600.
         const dir = mkdtempSync(join(tmpdir(), "flow-store-"));
+        const remove = () => rmSync(dir, { recursive: true, force: true });
+        /** @type {Record<string, () => void>} */
+        const handlers = {};
+        for (const [signal, code] of /** @type {const} */ ([
+          ["SIGINT", 130],
+          ["SIGTERM", 143],
+        ])) {
+          handlers[signal] = () => (remove(), process.exit(code));
+          process.on(signal, handlers[signal]);
+        }
         try {
           const file = join(dir, "value");
           writeFileSync(file, value, { mode: 0o600 });
@@ -120,13 +153,18 @@ export function secretsPort(block) {
             encoding: "utf8",
           });
           if (r.status === 0) return { ok: true, where: `Infisical ${path}/${name}` };
-          const why = r.error ? r.error.message : `infisical exited ${r.status}`;
+          const why = r.signal
+            ? `interrupted by ${r.signal}`
+            : r.error
+              ? r.error.message
+              : `infisical exited ${r.status}`;
           return {
             ok: false,
             problem: `storing ${name} at ${path} failed (${why}); is \`infisical login\` done?`,
           };
         } finally {
-          rmSync(dir, { recursive: true, force: true });
+          remove();
+          for (const [signal, handler] of Object.entries(handlers)) process.off(signal, handler);
         }
       },
       wrap(command, scope) {
