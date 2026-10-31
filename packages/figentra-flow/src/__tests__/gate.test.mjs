@@ -43,6 +43,7 @@ import { keyScheme } from "../adapters/tracker/index.mjs";
 import { labelsFor, specLinks, unlinkedTasks } from "../commands/linear.mjs";
 import { init } from "../commands/init.mjs";
 import { ASSETS, installSkills } from "../commands/sync.mjs";
+import { CONFIG_FILE, PACKAGE } from "../lib/product.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BIN = join(HERE, "../../bin/figentra-flow.mjs");
@@ -351,7 +352,7 @@ test("another tracker's scheme: keys, branches, folders, lanes, bugs and specDir
 });
 
 test("tripwire: the repository passes, and an upgrade that drops the wrap or resets numbering fails", () => {
-  assert.deepEqual(tripwire(ROOT), []);
+  assert.deepEqual(tripwire(ROOT, "stackra"), []);
   const root = mkdtempSync(join(tmpdir(), "spec-trip-"));
   try {
     for (const p of [
@@ -392,19 +393,23 @@ test("tripwire: the repository passes, and an upgrade that drops the wrap or res
       '{"workflows":{"speckit":{"source":"bundled"}}}',
     );
     const more = tripwire(root, "stackra").join("\n");
-    assert.match(more, /speckit\.taskstoissues\.md lost the Stackra wrap/);
+    assert.match(more, /speckit\.taskstoissues\.md lost the preset's wrap/);
     assert.match(more, /workflow is enabled/);
-    // The installed preset must equal its source.
+    // The installed preset must equal its source: here the repository's own preset folder, named in the config.
     for (const p of [
       ".agents/speckit/presets/stackra/preset.yml",
       ".specify/presets/stackra/preset.yml",
     ])
       cpSync(join(ROOT, p), join(root, p), { recursive: true });
-    assert.doesNotMatch(tripwire(root, "stackra").join(), /differs from/);
+    writeFileSync(
+      join(root, CONFIG_FILE),
+      JSON.stringify({ version: 1, preset: ".agents/speckit/presets/stackra" }),
+    );
+    assert.doesNotMatch(tripwire(root).join(), /differs from/);
     writeFileSync(join(root, ".specify/presets/stackra/preset.yml"), "hand edit\n");
     assert.match(
-      tripwire(root, "stackra").join(),
-      /\.specify\/presets\/stackra\/preset\.yml differs from/,
+      tripwire(root).join(),
+      /\.specify\/presets\/stackra\/preset\.yml differs from \.agents\/speckit\/presets\/stackra\/preset\.yml/,
     );
   } finally {
     rmSync(root, { recursive: true });
@@ -421,9 +426,12 @@ test("tripwire: without its own preset source a repository's installed preset mu
       join(root, ".specify/presets/stackra/templates/spec-template.md"),
       "an old template\n",
     );
-    assert.match(
-      tripwire(root, "stackra").join(),
-      /\.specify\/presets\/stackra\/templates\/spec-template\.md differs from the preset bundled in figentra-flow/,
+    assert.ok(
+      tripwire(root, "stackra")
+        .join()
+        .includes(
+          `.specify/presets/stackra/templates/spec-template.md differs from the preset bundled in ${PACKAGE}`,
+        ),
     );
   } finally {
     rmSync(root, { recursive: true });

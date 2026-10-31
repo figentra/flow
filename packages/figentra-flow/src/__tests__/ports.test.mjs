@@ -13,7 +13,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -113,6 +122,52 @@ test("secrets: env leaves the command alone; infisical wraps with the scope's pa
   assert.throws(
     () => secretsPort({ kind: "infisical", envFile: "~/.ci-env", paths: {} }),
     /envFile needs "auth"/,
+  );
+});
+
+test("secrets store: env writes a new 0600 file only; infisical sets NAME=@file and leaves no file", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "flow-store-test-"));
+  t.after(() => rmSync(dir, { recursive: true }));
+  const env = secretsPort({ kind: "env" });
+  const file = join(dir, "key.pem");
+  assert.deepEqual(env.store("X_PRIVATE_KEY", "pem-value", { file }), { ok: true, where: file });
+  assert.equal(statSync(file).mode & 0o777, 0o600);
+  assert.equal(
+    env.store("X_PRIVATE_KEY", "again", { file }).ok,
+    false,
+    "never over an existing file",
+  );
+  assert.match(env.store("X_PRIVATE_KEY", "v").problem ?? "", /--key-file/);
+  /** @type {{ program: string, args: string[], value?: string, mode?: number }[]} */
+  const calls = [];
+  const spawn = (/** @type {string} */ program, /** @type {string[]} */ args) => {
+    const at = args.at(-1)?.split("=@")[1] ?? "";
+    calls.push({ program, args, value: readFileSync(at, "utf8"), mode: statSync(at).mode & 0o777 });
+    return { status: 0 };
+  };
+  const vault = secretsPort({
+    kind: "infisical",
+    projectId: "p1",
+    env: "prod",
+    paths: { gate: "/ci/gate" },
+  });
+  assert.equal(vault.store("X_PRIVATE_KEY", "pem-value", { scope: "gate", spawn }).ok, true);
+  const [call] = calls;
+  assert.deepEqual(call.args.slice(0, 5), [
+    "secrets",
+    "set",
+    "--projectId=p1",
+    "--env=prod",
+    "--path=/ci/gate",
+  ]);
+  assert.match(call.args[5], /^X_PRIVATE_KEY=@\//);
+  assert.equal(call.value, "pem-value");
+  assert.equal(call.mode, 0o600);
+  assert.equal(call.args.join(" ").includes("pem-value"), false, "the value is on no command line");
+  assert.equal(existsSync(call.args[5].split("=@")[1]), false, "the file is gone");
+  assert.match(
+    vault.store("x y", "v", { scope: "gate", spawn }).problem ?? "",
+    /not a secret name/,
   );
 });
 
