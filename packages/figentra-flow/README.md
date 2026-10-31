@@ -93,7 +93,18 @@ setting you have not made refuses and names it.
 
   There are no defaults. Without a gate App `land` refuses, and without a review App no verdict counts.
 
-The runner, preset and `review.required` keys follow in the next steps of the same phase. Only
+  `figentra-flow app create gate|review [--org <login>] [--name <name>] [--key-file <path>]` creates either App by
+  GitHub's App-manifest flow, for a human at a terminal only (an agent or CI session is refused). It opens a local
+  page that sends the manifest to GitHub (no webhook; the gate gets `contents: read`, `statuses` and
+  `pull_requests: write`, the review App `contents: read`, `pull_requests` and `issues: write`), then hands the private
+  key and the App id to the secrets port: with `infisical`, `infisical secrets set NAME=@<file>` under the role's path,
+  so the key is on no command line; with `env`, a new 0600 file at `--key-file`. It prints the slug and login to set
+  under `apps`.
+
+- `review.required` lists the spec tiers whose changes need the AI review before `land` (default `small`,
+  `feature`, `big`; a spec with no tier counts as `small`).
+
+The preset key follows in the next step of the same phase. Only
 `figentra-flow.config.json` is read; no other file stands in for it.
 
 ## The gate
