@@ -61,7 +61,10 @@ setting you have not made refuses and names it.
   There is never a fallback to a personal login. A local origin (a path) needs no credentials.
 
 - `secrets` says how secrets reach the gate's poster on a box: `env` (the box's environment), or `infisical` with
-  `paths` per scope, e.g. `"gate": "/ci/gate"`. Vellum wraps the command and never reads a value.
+  `paths` per scope, e.g. `"gate": "/ci/gate"`. On a box with no login, `"auth": "universal-auth"` logs in
+  from the box's `INFISICAL_UNIVERSAL_AUTH_CLIENT_ID` and `INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET` inside the wrapped
+  command, and `projectId` and `env` name the project and environment. Vellum wraps the command and never reads a
+  value.
 - `gate.check` is the check command (default `pnpm verify`).
 
 - `artifacts` is the guard `gate run` and `land` apply to a change. `paths` defaults to `.cache/`, `node_modules/`,

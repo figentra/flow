@@ -74,6 +74,21 @@ test("secrets: env leaves the command alone; infisical wraps with the scope's pa
     "infisical run --silent --path=/ci/gate -- node post.mjs",
   );
   assert.throws(() => infisical.wrap("x", "review"), /set paths\.review/);
+  const box = secretsPort({
+    kind: "infisical",
+    auth: "universal-auth",
+    projectId: "abc-123",
+    env: "prod",
+    paths: { gate: "/ci/gate" },
+  });
+  assert.equal(
+    box.wrap("node post.mjs", "gate"),
+    'infisical run --silent --token="$(infisical login --method=universal-auth --silent --plain)" --projectId=abc-123 --env=prod --path=/ci/gate -- node post.mjs',
+  );
+  assert.throws(
+    () => secretsPort({ kind: "infisical", projectId: "x; y", paths: {} }),
+    /projectId is not an id/,
+  );
   assert.throws(
     () => secretsPort({ kind: "infisical", paths: { gate: "/ci; rm -rf /" } }).wrap("x", "gate"),
     /is not a path/,

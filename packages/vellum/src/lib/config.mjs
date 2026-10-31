@@ -69,7 +69,15 @@ export const SCHEMA = {
       { ssh: ["host"], command: ["run"] },
     ),
     secrets: port(
-      { env: {}, infisical: { paths: { type: "object", additionalProperties: str } } },
+      {
+        env: {},
+        infisical: {
+          paths: { type: "object", additionalProperties: str },
+          projectId: str,
+          env: str,
+          auth: { enum: ["universal-auth"] },
+        },
+      },
       { infisical: ["paths"] },
     ),
     apps: {
