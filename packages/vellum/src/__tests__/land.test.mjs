@@ -33,6 +33,7 @@ const pr = (over = {}) => ({
   ...over,
 });
 const quiet = { log: () => {}, warn: () => {} };
+const PASSED = { verdict: "PASS", ignored: [] };
 
 test("rules: a green, approved, conventional PR on main may land; each rule names its reason", () => {
   const ok = { pr: pr(), statuses: GREEN, base: "main", required: true };
@@ -69,7 +70,7 @@ test("rules: a green, approved, conventional PR on main may land; each rule name
 });
 
 test("rules: a feature spec needs its approval and Tasked; a spec without a tier passes", () => {
-  const ok = { pr: pr(), statuses: GREEN, base: "main", required: true };
+  const ok = { pr: pr(), statuses: GREEN, base: "main", required: true, review: PASSED };
   const feature = (/** @type {string} */ status) =>
     `# Spec\n\n**Status**: ${status}\n\n**Tier**: feature\n\n**Approver**: leader\n\n## Status history\n\n- Draft → Clarified\n`;
   assert.match(
@@ -79,6 +80,26 @@ test("rules: a feature spec needs its approval and Tasked; a spec without a tier
   // At Tasked without the recorded stop, the approval rule of ADR 0502 refuses.
   assert.match(landRules({ ...ok, spec: feature("Tasked") }).join("\n"), /^spec: /m);
   assert.deepEqual(landRules({ ...ok, spec: "# Spec\n\n**Status**: Draft\n" }), []);
+});
+
+test("rules: a change with a spec needs the AI review PASS on its head (AC-031); trivial work, with no spec, is exempt", () => {
+  const base = { pr: pr(), statuses: GREEN, base: "main", required: true };
+  const small = "# Spec\n\n**Status**: Tasked\n\n**Tier**: small\n";
+  assert.deepEqual(landRules(base), []);
+  assert.deepEqual(landRules({ ...base, spec: "# Spec\n\n**Tier**: trivial\n" }), []);
+  assert.match(
+    landRules({ ...base, spec: small }).join(),
+    /no AI review PASS for c{40} \(counted verdict: none\).*AI-REVIEW: PASS c{40} base=main/,
+  );
+  assert.match(
+    landRules({
+      ...base,
+      spec: small,
+      review: { verdict: "FAIL", ignored: ["x is not the stackra-reviewer app"] },
+    }).join(),
+    /counted verdict: FAIL.*ignored: x is not the stackra-reviewer app/,
+  );
+  assert.deepEqual(landRules({ ...base, spec: small, review: PASSED }), []);
 });
 
 test("squash message: one Refs line and each co-author once", () => {
@@ -128,7 +149,7 @@ function world({ failMerge = false } = {}) {
       if (failMerge)
         return { ok: false, json: undefined, err: "gh: Head branch was modified (HTTP 409)" };
       sh(r.root, "merge", "-q", "--squash", branch);
-      sh(r.root, "commit", "-q", "-m", body.commit_title);
+      sh(r.root, "commit", "-q", "-m", /** @type {any} */ (body).commit_title);
       sh(r.root, "push", "-q", "origin", "main");
       return ok({ sha: sh(r.root, "rev-parse", "HEAD") });
     }
@@ -244,7 +265,10 @@ test("land --stack: lands the bottom, updates the next by a merge commit and a p
     deps: { api, done: async () => {}, ...quiet, gate: async (dir) => (gated.push(dir), 1) },
   });
   assert.equal(result.code, 1);
-  assert.match(result.problems?.join() ?? "", /#8: vellum gate run exited 1; the stack stops here/);
+  assert.match(
+    "problems" in result ? result.problems.join() : "",
+    /#8: vellum gate run exited 1; the stack stops here/,
+  );
   assert.deepEqual(gated, [topPath]);
   // The bottom landed; the top got main by a merge commit (two parents), pushed without a rewrite.
   assert.equal(existsSync(w.path), false);

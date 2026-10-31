@@ -460,3 +460,10 @@ the branch when `clean` deletes the branch.
    It reads `GET /repos/{r}/rules/branches/{default}` and looks for a `required_status_checks` rule naming
    `vellum/gate`. Only stackra-f4 passes `--manual-ok`, during the transition. The flag is printed in the PR comment.
 5. AC-029 stays.
+6. **The AI review is a land rule** (added 2026-10-31, AC-031). Every change with a spec (small, feature or big) needs
+   the counted ADR 0230 verdict on its head; trivial work has no spec and is exempt. The verdict is
+   `AI-REVIEW: PASS <40-hex head> base=<base>` from the `stackra-reviewer` App, matched by App identity, unedited and
+   not by the PR's author or the head commit's author or committer; a FAIL for the head beats a PASS. The owner's
+   APPROVED review with `owner-approval` on the head also counts. It is ported from core's `pr-merge.mjs` without its
+   patch-id survival, because land merges the exact head. `vellum review`, run by a different agent than the builder
+   and posting through `pnpm bot:review`, is designed after land (T035).

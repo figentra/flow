@@ -18,6 +18,7 @@ import { clean } from "./clean.mjs";
 import { gateRun } from "./gate-run.mjs";
 import { client, linear } from "../lib/linear.mjs";
 import { github } from "../lib/github.mjs";
+import { aiReview, REVIEWER } from "../lib/review.mjs";
 import {
   defaultBranch,
   fetch,
@@ -38,7 +39,7 @@ export const CONVENTIONAL =
 /**
  * Every reason the PR may not land; empty means it may.
  * @param {{ pr: any, statuses: any[], base: string, spec?: string, gateApp?: string, required: boolean,
- *           manualOk?: boolean, stack?: boolean }} input
+ *           manualOk?: boolean, stack?: boolean, review?: { verdict: string | null, ignored: string[] } }} input
  * @returns {string[]}
  */
 export function landRules({
@@ -50,6 +51,7 @@ export function landRules({
   required,
   manualOk = false,
   stack = false,
+  review,
 }) {
   const problems = [];
   const head = String(pr.head?.sha ?? "").slice(0, 12);
@@ -74,6 +76,12 @@ export function landRules({
   if (!CONVENTIONAL.test(title) || title.length > 100)
     problems.push(
       `the title is not a conventional commit header of at most 100 characters: "${title}"`,
+    );
+  // ADR 0230 (AC-031): every change with a spec (small, feature, big) needs the independent AI review on its head;
+  // trivial work has no spec and is exempt.
+  if (spec !== undefined && tierOf(spec) !== "trivial" && review?.verdict !== "PASS")
+    problems.push(
+      `no AI review PASS for ${pr.head?.sha} (counted verdict: ${review?.verdict ?? "none"}): a different agent posts "AI-REVIEW: PASS ${pr.head?.sha} base=${pr.base?.ref}" as the ${REVIEWER} app through \`pnpm bot:review\`${review?.ignored.length ? `; ignored: ${[...new Set(review.ignored)].join("; ")}` : ""}`,
     );
   if (spec !== undefined) {
     problems.push(...checkApproval(spec).map((p) => `spec: ${p}`));
@@ -102,6 +110,9 @@ export function squashMessage(/** @type {string | undefined} */ key, /** @type {
         coauthors.add(line.trim().replace(/^co-authored-by/i, "Co-Authored-By"));
   return [...(key ? [`Refs: ${key.toUpperCase()}`] : []), ...coauthors].join("\n");
 }
+
+/** A list response's items; none when the call failed or answered something else. */
+const list = (/** @type {{ json: any }} */ r) => (Array.isArray(r.json) ? r.json : []);
 
 /** The spec text at `sha` for the branch's key, read through the API; undefined when there is none. */
 function specAt(
@@ -159,11 +170,20 @@ export async function landOne({
       ),
   );
   const key = issueKey(branch);
+  const spec = specAt(api, repo, head, key);
+  const commit = api("GET", `/repos/${repo}/commits/${head}`).json ?? {};
+  const review = aiReview(
+    { sha: head, base: pr.json.base.ref },
+    list(api("GET", `/repos/${repo}/issues/${number}/comments?per_page=100`)),
+    list(api("GET", `/repos/${repo}/pulls/${number}/reviews?per_page=100`)),
+    [pr.json.user?.login, commit.author?.login, commit.committer?.login],
+  );
   const problems = landRules({
     pr: pr.json,
     statuses,
     base,
-    spec: specAt(api, repo, head, key),
+    spec,
+    review,
     gateApp,
     required,
     manualOk,

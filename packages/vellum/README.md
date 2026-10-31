@@ -56,6 +56,8 @@ check exited 0. Nothing secret reaches the comment or the log. Exit codes: 0 gre
   it);
 - titled with a conventional commit header;
 - approved as its spec's tier requires (ADR 0502), and at Tasked or later for a feature or big spec.
+- for a change with a spec: reviewed. The `stackra-reviewer` App's unedited `AI-REVIEW: PASS <head> base=<base>`
+  comment, never from the change's own authors, is on its head (ADR 0230). Trivial work, with no spec, is exempt.
 
 It lists every failing rule. Then it squash-merges with GitHub's `sha` guard, so the merge fails if the head moved. A
 `Refs:` line and the co-author trailers go into the squash commit. After the merge it:
