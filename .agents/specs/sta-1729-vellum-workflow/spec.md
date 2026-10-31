@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-31
 
-**Status**: Clarified — Approved by leader 2026-10-31
+**Status**: Tasked
 
 **Tier**: big
 
@@ -63,8 +63,10 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - **FR-2** A worktree is created only by `vellum start`: the guard refuses `git worktree add` to any path outside
   `<repo>/.claude/worktrees/`.
 - **FR-3** Every repository ignores `.claude/worktrees/`; `vellum init` and `vellum clean --fix-ignore` add it.
-- **FR-4** `vellum clean` removes a worktree only when it is clean, its branch is landed or abandoned, and its commits
-  are on the remote; it never removes a tester gate worktree (`g-*`) or one with unpushed commits.
+- **FR-4** `vellum clean` removes a worktree only when it is clean and saved (its head on a remote ref, or every commit
+  landed by patch), and either its issue is Done or Canceled or, without an issue key, it has been idle for at least
+  2 hours; it keeps tester worktrees, trees holding ignored files outside the usual caches, and every tree it cannot
+  prove saved, and reports the space it frees.
 - **FR-5** `vellum gate` runs the full check set on a testbed box and posts `vellum/gate` (success or failure, with
   the report URL) on the head commit with the gate bot's token.
 - **FR-6** `vellum land` merges only with a green `vellum/gate` on the head and the spec's approvals recorded, as one
@@ -92,6 +94,11 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - **AC-014**: WHEN `vellum ship <env>` runs for dev or staging THE CLI SHALL call runway deploy for that environment
 - **AC-015**: IF `vellum ship production` is asked for THEN THE CLI SHALL refuse and name `runway promote` by the owner
 - **AC-016**: WHILE a repository is switched over THE repository SHALL require only `vellum/gate` on main and keep only the Release workflow
+- **AC-018**: WHEN `vellum clean` decides whether a worktree is saved THE CLI SHALL count it saved when its head is on a remote ref or `git cherry origin/<default> HEAD` lists no `+` commit
+- **AC-019**: WHILE a worktree has a detached HEAD THE CLI SHALL treat it like any other: removable when it is clean, idle and saved
+- **AC-020**: IF a worktree's branch carries no issue key THEN THE CLI SHALL require it to be clean, saved and idle for at least 2 hours, measured from the HEAD reflog's modification time, instead of a Linear state
+- **AC-021**: WHEN `vellum clean` removes worktrees THE CLI SHALL report the disk space it freed
+- **AC-022**: IF a worktree holds an ignored file outside the usual caches (such as `.env`, `ios/` or `android/`) THEN THE CLI SHALL keep it and name the files
 - **AC-017**: WHEN `vellum land --stack` runs on a stack of PRs THE CLI SHALL land them bottom-up in order, each only after its own green `vellum/gate` on its rebased head
 
 ## Clarifications (the leader's answers at the spec stop, 2026-10-31)
@@ -128,3 +135,5 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 
 - 2026-10-31: Draft (questions sent to the leader for the spec stop)
 - 2026-10-31: Draft → Clarified — Approved by leader 2026-10-31 (technical stop under ADR 0502; Q1 to Q8 answered)
+- 2026-10-31: Clarified → Planned — Approved by leader 2026-10-31 (phase 1, with three revisions to `vellum clean`: AC-018 to AC-022)
+- 2026-10-31: Planned → Tasked (tasks for phase 1; later phases are placeholders)

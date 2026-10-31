@@ -37,12 +37,23 @@ never blocks (ADR 0065 rule 7).
   then `git worktree add <repo>/.claude/worktrees/sta-n-<slug> -b figentra/sta-n-<slug> origin/<default>`, move STA-n
   to In Progress with a comment naming the branch, and run `pnpm install` only with `--install`.
 - **`vellum clean [--dry-run] [--adopt] [--fix-ignore] [--all]`**: for each worktree of the repository (or of every
-  workspace repository with `--all`):
-  - skip a tester worktree (`g-*`, `*-gate`, `land-*`, `tpl-core`, `c6-lock*`, `template-wt-lean`) and a detached HEAD;
-  - remove a worktree inside `.claude/worktrees/` when it is clean, its issue is Done or Canceled (landed or abandoned),
-    and its head is on a remote (an ancestor of `origin/<default>`, or contained by a remote branch); then delete its
-    local branch;
-  - report every kept one with its reason (dirty, unpushed, issue open, tester);
+  workspace repository with `--all`), the leader's revisions of 2026-10-31 included:
+  - **skip** a tester worktree (`g-*`, `*-gate`, `land-*`, `tpl-core`, `c6-lock*`, `template-wt-lean`);
+  - **clean**: `git status --porcelain` is empty (untracked files count);
+  - **saved**: the head is on a remote ref (`git branch -r --contains`, or an ancestor of `origin/<default>`), or every
+    commit is landed (`git cherry origin/<default> HEAD` lists no `+`), since core builders never push and stackra-f4
+    lands by cherry-pick;
+  - **finished**: with an issue key in the branch (`sta-n`), the issue is Done or Canceled; without one (a detached HEAD,
+    or a builder sub-agent tree such as `agent-*`, `wf_*` or a random name), the tree has been idle for at least
+    2 hours, from the modification time of its HEAD reflog (`<gitdir>/logs/HEAD`), not the index, which `git status`
+    touches;
+  - **no precious ignored files**: `git status --ignored --porcelain` lists nothing outside the usual caches
+    (`node_modules`, `dist`, `build`, `coverage`, `.turbo`, `.cache`, `.stackra`, `.next`, `.expo`, `*.tsbuildinfo`,
+    `.DS_Store`); a tree with anything else (`.env`, `ios/`, `android/`, …) is kept and the files are named;
+  - a tree that passes every test is removed (`git worktree remove`), with its local branch when it has one, and its
+    size (`du -sk` before removal) is added to the space freed, which the command reports;
+  - every kept tree is reported with its reason (tester, dirty, unsaved, issue open, idle for less than 2 hours, precious
+    ignored files, Linear unavailable);
   - `--adopt`: move each clean, non-tester worktree outside `.claude/worktrees/` inside with `git worktree move`, and
     list the tester ones for stackra-f4 and the dirty ones for their owner;
   - `--fix-ignore`: add `.claude/worktrees/` to `.gitignore` when missing and say a commit is needed.
@@ -90,7 +101,7 @@ repository's bot wrapper. `vellum clean` never deletes a worktree with uncommitt
 ## Testing strategy
 
 `node:test` against temporary repositories with a bare remote: start (folder, branch, refusals, slug, injected Linear),
-clean (each keep reason, removal, tester names, adopt, fix-ignore), guard (allowed and denied paths, `-C`, `cd &&`,
+clean (each keep reason, saved by remote and by cherry, detached and keyless trees with the idle time, precious ignored files, space freed, tester names, adopt, fix-ignore), guard (allowed and denied paths, `-C`, `cd &&`,
 non-matching commands, unreadable input) and the workspace file. Run on a box by stackra-f4 (`pnpm verify`), never on
 the Mac. Each test carries `@covers sta-1729:AC-###`.
 
@@ -132,7 +143,7 @@ the Mac. Each test carries `@covers sta-1729:AC-###`.
 - **P-001**: `vellum start` creates exactly one branch and one worktree under `.claude/worktrees/`, or changes nothing — Validates: FR-1
 - **P-002**: the guard denies a `worktree add` path outside `.claude/worktrees/` and passes every other command — Validates: FR-2
 - **P-003**: `--fix-ignore` leaves every repository ignoring `.claude/worktrees/` exactly once — Validates: FR-3
-- **P-004**: `vellum clean` never removes a dirty, unpushed, open or tester worktree — Validates: FR-4
+- **P-004**: `vellum clean` removes a tree only when it is clean, saved (on a remote or landed by patch), finished (issue closed, or idle 2 hours without a key) and free of precious ignored files, and never a tester tree — Validates: FR-4
 - **P-005**: phase 2's gate posts `vellum/gate` only for the head it ran on (designed in phase 2) — Validates: FR-5
 - **P-006**: phase 3's land merges only on a green gate and recorded approvals (designed in phase 3) — Validates: FR-6
 - **P-007**: phase 4's status lists every workspace repository (designed in phase 4) — Validates: FR-7
