@@ -62,7 +62,7 @@ test("rules: a green, approved, conventional PR on main may land; each rule name
           { context: "figentra-flow/gate", state: "success", creator: { login: "someone" } },
         ],
       },
-      /posted by someone, not stackra-gate\[bot\]/,
+      /posted by someone, not figentra-gate\[bot\]/,
     ],
     [{ pr: pr({ title: "Land it" }) }, /conventional commit header/],
     [{ required: false }, /does not require figentra-flow\/gate yet.*--manual-ok/],
