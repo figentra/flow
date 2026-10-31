@@ -74,7 +74,11 @@ test("gate run: a change carrying artifacts is refused before any box", async (t
   const head = change(r.root, { "coverage/lcov.info": "x\n" });
   sh(r.root, "push", "-q", "origin", "x");
   let ran = 0;
-  const result = await gateRun({ cwd: r.root, tip: () => head, runner: () => ++ran });
+  const result = await gateRun({
+    cwd: r.root,
+    tip: () => head,
+    runner: { kind: "command", wraps: false, program: "stackra", run: () => ++ran },
+  });
   assert.equal(result.code, 2);
   assert.match(result.problem ?? "", /coverage\/lcov\.info: build or tool output/);
   assert.equal(ran, 0);
@@ -87,7 +91,11 @@ test("gate run: the configuration's artifacts replace the defaults", async (t) =
   t.after(r.dispose);
   sh(r.root, "remote", "set-url", "origin", "git@github.com:figentra/flow.git");
   const head = change(r.root, { "generated/x.ts": "x\n", "coverage/ok.txt": "fine here\n" });
-  const result = await gateRun({ cwd: r.root, tip: () => head, runner: () => 0 });
+  const result = await gateRun({
+    cwd: r.root,
+    tip: () => head,
+    runner: { kind: "command", wraps: false, program: "stackra", run: () => 0 },
+  });
   assert.match(result.problem ?? "", /generated\/x\.ts/);
   assert.doesNotMatch(result.problem ?? "", /coverage/);
 });
