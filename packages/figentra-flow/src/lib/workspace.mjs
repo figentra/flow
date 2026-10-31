@@ -44,6 +44,17 @@ export function readWorkspace(file = workspaceFile()) {
 }
 
 /**
+ * The owner's `sessionCap:` in the workspace file (how many sessions may build at once, AC-026), else the default.
+ * @param {string} [file]
+ * @param {number} [fallback]
+ */
+export function readSessionCap(file = workspaceFile(), fallback = 2) {
+  if (!existsSync(file)) return fallback;
+  const cap = readFileSync(file, "utf8").match(/^sessionCap:\s*(\d+)\s*$/m)?.[1];
+  return cap === undefined ? fallback : Number(cap);
+}
+
+/**
  * Writes the workspace list.
  * @param {Repo[]} repos
  * @param {string} [file]
