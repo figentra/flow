@@ -12,19 +12,49 @@
  * Boundary: builds command strings for a POSIX shell on the box; runs nothing; reads no value. The access token is a
  *   command substitution assigned to `INFISICAL_TOKEN` for the `infisical run` process alone (AC-044): never an
  *   argument (a process list shows those), never in this process, the command text or a log.
- *   `store` (the one-time hand-off of `app create`) arrives with A4.
+ *   `store` is `app create`'s one hand-off of a new App's key, on the human's machine: `env` writes a new 0600 file
+ *   at the path the human names, refusing one inside a git work tree that git does not ignore (so the key cannot be
+ *   committed by accident); `infisical` writes the value to a 0600 file in a private (0700) temporary folder and runs
+ *   `infisical secrets set <NAME>=@<file>` with the human's own login (the CLI reads the file, so the value is on no
+ *   command line), discards the CLI's output (its table can echo values) and removes the folder: in a `finally`, and
+ *   from a SIGINT or SIGTERM handler while the file exists.
  * Runtime: node
  * Governing contract: STA-1729 phase A (A1); Stackra ADR 0257 for our Infisical use.
  * Secrets: paths, ids and environment names only, never values.
  */
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
+
 import { ConfigError } from "../lib/config.mjs";
 
 /**
- * @typedef {{ wrap: (command: string, scope: string) => string }} Secrets
+ * @typedef {{ ok: boolean, problem?: string, where?: string }} Stored
+ * @typedef {{ wrap: (command: string, scope: string) => string,
+ *             store: (name: string, value: string, options?: { scope?: string, file?: string, spawn?: any }) => Stored }} Secrets
  */
 
 /** A value safe to put in a shell word unquoted: a project id or an environment slug. */
 const SAFE = /^[\w.-]+$/;
+
+/**
+ * Why a key file may not be written at `file`: it lies inside a git work tree and git does not ignore it.
+ * @param {string} file
+ * @returns {string | undefined}
+ */
+export function trackable(file) {
+  const dir = dirname(resolve(file));
+  const inside = spawnSync("git", ["-C", dir, "rev-parse", "--is-inside-work-tree"], {
+    encoding: "utf8",
+  });
+  if (inside.status !== 0 || inside.stdout.trim() !== "true") return undefined;
+  // Relative to its own folder, so a symlinked temp path (/var vs /private/var) cannot confuse git.
+  const ignored = spawnSync("git", ["-C", dir, "check-ignore", "-q", "--", basename(file)]);
+  return ignored.status === 0
+    ? undefined
+    : `${file} is inside a git work tree and not ignored; write the key outside the repository`;
+}
 
 /** A file on the box: absolute, or under `~` or `$HOME`. */
 const BOX_PATH = /^(?:~|\$HOME)?\/[\w./-]+$/;
@@ -38,7 +68,26 @@ const IDENTITY = "s/^(export[[:space:]]+)?(INFISICAL_UNIVERSAL_AUTH_CLIENT_(ID|S
  * @returns {Secrets}
  */
 export function secretsPort(block) {
-  if (block === undefined || block.kind === "env") return { wrap: (command) => command };
+  if (block === undefined || block.kind === "env")
+    return {
+      wrap: (command) => command,
+      store(name, value, { file } = {}) {
+        if (!file)
+          return {
+            ok: false,
+            problem: `the env secrets port stores ${name} in a file: pass --key-file <path>`,
+          };
+        const tracked = trackable(file);
+        if (tracked) return { ok: false, problem: tracked };
+        try {
+          // `wx`: never over an existing file; 0600: only its owner reads it.
+          writeFileSync(file, value, { mode: 0o600, flag: "wx" });
+        } catch (error) {
+          return { ok: false, problem: `${file}: ${/** @type {Error} */ (error).message}` };
+        }
+        return { ok: true, where: file };
+      },
+    };
   if (block.kind === "infisical") {
     for (const key of ["projectId", "env"])
       if (block[key] !== undefined && !SAFE.test(block[key]))
@@ -67,12 +116,59 @@ export function secretsPort(block) {
         : "";
     const project = block.projectId ? ` --projectId=${block.projectId}` : "";
     const env = block.env ? ` --env=${block.env}` : "";
+    const pathOf = (/** @type {string} */ scope) => {
+      const path = block.paths?.[scope];
+      if (!path) throw new ConfigError(`secrets "infisical": set paths.${scope}`);
+      if (!/^\/[\w./-]*$/.test(path))
+        throw new ConfigError(`secrets "infisical": paths.${scope} is not a path: ${path}`);
+      return path;
+    };
     return {
+      store(name, value, { scope = "gate", spawn = spawnSync } = {}) {
+        if (!/^[A-Z][A-Z0-9_]*$/.test(name))
+          return { ok: false, problem: `${name} is not a secret name` };
+        const path = pathOf(scope);
+        // mkdtemp makes the folder 0700; the file inside is 0600.
+        const dir = mkdtempSync(join(tmpdir(), "flow-store-"));
+        const remove = () => rmSync(dir, { recursive: true, force: true });
+        /** @type {Record<string, () => void>} */
+        const handlers = {};
+        for (const [signal, code] of /** @type {const} */ ([
+          ["SIGINT", 130],
+          ["SIGTERM", 143],
+        ])) {
+          handlers[signal] = () => (remove(), process.exit(code));
+          process.on(signal, handlers[signal]);
+        }
+        try {
+          const file = join(dir, "value");
+          writeFileSync(file, value, { mode: 0o600 });
+          const args = [
+            "secrets",
+            "set",
+            ...[domain, project, env].filter(Boolean).map((a) => a.trim()),
+          ];
+          const r = spawn("infisical", [...args, `--path=${path}`, `${name}=@${file}`], {
+            stdio: ["ignore", "pipe", "pipe"],
+            encoding: "utf8",
+          });
+          if (r.status === 0) return { ok: true, where: `Infisical ${path}/${name}` };
+          const why = r.signal
+            ? `interrupted by ${r.signal}`
+            : r.error
+              ? r.error.message
+              : `infisical exited ${r.status}`;
+          return {
+            ok: false,
+            problem: `storing ${name} at ${path} failed (${why}); is \`infisical login\` done?`,
+          };
+        } finally {
+          remove();
+          for (const [signal, handler] of Object.entries(handlers)) process.off(signal, handler);
+        }
+      },
       wrap(command, scope) {
-        const path = block.paths?.[scope];
-        if (!path) throw new ConfigError(`secrets "infisical": set paths.${scope}`);
-        if (!/^\/[\w./-]*$/.test(path))
-          throw new ConfigError(`secrets "infisical": paths.${scope} is not a path: ${path}`);
+        const path = pathOf(scope);
         const run = `${login}${cli} run --silent${domain}${project}${env} --path=${path} -- ${command}`;
         return load ? `( ${load}${run} )` : run;
       },

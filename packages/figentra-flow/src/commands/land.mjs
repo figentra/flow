@@ -24,6 +24,9 @@ import { loadConfig } from "../lib/config.mjs";
 import { LANDED_KEY, NAME, STATUS_CONTEXT } from "../lib/product.mjs";
 import { defaultBranch, fetch, git, mainCheckout, remote, worktrees } from "../lib/git.mjs";
 
+/** The tiers whose changes need the AI review when the configuration's `review.required` names none. */
+export const REVIEW_TIERS = ["small", "feature", "big"];
+
 /** A conventional commit header (the squash commit's title). */
 export const CONVENTIONAL =
   /^(?:build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(?:\([\w./-]+\))?!?: \S/;
@@ -33,7 +36,7 @@ export const CONVENTIONAL =
  * @param {{ pr: any, statuses: any[], base: string, spec?: string, gateApp?: string, reviewer?: string,
  *           required: boolean,
  *           manualOk?: boolean, stack?: boolean, review?: { verdict: string | null, ignored: string[] },
- *           artifacts?: string[] }} input
+ *           artifacts?: string[], reviewTiers?: string[] }} input
  * @returns {string[]}
  */
 export function landRules({
@@ -48,6 +51,7 @@ export function landRules({
   stack = false,
   review,
   artifacts = [],
+  reviewTiers = REVIEW_TIERS,
 }) {
   const problems = [...artifacts];
   // The trusted gate status creator comes only from the configuration (defence in depth; the ruleset is the
@@ -77,11 +81,15 @@ export function landRules({
     problems.push(
       `the title is not a conventional commit header of at most 100 characters: "${title}"`,
     );
-  // ADR 0230 (AC-031): every change with a spec (small, feature, big) needs the independent AI review on its head;
-  // trivial work has no spec and is exempt.
-  if (spec !== undefined && tierOf(spec) !== "trivial" && review?.verdict !== "PASS")
+  // ADR 0230 (AC-031): a change whose spec's tier is in `review.required` (default small, feature, big) needs the
+  // independent AI review on its head; a spec with no tier counts as small, and work with no spec is exempt.
+  if (
+    spec !== undefined &&
+    reviewTiers.includes(tierOf(spec) ?? "small") &&
+    review?.verdict !== "PASS"
+  )
     problems.push(
-      `no AI review PASS for ${pr.head?.sha} (counted verdict: ${review?.verdict ?? "none"}): a different agent posts "AI-REVIEW: PASS ${pr.head?.sha} base=${pr.base?.ref}" as the ${reviewer ?? "(unconfigured, apps.review.slug)"} app through \`pnpm bot:review\`${review?.ignored.length ? `; ignored: ${[...new Set(review.ignored)].join("; ")}` : ""}`,
+      `no AI review PASS for ${pr.head?.sha} (counted verdict: ${review?.verdict ?? "none"}): a different agent posts "AI-REVIEW: PASS ${pr.head?.sha} base=${pr.base?.ref}" as the ${reviewer ?? "(unconfigured, apps.review.slug)"} app${review?.ignored.length ? `; ignored: ${[...new Set(review.ignored)].join("; ")}` : ""}`,
     );
   if (spec !== undefined) {
     problems.push(...checkApproval(spec).map((p) => `spec: ${p}`));
@@ -199,6 +207,7 @@ export async function landOne({
     reviewer,
     required,
     manualOk,
+    reviewTiers: loadConfig(root).config.review?.required,
   });
   if (problems.length) return { code: 1, problems };
   if (dry) {
