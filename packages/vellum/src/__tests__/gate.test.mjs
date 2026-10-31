@@ -16,6 +16,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  approvedAt,
+  checkApproval,
   checkBranch,
   checkBug,
   checkForeignStatus,
@@ -23,10 +25,13 @@ import {
   checkSpec,
   checkStage,
   checkTasks,
+  checkTier,
+  computedTier,
   isOwnSpec,
   refsKeys,
   REPLACED,
   specDir,
+  tierOf,
   tripwire,
   WRAPPED,
 } from "../commands/gate.mjs";
@@ -428,4 +433,54 @@ test("the v2 templates carry the state machine, Impact v2, Amendments, Status hi
     presetTemplate("tasks-template.md"),
     /— covers: FR-003, P-002 — route: spec-task — deps: T010/,
   );
+});
+
+// ADR 0502: tiers, the diff's floor and the approval stops (the same rules as core's @stackra/repo-checks).
+const tiered = (status, tier, extra = "") =>
+  `**Status**: ${status}\n\n**Tier**: ${tier}\n\n**Linear**: STA-901\n\n${extra}`;
+
+test("tiers: the declared tier, the diff's floor and the tier rule", () => {
+  assert.equal(tierOf("**Tier**: Big"), "big");
+  assert.equal(tierOf("**Status**: Draft"), undefined);
+  assert.equal(computedTier([{ status: "M", path: "packages/data/x/src/a.ts" }]).tier, "trivial");
+  assert.equal(
+    computedTier([
+      { status: "A", path: "services/o/src/modules/o/database/migrations/0002-x.migration.ts" },
+    ]).tier,
+    "feature",
+  );
+  assert.equal(
+    computedTier([{ status: "M", path: "services/o/src/modules/o/access/o.permissions.ts" }]).tier,
+    "feature",
+  );
+  assert.equal(
+    computedTier([{ status: "M", path: "packages/commerce/ledger/src/a.ts" }]).tier,
+    "feature",
+  );
+  assert.equal(computedTier([{ status: "A", path: "services/pay/package.json" }]).tier, "big");
+  assert.equal(
+    computedTier([{ status: "M", path: "apps/docs/src/docs/payments.mdx" }]).tier,
+    "trivial",
+  );
+  assert.deepEqual(checkTier({ declared: "feature", computed: "feature" }), []);
+  assert.match(
+    checkTier({ declared: "small", computed: "feature", reasons: ["a migration: m"] }).join(),
+    /spec declares small/,
+  );
+  assert.match(checkTier({ computed: "big" }).join(), /branch has no spec \(trivial\)/);
+});
+
+test("approval stops: feature before Tasked, big before Planned and Tasked", () => {
+  assert.deepEqual(approvedAt("**Status**: Planned — Approved by owner 2026-10-31", "planned"), {
+    who: "owner",
+    date: "2026-10-31",
+  });
+  const approver = "**Approver**: leader";
+  const planned = `${approver}\n\n## Status history\n\n- 2026-10-31: Clarified → Planned — Approved by leader 2026-10-31\n`;
+  assert.deepEqual(checkApproval(tiered("Planned", "feature", approver)), []);
+  assert.match(checkApproval(tiered("Tasked", "feature", approver)).join(), /Planned approval/);
+  assert.deepEqual(checkApproval(tiered("Tasked", "feature", planned)), []);
+  assert.match(checkApproval(tiered("Planned", "big", approver)).join(), /Clarified approval/);
+  assert.match(checkApproval(tiered("Planned", "feature")).join(), /Approver/);
+  assert.deepEqual(checkApproval(tiered("Tasked", "small")), []);
 });

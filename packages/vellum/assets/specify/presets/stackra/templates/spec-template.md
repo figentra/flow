@@ -6,6 +6,10 @@
 
 **Status**: Draft <!-- Draft → Clarified → Planned → Tasked → Implementing → Done, or Abandoned / Superseded (OR12). spec-gate refuses a status ahead of its artifacts; append every change to Status history -->
 
+**Tier**: [small / feature / big] <!-- ADR 0502: trivial work has no spec; small is a lite spec with ## Plan and ## Tasks below; feature stops once after the spec and plan; big stops after the spec and after the plan. The lane check refuses a tier below what the diff needs (migrations, contracts, permissions, money, new members) -->
+
+**Approver**: [owner / leader] <!-- feature and big: the owner for product, money, legal, security, brand and pricing; the leader for technical-only stops under the owner's delegation. An approval is "Approved by <who> <YYYY-MM-DD>" on the Status line of the stage it approves -->
+
 <!-- Specs are public on GitHub: no secrets, customer data or details of an unfixed vulnerability (ADR 0120 D17). -->
 
 <!-- Folder: .agents/specs/sta-n-<slug>/, named by the Linear key below (ADR 0120 D1). -->

@@ -10,7 +10,8 @@
  *   plan <spec.md>              exit 1 unless the spec may be planned (run by setup-plan.sh)
  *   check <dir>                 the stage rules for the spec's declared `**Status**`
  *   tasks <tasks.md>            tasks lint: ids, covers, routes, deps, coverage, waves
- *   lane [--base=ref]           feat commits need a lite or full spec reached through the branch or `Refs:` keys
+ *   lane [--base=ref]           feat commits need a lite or full spec reached through the branch or `Refs:` keys,
+ *                               and the diff's tier floor is not above the branch spec's `**Tier**` (ADR 0502)
  *   branch                      warn, never fail, unless the branch (STACKRA_BRANCH, else git) is Linear-named or
  *                               allow-listed: a `chore-lane` PR may use any branch, and only `linear check-pr`
  *                               sees the PR labels, so check-pr is the enforcing check
@@ -227,12 +228,21 @@ export function checkStage(folder, text, { files = [], tasks = "", plan = "", kn
     problems.push(`\`**Linear**: STA-${linear}\` does not match the folder key STA-${key}`);
   if (status === "draft") return problems;
   problems.push(...checkSpec(text));
+  problems.push(...checkApproval(text));
   const history =
     body.match(/^## Status history\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
   if (!new RegExp(`→\\s*${status}\\b`, "i").test(history))
     problems.push(
       `\`## Status history\` has no "→ ${status[0].toUpperCase()}${status.slice(1)}" line`,
     );
+  // ADR 0502: a small spec's plan and tasks are sections of spec.md, not files.
+  if (tierOf(text) === "small") {
+    if (atLeast(status, "planned") && !/^## Plan\b/m.test(body))
+      problems.push(`status ${status} needs a \`## Plan\` section in a small spec`);
+    if (atLeast(status, "tasked") && !/^## Tasks\b/m.test(body))
+      problems.push(`status ${status} needs a \`## Tasks\` section in a small spec`);
+    return problems;
+  }
   if (atLeast(status, "planned")) {
     if (!files.includes("plan.md")) problems.push(`status ${status} needs plan.md`);
     else problems.push(...checkPlan(plan, text));
@@ -251,6 +261,151 @@ export function checkStage(folder, text, { files = [], tasks = "", plan = "", kn
         .map((t) => t.id)
         .join(", ")} are unticked`,
     );
+  return problems;
+}
+
+/** The spec tiers of ADR 0502, smallest first. */
+export const TIERS = ["trivial", "small", "feature", "big"];
+
+/**
+ * The tier a spec declares in its `**Tier**:` header, or undefined (an older spec).
+ * @param {string} text
+ * @returns {string | undefined}
+ */
+export const tierOf = (text) => {
+  const tier = strip(text)
+    .match(/^\*\*Tier\*\*:\s*([A-Za-z]+)/m)?.[1]
+    ?.toLowerCase();
+  return tier !== undefined && TIERS.includes(tier) ? tier : undefined;
+};
+
+/** Paths that raise the floor, highest first (ADR 0502). */
+const FLOORS = [
+  {
+    tier: "big",
+    why: "a new service or package",
+    match: (/** @type {string} */ status, /** @type {string} */ path) =>
+      status.startsWith("A") &&
+      /^(?:services\/[^/]+|packages\/(?!tooling\/)[^/]+\/[^/]+)\/package\.json$/.test(path),
+  },
+  {
+    tier: "feature",
+    why: "a new app or Worker member",
+    match: (/** @type {string} */ status, /** @type {string} */ path) =>
+      status.startsWith("A") && /^(?:apps|workers)\/[^/]+\/package\.json$/.test(path),
+  },
+  {
+    tier: "feature",
+    why: "a migration",
+    match: (/** @type {string} */ _status, /** @type {string} */ path) =>
+      /\/database\/migrations\/|\.migration\.ts$/.test(path),
+  },
+  {
+    tier: "feature",
+    why: "a public contract",
+    match: (/** @type {string} */ _status, /** @type {string} */ path) =>
+      /\/src\/contracts\/|(?:^|\/)(?:stackra\.manifest|openapi)\.json$/.test(path),
+  },
+  {
+    tier: "feature",
+    why: "a permission",
+    match: (/** @type {string} */ _status, /** @type {string} */ path) =>
+      /\.permissions\.ts$|\/access\//.test(path),
+  },
+  {
+    tier: "feature",
+    why: "payment or money code",
+    match: (/** @type {string} */ _status, /** @type {string} */ path) =>
+      path.startsWith("packages/commerce/") ||
+      /(?:^|[/.-])(?:payments?|money|ledgers?|billing|payouts?|refunds?)(?:[/.-]|$)/i.test(path),
+  },
+];
+
+/** Paths that never raise the floor: specs, docs, tests and changesets. */
+const NEUTRAL = /^\.agents\/specs\/|^\.changeset\/|^apps\/docs\/|\.mdx?$|\/__tests__\//;
+
+/**
+ * The lowest tier a diff allows, with the paths that set it (ADR 0502).
+ * @param {{ status: string, path: string }[]} changes  `git diff --name-status` rows
+ * @returns {{ tier: string, reasons: string[] }}
+ */
+export function computedTier(changes) {
+  let tier = "trivial";
+  /** @type {string[]} */
+  const reasons = [];
+  for (const floor of FLOORS) {
+    const hits = changes.filter(
+      ({ status, path }) => !NEUTRAL.test(path) && floor.match(status, path),
+    );
+    if (hits.length === 0) continue;
+    if (tier === "trivial") tier = floor.tier;
+    if (floor.tier === tier)
+      reasons.push(
+        `${floor.why}: ${hits
+          .map((h) => h.path)
+          .slice(0, 3)
+          .join(", ")}${hits.length > 3 ? ", …" : ""}`,
+      );
+  }
+  return { tier, reasons };
+}
+
+/**
+ * A declared tier below the computed one is a problem; a branch with no spec declares trivial (ADR 0502).
+ * @param {{ declared?: string, computed: string, reasons?: string[] }} context
+ * @returns {string[]}
+ */
+export function checkTier({ declared, computed, reasons = [] }) {
+  const tier = declared ?? "trivial";
+  if (TIERS.indexOf(tier) >= TIERS.indexOf(computed)) return [];
+  return [
+    `tier: the diff needs at least ${computed} (${reasons.join("; ")}), but the ${
+      declared === undefined ? "branch has no spec (trivial)" : `spec declares ${tier}`
+    } (ADR 0502)`,
+  ];
+}
+
+/**
+ * Who approved a spec at `stage` and when: "Approved by <who> <YYYY-MM-DD>" on the Status line while the spec sits
+ * there, or on the Status history line that moved it there.
+ * @param {string} text
+ * @param {string} stage
+ * @returns {{ who: string, date: string } | undefined}
+ */
+export function approvedAt(text, stage) {
+  const lines = statusOf(text) === stage ? [statusLine(text)] : [];
+  const history =
+    strip(text).match(/^## Status history\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
+  lines.push(...history.split("\n").filter((l) => new RegExp(`→\\s*${stage}\\b`, "i").test(l)));
+  for (const line of lines) {
+    const found = line.match(/Approved by ([^\n]+?) (\d{4}-\d{2}-\d{2})\b/);
+    if (found) return { who: found[1] ?? "", date: found[2] ?? "" };
+  }
+  return undefined;
+}
+
+/**
+ * The approval stops of ADR 0502: feature before Tasked; big before Planned and before Tasked; both name the Approver.
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function checkApproval(text) {
+  const tier = tierOf(text);
+  if (tier !== "feature" && tier !== "big") return [];
+  const status = statusOf(text);
+  if (status === "abandoned" || status === "superseded") return [];
+  const problems = [];
+  if (atLeast(status, "planned") && !/^\*\*Approver\*\*:\s*\S/m.test(strip(text)))
+    problems.push(
+      `a ${tier} spec names its \`**Approver**\` (the owner, or the leader for a technical-only stop; ADR 0502)`,
+    );
+  for (const stop of tier === "big" ? ["clarified", "planned"] : ["planned"]) {
+    const next = stop === "clarified" ? "planned" : "tasked";
+    if (atLeast(status, next) && approvedAt(text, stop) === undefined)
+      problems.push(
+        `status ${status} needs the ${stop[0].toUpperCase()}${stop.slice(1)} approval of a ${tier} spec: "Approved by <who> <YYYY-MM-DD>" on that stage (ADR 0502)`,
+      );
+  }
   return problems;
 }
 
@@ -544,7 +699,22 @@ const prCommits = (base) =>
     .filter(Boolean);
 
 function laneGate(base) {
-  return checkLane({ commits: prCommits(base), branch: currentBranch(), ...specIndex() });
+  const branch = currentBranch();
+  const lane = checkLane({ commits: prCommits(base), branch, ...specIndex() });
+  // ADR 0502: the diff's floor against the branch's own spec; none is trivial, a spec without a tier is exempt.
+  const dir = join(ROOT, SPECS_DIR);
+  const own = (existsSync(dir) ? readdirSync(dir) : []).find((f) => isOwnSpec(f, branch));
+  const declared = own === undefined ? undefined : tierOf(readIf(join(dir, own, "spec.md")));
+  if (own !== undefined && declared === undefined) return lane;
+  const changes = git("diff", "--name-status", `${base}...HEAD`)
+    .split("\n")
+    .filter(Boolean)
+    .map((row) => {
+      const [status = "", ...paths] = row.split("\t");
+      return { status, path: paths.at(-1) ?? "" };
+    });
+  const computed = computedTier(changes);
+  return [...lane, ...checkTier({ declared, computed: computed.tier, reasons: computed.reasons })];
 }
 
 /** checkForeignStatus for every changed spec folder, against its spec.md at the merge base. */
