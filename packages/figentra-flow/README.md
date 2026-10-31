@@ -185,6 +185,12 @@ spec's `**Session**:` with the worktree carrying its key and that head's gate. M
 Tasked or Implementing) than `sessionCap:` in the workspace file (default 2) is a warning, and the exit code is 1.
 `--json` prints the snapshot (`figentra-flow.status/1`); `--offline` makes no GitHub call.
 
+`figentra-flow status --metrics [--since 30d]` reports, for the PRs merged in the window, per repository and in total:
+lead time (opened to merged) and cycle time (first commit to merged) as median and p90 hours, `figentra-flow/gate`
+runs per PR and their red share, rework (heads pushed after the first gate), review rounds (`AI-REVIEW: FAIL`
+verdicts) and approval latency (a merged spec's Draft line to its last approval), with the age of the open PRs. It
+is computed from GitHub and the specs on each call; nothing is stored.
+
 ## Worktrees
 
 A worktree lives only at `<repo>/.claude/worktrees/<name>` (Stackra ADR 0503), and `.gitignore` ignores that folder.

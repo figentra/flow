@@ -1,6 +1,7 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow status [--repo <path>] [--json] [--offline]` (FR-7, AC-012, AC-024, AC-026): one block per
+ * Purpose: `figentra-flow status [--repo <path>] [--json] [--offline] [--metrics [--since <n>d]]` (FR-7, AC-012,
+ *   AC-024, AC-026, AC-032): one block per
  *   repository of the workspace (or the one named, or the current one) with its specs by status, worktrees, open PRs
  *   and sessions; `--json` prints the snapshot itself. Exit 0, or 1 when a warning (more building sessions than the
  *   cap) is present, so a script can alert.
@@ -13,6 +14,7 @@ import { slugOf } from "./gate-run.mjs";
 import { busyFolders, git } from "../lib/git.mjs";
 import { github } from "../lib/github.mjs";
 import { NAME, STATUS_CONTEXT } from "../lib/product.mjs";
+import { metrics } from "../lib/metrics.mjs";
 import { snapshot } from "../lib/snapshot.mjs";
 import { readSessionCap, readWorkspace } from "../lib/workspace.mjs";
 
@@ -83,11 +85,51 @@ export function render(snap) {
   return out.join("\n");
 }
 
-/** `figentra-flow status [--repo <path>] [--json] [--offline]`. */
+/**
+ * The metrics as text.
+ * @param {any} m
+ * @returns {string}
+ */
+export function renderMetrics(m) {
+  const hours = (/** @type {any} */ x) => `${x.median ?? "-"} h median, ${x.p90 ?? "-"} h p90`;
+  const line = (/** @type {string} */ name, /** @type {any} */ n) =>
+    n.error
+      ? `${name}: ${n.error}`
+      : [
+          `${name}: ${n.merged} merged; lead ${hours(n.leadHours)}; cycle ${hours(n.cycleHours)}`,
+          `  gate runs per PR ${n.gateRunsPerPr ?? "-"} (${n.redShare ?? "-"}% red); rework ${n.reworkPerPr ?? "-"} heads per PR; review rounds ${n.reviewRoundsPerPr ?? "-"} per PR`,
+          `  approval latency ${n.approvalDays.median ?? "-"} d median; ${n.open} open PRs, ${n.openAgeDays.median ?? "-"} d median age`,
+        ].join("\n");
+  return [
+    `since ${m.since}`,
+    ...m.repos.map((/** @type {any} */ r) => line(r.github ?? r.path, r)),
+    line("total", m.total),
+  ].join("\n");
+}
+
+/** `figentra-flow status [--repo <path>] [--json] [--offline] [--metrics [--since <n>d]]`. */
 export function run(/** @type {string[]} */ args) {
   const opt = (/** @type {string} */ name) =>
     args.includes(`--${name}`) ? args[args.indexOf(`--${name}`) + 1] : undefined;
   const offline = args.includes("--offline");
+  if (args.includes("--metrics")) {
+    if (offline) {
+      console.error(`${NAME} status: --metrics reads GitHub; it cannot run --offline`);
+      return 2;
+    }
+    const days = Number((opt("since") ?? "30d").replace(/d$/, ""));
+    if (!Number.isFinite(days) || days <= 0) {
+      console.error(`${NAME} status: --since takes a number of days, e.g. 30d`);
+      return 2;
+    }
+    const m = metrics({
+      repos: reposFor(opt("repo"), process.cwd()),
+      api: (root) => github(root),
+      since: Date.now() - days * 86_400_000,
+    });
+    console.log(args.includes("--json") ? JSON.stringify(m, null, 2) : renderMetrics(m));
+    return 0;
+  }
   const snap = snapshot({
     repos: reposFor(opt("repo"), process.cwd()),
     cap: readSessionCap(),
