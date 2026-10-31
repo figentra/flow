@@ -43,6 +43,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { schemeFor, trackerFor } from "../adapters/tracker/index.mjs";
+import { say } from "../lib/cli.mjs";
 import { loadConfig } from "../lib/config.mjs";
 import { DISPLAY_NAME, ENV_PREFIX, NAME, PACKAGE } from "../lib/product.mjs";
 
@@ -1078,6 +1079,10 @@ export function run([mode, ...args]) {
       for (const b of bugs) failures += report(checkBug(basename(b), tests));
     }
     failures += report(laneGate(base));
+    say(
+      failures ? "blocked" : "approved",
+      failures ? `spec-gate: ${failures} problem(s)` : "spec-gate: the specs pass",
+    );
     return failures ? 1 : 0;
   }
   console.error(

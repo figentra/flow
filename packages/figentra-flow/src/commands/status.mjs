@@ -11,6 +11,7 @@
  * Secrets: none.
  */
 import { slugOf } from "./gate-run.mjs";
+import { colorFor, gateGlyph, glyph } from "../lib/cli.mjs";
 import { busyFolders, git } from "../lib/git.mjs";
 import { github } from "../lib/github.mjs";
 import { NAME, STATUS_CONTEXT } from "../lib/product.mjs";
@@ -37,9 +38,10 @@ export function reposFor(repo, cwd) {
 /**
  * The snapshot as text, one block per repository.
  * @param {any} snap
+ * @param {boolean} [color] colour the glyphs
  * @returns {string}
  */
-export function render(snap) {
+export function render(snap, color = false) {
   /** @type {string[]} */
   const out = [];
   for (const repo of snap.repos) {
@@ -72,7 +74,7 @@ export function render(snap) {
     else if (!repo.prs.length) out.push("    none");
     for (const p of repo.prs)
       out.push(
-        `    #${p.number} ${p.title} — ${STATUS_CONTEXT} ${p.gate?.state ?? "none"}${p.gate && p.gate.trusted === false ? " (untrusted poster)" : ""}, review ${p.review ?? "none"}${p.draft ? ", draft" : ""}${p.stacked ? `, stacked on ${p.base}` : ""}`,
+        `    ${glyph(gateGlyph(p.gate?.state), color)}#${p.number} ${p.title} — ${STATUS_CONTEXT} ${p.gate?.state ?? "none"}${p.gate && p.gate.trusted === false ? " (untrusted poster)" : ""}, review ${p.review ?? "none"}${p.draft ? ", draft" : ""}${p.stacked ? `, stacked on ${p.base}` : ""}`,
       );
     out.push("  sessions:");
     if (!repo.sessions.length) out.push("    none");
@@ -161,7 +163,11 @@ export function run(/** @type {string[]} */ args) {
     busy: busyFolders(),
     api: offline ? undefined : (root) => github(root),
   });
-  console.log(args.includes("--json") ? JSON.stringify(snap, null, 2) : render(snap));
+  console.log(
+    args.includes("--json")
+      ? JSON.stringify(snap, null, 2)
+      : render(snap, colorFor(process.stdout)),
+  );
   if (snap.warnings.length && !args.includes("--json"))
     console.error(`${NAME} status: see the warning above`);
   return snap.warnings.length ? 1 : 0;
