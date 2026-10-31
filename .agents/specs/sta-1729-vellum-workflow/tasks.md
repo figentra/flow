@@ -30,7 +30,9 @@ Phase 1 is designed and approved; the later phases are placeholders, refined whe
 
 ## Phase 3: land (design approved 2026-10-31)
 
-- [ ] T030 `vellum land` and `--stack` in `packages/vellum/src/commands/land.mjs`, `packages/vellum/src/lib/github.mjs` and `packages/vellum/src/commands/clean.mjs` — covers: FR-6, AC-010, AC-011, AC-017, AC-029, AC-030 — route: spec-task
+- [x] T030 `vellum land` and `--stack` in `packages/vellum/src/commands/land.mjs`, `packages/vellum/src/lib/github.mjs` and `packages/vellum/src/commands/clean.mjs` — covers: FR-6, AC-010, AC-011, AC-017, AC-029, AC-030 — route: spec-task
+- [x] T031 The ADR 0230 AI review as a land rule, ported from core's `pr-merge.mjs`, in `packages/vellum/src/lib/review.mjs` and `packages/vellum/src/commands/land.mjs` — covers: FR-6, AC-031 — route: spec-task — deps: T030
+- [ ] T035 `vellum review`: a different agent from the builder reviews the PR's head and posts the verdict through `pnpm bot:review` (design after land), in `packages/vellum/src/commands/review.mjs` — covers: FR-6, AC-031 — route: spec-task — deps: T031
 
 ## Phase 4: status (design pending)
 

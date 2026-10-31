@@ -14,21 +14,22 @@ pnpm exec vellum sync         # install the preset and render the speckit skills
 
 ## Commands
 
-| Command                                                     | What it does                                                                                                                  |
-| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `vellum init [--force]`                                     | installs `.specify/` (spec-kit 1.0.10, the Stackra preset, the gate in `setup-plan.sh`)                                       |
-| `vellum sync`                                               | installs the preset through `specify`, keeps the bundled workflow off, renders OpenCode and Claude                            |
-| `vellum gate run [--ref b] [--box host]`                    | the repository's checks on a testbed box (or `--box`) at the pushed head; the box posts `vellum/gate` as the Stackra Gate App |
-| `vellum gate plan <spec.md>`                                | exits 1 until the spec may be planned (run by `setup-plan.sh`)                                                                |
-| `vellum gate check <dir>` / `tasks <tasks.md>`              | the stage rules for the spec's `**Status**`; the tasks lint                                                                   |
-| `vellum gate lane` / `branch` / `ci` / `dir`                | the lane check, the branch warning, the CI gate with the spec-kit tripwire, the spec folder                                   |
-| `vellum trace trace <dir>` / `drift` / `ci`                 | the FR/P → task → `@covers` test matrix, spec-vs-diff drift, the Done rules                                                   |
-| `vellum parse <file>`                                       | what the parsers read from a `spec.md`, `plan.md`, `tasks.md` or `routing.yaml`, as JSON                                      |
-| `vellum linear issue <spec.md>` / `tasks <tasks.md>`        | the spec's Linear issue and one sub-issue per task; `--dry-run` needs no token                                                |
-| `vellum start <STA-n> [--slug s] [--install]`               | branch `figentra/sta-n-<slug>` from `origin/<default>` into `.claude/worktrees/sta-n-<slug>`; issue In Progress               |
-| `vellum clean [--dry-run] [--adopt] [--fix-ignore] [--all]` | removes finished worktrees (clean, saved, issue Done or idle 2 h), reports what it kept and the space freed                   |
-| `vellum guard [--print-settings]`                           | the PreToolUse hook that denies `git worktree add` outside `.claude/worktrees/`                                               |
-| `vellum init --workspace <dir>…`                            | writes the workspace list (`~/.config/vellum/workspace.yaml`) that `--all` acts on                                            |
+| Command                                                     | What it does                                                                                                                                    |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vellum init [--force]`                                     | installs `.specify/` (spec-kit 1.0.10, the Stackra preset, the gate in `setup-plan.sh`)                                                         |
+| `vellum sync`                                               | installs the preset through `specify`, keeps the bundled workflow off, renders OpenCode and Claude                                              |
+| `vellum gate run [--ref b] [--box host]`                    | the repository's checks on a testbed box (or `--box`) at the pushed head; the box posts `vellum/gate` as the Stackra Gate App                   |
+| `vellum land [<pr>] [--stack] [--dry-run] [--manual-ok]`    | squash-merges a PR that is green on `vellum/gate` from the gate App on its head and has its approvals; Linear Done, worktree and branch removed |
+| `vellum gate plan <spec.md>`                                | exits 1 until the spec may be planned (run by `setup-plan.sh`)                                                                                  |
+| `vellum gate check <dir>` / `tasks <tasks.md>`              | the stage rules for the spec's `**Status**`; the tasks lint                                                                                     |
+| `vellum gate lane` / `branch` / `ci` / `dir`                | the lane check, the branch warning, the CI gate with the spec-kit tripwire, the spec folder                                                     |
+| `vellum trace trace <dir>` / `drift` / `ci`                 | the FR/P → task → `@covers` test matrix, spec-vs-diff drift, the Done rules                                                                     |
+| `vellum parse <file>`                                       | what the parsers read from a `spec.md`, `plan.md`, `tasks.md` or `routing.yaml`, as JSON                                                        |
+| `vellum linear issue <spec.md>` / `tasks <tasks.md>`        | the spec's Linear issue and one sub-issue per task; `--dry-run` needs no token                                                                  |
+| `vellum start <STA-n> [--slug s] [--install]`               | branch `figentra/sta-n-<slug>` from `origin/<default>` into `.claude/worktrees/sta-n-<slug>`; issue In Progress                                 |
+| `vellum clean [--dry-run] [--adopt] [--fix-ignore] [--all]` | removes finished worktrees (clean, saved, issue Done or idle 2 h), reports what it kept and the space freed                                     |
+| `vellum guard [--print-settings]`                           | the PreToolUse hook that denies `git worktree add` outside `.claude/worktrees/`                                                                 |
+| `vellum init --workspace <dir>…`                            | writes the workspace list (`~/.config/vellum/workspace.yaml`) that `--all` acts on                                                              |
 
 A repository keeps one-line aliases: `"spec:gate": "vellum gate"`, `"spec:trace": "vellum trace"`,
 `"speckit:sync": "vellum sync"`, and `"spec:linear": "infisical run --env=dev --path=/agents --silent -- vellum linear"`.
@@ -45,6 +46,31 @@ poster posts the `vellum/gate` commit status and one PR comment as the "Stackra 
 Infisical `/ci/gate`. The poster posts only while that commit is still the branch tip, and never `success` unless the
 check exited 0. Nothing secret reaches the comment or the log. Exit codes: 0 green, 1 red, 2 refused, 4 not posted,
 5 stale, 73 every box busy, 75 no healthy box.
+
+## Landing
+
+`vellum land` is the lander's checklist as code. The PR must be:
+
+- open, not a draft and not conflicting, and based on the default branch (`--stack` lands a stack bottom-up);
+- green on `vellum/gate` on its exact head, posted by `stackra-gate[bot]` (`"vellum": { "gateApp": "…" }` overrides
+  it);
+- titled with a conventional commit header;
+- approved as its spec's tier requires (ADR 0502), and at Tasked or later for a feature or big spec.
+- for a change with a spec: reviewed. The `stackra-reviewer` App's unedited `AI-REVIEW: PASS <head> base=<base>`
+  comment, never from the change's own authors, is on its head (ADR 0230). Trivial work, with no spec, is exempt.
+
+It lists every failing rule. Then it squash-merges with GitHub's `sha` guard, so the merge fails if the head moved. A
+`Refs:` line and the co-author trailers go into the squash commit. After the merge it:
+
+1. sets the Linear issue Done;
+2. records the merge commit on the branch, so `vellum clean` counts the squashed branch as saved;
+3. removes the worktree under `clean`'s rules;
+4. deletes the remote branch;
+5. comments on the PR.
+
+Until a repository's ruleset requires `vellum/gate` (phase 6), `land` refuses there without `--manual-ok`, which only
+the tester passes. A stack's next PR is brought up to date by merging the default branch and pushing: no rebase, no
+force push. The stack is gated again before that PR lands.
 
 ## Worktrees
 
