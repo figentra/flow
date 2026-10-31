@@ -37,8 +37,8 @@ Phase 1 is designed and approved; the later phases are placeholders, refined whe
 
 ## Phase A: neutral core with adapters (design approved 2026-10-31)
 
-- [ ] T080 The product module, `vellum.config.json` with its schema, the credentials and secrets ports and the deprecation path, in `packages/vellum/src/lib/product.mjs`, `packages/vellum/src/lib/config.mjs` and `packages/vellum/src/adapters/credentials.mjs` — covers: FR-11, AC-035, AC-036, AC-040, AC-042 — route: spec-task
-- [ ] T086 The artifact guard in `vellum gate run` and `vellum land`, configured by `artifacts` in `vellum.config.json`, in `packages/vellum/src/lib/artifacts.mjs` — covers: FR-11, AC-043 — route: spec-task — deps: T080
+- [x] T080 The product module, `vellum.config.json` with its schema, the credentials and secrets ports and the deprecation path, in `packages/vellum/src/lib/product.mjs`, `packages/vellum/src/lib/config.mjs` and `packages/vellum/src/adapters/credentials.mjs` — covers: FR-11, AC-035, AC-036, AC-040, AC-042 — route: spec-task
+- [x] T086 The artifact guard in `vellum gate run` and `vellum land`, configured by `artifacts` in `vellum.config.json`, in `packages/vellum/src/lib/artifacts.mjs` — covers: FR-11, AC-043 — route: spec-task — deps: T080
 - [ ] T081 The tracker port: `linear` moved, `github-issues` and `jira` added, in `packages/vellum/src/adapters/tracker/linear.mjs` — covers: FR-11, AC-037 — route: spec-task — deps: T080
 - [ ] T082 The runner port: `ssh`, `local`, `command` and `github-actions` with its workflow, in `packages/vellum/src/adapters/runner/github-actions.mjs` — covers: FR-11, AC-038 — route: spec-task — deps: T080
 - [ ] T083 Gate and review identities from the configuration and `vellum app create`, in `packages/vellum/src/adapters/apps.mjs` and `packages/vellum/src/commands/app.mjs` — covers: FR-11, AC-039 — route: spec-task — deps: T080

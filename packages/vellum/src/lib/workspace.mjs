@@ -13,10 +13,12 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { git } from "./git.mjs";
+import { ENV_PREFIX, USER_DIR } from "./product.mjs";
 
 /** The workspace file's path. */
-export const workspaceFile = (env = process.env) =>
-  env.VELLUM_WORKSPACE ?? join(homedir(), ".config", "vellum", "workspace.yaml");
+export const workspaceFile = (
+  /** @type {Record<string, string | undefined>} */ env = process.env,
+) => env[`${ENV_PREFIX}WORKSPACE`] ?? join(homedir(), ...USER_DIR, "workspace.yaml");
 
 /**
  * @typedef {{ path: string, github: string }} Repo

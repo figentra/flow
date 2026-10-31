@@ -16,14 +16,25 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
+import { secretsPort } from "../adapters/secrets.mjs";
+import { artifactProblems } from "../lib/artifacts.mjs";
+import { loadConfig } from "../lib/config.mjs";
 import { defaultBranch, git, isClean, remoteTip } from "../lib/git.mjs";
+import {
+  ENV_PREFIX,
+  GATE_DIR,
+  GATE_MARKER,
+  NAME,
+  PACKAGE,
+  STATUS_CONTEXT,
+} from "../lib/product.mjs";
 
-/** The poster, copied into every job as `.vellum-gate/post.mjs`. */
+/** The poster, copied into every job as `<GATE_DIR>/post.mjs`. */
 const POSTER = new URL("../lib/gate-post.mjs", import.meta.url);
 
 /**
- * The repository's check command: `package.json` `"vellum": { "gate": "<cmd>" }`, else `pnpm verify`, followed by the
- * spec gate where Vellum is installed.
+ * The repository's check command: the configuration's `gate.check`, else `pnpm verify`, followed by the spec gate
+ * where this package is installed.
  * @param {string} dir
  */
 export function checkCommand(dir) {
@@ -34,21 +45,19 @@ export function checkCommand(dir) {
   } catch {
     // no package.json: the default command, which will fail loudly on the box
   }
-  const check = pkg.vellum?.gate ?? "pnpm verify";
-  const hasVellum = Boolean(
-    pkg.devDependencies?.["@stackra/vellum"] ?? pkg.dependencies?.["@stackra/vellum"],
-  );
-  return `pnpm install --frozen-lockfile && ${check}${hasVellum ? " && pnpm exec vellum gate ci" : ""}`;
+  const check = loadConfig(dir).config.gate?.check ?? "pnpm verify";
+  const installed = Boolean(pkg.devDependencies?.[PACKAGE] ?? pkg.dependencies?.[PACKAGE]);
+  return `pnpm install --frozen-lockfile && ${check}${installed ? ` && pnpm exec ${NAME} gate ci` : ""}`;
 }
 
 /**
- * The POSIX command the box runs: the check, its output and exit code kept for the poster, then the poster.
+ * The POSIX command the box runs: the check, its output and exit code kept for the poster, then the poster, wrapped
+ * by the secrets port for the `gate` scope.
  * @param {string} check
- * @param {{ infisical?: boolean }} [options] wrap the poster in `infisical run --path=/ci/gate` (a `--box` host)
+ * @param {{ wrap?: (command: string) => string }} [options]
  */
-export function boxCommand(check, { infisical = false } = {}) {
-  const poster = "node .vellum-gate/post.mjs";
-  return `{ ${check}; echo $? > .vellum-gate/exit; } 2>&1 | tee .vellum-gate/log.txt; ${infisical ? `infisical run --silent --path=/ci/gate -- ${poster}` : poster}`;
+export function boxCommand(check, { wrap = (command) => command } = {}) {
+  return `{ ${check}; echo $? > ${GATE_DIR}/exit; } 2>&1 | tee ${GATE_DIR}/log.txt; ${wrap(`node ${GATE_DIR}/post.mjs`)}`;
 }
 
 /**
@@ -65,7 +74,7 @@ export const slugOf = (url) => url.match(/github\.com[:/]+([^/]+\/[^/]+?)(?:\.gi
 /** @type {Runner} */
 export function defaultRunner({ dir, command, label, box, noWait, onDemand }) {
   if (box !== undefined) {
-    const remoteDir = `/tmp/vellum-gate/${basename(dir)}`;
+    const remoteDir = `/tmp/${NAME}-gate/${basename(dir)}`;
     const copied = spawnSync(
       "rsync",
       [
@@ -137,8 +146,16 @@ export async function gateRun(options) {
   const repository = slugOf(url);
   if (!repository) return { code: 2, problem: `origin (${url}) is not a GitHub repository` };
   const base = defaultBranch(root);
+  const loaded = loadConfig(root);
+  if (loaded.errors.length) return { code: 2, problem: loaded.errors.join("; ") };
+  for (const w of loaded.warnings) console.error(w);
+  const secrets = secretsPort(loaded.config.secrets);
+  // AC-043: no build or tool output and no oversized file reaches a box, or main.
+  const artifacts = artifactProblems(root, `origin/${base}`, sha, loaded.config.artifacts);
+  if (artifacts.length)
+    return { code: 2, problem: `the change carries artifacts:\n  ${artifacts.join("\n  ")}` };
 
-  const dir = mkdtempSync(join(tmpdir(), "vellum-gate-"));
+  const dir = mkdtempSync(join(tmpdir(), `${NAME}-gate-`));
   try {
     for (const args of [
       ["clone", "-q", "--no-hardlinks", "--no-checkout", root, dir],
@@ -149,17 +166,26 @@ export async function gateRun(options) {
       const r = git(root, args);
       if (!r.ok) return { code: 2, problem: `git ${args.join(" ")} failed: ${r.err}` };
     }
-    mkdirSync(join(dir, ".vellum-gate"));
-    copyFileSync(POSTER, join(dir, ".vellum-gate", "post.mjs"));
-    writeFileSync(
-      join(dir, ".vellum-gate", "job.json"),
-      `${JSON.stringify({ sha, branch, repository, startedAt: now().toISOString() }, null, 2)}\n`,
-    );
-    const command = boxCommand(checkCommand(dir), { infisical: box !== undefined });
+    mkdirSync(join(dir, GATE_DIR));
+    copyFileSync(POSTER, join(dir, GATE_DIR, "post.mjs"));
+    const job = {
+      sha,
+      branch,
+      repository,
+      startedAt: now().toISOString(),
+      context: STATUS_CONTEXT,
+      marker: GATE_MARKER,
+      envPrefix: ENV_PREFIX,
+    };
+    writeFileSync(join(dir, GATE_DIR, "job.json"), `${JSON.stringify(job, null, 2)}\n`);
+    // A `--box` host runs the poster under the secrets port's `gate` scope; a testbed job brings its own (ADR 0484).
+    const wrap =
+      box === undefined ? undefined : (/** @type {string} */ c) => secrets.wrap(c, "gate");
+    const command = boxCommand(checkCommand(dir), { wrap });
     const code = runner({
       dir,
       command,
-      label: `vellum gate ${repository}@${sha.slice(0, 12)}`,
+      label: `${NAME} gate ${repository}@${sha.slice(0, 12)}`,
       box,
       noWait,
       onDemand,
@@ -181,13 +207,20 @@ export async function gateRun(options) {
 export async function run(/** @type {string[]} */ args) {
   const opt = (/** @type {string} */ name) =>
     args.includes(`--${name}`) ? args[args.indexOf(`--${name}`) + 1] : undefined;
-  const result = await gateRun({
-    cwd: process.cwd(),
-    ref: opt("ref"),
-    box: opt("box"),
-    noWait: args.includes("--no-wait"),
-    onDemand: args.includes("--on-demand"),
-  });
-  if (result.problem) console.error(`vellum gate run: ${result.problem}`);
+  /** @type {{ code: number, problem?: string }} */
+  let result;
+  try {
+    result = await gateRun({
+      cwd: process.cwd(),
+      ref: opt("ref"),
+      box: opt("box"),
+      noWait: args.includes("--no-wait"),
+      onDemand: args.includes("--on-demand"),
+    });
+  } catch (error) {
+    // a configuration the secrets or credentials port refuses
+    result = { code: 2, problem: /** @type {Error} */ (error).message };
+  }
+  if (result.problem) console.error(`${NAME} gate run: ${result.problem}`);
   return result.code;
 }

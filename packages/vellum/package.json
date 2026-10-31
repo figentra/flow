@@ -30,6 +30,7 @@
     "src",
     "!src/**/__tests__",
     "assets",
+    "schema",
     "dist",
     "README.md",
     "CHANGELOG.md",

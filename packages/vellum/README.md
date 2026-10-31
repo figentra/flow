@@ -36,6 +36,45 @@ A repository keeps one-line aliases: `"spec:gate": "vellum gate"`, `"spec:trace"
 `vellum linear` reads its token from the environment only (`LINEAR_AGENT_TOKEN`, else `LINEAR_API_KEY`) and never
 prints it.
 
+## Configuration
+
+A repository chooses Vellum's adapters in `vellum.config.json` at its root. The file is checked against the shipped
+schema (`schema/vellum.config.schema.json`, which editors read through `"$schema"`), and an unknown key or a wrong
+type stops every command, named by its path. Nothing defaults to an organisation's choice. A command that needs a
+setting you have not made refuses and names it.
+
+```json
+{
+  "$schema": "./node_modules/@stackra/vellum/schema/vellum.config.schema.json",
+  "version": 1,
+  "credentials": { "kind": "gh-user" },
+  "secrets": { "kind": "env" },
+  "gate": { "check": "pnpm verify" }
+}
+```
+
+- `credentials` says how GitHub calls and network git authenticate:
+  - `env`: `GH_TOKEN` is set by the caller;
+  - `gh-user`: your own `gh` login, on purpose;
+  - `wrapper`: your own commands, e.g. `"gh": ["pnpm", "bot:gh", "--"]` and `"git": ["pnpm", "bot:git", "--"]`.
+
+  There is never a fallback to a personal login. A local origin (a path) needs no credentials.
+
+- `secrets` says how secrets reach the gate's poster on a box: `env` (the box's environment), or `infisical` with
+  `paths` per scope, e.g. `"gate": "/ci/gate"`. On a box with no login, `"auth": "universal-auth"` logs in
+  from the box's `INFISICAL_UNIVERSAL_AUTH_CLIENT_ID` and `INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET` inside the wrapped
+  command, and `projectId` and `env` name the project and environment. Vellum wraps the command and never reads a
+  value.
+- `gate.check` is the check command (default `pnpm verify`).
+
+- `artifacts` is the guard `gate run` and `land` apply to a change. `paths` defaults to `.cache/`, `node_modules/`,
+  `dist/`, `.turbo/` and `coverage/`, where a trailing `/` matches the folder at any depth and other entries are globs.
+  `maxBytes` defaults to 5 MB. A change that adds or changes such a file is refused, with each file named.
+
+The tracker, runner, apps, preset, `clean.keep` and `review.required` keys follow in the next steps of
+the same phase. The older `package.json` `"vellum"` keys (`credentials`, `gate`, `gateApp`) are still read, with a
+warning, until the next minor version.
+
 ## The gate
 
 `vellum gate run` checks the pushed head of the current branch, never anything uncommitted. It clones that commit into
