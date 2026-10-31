@@ -22,7 +22,7 @@ import {
 import { basename, dirname, join, resolve, sep } from "node:path";
 
 import { credentialsPort } from "../adapters/credentials.mjs";
-import { loadConfig, need } from "./config.mjs";
+import { ConfigError, loadConfig, need } from "./config.mjs";
 
 /** Ignored paths a worktree may hold and still be removed: dependency, build and tool caches. */
 export const CACHES = [
@@ -87,11 +87,15 @@ const warned = new Set();
  */
 export function remote(root, args) {
   if (isLocal(git(root, ["remote", "get-url", "origin"]).out)) return git(root, args);
+  const loaded = loadConfig(root);
+  // An invalid configuration is that error, never a failed git call (a missing tip read as "push it first").
+  if (loaded.errors.length) throw new ConfigError(loaded.errors.join("\n"));
   /** @type {string[] | undefined} */
   let prefix;
   try {
-    prefix = credentialsPort(need(loadConfig(root), "credentials", "network git"), { root }).git;
+    prefix = credentialsPort(need(loaded, "credentials", "network git"), { root }).git;
   } catch (error) {
+    if (loaded.config.credentials !== undefined) throw error;
     let scripts = {};
     try {
       scripts = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).scripts ?? {};
