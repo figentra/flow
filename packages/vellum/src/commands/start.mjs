@@ -68,7 +68,7 @@ export async function start(options) {
     if (!issues) return { ok: false, problem: `${problem}; or pass --slug` };
     let title;
     try {
-      title = await issues.title(key);
+      title = await issues.title(shown);
     } catch (error) {
       return {
         ok: false,
@@ -101,7 +101,7 @@ export async function start(options) {
   log(`${NAME} start: ${branch} at ${path} (from origin/${base})`);
   try {
     if (!issues) throw new Error(problem);
-    await issues.inProgress(key, branch);
+    await issues.inProgress(shown, branch);
     log(`${NAME} start: ${shown} → In Progress`);
   } catch (error) {
     warn(
