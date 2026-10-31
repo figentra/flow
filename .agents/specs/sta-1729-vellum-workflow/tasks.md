@@ -6,15 +6,15 @@ Phase 1 is designed and approved; the later phases are placeholders, refined whe
 
 ## Phase 1: the worktree rule
 
-- [ ] T001 Git helpers (main checkout, default branch, worktree list, saved by remote or cherry, reflog idle time, ignored files) in `packages/vellum/src/lib/git.mjs` — covers: FR-1, FR-4, AC-018, AC-019 — route: spec-task
-- [ ] T002 Workspace list read and write in `packages/vellum/src/lib/workspace.mjs` and `packages/vellum/src/commands/init.mjs` — covers: FR-7, AC-012 — route: spec-task
-- [ ] T003 `vellum start` in `packages/vellum/src/commands/start.mjs` — covers: FR-1, AC-001, AC-002 — route: spec-task — deps: T001
-- [ ] T004 `vellum clean` with adopt and fix-ignore in `packages/vellum/src/commands/clean.mjs` — covers: FR-3, FR-4, AC-004, AC-005, AC-006, AC-007, AC-018, AC-019, AC-020, AC-021, AC-022 — route: spec-task — deps: T001, T002
-- [ ] T005 `vellum guard` and its printed settings entry in `packages/vellum/src/commands/guard.mjs` — covers: FR-2, AC-003 — route: spec-task
-- [ ] T006 The commands on the dispatcher in `packages/vellum/bin/vellum.mjs` — covers: FR-1, FR-2, FR-4, AC-001, AC-003, AC-004 — route: spec-task — deps: T003, T004, T005
-- [ ] T007 [P] Tests in `packages/vellum/src/__tests__/start.test.mjs`, `packages/vellum/src/__tests__/clean.test.mjs`, `packages/vellum/src/__tests__/guard.test.mjs` and `packages/vellum/src/__tests__/workspace.test.mjs` — covers: FR-1, FR-2, FR-3, FR-4, AC-001, AC-002, AC-003, AC-004, AC-005, AC-006, AC-007, AC-012, AC-018, AC-019, AC-020, AC-021, AC-022 — route: spec-task — deps: T003, T004, T005, T002
-- [ ] T008 [P] Docs and release note in `packages/vellum/README.md`, `AGENTS.md` and `.changeset/vellum-worktree-rule.md` — covers: FR-1, FR-2, FR-4, AC-001 — route: spec-task — deps: T006
-- [ ] T009 Vellum ignores its worktrees in `.gitignore` — covers: FR-3, AC-006 — route: spec-task
+- [x] T001 Git helpers (main checkout, default branch, worktree list, saved by remote or cherry, reflog idle time, ignored files) in `packages/vellum/src/lib/git.mjs` — covers: FR-1, FR-4, AC-018, AC-019 — route: spec-task
+- [x] T002 Workspace list read and write in `packages/vellum/src/lib/workspace.mjs` and `packages/vellum/src/commands/init.mjs` — covers: FR-7, AC-012 — route: spec-task
+- [x] T003 `vellum start` in `packages/vellum/src/commands/start.mjs` — covers: FR-1, AC-001, AC-002 — route: spec-task — deps: T001
+- [x] T004 `vellum clean` with adopt and fix-ignore in `packages/vellum/src/commands/clean.mjs` — covers: FR-3, FR-4, AC-004, AC-005, AC-006, AC-007, AC-018, AC-019, AC-020, AC-021, AC-022 — route: spec-task — deps: T001, T002
+- [x] T005 `vellum guard` and its printed settings entry in `packages/vellum/src/commands/guard.mjs` — covers: FR-2, AC-003 — route: spec-task
+- [x] T006 The commands on the dispatcher in `packages/vellum/bin/vellum.mjs` — covers: FR-1, FR-2, FR-4, AC-001, AC-003, AC-004 — route: spec-task — deps: T003, T004, T005
+- [x] T007 [P] Tests in `packages/vellum/src/__tests__/start.test.mjs`, `packages/vellum/src/__tests__/clean.test.mjs`, `packages/vellum/src/__tests__/guard.test.mjs` and `packages/vellum/src/__tests__/workspace.test.mjs` — covers: FR-1, FR-2, FR-3, FR-4, AC-001, AC-002, AC-003, AC-004, AC-005, AC-006, AC-007, AC-012, AC-018, AC-019, AC-020, AC-021, AC-022 — route: spec-task — deps: T003, T004, T005, T002
+- [x] T008 [P] Docs and release note in `packages/vellum/README.md`, `AGENTS.md` and `.changeset/vellum-worktree-rule.md` — covers: FR-1, FR-2, FR-4, AC-001 — route: spec-task — deps: T006
+- [x] T009 Vellum ignores its worktrees in `.gitignore` — covers: FR-3, AC-006 — route: spec-task
 - [ ] T010 The five other repositories ignore their worktrees in each `.gitignore` (billing, invoicing, brand, stackra/notes, stackra/pro) — covers: FR-3, AC-006 — route: spec-task — deps: T004
 
 ## Phase 2: the gate (design pending)
