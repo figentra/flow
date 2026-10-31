@@ -42,7 +42,7 @@ Phase 1 is designed and approved; the later phases are placeholders, refined whe
 - [x] T086 The artifact guard in `vellum gate run` and `vellum land`, configured by `artifacts` in `vellum.config.json`, in `packages/figentra-flow/src/lib/artifacts.mjs` — covers: FR-11, AC-043 — route: spec-task — deps: T080
 - [x] T081 The tracker port: `linear` and `github-issues` adapters with the key scheme, used by start, clean, land and the gate's stage report (Jira later, leader 2026-10-31), in `packages/figentra-flow/src/adapters/tracker/index.mjs`, `packages/figentra-flow/src/adapters/tracker/linear.mjs` and `packages/figentra-flow/src/adapters/tracker/github-issues.mjs` — covers: FR-11, AC-037 — route: spec-task — deps: T080
 - [x] T087 The spec gate, trace and parser read issue keys, branches and folders from the key scheme instead of `sta-` and `figentra/`, in `packages/figentra-flow/src/commands/gate.mjs`, `packages/figentra-flow/src/commands/trace.mjs` and `packages/figentra-flow/src/lib/spec-parse.mjs` — covers: FR-11, AC-037 — route: spec-task — deps: T081
-- [ ] T082 The runner port: `ssh`, `local`, `command` and `github-actions` with its workflow, in `packages/figentra-flow/src/adapters/runner/github-actions.mjs` — covers: FR-11, AC-038 — route: spec-task — deps: T080
+- [x] T082 The runner port: `ssh`, `local`, `command` and `github-actions` with its workflow, in `packages/figentra-flow/src/adapters/runner/github-actions.mjs` — covers: FR-11, AC-038 — route: spec-task — deps: T080
 - [x] T083 Gate and review identities from the configuration and `vellum app create`, in `packages/figentra-flow/src/adapters/apps.mjs` and `packages/figentra-flow/src/commands/app.mjs` — covers: FR-11, AC-039 — route: spec-task — deps: T080
 - [ ] T084 The `neutral` preset and preset selection, in `packages/figentra-flow/assets/presets/neutral/preset.yml` and `packages/figentra-flow/src/commands/sync.mjs` — covers: FR-11, AC-041 — route: spec-task — deps: T080
 - [ ] T085 `vellum.config.json` in our repositories (core first), in `vellum.config.json` — covers: FR-11, AC-036, AC-045 — route: spec-task — deps: T081, T082, T083, T084
@@ -62,5 +62,11 @@ Phase 1 is designed and approved; the later phases are placeholders, refined whe
 - [ ] T060 Per-PR workflows off and `vellum/gate` required, repository by repository, in `.github/workflows/` — covers: FR-5, AC-016 — route: spec-task
 
 ## Phase 7: sessions (design pending)
+
+Queued extension (leader, 2026-10-31; after A6, with its own design stop): the agent team as a neutral feature. It
+covers a roster path in the configuration with a published schema and `team check`, a role on each spec and task
+(the tracker label and the assignee/delegate rule), `status --by role`, refusing a `REVIEWER_IS_BUILDER` approval, and
+the owner's kept categories always needing the owner. It extends AC-023 to AC-026; the source is the agent-team
+session's design note, and Figentra's own roster stays in figentra/figentra `.agents/team/`.
 
 - [ ] T070 `**Session**` in the spec gate in `packages/figentra-flow/src/commands/gate.mjs` and `packages/figentra-flow/src/commands/status.mjs` — covers: FR-10, AC-023, AC-025 — route: spec-task — deps: T040
