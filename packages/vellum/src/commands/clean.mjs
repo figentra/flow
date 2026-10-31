@@ -16,7 +16,7 @@
  * Governing contract: Stackra ADR 0503 (decision 6); STA-1729 (the leader's revisions of 2026-10-31).
  * Secrets: the Linear token only from the environment the calling wrapper sets; never read or printed.
  */
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { basename, join, resolve, sep } from "node:path";
 
 import { client, linear } from "../lib/linear.mjs";
@@ -145,6 +145,7 @@ export async function clean(options) {
         continue;
       }
       if (!dry) {
+        mkdirSync(inside, { recursive: true }); // older git (2.43) does not create the parent
         const moved = git(root, ["worktree", "move", tree.path, target]);
         if (!moved.ok) {
           keep(`move failed: ${moved.err}`);

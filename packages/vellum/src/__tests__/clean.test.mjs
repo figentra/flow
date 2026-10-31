@@ -150,9 +150,11 @@ test("clean --adopt moves a stray tree inside and lists a tester's for stackra-f
   const gate = join(outside, "pro-gate");
   sh(r.root, "worktree", "add", "-q", "--detach", gate, "main");
   const report = await clean({ cwd: r.root, adopt: true, issues: states() });
-  assert.deepEqual(report.adopted, [
-    `${stray} → ${join(r.root, ".claude", "worktrees", "sta-9-stray")}`,
-  ]);
+  assert.deepEqual(
+    report.adopted,
+    [`${stray} → ${join(r.root, ".claude", "worktrees", "sta-9-stray")}`],
+    JSON.stringify(report.kept),
+  );
   assert.equal(existsSync(join(r.root, ".claude", "worktrees", "sta-9-stray")), true);
   assert.deepEqual(report.forTester, [gate]);
   assert.equal(existsSync(gate), true);
