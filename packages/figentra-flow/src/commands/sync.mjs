@@ -2,9 +2,12 @@
  * Figentra Flow file contract:
  * Purpose: `figentra-flow sync` (core's `speckit-sync`, moved unchanged) — install the Stackra spec-kit preset into
  *   `.specify/presets/`, keep the bundled `speckit` workflow disabled, and re-render both integrations (spec-kit
- *   registers preset commands for the active integration only, so OpenCode first, then Claude). The preset source is
- *   the repo's `.agents/speckit/presets/` when it has one, else the preset bundled in this package.
- *   Without `specify` on PATH it copies the bundled, already rendered `speckit-*` skills and commands instead.
+ *   registers preset commands for the active integration only, so OpenCode first, then Claude). The preset is the
+ *   configuration's `preset`: a bundled one (`neutral`, `stackra`) or a path to the repository's own preset folder.
+ *   A configuration without one gets `neutral`; a repository with no config file keeps what it used before (its
+ *   `.agents/speckit/presets/` when it has one, else the bundled `stackra`) until the config files land.
+ *   Without `specify` on PATH it copies the bundled, already rendered `speckit-*` skills and commands of the
+ *   `stackra` preset instead; the other presets need `specify`.
  *   The installed copies are generated and committed; `figentra-flow gate ci` (tripwire) fails when they drift from the source.
  * Boundary: writes only `.specify/` (through the pinned `specify`), or `.claude/skills/speckit-*` and
  *   `.opencode/commands/speckit.*` when it falls back.
@@ -15,8 +18,11 @@
  */
 import { spawnSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, readdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { loadConfig } from "../lib/config.mjs";
+import { CONFIG_FILE } from "../lib/product.mjs";
 
 const ROOT = process.cwd();
 export const PRESETS = ".agents/speckit/presets";
@@ -45,16 +51,41 @@ export function installSkills(root) {
   cpSync(join(ASSETS, "opencode/commands"), join(root, ".opencode/commands"), { recursive: true });
 }
 
+/** The bundled presets. */
+export const BUNDLED = ["neutral", "stackra"];
+
+/**
+ * The folder holding the presets to install, and their ids.
+ * @param {string} root
+ * @returns {{ dir: string, presets: string[] }}
+ */
+export function presetSource(root) {
+  const preset = loadConfig(root).config.preset;
+  if (preset && BUNDLED.includes(preset))
+    return { dir: join(ASSETS, "presets"), presets: [preset] };
+  if (preset)
+    return { dir: dirname(resolve(root, preset)), presets: [basename(resolve(root, preset))] };
+  if (existsSync(join(root, CONFIG_FILE)))
+    return { dir: join(ASSETS, "presets"), presets: ["neutral"] };
+  if (existsSync(join(root, PRESETS)))
+    return { dir: PRESETS, presets: readdirSync(join(root, PRESETS)) };
+  return { dir: join(ASSETS, "presets"), presets: ["stackra"] };
+}
+
 export function run() {
   const list = (p) => (existsSync(join(ROOT, p)) ? readdirSync(join(ROOT, p)) : []);
-  const own = existsSync(join(ROOT, PRESETS));
-  const dir = own ? PRESETS : join(ASSETS, "presets");
-  const presets = own ? list(PRESETS) : readdirSync(dir);
+  const { dir, presets } = presetSource(ROOT);
   const installed = list(".specify/presets").filter((n) => !n.startsWith("."));
   for (const args of steps(presets, installed, dir)) {
     console.log(`$ specify ${args.join(" ")}`);
     const r = spawnSync("specify", args, { cwd: ROOT, stdio: "inherit" });
     if (/** @type {NodeJS.ErrnoException | undefined} */ (r.error)?.code === "ENOENT") {
+      if (presets.join() !== "stackra" && dir !== PRESETS) {
+        console.error(
+          `specify is not on PATH: the ${presets.join(", ")} preset renders through it (install spec-kit's specify)`,
+        );
+        return 1;
+      }
       console.log("specify is not on PATH: installing the bundled speckit skills and commands");
       installSkills(ROOT);
       return 0;

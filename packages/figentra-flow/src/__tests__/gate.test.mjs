@@ -379,7 +379,7 @@ test("tripwire: the repository passes, and an upgrade that drops the wrap or res
     writeFileSync(join(root, ".specify/scripts/bash/setup-plan.sh"), "#!/bin/sh\n");
     const problems = tripwire(root).join("\n");
     assert.match(problems, /feature_numbering/);
-    assert.match(problems, /speckit\.specify\.md lost the Stackra wrap/);
+    assert.match(problems, /speckit\.specify\.md lost the preset's wrap/);
     assert.match(problems, /as-is/);
     assert.match(problems, /setup-plan\.sh/);
     // The replaced commands keep their markers, and the bundled workflow stays disabled.

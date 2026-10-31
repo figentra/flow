@@ -104,7 +104,18 @@ setting you have not made refuses and names it.
   `github-actions` follows. With a config file but no runner, `gate run` refuses; without a config file, the testbed
   command is kept, with a warning, until the next minor version.
 
-The preset and `review.required` keys follow in the next steps of the same phase. Only
+- `preset` picks the spec-kit preset `sync` installs and the rules the gate holds a spec to:
+  - `neutral` (the default with a config file): spec-kit's commands with only what the gates need (the spec
+    location, the plan gate, the issue key, tiers and approval stops). The gate keeps the shared rules: the
+    clarifications marker, statuses, tiers, approvals, EARS criteria and the design sections.
+  - `stackra`: Stackra's preset, which adds the Impact questionnaire, the Constitution Check, deploy modes,
+    correctness properties, task routes and the path floors of the tier check.
+  - a path to the repository's own preset folder, held to the neutral rules.
+
+  `neutral` and a path need `specify` on PATH to render; without a config file, `stackra` (or the repository's
+  `.agents/speckit/presets/`) is kept until the next minor version.
+
+The `review.required` key follows in the next step of the same phase. Only
 `figentra-flow.config.json` is read; no other file stands in for it.
 
 ## The gate
