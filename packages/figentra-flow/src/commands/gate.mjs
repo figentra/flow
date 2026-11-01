@@ -44,6 +44,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { schemeFor, trackerFor } from "../adapters/tracker/index.mjs";
 import { say } from "../lib/cli.mjs";
+import { loadTeam } from "../lib/team.mjs";
 import { loadConfig } from "../lib/config.mjs";
 import { DISPLAY_NAME, ENV_PREFIX, NAME, PACKAGE } from "../lib/product.mjs";
 
@@ -1079,6 +1080,7 @@ export function run([mode, ...args]) {
       for (const b of bugs) failures += report(checkBug(basename(b), tests));
     }
     failures += report(laneGate(base));
+    failures += report(loadTeam(ROOT)?.problems.map((p) => `team: ${p}`) ?? []);
     say(
       failures ? "blocked" : "approved",
       failures ? `spec-gate: ${failures} problem(s)` : "spec-gate: the specs pass",

@@ -42,6 +42,7 @@ export const SCHEMA = {
     $schema: str,
     version: { const: 1 },
     preset: str,
+    team: str,
     tracker: port(
       {
         linear: { team: str, branchPrefix: str, otherBranchPrefixes: strs, token: strs },
@@ -200,7 +201,7 @@ export function validate(schema, value, path = "") {
 }
 
 /**
- * @typedef {{ version?: number, preset?: string, tracker?: any, credentials?: any, runner?: any, secrets?: any,
+ * @typedef {{ version?: number, preset?: string, team?: string, tracker?: any, credentials?: any, runner?: any, secrets?: any,
  *             apps?: { gate?: { slug?: string, login: string }, review?: { slug: string }, owner?: string },
  *             gate?: { check?: string }, clean?: { keep?: string[] }, review?: { required?: string[] },
  *             artifacts?: { paths?: string[], maxBytes?: number },

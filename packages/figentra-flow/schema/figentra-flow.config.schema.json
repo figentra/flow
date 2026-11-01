@@ -17,6 +17,10 @@
       "type": "string",
       "minLength": 1
     },
+    "team": {
+      "type": "string",
+      "minLength": 1
+    },
     "tracker": {
       "oneOf": [
         {
