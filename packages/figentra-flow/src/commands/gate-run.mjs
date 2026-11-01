@@ -20,6 +20,7 @@ import { join } from "node:path";
 import { runnerFor } from "../adapters/runner/index.mjs";
 import { secretsPort } from "../adapters/secrets.mjs";
 import { artifactProblems } from "../lib/artifacts.mjs";
+import { say } from "../lib/cli.mjs";
 import { loadConfig } from "../lib/config.mjs";
 import { defaultBranch, git, isClean, remoteTip } from "../lib/git.mjs";
 import {
@@ -170,6 +171,7 @@ export async function run(/** @type {string[]} */ all) {
     args.includes(`--${name}`) ? args[args.indexOf(`--${name}`) + 1] : undefined;
   /** @type {{ code: number, problem?: string }} */
   let result;
+  say("checking", `${NAME} gate run: checking ${opt("ref") ?? "HEAD"}`);
   try {
     result = await gateRun({
       cwd: process.cwd(),
@@ -182,5 +184,6 @@ export async function run(/** @type {string[]} */ all) {
     result = { code: 2, problem: /** @type {Error} */ (error).message };
   }
   if (result.problem) console.error(`${NAME} gate run: ${result.problem}`);
+  say(result.code ? "blocked" : "approved", `${NAME} gate run: ${result.code ? "red" : "green"}`);
   return result.code;
 }

@@ -20,6 +20,7 @@ import { trackerFor } from "../adapters/tracker/index.mjs";
 import { github } from "../lib/github.mjs";
 import { aiReview } from "../lib/review.mjs";
 import { artifactProblems } from "../lib/artifacts.mjs";
+import { say } from "../lib/cli.mjs";
 import { loadConfig } from "../lib/config.mjs";
 import { LANDED_KEY, NAME, STATUS_CONTEXT } from "../lib/product.mjs";
 import { defaultBranch, fetch, git, mainCheckout, remote, worktrees } from "../lib/git.mjs";
@@ -448,5 +449,9 @@ export async function run(/** @type {string[]} */ args) {
     ? await landStack(options)
     : await landOne({ ...options, dry: args.includes("--dry-run") });
   for (const p of result.problems ?? []) console.error(`${NAME} land: ${p}`);
+  const dry = args.includes("--dry-run") && !args.includes("--stack");
+  if (result.code === 0 || result.code === 3)
+    say(dry ? "approved" : "shipped", `${NAME} land: ${dry ? "ready to land" : "landed"}`);
+  else say("blocked", `${NAME} land: not landed`);
   return result.code;
 }
