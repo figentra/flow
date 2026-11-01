@@ -22,7 +22,7 @@
  *                               edit to another spec gets only `check`, and changing another spec's `**Status**`
  *                               line needs a commit whose `Refs:` names that spec's key. No branch check: check-pr
  *                               owns it.
- *   dir [--slug s] [--key <key>]   print the spec folder for the branch's issue key and persist .specify/feature.json
+ *   dir [--slug s] [--key <key>]   print the spec folder for the branch's issue key and persist .flow/current.json
  *   stage <spec.md> <stage>     best-effort Linear comment for a stage change
  *
  * States: Draft → Clarified → Planned → Tasked → Implementing → Done, or Abandoned / Superseded. A status may lag
@@ -39,7 +39,7 @@
  * the exit code (ADR 0065 rule 7). `ci` never calls it. FIGENTRA_FLOW_TRACKER=off (or STACKRA_LINEAR=off) disables it.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { schemeFor, trackerFor } from "../adapters/tracker/index.mjs";
@@ -53,6 +53,7 @@ import {
 } from "../lib/roles.mjs";
 import { loadTeam } from "../lib/team.mjs";
 import { loadConfig } from "../lib/config.mjs";
+import { specsDirs, writeCurrent } from "../lib/flow-dir.mjs";
 import { DISPLAY_NAME, ENV_PREFIX, NAME, PACKAGE } from "../lib/product.mjs";
 
 /** The presets this package ships (`stackra`, `neutral`), installed when a repository keeps none of its own. */
@@ -744,15 +745,16 @@ export function checkBug(folder, tests, keys = repoScheme()) {
 export function specDir({ root = ROOT, branch = "", key, slug, keys = repoScheme() } = {}) {
   const k = key === undefined ? keys.keys(branch)[0] : keys.parse(key);
   if (!k) return { error: `no issue key in ${key ? `--key ${key}` : `branch \`${branch}\``}` };
-  const base = join(root, SPECS_DIR);
+  const specs = specsDirs(root).dir;
+  const base = join(root, specs);
   const existing = existsSync(base) ? readdirSync(base).filter((d) => keys.folderKey(d) === k) : [];
   if (existing.length > 1)
     return { error: `several folders for ${keys.display(k)}: ${existing.join(", ")}` };
-  if (existing.length) return { dir: `${SPECS_DIR}/${existing[0]}` };
+  if (existing.length) return { dir: `${specs}/${existing[0]}` };
   const name = keys.folder(k, slug ?? "");
   if (keys.folderKey(name) !== k)
     return { error: `no folder for ${keys.display(k)} yet; pass --slug <kebab-case short name>` };
-  return { dir: `${SPECS_DIR}/${name}` };
+  return { dir: `${specs}/${name}` };
 }
 
 /** Commands whose rendered copies must carry the preset's feature-directory wrap. */
@@ -913,7 +915,7 @@ export async function trackerStage(file, stage, options = {}) {
   }
 }
 
-function gate(file) {
+export function gate(file) {
   const problems = checkSpec(readFileSync(file, "utf8"));
   for (const p of problems) console.error(`spec-gate: ${file}: ${p}`);
   return problems.length;
@@ -1089,11 +1091,8 @@ export function run([mode, ...args]) {
       console.error(`spec-gate: ${error}`);
       return 1;
     }
-    // Every later spec-kit script resolves the feature from here when SPECIFY_FEATURE_DIRECTORY is unset.
-    writeFileSync(
-      join(ROOT, ".specify/feature.json"),
-      `${JSON.stringify({ feature_directory: dir }, null, 2)}\n`,
-    );
+    // Every later `figentra-flow spec` call resolves the spec folder from here (ADR 0510).
+    writeCurrent(ROOT, dir ?? "");
     console.log(dir);
     return 0;
   }

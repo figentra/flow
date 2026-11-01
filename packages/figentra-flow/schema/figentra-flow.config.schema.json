@@ -21,6 +21,20 @@
       "type": "string",
       "minLength": 1
     },
+    "specs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bugsDir": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "tracker": {
       "oneOf": [
         {
