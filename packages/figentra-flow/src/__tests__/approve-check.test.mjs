@@ -60,6 +60,8 @@ function github(over = {}) {
     contents: { [`.github/CODEOWNERS@${BASE}`]: "/.github/workflows/** @figentra-usr\n" },
     codeOwnerReview: true,
     dismissFails: false,
+    requestFails: false,
+    graphqlError: "",
     required: [{ context: "figentra-flow/gate" }, { context: "verify", integration_id: 15368 }],
     statuses: [
       { context: "figentra-flow/gate", state: "success", creator: { login: "figentra-gate[bot]" } },
@@ -110,6 +112,9 @@ function github(over = {}) {
     writes.push({ method, path, body });
     if (s.dismissFails && path.endsWith("/dismissals"))
       return { ok: false, status: 403, json: undefined };
+    if (s.requestFails && /** @type {any} */ (body)?.event === "REQUEST_CHANGES")
+      return { ok: false, status: 422, json: undefined };
+    if (s.graphqlError && path === "/graphql") return ok({ errors: [{ message: s.graphqlError }] });
     return ok({ id: 42 });
   };
   return { read, write, writes };
@@ -263,7 +268,7 @@ test("approve: approves at the checked head; a head that moves meanwhile gets th
     [`POST /repos/${REPO}/pulls/7/reviews`, `PUT /repos/${REPO}/pulls/7/reviews/42/dismissals`],
   );
 
-  // A dismissal GitHub refuses: auto-merge goes off and the PR says why.
+  // A dismissal GitHub refuses: the same App requests changes, auto-merge goes off, and the PR says so.
   const stuck = github({
     headAfter: "e".repeat(40),
     dismissFails: true,
@@ -275,13 +280,38 @@ test("approve: approves at the checked head; a head that moves meanwhile gets th
     [
       `POST /repos/${REPO}/pulls/7/reviews`,
       `PUT /repos/${REPO}/pulls/7/reviews/42/dismissals`,
+      `POST /repos/${REPO}/pulls/7/reviews`,
       "POST /graphql",
       `POST /repos/${REPO}/issues/7/comments`,
     ],
   );
-  assert.match(stuck.writes[2].body.query, /disablePullRequestAutoMerge/);
-  assert.equal(stuck.writes[2].body.variables.id, "PR_7");
-  assert.match(stuck.writes[3].body.body, /could not be dismissed\. Auto-merge is off/);
+  assert.equal(stuck.writes[2].body.event, "REQUEST_CHANGES");
+  assert.match(stuck.writes[3].body.query, /disablePullRequestAutoMerge/);
+  assert.equal(stuck.writes[3].body.variables.id, "PR_7");
+  assert.match(stuck.writes[4].body.body, /Dismissing the approval failed \(HTTP 403\)/);
+  assert.match(
+    stuck.writes[4].body.body,
+    /This App now requests changes, which replaces its approval\./,
+  );
+  assert.match(stuck.writes[4].body.body, /- Auto-merge is off\./);
+});
+
+test("approve: when every fallback fails too, the comment says the approval may still stand", async () => {
+  const worst = github({
+    headAfter: "e".repeat(40),
+    dismissFails: true,
+    requestFails: true,
+    graphqlError: "Pull request is not in the correct state",
+    pr: { ...PR, node_id: "PR_7" },
+  });
+  assert.equal(await main(env(), { read: worst.read, write: worst.write, log: () => {} }), 1);
+  const comment = worst.writes.at(-1)?.body.body ?? "";
+  assert.match(comment, /Requesting changes failed too \(HTTP 422\): the approval may still stand/);
+  assert.match(
+    comment,
+    /Turning auto-merge off failed: Pull request is not in the correct state\./,
+  );
+  assert.doesNotMatch(comment, /Auto-merge is off/);
 });
 
 test("required checks: an App-pinned context counts only that App's newest run; a status only from its trusted login", () => {
