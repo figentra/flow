@@ -28,6 +28,8 @@ const COMMANDS = [
   "spec",
   "migrate",
   "ship",
+  "release",
+  "doctor",
 ];
 const [command, ...args] = process.argv.slice(2);
 if (!COMMANDS.includes(command)) {

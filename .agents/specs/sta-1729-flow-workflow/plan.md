@@ -928,7 +928,8 @@ It reuses the checks other commands already make: `loadConfig`, `installProblems
   - `changesetsOf(root)`: reads `.changeset/*.md` (not `README.md`) and returns `{ file, bumps: { name: bump } }`
     from each frontmatter.
   - `packagesOf(root)`: maps each `package.json` that git tracks to its name, version, `private` and
-    `publishConfig.registry`.
+    registry: `publishConfig.registry`, else its scope's `.npmrc` line, else the Release workflow's `registry:`
+    input (Stackra core passes it to the Runway npm provider and sets none per package).
   - `nextVersions(changesets, packages)`: each package's next version, from the highest bump. `releaseProblems(...)`
     covers AC-054.
   - `versionPr(api, repo, branch)`: the open PR from `changeset-release/<branch>`, and whether its body names every

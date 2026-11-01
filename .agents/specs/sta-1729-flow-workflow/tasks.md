@@ -56,8 +56,8 @@ Phase 1 is designed and approved; the later phases are placeholders, refined whe
 
 ## Phase 5: release, ship and doctor
 
-- [ ] T050 `figentra-flow release [--json] [--offline]` in `packages/figentra-flow/src/commands/release.mjs`: pending changesets and next versions, the version PR, the Release workflow's last run and notices, the registry's versions (STA-1845) — covers: FR-8, AC-013, AC-054 — route: spec-task
-- [ ] T052 `figentra-flow doctor [--json] [--offline]` in `packages/figentra-flow/src/commands/doctor.mjs` (STA-1846) — covers: FR-13, AC-055 — route: spec-task
+- [x] T050 `figentra-flow release [--json] [--offline]` in `packages/figentra-flow/src/commands/release.mjs`: pending changesets and next versions, the version PR, the Release workflow's last run and notices, the registry's versions (STA-1845) — covers: FR-8, AC-013, AC-054 — route: spec-task
+- [x] T052 `figentra-flow doctor [--json] [--offline]` in `packages/figentra-flow/src/commands/doctor.mjs` (STA-1846) — covers: FR-13, AC-055 — route: spec-task
 - [x] T051 `figentra-flow ship <dev|staging>` in `packages/figentra-flow/src/commands/ship.mjs`: dispatches the product's deploy workflow with `environment`, refuses production — covers: FR-8, AC-014, AC-015 — route: spec-task
 
 ## Phase 6: GitHub switch-over (design pending)
