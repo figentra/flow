@@ -1,0 +1,7 @@
+preset:
+  id: "stackra"
+  name: "Stackra clarify-first workflow"
+  version: "2.0.0"
+  description: "Specs in .agents/specs/sta-<n>-<slug>, mandatory Impact questionnaire, clarifications marker, Linear link, and a plan gate"
+  author: "stackra"
+  license: "MIT"
