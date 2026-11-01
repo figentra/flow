@@ -319,7 +319,8 @@ function budget(root, report, { apply, now, busy, keepNames, base, backupDir }) 
     kept: [],
   };
   if (busy === undefined) return out;
-  for (const tree of left) {
+  // Path order, so the report and the sweep never depend on git's listing order.
+  for (const tree of left.toSorted((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))) {
     if (
       !resolve(tree.path).startsWith(inside) ||
       keepNames.some((pattern) => matches(basename(tree.path), pattern)) ||

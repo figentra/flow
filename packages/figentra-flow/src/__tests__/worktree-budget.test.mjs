@@ -119,13 +119,13 @@ test("budget: --dry-run changes nothing; --budget preserves dirty work and a det
     dry: true,
     backupDir,
   });
-  assert.deepEqual(dry.budget?.candidates, [dirty, detached]);
+  assert.deepEqual(dry.budget?.candidates, [detached, dirty], "in path order");
   assert.deepEqual(dry.budget?.swept, []);
   assert.equal(existsSync(dirty), true);
   assert.equal(sh(r.root, "branch", "--list", "keep/*"), "");
 
   const swept = await clean({ cwd: r.root, issues: open, busy: [], budget: true, backupDir });
-  assert.deepEqual(swept.budget?.swept, [dirty, detached], JSON.stringify(swept.budget));
+  assert.deepEqual(swept.budget?.swept, [detached, dirty], JSON.stringify(swept.budget));
   assert.equal(existsSync(dirty) || existsSync(detached), false);
   // The work lives on: committed on keep/ branches; the original branch is still there.
   assert.equal(sh(r.root, "show", "keep/main-sta-21-dirty:sta-21-dirty.txt"), "changed");
@@ -143,10 +143,11 @@ test("budget: --dry-run changes nothing; --budget preserves dirty work and a det
 test("budget: a preservation commit the hooks refuse keeps the tree, with the reason", async (t) => {
   const r = budgeted(1);
   t.after(r.dispose);
+  const dirty = tree(r.root, "sta-31-hooked");
+  // The hook goes in after the tree's own commit, so only the preservation commit meets it.
   const hook = join(r.root, ".git", "hooks", "pre-commit");
   writeFileSync(hook, "#!/bin/sh\nexit 1\n");
   chmodSync(hook, 0o755);
-  const dirty = tree(r.root, "sta-31-hooked");
   writeFileSync(join(dirty, "x.txt"), "x\n");
   age(dirty, 30);
   const report = await clean({ cwd: r.root, issues: open, busy: [], budget: true });
