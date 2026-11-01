@@ -25,6 +25,12 @@ export function githubIssuesTracker(_block, { root, api }) {
   )?.[1];
   /** @type {import("../../lib/github.mjs").Api | undefined} */
   let gh = api;
+  /** A repository-level call. */
+  const repoCall = (/** @type {string} */ method, /** @type {string} */ tail) => {
+    if (!repo) throw new Error("origin is not a GitHub repository");
+    gh ??= github(root);
+    return gh(method, `/repos/${repo}${tail}`);
+  };
   const call = (
     /** @type {string} */ method,
     /** @type {string} */ key,
@@ -58,6 +64,18 @@ export function githubIssuesTracker(_block, { root, api }) {
     },
     async comment(key, body) {
       call("POST", key, "/comments", { body });
+    },
+    async role(key, label) {
+      // POST /labels would create a missing label; the roster's labels are the lead's to create.
+      if (!repoCall("GET", `/labels/${encodeURIComponent(label)}`).ok)
+        throw new Error(`the label ${label} does not exist on GitHub (the lead creates it)`);
+      for (const old of call("GET", key, "").labels ?? [])
+        if (old.name.startsWith("role:") && old.name !== label)
+          call("DELETE", key, `/labels/${encodeURIComponent(old.name)}`);
+      call("POST", key, "/labels", { labels: [label] });
+    },
+    async missingLabels(labels) {
+      return labels.filter((label) => !repoCall("GET", `/labels/${encodeURIComponent(label)}`).ok);
     },
   };
 }

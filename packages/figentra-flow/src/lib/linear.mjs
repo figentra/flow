@@ -204,6 +204,14 @@ export function linear(c, { dry = false, log = console.log } = {}) {
       }
       return cache.get(k);
     },
+    /** Label id by name, or undefined; never creates one (a roster's labels are the lead's to create). */
+    async findLabel(name) {
+      const d = await gql(
+        `query($n:String!,$t:ID!){issueLabels(filter:{name:{eqIgnoreCase:$n},or:[{team:{null:true}},{team:{id:{eq:$t}}}]}){nodes{id}}}`,
+        { n: name, t: await api.teamId() },
+      );
+      return d.issueLabels.nodes[0]?.id;
+    },
     async viewerId() {
       viewerId ??= (await gql(`query{viewer{id}}`)).viewer.id;
       return viewerId;
