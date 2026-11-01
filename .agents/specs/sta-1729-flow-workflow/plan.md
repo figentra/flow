@@ -865,3 +865,43 @@ Each step lands green on f4's box. Phase 4 follows A6.
 A finding outside this design: `gate.mjs` calls `pnpm --silent linear …`, and pnpm 12 refused `-s` (37f62ef). The
 tracker port removes the call. Until then, Linear stage comments from `figentra-flow gate plan` may fail quietly, because
 they are best-effort.
+
+## Phase 5: ship (design; release follows separately)
+
+Assigned by the leader's runway bring-up (2026-11-01): pay is the pilot.
+
+### Architecture overview
+
+`figentra-flow ship <dev|staging>` never deploys from the workstation (Stackra ADR 0352 decision 6). It dispatches the
+product's Runway deploy workflow, `.github/workflows/deploy.yml`, on the default branch with the input
+`environment=<env>`. That workflow runs `stackra build --product` and `stackra deploy --product --env <env>` in CI, in
+that GitHub environment. The tip it ships is the default branch's tip on origin, printed before the dispatch.
+
+### Components and responsibilities
+
+- `src/commands/ship.mjs`: `environmentProblems(env)` refuses everything but dev and staging, and refuses production
+  by name, pointing at `runway promote <sha>` by the owner (AC-015). `run(args)` checks it before anything else, reads
+  origin's tip, then makes one dispatch through `connect(root)` (the configured credentials, never a personal login).
+  The workflow isn't parsed locally, because Flow's YAML reader refuses anchors, which deploy workflows use.
+  GitHub refuses an undeclared input (422), and `dispatchProblem` turns that into "takes no input `environment`".
+  `--dry-run` prints the dispatch, and `--workflow <file>` names another workflow.
+- The product's deploy workflow takes an optional `environment` input (dev or staging). Its promote job runs only
+  when that input is empty, so `runway promote <sha>` keeps its meaning. This is a product-repo change (pay first),
+  not Flow's.
+
+### Error handling
+
+A refusal exits 2 before anything is called. A failed dispatch exits 1 with `gh`'s error. A `sha` input is never
+sent, because a `sha` is a promote.
+
+### Security and tenancy
+
+There's no new credential: the dispatch uses the repository's `credentials` port. Production can't be reached in two
+ways: `ship` refuses it, and the workflow's ship path validates `environment` against dev and staging. The deploy itself
+waits on whatever the GitHub environment requires.
+
+### Testing strategy
+
+`src/__tests__/ship.test.mjs`: the refusals (production, prod, unknown, missing), the reading of a refused dispatch
+(422 for a missing input, 404 for a missing workflow), and the CLI's exit 2 on `ship production` before any config is
+read.

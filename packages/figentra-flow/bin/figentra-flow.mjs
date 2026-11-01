@@ -27,6 +27,7 @@ const COMMANDS = [
   "team",
   "spec",
   "migrate",
+  "ship",
 ];
 const [command, ...args] = process.argv.slice(2);
 if (!COMMANDS.includes(command)) {
