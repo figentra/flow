@@ -44,6 +44,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { schemeFor, trackerFor } from "../adapters/tracker/index.mjs";
 import { say } from "../lib/cli.mjs";
+import { checkSpecRoles, checkTaskRoles } from "../lib/roles.mjs";
 import { loadTeam } from "../lib/team.mjs";
 import { loadConfig } from "../lib/config.mjs";
 import { DISPLAY_NAME, ENV_PREFIX, NAME, PACKAGE } from "../lib/product.mjs";
@@ -303,12 +304,20 @@ export function checkTasks(
  * @param {string} folder
  * @param {string} text
  * @param {{ files?: string[], tasks?: string, plan?: string, known?: Set<string>, keys?: KeyScheme,
- *           rules?: Rules }} [options]
+ *           rules?: Rules, team?: import("../lib/team.mjs").Team }} [options]
  */
 export function checkStage(
   folder,
   text,
-  { files = [], tasks = "", plan = "", known, keys = repoScheme(), rules = repoRules() } = {},
+  {
+    files = [],
+    tasks = "",
+    plan = "",
+    known,
+    keys = repoScheme(),
+    rules = repoRules(),
+    team = loadTeam(ROOT),
+  } = {},
 ) {
   const body = strip(text);
   const key = keys.folderKey(folder);
@@ -326,6 +335,13 @@ export function checkStage(
   problems.push(...checkSpec(text, keys, rules));
   problems.push(...checkApproval(text));
   const tier = tierOf(text);
+  if (team)
+    problems.push(
+      ...checkSpecRoles(text, team, {
+        tiered: tier === "feature" || tier === "big",
+        pastClarified: atLeast(status, "planned"),
+      }),
+    );
   if (tier !== undefined && tier !== "trivial") problems.push(...checkCriteria(text));
   const history =
     body.match(/^## Status history\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
@@ -364,6 +380,7 @@ export function checkStage(
   if (atLeast(status, "tasked")) {
     if (!files.includes("tasks.md")) problems.push(`status ${status} needs tasks.md`);
     else problems.push(...checkTasks(tasks, { spec: text, plan, known, rules }));
+    if (team) problems.push(...checkTaskRoles(tasks, team).problems);
   }
   const live = parseTasks(tasks).filter((t) => !t.struck);
   if (atLeast(status, "implementing") && !live.some((t) => t.done))
@@ -1039,13 +1056,19 @@ export function run([mode, ...args]) {
   if (mode === "check" && arg) return stageGate(resolve(arg)) ? 1 : 0;
   if (mode === "tasks" && arg) {
     const dir = dirname(resolve(arg));
-    return report(
-      checkTasks(readFileSync(arg, "utf8"), {
+    const team = loadTeam(ROOT);
+    const roles = team ? checkTaskRoles(readFileSync(arg, "utf8"), team) : undefined;
+    // AC-048: a task with no role is the lead's to assign, never a guess.
+    for (const t of roles?.unassigned ?? [])
+      console.warn(`spec-gate: for the lead: ${t} has no role`);
+    return report([
+      ...(roles?.problems ?? []),
+      ...checkTasks(readFileSync(arg, "utf8"), {
         spec: readIf(join(dir, "spec.md")),
         plan: readIf(join(dir, "plan.md")),
         known: knownRoutes(),
       }),
-    )
+    ])
       ? 1
       : 0;
   }

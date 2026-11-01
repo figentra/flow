@@ -59,6 +59,7 @@ export function parseTasks(text) {
       parallel: /^\s*\[P\]/.test(rest),
       covers: list(field(rest, "covers")),
       route: field(rest, "route"),
+      role: field(rest, "role"),
       deps: list(field(rest, "deps")),
       paths: [...rest.matchAll(/`([^`]+)`/g)].map((p) => p[1]),
       key: rest.match(/\[([A-Za-z][A-Za-z0-9]*-\d+)\]\s*$/)?.[1],
