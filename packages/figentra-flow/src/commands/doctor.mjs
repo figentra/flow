@@ -2,25 +2,44 @@
  * Figentra Flow file contract:
  * Purpose: `figentra-flow doctor [--json] [--offline]`: whether this machine and repository can run Flow: Node, git,
  *   the configuration, the `.flow/` install, the ignored worktree folder, the roster and the GitHub credentials, each
- *   reported as passed or failed with its fix.
+ *   reported as passed or failed with its fix. Two warnings never fail the run (STA-1871): more linked worktrees than
+ *   `clean.budget`, and under 10 GB or 10 % free on the disk that holds the repository.
  * Boundary: reads only, reusing the checks the other commands make (`loadConfig`, `installProblems`, `loadTeam`,
  *   `connect`); one GitHub call (`GET /repos/{repo}`) unless `--offline`. Exit 0 when every check passes, 1 otherwise.
  * Runtime: node
  * Governing contract: STA-1729 (FR-13, AC-055); STA-1846.
  * Secrets: none here; the token stays inside `gh` or the wrapper.
  */
-import { ignoresWorktrees } from "./clean.mjs";
+import { statfsSync } from "node:fs";
+
+import { BUDGET, ignoresWorktrees } from "./clean.mjs";
 import { connect } from "./land.mjs";
 import { say } from "../lib/cli.mjs";
 import { loadConfig } from "../lib/config.mjs";
-import { git } from "../lib/git.mjs";
+import { git, worktrees } from "../lib/git.mjs";
 import { CONFIG_FILE, NAME, NODE_RANGE } from "../lib/product.mjs";
 import { installProblems } from "../lib/render.mjs";
 import { loadTeam } from "../lib/team.mjs";
 
 /**
- * @typedef {{ id: string, ok: boolean, detail: string, fix?: string }} Check
+ * @typedef {{ id: string, ok: boolean, detail: string, fix?: string, warn?: boolean }} Check
  */
+
+/** Below either, the disk is low: 10 GB free, or 10 % of it. */
+export const LOW_DISK_BYTES = 10 * 1024 ** 3;
+export const LOW_DISK_SHARE = 0.1;
+
+/**
+ * Free and total bytes of the file system that holds `path`.
+ * @param {string} path
+ */
+export function diskOf(path) {
+  const s = statfsSync(path);
+  return { free: s.bavail * s.bsize, total: s.blocks * s.bsize };
+}
+
+/** Bytes as gigabytes, one decimal. */
+const gb = (/** @type {number} */ n) => `${(n / 1024 ** 3).toFixed(1)} GB`;
 
 /**
  * Whether `version` meets a `>=x.y.z` range (the only form Flow's `engines` uses).
@@ -41,10 +60,10 @@ export function meets(version, range) {
 /**
  * Every check for the repository at `root` (or `cwd` when it is none).
  * @param {string} cwd
- * @param {{ offline?: boolean, node?: string }} [options]
+ * @param {{ offline?: boolean, node?: string, disk?: (path: string) => { free: number, total: number } }} [options]
  * @returns {Check[]}
  */
-export function checks(cwd, { offline = false, node = process.versions.node } = {}) {
+export function checks(cwd, { offline = false, node = process.versions.node, disk = diskOf } = {}) {
   const range = NODE_RANGE;
   /** @type {Check[]} */
   const out = [
@@ -103,6 +122,31 @@ export function checks(cwd, { offline = false, node = process.versions.node } = 
         },
   );
 
+  // STA-1871: warnings, not failures.
+  const count = worktrees(root).length;
+  const limit = loaded.config.clean?.budget ?? BUDGET;
+  out.push(
+    count > limit
+      ? {
+          id: "worktree-budget",
+          ok: false,
+          warn: true,
+          detail: `${count} linked worktrees, over the budget of ${limit}`,
+          fix: `run \`${NAME} clean --budget --dry-run\`, then \`${NAME} clean --budget\``,
+        }
+      : { id: "worktree-budget", ok: true, detail: `${count} of ${limit} linked worktrees` },
+  );
+  const space = disk(root);
+  const low = space.free < LOW_DISK_BYTES || space.free < space.total * LOW_DISK_SHARE;
+  out.push({
+    id: "disk",
+    ok: !low,
+    ...(low
+      ? { warn: true, fix: `free space: \`${NAME} clean --budget\`, then old caches and builds` }
+      : {}),
+    detail: `${gb(space.free)} free of ${gb(space.total)}`,
+  });
+
   if (!loaded.errors.length) {
     const team = loadTeam(root);
     if (team)
@@ -150,12 +194,15 @@ export function checks(cwd, { offline = false, node = process.versions.node } = 
 /** @param {string[]} args */
 export function run(args = []) {
   const all = checks(process.cwd(), { offline: args.includes("--offline") });
-  const failed = all.filter((c) => !c.ok);
+  const failed = all.filter((c) => !c.ok && !c.warn);
   if (args.includes("--json"))
     console.log(JSON.stringify({ schema: `${NAME}.doctor/1`, checks: all }, null, 2));
   else {
     for (const c of all) {
-      say(c.ok ? "approved" : "blocked", `${c.id}: ${c.detail}`);
+      say(
+        c.ok ? "approved" : c.warn ? "waiting" : "blocked",
+        `${c.id}${c.warn ? " (warning)" : ""}: ${c.detail}`,
+      );
       if (c.fix) console.error(`  fix: ${c.fix}`);
     }
     if (!failed.length) console.error(`  ${NAME} doctor: every check passed`);

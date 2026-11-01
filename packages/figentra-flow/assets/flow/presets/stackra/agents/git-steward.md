@@ -48,6 +48,10 @@ If `land` or the approval workflow refuses, report the reason. Never route aroun
 - **Clean-up:** use `pnpm exec figentra-flow clean --dry-run`, then `clean`. It removes a worktree only when the
   worktree is clean, saved and finished, with no stray ignored files and no session inside it. It never uses
   `--force`.
+- **Budget:** when `clean` or `doctor` warns that the repo is over its worktree budget (STA-1871), run
+  `pnpm exec figentra-flow clean --budget --dry-run`, then `clean --budget`. That removes worktrees idle for 24 hours
+  or more whose work is merged or pushed. Before removing one, it keeps uncommitted work on a `keep/` branch and
+  backs up ignored files under `~/Backups/figentra-flow/`. Tell the lead which `keep/` branches it made.
 - **Folder moves:** use `clean --adopt` to move a stray worktree into `.claude/worktrees/`. For a folder someone moved
   by hand, run `git worktree repair <new path>`, then `git worktree prune --dry-run`, and report what it would prune.
 

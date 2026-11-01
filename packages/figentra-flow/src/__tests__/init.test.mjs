@@ -38,6 +38,11 @@ test("init writes .flow/, a starter constitution and the direct skills; it keeps
     }
     assert.equal(existsSync(join(root, ".specify")), false, "no spec-kit folder");
     assert.equal(readFileSync(join(root, ".gitignore"), "utf8"), ".claude/worktrees/\n", "FR-3");
+    // STA-1871 FR-2: the folder explains itself to people browsing it.
+    assert.match(
+      readFileSync(join(root, ".claude/worktrees/README.md"), "utf8"),
+      /One worktree per active task, only here\./,
+    );
     writeFileSync(join(root, ".flow/constitution.md"), "ours\n");
     assert.equal(init(root), false);
     assert.equal(init(root, { force: true }), true);
@@ -67,6 +72,7 @@ test("with a projector, sync writes neutral .agents/skills documents; it removes
       ".agents/agents/ci-steward.md",
       ".agents/agents/git-steward.md",
       ".agents/agents/tracker-steward.md",
+      ".agents/rules/worktrees.md",
       ".github/workflows/figentra-flow-approve.yml",
     ]);
     assert.deepEqual(removed.toSorted(), [

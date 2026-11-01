@@ -14,31 +14,31 @@ pnpm exec figentra-flow sync         # re-render the flow-* skills after a prese
 
 ## Commands
 
-| Command                                                                | What it does                                                                                                                                                                              |
-| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `figentra-flow init [--force]`                                         | writes `.flow/` (README, a starter constitution, `.gitignore`) and renders the `flow-*` skills                                                                                            |
-| `figentra-flow migrate [--dry-run]`                                    | moves a spec-kit repository onto `.flow/` (constitution, `.specify/` and `.agents/speckit/` deleted, scripts, pins and skips), then syncs                                                 |
-| `figentra-flow spec paths\|setup-plan\|setup-tasks\|template`          | the spec folder, its documents and the resolved templates as JSON, for the `flow-*` commands                                                                                              |
-| `figentra-flow sync [--direct]`                                        | renders the `flow-*` skills (for the repository's projector, or Claude Code and OpenCode directly) and writes `.flow/lock.json`                                                           |
-| `figentra-flow gate run [--ref b] [--box host] [-- flags]`             | the repository's checks through the configured runner (or on `--box`) at the pushed head; the box posts `figentra-flow/gate` as the gate App                                              |
-| `figentra-flow land [<pr>] [--stack] [--dry-run] [--manual-ok]`        | squash-merges a PR that is green on `figentra-flow/gate` from the gate App on its head and has its approvals; Linear Done, worktree and branch removed                                    |
-| `figentra-flow train <open\|add\|close\|build\|eject\|depart\|status>` | the release train: board green PRs, cut off, build `train/<version>` by merge commits with bisect ejection, depart by fast-forward (see [Release trains](#release-trains))                |
-| `figentra-flow ship <dev\|staging> [--workflow f] [--dry-run]`         | dispatches the product's Runway deploy workflow (`deploy.yml`, input `environment`) on main; production is refused: the owner promotes                                                    |
-| `figentra-flow release [--json] [--offline]`                           | what the next release would publish: pending changesets and next versions, the version PR, the Release workflow's last run and its notices, the registry's versions; it publishes nothing |
-| `figentra-flow doctor [--json] [--offline]`                            | checks Node, git, the configuration, the `.flow/` install, the ignored worktree folder, the roster and the credentials, each with its fix                                                 |
-| `figentra-flow gate plan <spec.md>`                                    | exits 1 until the spec may be planned (run by `figentra-flow spec setup-plan`)                                                                                                            |
-| `figentra-flow gate check <dir>` / `tasks <tasks.md>`                  | the stage rules for the spec's `**Status**`; the tasks lint                                                                                                                               |
-| `figentra-flow gate lane` / `branch` / `ci` / `dir`                    | the lane check, the branch warning, the CI gate with the install check, the spec folder                                                                                                   |
-| `figentra-flow trace trace <dir>` / `drift` / `ci`                     | the FR/P → task → `@covers` test matrix, spec-vs-diff drift, the Done rules                                                                                                               |
-| `figentra-flow parse <file>`                                           | what the parsers read from a `spec.md`, `plan.md`, `tasks.md` or `routing.yaml`, as JSON                                                                                                  |
-| `figentra-flow linear issue <spec.md>` / `tasks <tasks.md>`            | the spec's Linear issue and one sub-issue per task; `--dry-run` needs no token                                                                                                            |
-| `figentra-flow start <STA-n> [--slug s] [--install]`                   | branch `figentra/sta-n-<slug>` from `origin/<default>` into `.claude/worktrees/sta-n-<slug>`; issue In Progress                                                                           |
-| `figentra-flow clean [--dry-run] [--adopt] [--fix-ignore] [--all]`     | removes finished worktrees (clean, saved, issue Done or idle 2 h), reports what it kept and the space freed                                                                               |
-| `figentra-flow guard [--print-settings]`                               | the PreToolUse hook that denies `git worktree add` outside `.claude/worktrees/`                                                                                                           |
-| `figentra-flow init --workspace <dir>…`                                | writes the workspace list (`~/.config/figentra-flow/workspace.yaml`) that `--all` acts on                                                                                                 |
-| `figentra-flow status [--repo p] [--json] [--offline]`                 | specs by status, worktrees, open PRs with their gate and review, and sessions, for every repository of the workspace                                                                      |
-| `figentra-flow mcp`                                                    | a read-only MCP server over stdio: status, spec, trace, worktrees and metrics                                                                                                             |
-| `figentra-flow init --runner github-actions [--force]`                 | writes the gate workflow for the `github-actions` runner, and a starter config when there is none                                                                                         |
+| Command                                                                       | What it does                                                                                                                                                                                     |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `figentra-flow init [--force]`                                                | writes `.flow/` (README, a starter constitution, `.gitignore`) and renders the `flow-*` skills                                                                                                   |
+| `figentra-flow migrate [--dry-run]`                                           | moves a spec-kit repository onto `.flow/` (constitution, `.specify/` and `.agents/speckit/` deleted, scripts, pins and skips), then syncs                                                        |
+| `figentra-flow spec paths\|setup-plan\|setup-tasks\|template`                 | the spec folder, its documents and the resolved templates as JSON, for the `flow-*` commands                                                                                                     |
+| `figentra-flow sync [--direct]`                                               | renders the `flow-*` skills (for the repository's projector, or Claude Code and OpenCode directly) and writes `.flow/lock.json`                                                                  |
+| `figentra-flow gate run [--ref b] [--box host] [-- flags]`                    | the repository's checks through the configured runner (or on `--box`) at the pushed head; the box posts `figentra-flow/gate` as the gate App                                                     |
+| `figentra-flow land [<pr>] [--stack] [--dry-run] [--manual-ok]`               | squash-merges a PR that is green on `figentra-flow/gate` from the gate App on its head and has its approvals; Linear Done, worktree and branch removed                                           |
+| `figentra-flow train <open\|add\|close\|build\|eject\|depart\|status>`        | the release train: board green PRs, cut off, build `train/<version>` by merge commits with bisect ejection, depart by fast-forward (see [Release trains](#release-trains))                       |
+| `figentra-flow ship <dev\|staging> [--workflow f] [--dry-run]`                | dispatches the product's Runway deploy workflow (`deploy.yml`, input `environment`) on main; production is refused: the owner promotes                                                           |
+| `figentra-flow release [--json] [--offline]`                                  | what the next release would publish: pending changesets and next versions, the version PR, the Release workflow's last run and its notices, the registry's versions; it publishes nothing        |
+| `figentra-flow doctor [--json] [--offline]`                                   | checks Node, git, the configuration, the `.flow/` install, the ignored worktree folder, the roster and the credentials, each with its fix                                                        |
+| `figentra-flow gate plan <spec.md>`                                           | exits 1 until the spec may be planned (run by `figentra-flow spec setup-plan`)                                                                                                                   |
+| `figentra-flow gate check <dir>` / `tasks <tasks.md>`                         | the stage rules for the spec's `**Status**`; the tasks lint                                                                                                                                      |
+| `figentra-flow gate lane` / `branch` / `ci` / `dir`                           | the lane check, the branch warning, the CI gate with the install check, the spec folder                                                                                                          |
+| `figentra-flow trace trace <dir>` / `drift` / `ci`                            | the FR/P → task → `@covers` test matrix, spec-vs-diff drift, the Done rules                                                                                                                      |
+| `figentra-flow parse <file>`                                                  | what the parsers read from a `spec.md`, `plan.md`, `tasks.md` or `routing.yaml`, as JSON                                                                                                         |
+| `figentra-flow linear issue <spec.md>` / `tasks <tasks.md>`                   | the spec's Linear issue and one sub-issue per task; `--dry-run` needs no token                                                                                                                   |
+| `figentra-flow start <STA-n> [--slug s] [--install]`                          | branch `figentra/sta-n-<slug>` from `origin/<default>` into `.claude/worktrees/sta-n-<slug>`; issue In Progress                                                                                  |
+| `figentra-flow clean [--dry-run] [--adopt] [--fix-ignore] [--budget] [--all]` | removes finished worktrees (clean, saved, issue Done or idle 2 h), reports what it kept and the space freed; warns over `clean.budget`, and `--budget` sweeps idle merged or pushed trees safely |
+| `figentra-flow guard [--print-settings]`                                      | the PreToolUse hook that denies `git worktree add` outside `.claude/worktrees/`                                                                                                                  |
+| `figentra-flow init --workspace <dir>…`                                       | writes the workspace list (`~/.config/figentra-flow/workspace.yaml`) that `--all` acts on                                                                                                        |
+| `figentra-flow status [--repo p] [--json] [--offline]`                        | specs by status, worktrees, open PRs with their gate and review, and sessions, for every repository of the workspace                                                                             |
+| `figentra-flow mcp`                                                           | a read-only MCP server over stdio: status, spec, trace, worktrees and metrics                                                                                                                    |
+| `figentra-flow init --runner github-actions [--force]`                        | writes the gate workflow for the `github-actions` runner, and a starter config when there is none                                                                                                |
 
 A repository keeps one-line aliases: `"spec:gate": "figentra-flow gate"`, `"spec:trace": "figentra-flow trace"`,
 `"spec:sync": "figentra-flow sync"`, and `"spec:linear": "infisical run --env=dev --path=/agents --silent -- figentra-flow linear"`.
@@ -288,6 +288,22 @@ A worktree lives only at `<repo>/.claude/worktrees/<name>` (Stackra ADR 0503), a
 keeps tester trees (`g-*`, `*-gate`, `land-*`, `tpl-core`, `c6-lock*`, `template-wt-lean`), dirty or unsaved trees,
 trees whose issue is open, keyless trees used in the last 2 hours, and trees holding ignored files such as `.env` or
 `ios/`, each with its reason. A tree is saved when its head is on a remote or every commit has landed by patch.
+
+### The budget
+
+A repository keeps few worktrees (STA-1871). `clean.budget`, 10 by default, is the most linked worktrees it should
+hold. Above it, `clean` and `doctor` warn. `doctor` also warns when the disk has less than 10 GB or 10 % free.
+
+Every `clean` lists the budget candidates: trees under `.claude/worktrees/` that have been idle for 24 hours or more
+and whose head is merged or pushed. `clean --budget` removes them, after preserving their contents:
+
+- uncommitted work, and a detached HEAD, go to a new local `keep/<repo>-<name>` branch, committed with the hooks
+  running. If the hooks refuse, the tree stays as it was.
+- ignored files outside the caches go into `~/Backups/figentra-flow/<repo>__<name>-<stamp>.tgz`.
+
+Removal never uses `--force` and never deletes a branch. `clean` also writes `.claude/worktrees/README.md`, and
+`sync` installs the worktree rule into the agent rules (`.agents/rules/worktrees.md`, or `.claude/rules/` with
+`--direct`).
 
 ## The flow
 
