@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold the stage gates (state machine, plan, tasks, lane, branch, bug lane, tripwire), the v2 templates
+ * Purpose: hold the stage gates (state machine, plan, tasks, lane, branch, bug lane, install check), the v2 templates
  *   and the Linear task parser to their contract (moved from core's spec-gate tests; core keeps its wiring).
  * Boundary: pure functions plus one dry-run child process; no network, no repository writes; node:test and node:assert.
  * Runtime: node
@@ -11,7 +11,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,17 +33,14 @@ import {
   computedTier,
   isOwnSpec,
   refsKeys,
-  REPLACED,
   specDir,
   tierOf,
-  tripwire,
-  WRAPPED,
 } from "../commands/gate.mjs";
 import { keyScheme } from "../adapters/tracker/index.mjs";
 import { labelsFor, specLinks, unlinkedTasks } from "../commands/linear.mjs";
 import { init } from "../commands/init.mjs";
-import { ASSETS, installSkills } from "../commands/sync.mjs";
-import { CONFIG_FILE, PACKAGE } from "../lib/product.mjs";
+import { installProblems } from "../lib/render.mjs";
+import { CONFIG_FILE } from "../lib/product.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BIN = join(HERE, "../../bin/figentra-flow.mjs");
@@ -65,15 +62,6 @@ const impact = (v = "none") =>
   ]
     .map((f) => `- **${f}**: ${v}`)
     .join("\n");
-/** A repository as `figentra-flow init` and the skill fallback of `figentra-flow sync` leave it, with the preset source in place. */
-const ROOT = mkdtempSync(join(tmpdir(), "flow-root-"));
-init(ROOT);
-installSkills(ROOT);
-// The source holds the preset init installed (stackra), not every bundled one.
-cpSync(join(ASSETS, "presets/stackra"), join(ROOT, ".agents/speckit/presets/stackra"), {
-  recursive: true,
-});
-process.on("exit", () => rmSync(ROOT, { recursive: true, force: true }));
 const spec = ({ status = "complete", linear = "STA-12", body = impact(), stage = "Draft" } = {}) =>
   `# Feature Specification: X\n\n**Status**: ${stage}\n\n**Linear**: ${linear}\n\n**Clarifications status**: ${status}\n\n## Impact\n\n${body}\n\n## Requirements\n\n## Status history\n\n- d · Draft → ${stage}\n`;
 
@@ -351,88 +339,31 @@ test("another tracker's scheme: keys, branches, folders, lanes, bugs and specDir
   }
 });
 
-test("tripwire: the repository passes, and an upgrade that drops the wrap or resets numbering fails", () => {
-  assert.deepEqual(tripwire(ROOT, "stackra"), []);
-  const root = mkdtempSync(join(tmpdir(), "spec-trip-"));
+// @covers sta-1729:FR-11
+test("install check: a synced repository passes; a hand edit, a stale lock, a missing file and spec-kit leftovers fail (ADR 0510)", () => {
+  const root = mkdtempSync(join(tmpdir(), "flow-install-"));
   try {
-    for (const p of [
-      ".specify/scripts/bash",
-      ".specify/init-options.json",
-      ".specify/workflows/workflow-registry.json",
-      ...[...WRAPPED, ...Object.keys(REPLACED)].flatMap((n) => [
-        `.claude/skills/speckit-${n}/SKILL.md`,
-        `.opencode/commands/speckit.${n}.md`,
-      ]),
-    ])
-      cpSync(join(ROOT, p), join(root, p), { recursive: true });
-    assert.deepEqual(tripwire(root, "stackra"), []);
-    // The wrap stays, but the core resolution rule changed.
-    const skill = join(root, ".claude/skills/speckit-specify/SKILL.md");
-    writeFileSync(
-      skill,
-      readFileSync(skill, "utf8").replace(
-        /explicitly provided `SPECIFY_FEATURE_DIRECTORY`/,
-        "set the dir",
-      ),
-    );
-    assert.match(tripwire(root, "stackra").join(), /SKILL\.md: core specify/);
-    rmSync(join(root, ".claude/skills/speckit-plan"), { recursive: true });
-    assert.match(tripwire(root, "stackra").join(), /speckit-plan\/SKILL\.md is missing/);
-    writeFileSync(join(root, ".specify/init-options.json"), '{"feature_numbering":"sequential"}');
-    writeFileSync(join(root, ".opencode/commands/speckit.specify.md"), "vanilla core text\n");
-    writeFileSync(join(root, ".specify/scripts/bash/setup-plan.sh"), "#!/bin/sh\n");
-    const problems = tripwire(root, "stackra").join("\n");
-    assert.match(problems, /feature_numbering/);
-    assert.match(problems, /speckit\.specify\.md lost the preset's wrap/);
-    assert.match(problems, /as-is/);
-    assert.match(problems, /setup-plan\.sh/);
-    // The replaced commands keep their markers, and the bundled workflow stays disabled.
-    writeFileSync(join(root, ".opencode/commands/speckit.taskstoissues.md"), "GitHub issues\n");
-    writeFileSync(
-      join(root, ".specify/workflows/workflow-registry.json"),
-      '{"workflows":{"speckit":{"source":"bundled"}}}',
-    );
-    const more = tripwire(root, "stackra").join("\n");
-    assert.match(more, /speckit\.taskstoissues\.md lost the preset's wrap/);
-    assert.match(more, /workflow is enabled/);
-    // The installed preset must equal its source: here the repository's own preset folder, named in the config.
-    for (const p of [
-      ".agents/speckit/presets/stackra/preset.yml",
-      ".specify/presets/stackra/preset.yml",
-    ])
-      cpSync(join(ROOT, p), join(root, p), { recursive: true });
-    writeFileSync(
-      join(root, CONFIG_FILE),
-      JSON.stringify({ version: 1, preset: ".agents/speckit/presets/stackra" }),
-    );
-    assert.doesNotMatch(tripwire(root).join(), /differs from/);
-    writeFileSync(join(root, ".specify/presets/stackra/preset.yml"), "hand edit\n");
-    assert.match(
-      tripwire(root).join(),
-      /\.specify\/presets\/stackra\/preset\.yml differs from \.agents\/speckit\/presets\/stackra\/preset\.yml/,
-    );
-  } finally {
-    rmSync(root, { recursive: true });
-  }
-});
-
-test("tripwire: without its own preset source a repository's installed preset must equal Figentra Flow's bundled one", () => {
-  const root = mkdtempSync(join(tmpdir(), "spec-trip-bundled-"));
-  try {
-    const bundled = fileURLToPath(new URL("../../assets/presets/stackra", import.meta.url));
-    cpSync(bundled, join(root, ".specify/presets/stackra"), { recursive: true });
-    assert.doesNotMatch(tripwire(root, "stackra").join(), /bundled/);
-    writeFileSync(
-      join(root, ".specify/presets/stackra/templates/spec-template.md"),
-      "an old template\n",
-    );
-    assert.ok(
-      tripwire(root, "stackra")
-        .join()
-        .includes(
-          `.specify/presets/stackra/templates/spec-template.md differs from the preset bundled in ${PACKAGE}`,
-        ),
-    );
+    assert.deepEqual(installProblems(root), [], "nothing to check before init");
+    writeFileSync(join(root, CONFIG_FILE), JSON.stringify({ version: 1, preset: "stackra" }));
+    assert.equal(init(root), true);
+    assert.equal(init(root), false, "an existing .flow/ is refused");
+    assert.ok(readFileSync(join(root, ".flow/constitution.md"), "utf8").length > 0);
+    assert.equal(readFileSync(join(root, ".flow/.gitignore"), "utf8"), "current.json\n");
+    assert.deepEqual(installProblems(root), []);
+    const skill = join(root, ".claude/skills/flow-plan/SKILL.md");
+    assert.match(readFileSync(skill, "utf8"), /^---\nname: flow-plan\n/);
+    assert.match(readFileSync(skill, "utf8"), /generated-by: figentra-flow/);
+    assert.match(readFileSync(skill, "utf8"), /derived-from: github\/spec-kit 1\.0\.10 \(MIT\)/);
+    writeFileSync(skill, "hand edit\n");
+    assert.match(installProblems(root).join(), /flow-plan\/SKILL\.md differs from what/);
+    assert.match(installProblems(root, "9.9.9").join(), /9\.9\.9 is installed/);
+    rmSync(skill);
+    assert.match(installProblems(root).join(), /flow-plan\/SKILL\.md is missing/);
+    mkdirSync(join(root, ".specify"));
+    mkdirSync(join(root, ".claude/skills/speckit-plan"), { recursive: true });
+    const found = installProblems(root).join("\n");
+    assert.match(found, /^\.specify is spec-kit's/m);
+    assert.match(found, /^\.claude\/skills\/speckit-plan is spec-kit's/m);
   } finally {
     rmSync(root, { recursive: true });
   }

@@ -3,7 +3,8 @@
  * Purpose: hold the preset port to AC-041 and AC-045: the configuration picks the preset (`neutral` without one or
  *   without a config file, a path for the repository's own); the neutral preset names no ADR, product,
  *   tracker or script of ours; the gate holds a neutral spec to the shared rules only (no Impact, Constitution Check,
- *   deploy modes, properties, routes or path floors), while `stackra` keeps them; the tripwire reads the neutral wrap.
+ *   deploy modes, properties, routes or path floors), while `stackra` keeps them; a neutral repository renders its
+ *   own `flow-*` skills.
  * Boundary: temporary folders; no `specify`, no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1729 phase A (A5).
@@ -20,18 +21,17 @@ import {
   checkSpec,
   checkTasks,
   computedTier,
-  MARKERS,
   presetId,
   presetOf,
   RULES,
-  tripwire,
-  WRAPPED,
 } from "../commands/gate.mjs";
 import { keyScheme } from "../adapters/tracker/index.mjs";
-import { ASSETS, presetSource } from "../commands/sync.mjs";
+import { sync } from "../commands/sync.mjs";
+import { FLOW_ASSETS, presetDir } from "../lib/flow-dir.mjs";
+import { installProblems, VERBS } from "../lib/render.mjs";
 import { CONFIG_FILE } from "../lib/product.mjs";
 
-const NEUTRAL = join(ASSETS, "presets/neutral");
+const NEUTRAL = join(FLOW_ASSETS, "presets/neutral");
 /** @returns {string[]} */
 const walk = (/** @type {string} */ dir) =>
   readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
@@ -42,30 +42,32 @@ test("preset choice: the config's preset, else neutral (config file or not), or 
   const root = mkdtempSync(join(tmpdir(), "flow-preset-"));
   t.after(() => rmSync(root, { recursive: true }));
   assert.equal(presetOf(root), "neutral", "no stackra fallback without a config file (AC-045)");
-  assert.deepEqual(presetSource(root).presets, ["neutral"]);
+  assert.equal(presetDir(root), NEUTRAL);
   writeFileSync(join(root, CONFIG_FILE), JSON.stringify({ version: 1 }));
   assert.equal(presetOf(root), "neutral");
-  assert.deepEqual(presetSource(root), { dir: join(ASSETS, "presets"), presets: ["neutral"] });
+  assert.equal(presetDir(root), NEUTRAL);
   writeFileSync(join(root, CONFIG_FILE), JSON.stringify({ version: 1, preset: "stackra" }));
-  assert.deepEqual(presetSource(root).presets, ["stackra"]);
+  assert.equal(presetDir(root), join(FLOW_ASSETS, "presets/stackra"));
   writeFileSync(
     join(root, CONFIG_FILE),
     JSON.stringify({ version: 1, preset: "tools/presets/ours" }),
   );
-  assert.deepEqual(presetSource(root), { dir: join(root, "tools/presets"), presets: ["ours"] });
+  assert.equal(presetDir(root), join(root, "tools/presets/ours"));
 });
 
 test("neutral preset: wraps every gated command and names no ADR, product, tracker or script of ours", () => {
   for (const file of walk(NEUTRAL))
     assert.doesNotMatch(
       readFileSync(file, "utf8"),
-      /\bADR\b|Stackra|Figentra|Linear|\bSTA-|pnpm/,
+      /\bADR\b|Stackra|Figentra|Linear|\bSTA-|\bpnpm\b(?!-lock)/,
       file,
     );
-  for (const name of WRAPPED)
+  for (const verb of VERBS)
     assert.ok(
-      readFileSync(join(NEUTRAL, `commands/speckit.${name}.md`), "utf8").includes(MARKERS.neutral),
-      name,
+      readFileSync(join(NEUTRAL, `commands/flow-${verb}.md`), "utf8").includes(
+        "## Workflow: feature directory",
+      ),
+      verb,
     );
   assert.match(readFileSync(join(NEUTRAL, "preset.yml"), "utf8"), /id: "neutral"/);
 });
@@ -90,16 +92,16 @@ test("neutral rules: the shared checks stay; Stackra's Impact, constitution, dep
   assert.equal(computedTier(migration, RULES.stackra).tier, "feature");
 });
 
-test("tripwire: a neutral repository's rendered commands carry the neutral wrap", (t) => {
-  const root = mkdtempSync(join(tmpdir(), "flow-trip-neutral-"));
+test("a neutral repository renders the neutral flow-* skills and passes the install check", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "flow-neutral-"));
   t.after(() => rmSync(root, { recursive: true }));
-  for (const name of WRAPPED) {
-    mkdirSync(join(root, `.claude/skills/speckit-${name}`), { recursive: true });
-    const text = `${MARKERS.neutral}\nexplicitly provided \`SPECIFY_FEATURE_DIRECTORY\` (x), use it as-is\n`;
-    writeFileSync(join(root, `.claude/skills/speckit-${name}/SKILL.md`), text);
-  }
-  assert.deepEqual(tripwire(root, "neutral"), []);
-  assert.match(tripwire(root, "stackra").join(), /lost the preset's wrap/);
+  sync(root, { direct: true, log: () => {} });
+  for (const verb of VERBS)
+    assert.match(
+      readFileSync(join(root, `.claude/skills/flow-${verb}/SKILL.md`), "utf8"),
+      /## Workflow: feature directory/,
+    );
+  assert.deepEqual(installProblems(root), []);
 });
 
 test("presetId: a bundled preset is its name; a repository's own folder is the id its preset.yml declares", (t) => {

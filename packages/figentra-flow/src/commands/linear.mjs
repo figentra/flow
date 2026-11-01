@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow linear` (core's `spec-linear`, moved unchanged) — link a spec-kit spec and its tasks to Linear (team STA).
+ * Purpose: `figentra-flow linear` (core's `spec-linear`, moved unchanged) — link a spec and its tasks to Linear (team STA).
  * Boundary: creates Linear issues and writes only the `**Linear**` key and task ` [STA-n]` suffixes into the spec
  *           files.
  * Runtime: node

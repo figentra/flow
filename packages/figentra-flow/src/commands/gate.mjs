@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow gate` (core's `spec-gate`, moved unchanged) — the stage gates for spec-kit specs in `.agents/specs/<key>-<slug>/` (ADR 0120 D1, owner
+ * Purpose: `figentra-flow gate` (core's `spec-gate`, moved unchanged) — the stage gates for the specs in `.agents/specs/<key>-<slug>/` (ADR 0120 D1, owner
  *          decision OR12).
  * Boundary: reads the spec folders, git and, through the tracker port, comments on the issue (best-effort); writes no spec
  *           file.
@@ -16,7 +16,7 @@
  *   branch                      warn, never fail, unless the branch (STACKRA_BRANCH, else git) is Linear-named or
  *                               allow-listed: a `chore-lane` PR may use any branch, and only `linear check-pr`
  *                               sees the PR labels, so check-pr is the enforcing check
- *   ci [--base=ref]             tripwire; `check` for every spec folder changed since the base; bug-lane rules;
+ *   ci [--base=ref]             the install check (ADR 0510); `check` for every spec folder changed since the base; bug-lane rules;
  *                               `lane`. SPEC_GATE_REQUIRE_READY=1 (a ready-for-review PR) also requires the PR's
  *                               own spec (the branch key's folder), when changed, to be at Tasked or later; an
  *                               edit to another spec gets only `check`, and changing another spec's `**Status**`
@@ -41,7 +41,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { schemeFor, trackerFor } from "../adapters/tracker/index.mjs";
 import { say } from "../lib/cli.mjs";
 import {
@@ -52,12 +51,13 @@ import {
   roleOf,
 } from "../lib/roles.mjs";
 import { loadTeam } from "../lib/team.mjs";
+import { installProblems } from "../lib/render.mjs";
+import { BUNDLED } from "./sync.mjs";
 import { loadConfig } from "../lib/config.mjs";
 import { specsDirs, writeCurrent } from "../lib/flow-dir.mjs";
-import { DISPLAY_NAME, ENV_PREFIX, NAME, PACKAGE } from "../lib/product.mjs";
+import { ENV_PREFIX, NAME } from "../lib/product.mjs";
 
 /** The presets this package ships (`stackra`, `neutral`), installed when a repository keeps none of its own. */
-const BUNDLED_PRESETS = fileURLToPath(new URL("../../assets/presets", import.meta.url));
 import {
   definedIds,
   definedLines,
@@ -120,7 +120,7 @@ export const presetOf = (root = ROOT) => loadConfig(root).config.preset ?? "neut
  * @param {string} [root]
  */
 export function presetId(preset, root = ROOT) {
-  if (preset in MARKERS) return preset;
+  if (BUNDLED.includes(preset)) return preset;
   const yml = readIf(join(resolve(root, preset), "preset.yml"));
   return yml.match(/^\s+id:\s*["']?([\w-]+)["']?\s*$/m)?.[1];
 }
@@ -168,7 +168,7 @@ export function checkSpec(text, keys = repoScheme(), rules = repoRules()) {
   const body = text.replaceAll(/<!--[\s\S]*?-->/g, "");
   const problems = [];
   if (!/^\*\*Clarifications status\*\*:\s*complete\s*$/im.test(body))
-    problems.push("`**Clarifications status**` is not `complete` (run /speckit.clarify)");
+    problems.push("`**Clarifications status**` is not `complete` (run /flow-clarify)");
   if (!issueLine(body, keys))
     problems.push(
       `\`**Linear**\` (or \`**Issue**\`) has no issue key (${NAME} linear issue, or the tracker)`,
@@ -729,13 +729,13 @@ export function checkBranch(branch, keys = repoScheme()) {
     : [`branch \`${branch}\` is not \`${keys.branchShape}\` (the tracker's branch name)`];
 }
 
-/** Bug lane: `.specify/bugs/<key>-<slug>/` with a regression test tagged `@covers <key>:BUG`. */
+/** Bug lane: `<specs.bugsDir>/<key>-<slug>/` (default `.agents/specs/bugs/`) with a regression test tagged `@covers <key>:BUG`. */
 export function checkBug(folder, tests, keys = repoScheme()) {
   const key = keys.folderKey(folder);
-  if (!key) return [`.specify/bugs/${folder}: folder is not \`<key>-<slug>\``];
+  if (!key) return [`${specsDirs(ROOT).bugsDir}/${folder}: folder is not \`<key>-<slug>\``];
   return new RegExp(`@covers[^\\n]*(?<![a-z0-9])${key}:BUG\\b`, "i").test(tests)
     ? []
-    : [`.specify/bugs/${folder}: no regression test carries \`@covers ${key}:BUG\``];
+    : [`${specsDirs(ROOT).bugsDir}/${folder}: no regression test carries \`@covers ${key}:BUG\``];
 }
 
 /**
@@ -755,125 +755,6 @@ export function specDir({ root = ROOT, branch = "", key, slug, keys = repoScheme
   if (keys.folderKey(name) !== k)
     return { error: `no folder for ${keys.display(k)} yet; pass --slug <kebab-case short name>` };
   return { dir: `${specs}/${name}` };
-}
-
-/** Commands whose rendered copies must carry the preset's feature-directory wrap. */
-export const WRAPPED = [
-  "specify",
-  "clarify",
-  "plan",
-  "tasks",
-  "analyze",
-  "checklist",
-  "implement",
-  "converge",
-];
-
-/** The feature-directory marker each bundled preset's wrap carries. */
-export const MARKERS = {
-  stackra: "## Stackra: feature directory",
-  neutral: "## Workflow: feature directory",
-};
-
-/** Core commands the `stackra` preset replaces outright, with the marker their rendered copies must keep (ADR 0121). */
-export const REPLACED = {
-  taskstoissues: "## Stackra: tasks to Linear issues",
-  constitution: "## Stackra: the constitution is generated",
-};
-
-/**
- * spec-kit upgrade tripwire (ADR 0120 D1): keeping specs in `.agents/specs` rests on core text and scripts that
- * `specify integration upgrade` or `specify init --force` can change or wipe. Each problem names what broke.
- */
-export function tripwire(root = ROOT, preset = presetOf(root)) {
-  const problems = [];
-  const read = (p) => (existsSync(join(root, p)) ? readFileSync(join(root, p), "utf8") : null);
-  const plan = read(".specify/scripts/bash/setup-plan.sh");
-  // `spec-gate.mjs` is the call before Figentra Flow; either keeps the gate.
-  if (plan !== null && !new RegExp(String.raw`spec-gate\.mjs|${NAME} gate`).test(plan))
-    problems.push(`setup-plan.sh lost its gate call (re-add \`${NAME} gate plan\`)`);
-  const common = read(".specify/scripts/bash/common.sh");
-  if (common !== null && !/SPECIFY_FEATURE_DIRECTORY[\s\S]*\.specify\/feature\.json/.test(common))
-    problems.push(
-      "common.sh no longer resolves SPECIFY_FEATURE_DIRECTORY, then .specify/feature.json",
-    );
-  const opts = read(".specify/init-options.json");
-  let numbering;
-  try {
-    numbering = opts === null ? "linear-key" : JSON.parse(opts).feature_numbering;
-  } catch {
-    numbering = "(unreadable JSON)";
-  }
-  if (numbering !== "linear-key")
-    problems.push(
-      "init-options.json `feature_numbering` is not `linear-key` (an init or upgrade reset it)",
-    );
-  const replaced = presetId(preset, root) === "stackra" ? REPLACED : {};
-  // A repository's own preset folder may carry either bundled wrap.
-  const markers =
-    preset in MARKERS ? [MARKERS[/** @type {"stackra"} */ (preset)]] : Object.values(MARKERS);
-  for (const name of [...WRAPPED, ...Object.keys(replaced)]) {
-    const wanted = replaced[name] ? [replaced[name]] : markers;
-    for (const p of [
-      `.claude/skills/speckit-${name}/SKILL.md`,
-      `.opencode/commands/speckit.${name}.md`,
-    ]) {
-      const text = read(p);
-      if (text === null) {
-        // The integration is installed (its folder exists) but an upgrade dropped this command.
-        if (existsSync(join(root, dirname(dirname(p))))) problems.push(`${p} is missing`);
-        continue;
-      }
-      if (!wanted.some((m) => text.includes(m)))
-        problems.push(`${p} lost the preset's wrap (re-register the preset for that integration)`);
-      // Anchor on the core's own resolution rule; the wrap's prose says "use it as-is" too.
-      if (
-        name === "specify" &&
-        !/explicitly provided `SPECIFY_FEATURE_DIRECTORY` \([^\n]*\), use it as-is/.test(text)
-      )
-        problems.push(`${p}: core specify no longer takes SPECIFY_FEATURE_DIRECTORY as-is`);
-    }
-  }
-  // The installed preset is what `sync` made of its source: the folder the configuration's `preset` names, else the
-  // preset bundled in Figentra Flow.
-  const walk = (dir) =>
-    readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
-      e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)],
-    );
-  const own = preset in MARKERS ? undefined : resolve(root, preset);
-  const source = own ? dirname(own) : BUNDLED_PRESETS;
-  // Bundled presets are compared only where installed: a repository uses one of them, not both.
-  const ids = own
-    ? [basename(own)]
-    : existsSync(join(root, ".specify/presets"))
-      ? readdirSync(join(root, ".specify/presets")).filter((id) => existsSync(join(source, id)))
-      : [];
-  for (const id of ids)
-    for (const file of walk(join(source, id))) {
-      const rel = relative(source, file);
-      const installed = `.specify/presets/${rel}`;
-      if (read(installed) !== readFileSync(file, "utf8"))
-        problems.push(
-          own
-            ? `${installed} differs from ${preset}/${relative(own, file)} (edit the source, then \`${NAME} sync\`)`
-            : `${installed} differs from the preset bundled in ${PACKAGE} (run \`pnpm speckit:sync\`; change the preset in ${DISPLAY_NAME})`,
-        );
-    }
-  // The bundled `speckit` workflow skips clarify and analyze (ADR 0121 D19); it stays disabled.
-  const workflows = read(".specify/workflows/workflow-registry.json");
-  if (workflows !== null) {
-    let speckit;
-    try {
-      speckit = JSON.parse(workflows).workflows?.speckit;
-    } catch {
-      // unreadable workflows file: nothing is enabled
-    }
-    if (speckit && speckit.enabled !== false)
-      problems.push(
-        "the bundled `speckit` workflow is enabled (`specify workflow disable speckit`)",
-      );
-  }
-  return problems;
 }
 
 /**
@@ -955,11 +836,23 @@ function changedSpecs(base) {
     console.log(`spec-gate: no ${base} to diff against; skipping`);
   }
   const lines = names.split("\n");
+  const { dir: specs, bugsDir } = specsDirs(ROOT);
+  const under = (/** @type {string} */ base, /** @type {string} */ n) =>
+    n.startsWith(`${base}/`) ? n.slice(base.length + 1).split("/") : [];
+  // A spec folder is `<specs>/<folder>/…`; the bug lane's own folder is not one.
   const features = new Set(
-    lines.flatMap((n) => n.match(/^\.agents\/specs\/[^/]+(?=\/)/)?.slice(0, 1) ?? []),
+    lines.flatMap((n) => {
+      const [folder, ...rest] = under(specs, n);
+      return folder && rest.length && `${specs}/${folder}` !== bugsDir
+        ? [`${specs}/${folder}`]
+        : [];
+    }),
   );
   const bugs = new Set(
-    lines.flatMap((n) => n.match(/^\.specify\/bugs\/[^/]+(?=\/)/)?.slice(0, 1) ?? []),
+    lines.flatMap((n) => {
+      const [folder, ...rest] = under(bugsDir, n);
+      return folder && rest.length ? [`${bugsDir}/${folder}`] : [];
+    }),
   );
   return {
     names: lines.filter(Boolean),
@@ -1126,8 +1019,8 @@ export function run([mode, ...args]) {
   }
   if (mode === "ci") {
     let failures = 0;
-    for (const p of tripwire()) {
-      console.error(`spec-gate: tripwire: ${p}`);
+    for (const p of installProblems(ROOT)) {
+      console.error(`spec-gate: install: ${p}`);
       failures++;
     }
     const { dirs, legacy, bugs } = changedSpecs(base);
