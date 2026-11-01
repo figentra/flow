@@ -27,7 +27,7 @@
 
 **{{status}}**{{#statusNote}}: {{statusNote}}{{/statusNote}}
 
-Every Figentra repository reports one of three states: **Live** (serving customers), **In progress** (being built) or **Planned** (a plan, no build yet).
+The states: **Live** (serving customers), **In progress** (being built), **Planned** (no build yet).
 
 ## Quick start
 
@@ -51,7 +51,9 @@ pnpm verify
 `pnpm verify` is the full check: CI and the gate run the same command.
 {{/development}}
 
-Changes go through [Figentra Flow](https://github.com/figentra/flow) (`figentra-flow`, alias `fflow`). Every branch and pull request carries a Linear `STA-` key.
+Changes go through [Figentra Flow](https://github.com/figentra/flow), the `figentra-flow` CLI.
+
+Every branch and pull request carries a Linear `STA-` key.
 
 | Step                          | Command                                                       |
 | ----------------------------- | ------------------------------------------------------------- |
@@ -77,12 +79,22 @@ There is no docs site or playground yet. This README is the entry point.
 {{release}}
 {{/release}}
 {{^release}}
-Every change that ships carries a changeset in `.changeset/`. Merging the version pull request that Changesets opens cuts the release. Each release's notes are in [Releases]({{github}}/releases) and in each package's `CHANGELOG.md`.
+Every change that ships carries a changeset in `.changeset/`.
+
+Merging the version pull request that Changesets opens cuts the release.
+
+The notes are in [Releases][releases] and in each package's `CHANGELOG.md`.
+
+[releases]: {{github}}/releases
 {{/release}}
 
 ## Security
 
-Report a vulnerability privately, as the [security policy]({{github}}/security/policy) describes. Never report one in a public issue or pull request.
+Report a vulnerability privately, as the [security policy][security] describes.
+
+Never report one in a public issue or pull request.
+
+[security]: {{github}}/security/policy
 
 ## Licence
 
@@ -90,7 +102,11 @@ Report a vulnerability privately, as the [security policy]({{github}}/security/p
 Released under the MIT licence. See [LICENSE](LICENSE).
 {{/mit}}
 {{^mit}}
-{{licence}}. Copyright © Figentra Technologies L.L.C. All rights reserved.{{#licenceFile}} See [LICENSE](LICENSE).{{/licenceFile}}
+{{licence}}. Copyright © Figentra Technologies L.L.C. All rights reserved.
+{{#licenceFile}}
+
+See [LICENSE](LICENSE).
+{{/licenceFile}}
 {{/mit}}
 
 ---

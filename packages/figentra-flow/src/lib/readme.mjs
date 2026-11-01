@@ -50,7 +50,7 @@ const shield = (
 /**
  * Fills `template` from `view`: `{{name}}` is the value (no escaping: the README is Markdown), `{{#name}}…{{/name}}`
  * renders once per array item, once with an object pushed on the lookup stack, or once when truthy, and
- * `{{^name}}…{{/name}}` renders when falsy or empty. A newline right after a section tag is dropped.
+ * `{{^name}}…{{/name}}` renders when falsy or empty. The newlines right after a block section's tags are dropped.
  * @param {string} template
  * @param {Record<string, unknown>} view
  */
@@ -73,15 +73,18 @@ export function fill(template, view) {
    */
   const walk = (text, stack) =>
     text.replace(
-      /\{\{([#^])(\w+)\}\}\n?([\s\S]*?)\{\{\/\2\}\}\n?|\{\{(\w+)\}\}/g,
-      (_, kind, section, body, name) => {
+      /\{\{([#^])(\w+)\}\}\n?([\s\S]*?)\{\{\/\2\}\}(\n?)|\{\{(\w+)\}\}/g,
+      (_, kind, section, body, newline, name) => {
         if (name) return String(lookup(stack, name) ?? "").replace(/\n+$/, "");
+        // An inline section (its close tag mid-line) keeps the newline after it; a block section drops it.
+        const after = body.endsWith("\n") ? "" : newline;
         const value = lookup(stack, section);
         const empty = !value || (Array.isArray(value) && value.length === 0);
-        if (kind === "^") return empty ? walk(body, stack) : "";
-        if (empty) return "";
-        if (Array.isArray(value)) return value.map((item) => walk(body, [...stack, item])).join("");
-        return walk(body, typeof value === "object" ? [...stack, value] : stack);
+        if (kind === "^") return (empty ? walk(body, stack) : "") + after;
+        if (empty) return after;
+        if (Array.isArray(value))
+          return value.map((item) => walk(body, [...stack, item])).join("") + after;
+        return walk(body, typeof value === "object" ? [...stack, value] : stack) + after;
       },
     );
   return walk(template, [view]);
@@ -99,6 +102,9 @@ export function readmeProblems(data) {
   for (const k of Object.keys(data))
     if (!REQUIRED.includes(k) && !OPTIONAL.includes(k))
       problems.push(`${README_DATA}: "${k}" is not a README field`);
+  // The status line must stay one line under a 100-column prose wrap (`proseWrap: "always"`).
+  if (typeof data.statusNote === "string" && data.statusNote.length > 80)
+    problems.push(`${README_DATA}: "statusNote" is one short line (80 characters at most)`);
   if (typeof data.status === "string" && !(data.status in STATUSES))
     problems.push(`${README_DATA}: "status" is one of ${Object.keys(STATUSES).join(", ")}`);
   const banner = /** @type {Record<string, unknown> | undefined} */ (data.banner);

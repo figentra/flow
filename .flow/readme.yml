@@ -7,7 +7,7 @@ banner:
   light: .github/assets/brand/banner-light.png
   dark: .github/assets/brand/banner-dark.png
 status: In progress
-statusNote: "0.1.0 is published and every Stackra repository runs it; the agent-team commands are still landing."
+statusNote: "0.1.0 is published and every Stackra repository runs it."
 package: "@figentra-oss/flow"
 docs: https://github.com/figentra/flow/blob/main/packages/figentra-flow/README.md
 what: |

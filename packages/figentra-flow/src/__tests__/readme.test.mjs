@@ -45,6 +45,9 @@ test("fill: variables, sections over arrays, objects and scalars, and inverted s
   assert.equal(fill("{{#s}}yes{{/s}}{{^s}}no{{/s}}", { s: "" }), "no");
   assert.equal(fill("{{^xs}}none{{/xs}}", { xs: [] }), "none");
   assert.equal(fill("{{#t}}\nline\n{{/t}}\nafter", { t: true }), "line\nafter");
+  // An inline section keeps the line break after it, filled or empty.
+  assert.equal(fill("**S**{{#n}}: {{n}}{{/n}}\n\nnext", {}), "**S**\n\nnext");
+  assert.equal(fill("**S**{{#n}}: {{n}}{{/n}}\n\nnext", { n: "x" }), "**S**: x\n\nnext");
 });
 
 test("readmeProblems: required keys, unknown keys, the status values and the banner shape", () => {
@@ -60,11 +63,18 @@ test("readmeProblems: required keys, unknown keys, the status values and the ban
     }),
     [],
   );
-  const problems = readmeProblems({ name: "n", status: "Done", extra: 1, banner: { light: "l" } });
+  const problems = readmeProblems({
+    name: "n",
+    status: "Done",
+    statusNote: "x".repeat(81),
+    extra: 1,
+    banner: { light: "l" },
+  });
   assert.ok(problems.some((p) => p.includes('"repo" is required')));
   assert.ok(problems.some((p) => p.includes('"extra" is not a README field')));
   assert.ok(problems.some((p) => p.includes('"status" is one of')));
   assert.ok(problems.some((p) => p.includes('"banner"')));
+  assert.ok(problems.some((p) => p.includes('"statusNote" is one short line')));
 });
 
 test("detectLicence: MIT from the MIT text, Proprietary otherwise or without a LICENSE", () => {

@@ -29,8 +29,9 @@ trains and releases. Adapters choose the tracker, runner, credentials and secret
 
 ## Status
 
-**In progress**: 0.1.0 is published and every Stackra repository runs it; the agent-team commands are still landing.
-Every Figentra repository reports one of three states: **Live** (serving customers), **In progress** (being built) or **Planned** (a plan, no build yet).
+**In progress**: 0.1.0 is published and every Stackra repository runs it.
+
+The states: **Live** (serving customers), **In progress** (being built), **Planned** (no build yet).
 
 ## Quick start
 
@@ -62,7 +63,9 @@ pnpm verify
 
 `pnpm verify` is the full check: CI and the gate run the same command.
 
-Changes go through [Figentra Flow](https://github.com/figentra/flow) (`figentra-flow`, alias `fflow`). Every branch and pull request carries a Linear `STA-` key.
+Changes go through [Figentra Flow](https://github.com/figentra/flow), the `figentra-flow` CLI.
+
+Every branch and pull request carries a Linear `STA-` key.
 
 | Step                          | Command                                                       |
 | ----------------------------- | ------------------------------------------------------------- |
@@ -79,11 +82,21 @@ Changes go through [Figentra Flow](https://github.com/figentra/flow) (`figentra-
 
 ## Release and changelog
 
-Every change that ships carries a changeset in `.changeset/`. Merging the version pull request that Changesets opens cuts the release. Each release's notes are in [Releases](https://github.com/figentra/flow/releases) and in each package's `CHANGELOG.md`.
+Every change that ships carries a changeset in `.changeset/`.
+
+Merging the version pull request that Changesets opens cuts the release.
+
+The notes are in [Releases][releases] and in each package's `CHANGELOG.md`.
+
+[releases]: https://github.com/figentra/flow/releases
 
 ## Security
 
-Report a vulnerability privately, as the [security policy](https://github.com/figentra/flow/security/policy) describes. Never report one in a public issue or pull request.
+Report a vulnerability privately, as the [security policy][security] describes.
+
+Never report one in a public issue or pull request.
+
+[security]: https://github.com/figentra/flow/security/policy
 
 ## Licence
 
