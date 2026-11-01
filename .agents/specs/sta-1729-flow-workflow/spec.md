@@ -12,14 +12,14 @@
 
 **Tier**: big
 
-**Approver**: owner (direction, approved 2026-10-31 in `notes/plans/vellum-complete.md`); the leader for the technical
+**Approver**: owner (direction, approved 2026-10-31 in `notes/plans/flow-complete.md`); the leader for the technical
 stops under the owner's delegation
 
 **Linear**: STA-1729
 
 **Clarifications status**: complete
 
-**Input**: Owner direction (2026-10-31), the approved plan `stackra/notes/plans/vellum-complete.md`: finish Figentra Flow so all
+**Input**: Owner direction (2026-10-31), the approved plan `stackra/notes/plans/flow-complete.md`: finish Figentra Flow so all
 work runs through one workflow, from spec to release. Figentra Flow moves the work (spec, approval, worktree, gate, land,
 release, ship, status, clean); `stackra testbed` runs the checks on the boxes; runway deploys, and only the owner
 promotes to production. GitHub keeps the Release workflow and one required check, `figentra-flow/gate`, posted by the gate bot;
@@ -184,7 +184,7 @@ approved once and the plan is written per phase (each phase's design is a plan.m
   **Answer: yes.**
 - **Phase 1 also** adds `.claude/worktrees/` to `.gitignore` in billing, invoicing, brand, figentra-flow, stackra/notes and
   stackra/pro.
-- **Later phases** fold in stackra-f4's `notes/plans/vellum-final-plan.md` (ownership, the move list, old-Figentra Flow
+- **Later phases** fold in stackra-f4's `notes/plans/flow-final-plan.md` (ownership, the move list, old-Figentra Flow
   verdicts, the agent-config model) when it lands.
 
 ## Status history
