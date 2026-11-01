@@ -81,8 +81,10 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - **FR-6** `figentra-flow land` merges only with a green `figentra-flow/gate` on the head and the spec's approvals recorded, as one
   squash commit with a conventional message, then moves Linear to Done and removes the worktree.
 - **FR-7** `figentra-flow status` lists, for every repository in the workspace list, its specs, worktrees, gates and PRs.
-- **FR-8** `figentra-flow release` versions with changesets and publishes to the Stackra registry only; `figentra-flow ship` deploys
-  with runway to dev and staging; production stays `runway promote` by the owner.
+- **FR-8** `figentra-flow release` reports what the next release would publish and why it would not; the
+  repository's Release workflow versions with changesets and publishes, in CI, to the registry each package names
+  (the Stackra registry for Figentra's own repositories); `figentra-flow ship` deploys with runway to dev and staging;
+  production stays `runway promote` by the owner.
 - **FR-9** Builders run only oxfmt and oxlint on the Mac; every other check runs on a box.
 - **FR-10** Work follows ADR 0503 decision 7: a leader session plans, assigns, tracks and approves technical stops;
   feature- and big-tier work runs in its own sub-session and `figentra-flow start` worktree; the tester gates and lands; at
@@ -94,6 +96,8 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - **FR-12** A repository may name an agent roster in `team` (roles in its own files, none shipped by Flow): specs and
   tasks carry a role, `status` groups by it, a review from the builder's role or session is refused, and an approval
   in a category the owner keeps needs the owner, whatever a role file says.
+- **FR-13** `figentra-flow doctor` checks that a repository and the machine can run Flow: the toolchain, the
+  configuration, the `.flow/` install, the ignored worktree folder, the roster and the credentials, each with its fix.
 
 ## Acceptance criteria
 
@@ -109,7 +113,7 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - **AC-010**: WHEN `figentra-flow land` runs with a green `figentra-flow/gate` and the approvals recorded THE CLI SHALL squash-merge, set Linear Done and remove the worktree
 - **AC-011**: IF the gate is missing, red or on an older commit, or an approval is missing THEN THE CLI SHALL refuse to land and say which
 - **AC-012**: WHEN `figentra-flow status` runs THE CLI SHALL list every repository's specs by status, worktrees, gates and open PRs
-- **AC-013**: WHEN `figentra-flow release` runs THE CLI SHALL version with changesets and publish only to the Stackra registry, then tag and create GitHub releases
+- **AC-013**: WHEN `figentra-flow release` runs THE CLI SHALL list the pending changesets with each package's next version, the open version pull request, the Release workflow's last run on the default branch with its notices, and each package's published versions on its registry, and SHALL publish, version, dispatch and merge nothing itself
 - **AC-014**: WHEN `figentra-flow ship <env>` runs for dev or staging THE CLI SHALL call runway deploy for that environment
 - **AC-015**: IF `figentra-flow ship production` is asked for THEN THE CLI SHALL refuse and name `runway promote` by the owner
 - **AC-016**: WHILE a repository is switched over THE repository SHALL require only `figentra-flow/gate` on main and keep only the Release workflow
@@ -150,6 +154,8 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - **AC-051**: IF a review verdict's `role=` is the builder's role or not in the builder role's `reviewed_by`, or its `session=` is the builder's session THEN THE CLI SHALL refuse it in `figentra-flow land` as `REVIEWER_IS_BUILDER`
 - **AC-052**: IF a change in a repository a role's `changes` names touches a path outside that role's `paths` THEN THE CLI SHALL warn at `start` and report a finding at `gate run` and `land`
 - **AC-053**: IF a feature- or big-tier spec's `**Owner stops**` names a category the owner keeps THEN THE CLI SHALL accept its stage approvals only from the owner; and IF its Impact names money, security, legal, brand, pricing, secrets or public content while `**Owner stops**` says none THEN the plan gate SHALL report the mismatch
+- **AC-054**: IF a pending changeset names a package the repository does not have, a package it names has no registry (its `publishConfig.registry`, its scope in `.npmrc`, or the Release workflow's `registry:` input), or a package's next version is already on its registry THEN `figentra-flow release` SHALL report it and exit 1
+- **AC-055**: WHEN `figentra-flow doctor` runs THE CLI SHALL report each check (Node, git, configuration, `.flow/` install, ignored worktree folder, roster, credentials) as passed or failed with its fix, exit 1 when any failed, and with `--offline` SHALL make no network call
 
 ## Clarifications (the leader's answers at the spec stop, 2026-10-31)
 
@@ -189,6 +195,8 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - 2026-10-31: Planned → Tasked (tasks for phase 1; later phases are placeholders)
 - 2026-10-31: Tasked (scope added) — Approved by owner 2026-10-31 ("Yes, record it", relayed by the leader): the sessions phase, FR-10 and AC-023 to AC-026; designed at its own plan stop
 - 2026-10-31: Tasked (revised) — Approved by leader 2026-10-31 (AC-027: never remove or adopt a tree a live session works in; adopt only after 2 h idle)
+- 2026-11-01: phase 5 release and doctor Planned — Approved by leader 2026-11-01 (`release` reads and reports only; the publish stays in the Release workflow; built under this spec)
+- 2026-11-01: Tasked (scope added): `release` reads and reports, the Release workflow publishes (FR-8 and AC-013 amended), `doctor` (FR-13, AC-054, AC-055); STA-1845 and STA-1846, designed for the leader's plan stop
 - 2026-11-01: phase 7 agent-team roles Planned — Approved by leader 2026-11-01 (FR-12, AC-046 to AC-053; decisions A to D as recommended, plus the Impact mismatch check)
 - 2026-10-31: phase 2 Planned — Approved by leader 2026-10-31 (the gate design: a dedicated Stackra Gate App, `figentra-flow gate ci` where Figentra Flow is installed, `--box` now, no secret in any log)
 - 2026-10-31: Tasked (revised) — Approved by leader 2026-10-31 (AC-028: the tripwire compares the installed preset with Figentra Flow's bundled one once core keeps no copy, W2)

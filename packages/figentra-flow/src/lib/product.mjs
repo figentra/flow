@@ -21,6 +21,9 @@ export const PACKAGE = MANIFEST.name;
 /** This package's version: the one a written gate workflow pins its poster to. */
 export const VERSION = MANIFEST.version;
 
+/** The Node range Flow needs, from `package.json`'s `engines`. */
+export const NODE_RANGE = MANIFEST.engines?.node ?? ">=0";
+
 /** The registry the package is published to (`publishConfig.registry`), or undefined for npm's default. */
 export const REGISTRY = MANIFEST.publishConfig?.registry;
 
