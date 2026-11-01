@@ -50,7 +50,7 @@ Phase 1 is designed and approved; the later phases are placeholders, refined whe
 ## Phase 4: status, MCP and metrics (design approved 2026-10-31)
 
 - [x] T040 The snapshot and `vellum status` (specs, worktrees, PRs with gate and review, sessions and the cap) in `packages/figentra-flow/src/lib/snapshot.mjs` and `packages/figentra-flow/src/commands/status.mjs` — covers: FR-7, AC-012, AC-024, AC-026 — route: spec-task — deps: T030
-- [ ] T041 Metrics from merged PRs, gate statuses, reviews and spec history in `packages/figentra-flow/src/lib/metrics.mjs` — covers: FR-7, AC-032 — route: spec-task — deps: T040
+- [x] T041 Metrics from merged PRs, gate statuses, reviews and spec history in `packages/figentra-flow/src/lib/metrics.mjs` — covers: FR-7, AC-032 — route: spec-task — deps: T040
 - [ ] T042 The read-only `vellum mcp` stdio server in `packages/figentra-flow/src/commands/mcp.mjs` — covers: FR-7, AC-033 — route: spec-task — deps: T040, T041
 
 ## Phase 5: release and ship (design pending)
