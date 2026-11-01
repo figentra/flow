@@ -6,7 +6,7 @@
  *   `.agents/agents/<id>.md` or, with `direct`, `.claude/agents/<id>.md`), the approval workflow (its secret names
  *   from `preset.yml`'s `approve`) and, with `apps.owner`, a CODEOWNERS for the owner-only paths (STA-1856); `.flow/lock.json` records the Flow version, the preset
  *   and each rendered file's hash; `installProblems` is the check that replaces spec-kit's tripwire: no hand edit, no
- *   forgotten `sync`, and no spec-kit leftover.
+ *   forgotten `sync`, and no spec-kit leftover. With a `.flow/readme.yml`, `README.md` is rendered too (STA-1879).
  * Boundary: `render` and `installProblems` read; `writeRendered` writes the rendered files and the lock and removes
  *   spec-kit's rendered `speckit-*` skills and commands. Nothing here deletes `.specify/` (that is `migrate`).
  * Runtime: node
@@ -29,6 +29,7 @@ import {
   STATUS_CONTEXT,
   VERSION,
 } from "./product.mjs";
+import { renderReadme } from "./readme.mjs";
 import { parseYaml, YamlError } from "./yaml.mjs";
 
 /** The eight commands, in workflow order. */
@@ -117,6 +118,8 @@ export function render(root, { direct = false } = {}) {
   // STA-1871: the preset's agent rules (the worktree rule among them).
   for (const [id, text] of presetDocs(root, "rules"))
     out.set(direct ? `.claude/rules/${id}.md` : `.agents/rules/${id}.md`, text);
+  const readme = renderReadme(root);
+  if (readme !== undefined) out.set("README.md", readme);
   const { apps, approve } = loadConfig(root).config;
   const ownerOnly = approve?.ownerOnly ?? [];
   // No owner, no approval path: GitHub must be able to ask someone for the owner-only paths (CODEOWNERS).

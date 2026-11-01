@@ -39,11 +39,48 @@ pnpm exec figentra-flow sync         # re-render the flow-* skills after a prese
 | `figentra-flow status [--repo p] [--json] [--offline]`                        | specs by status, worktrees, open PRs with their gate and review, and sessions, for every repository of the workspace                                                                             |
 | `figentra-flow mcp`                                                           | a read-only MCP server over stdio: status, spec, trace, worktrees and metrics                                                                                                                    |
 | `figentra-flow init --runner github-actions [--force]`                        | writes the gate workflow for the `github-actions` runner, and a starter config when there is none                                                                                                |
+| `figentra-flow readme [--check]`                                              | renders `README.md` from `.flow/readme.yml` through the preset's `readme-template` (stackra); `--check` exits 1 when it differs                                                                  |
 
 A repository keeps one-line aliases: `"spec:gate": "figentra-flow gate"`, `"spec:trace": "figentra-flow trace"`,
 `"spec:sync": "figentra-flow sync"`, and `"spec:linear": "infisical run --env=dev --path=/agents --silent -- figentra-flow linear"`.
 `figentra-flow linear` reads its token from the environment only (`LINEAR_AGENT_TOKEN`, else `LINEAR_API_KEY`) and never
 prints it.
+
+## The README
+
+With the `stackra` preset, a repository's `README.md` is rendered from its data file `.flow/readme.yml`, so every
+Figentra repository has the same layout and its own content. The sections are: banner, badges, tagline, What it is,
+Status, Quick start, Architecture at a glance, Development, Docs and playground, Release and changelog, Security,
+Licence, and the footer. `figentra-flow readme` writes it, `readme --check` fails when it was edited by hand, and
+`sync` renders it too and records it in `.flow/lock.json`. A repository can override the layout with
+`.flow/overrides/readme-template.md`.
+
+```yaml
+name: Figentra Pay # required: the product's name
+repo: figentra/pay # required: owner/name, for the badges and links
+tagline: Payments, wallet and payouts for every Figentra product. # required: one line, same as the GitHub description
+status: In progress # required: Live | In progress | Planned
+statusNote: dev pilot (pay#18) # optional: after the status, 80 characters at most
+banner: # optional: the brand kit's images, committed in the repository
+  light: .github/assets/brand/banner-light.png
+  dark: .github/assets/brand/banner-dark.png
+package: "@figentra/pay" # optional: the release badge's text (default "latest")
+licence: Commercial # optional: overrides what LICENSE says (MIT, else Proprietary)
+ci: ci.yml # optional: the CI workflow for the badge (default ci.yml)
+docs: https://docs.example.com # optional: a badge and a link
+playground: https://play.example.com # optional: a badge and a link
+site: https://pay.figentra.com # optional: a link
+what: | # required: Markdown
+  …
+quickstart: | # required: Markdown
+  …
+architecture: | # required: Markdown
+  …
+development: | # optional: replaces the `pnpm install` / `pnpm verify` block
+  …
+release: | # optional: replaces the Changesets paragraph
+  …
+```
 
 ## Configuration
 
