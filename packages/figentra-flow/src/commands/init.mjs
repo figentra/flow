@@ -42,12 +42,13 @@ This folder belongs to Figentra Flow (\`${NAME}\`, ADR 0510). Do not hand-edit w
  * Installs `.flow/` into `root` (README, a starter constitution from the template, `.gitignore`), makes the
  * repository's `.gitignore` ignore `.claude/worktrees/` (FR-3), and renders the
  * \`flow-*\` skills: through the repository's projector when its package.json has \`agents:sync\`, else directly.
- * Refuses an existing `.flow/` unless `force`; an existing constitution is always kept.
+ * Refuses an installed `.flow/` (its README) unless `force`; an existing constitution is always kept.
  * @param {string} root
  * @param {{ force?: boolean, log?: (s: string) => void }} [options]
  */
 export function init(root, { force = false, log = () => {} } = {}) {
-  if (existsSync(join(root, FLOW_DIR)) && !force) return false;
+  // `.flow/readme.yml` alone is not an install (STA-1879): `init` writes `.flow/README.md`.
+  if (existsSync(join(root, FLOW_DIR, "README.md")) && !force) return false;
   writeFlowDir(root);
   ignoreWorktrees(root);
   sync(root, { direct: !hasProjector(root), log });
