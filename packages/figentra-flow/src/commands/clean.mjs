@@ -52,6 +52,20 @@ const FINISHED = new Set(["Done", "Canceled", "Cancelled", "Duplicate"]);
  */
 
 /**
+ * Appends `.claude/worktrees/` to `root`'s `.gitignore` unless it is ignored already (FR-3: `init` and
+ * `clean --fix-ignore`).
+ * @param {string} root
+ * @returns {boolean} whether the line was added
+ */
+export function ignoreWorktrees(root) {
+  if (ignoresWorktrees(root)) return false;
+  const file = join(root, ".gitignore");
+  const text = existsSync(file) ? readFileSync(file, "utf8") : "";
+  appendFileSync(file, `${text === "" || text.endsWith("\n") ? "" : "\n"}.claude/worktrees/\n`);
+  return true;
+}
+
+/**
  * Whether `.gitignore` at `root` ignores `.claude/worktrees/`.
  * @param {string} root
  */
@@ -219,11 +233,7 @@ export async function clean(options) {
   }
 
   if (options.fixIgnore && !ignoresWorktrees(root)) {
-    if (!dry) {
-      const file = join(root, ".gitignore");
-      const text = existsSync(file) ? readFileSync(file, "utf8") : "";
-      appendFileSync(file, `${text === "" || text.endsWith("\n") ? "" : "\n"}.claude/worktrees/\n`);
-    }
+    if (!dry) ignoreWorktrees(root);
     report.ignoreFixed = true;
   }
   return report;

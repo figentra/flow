@@ -37,10 +37,16 @@ test("init writes .flow/, a starter constitution and the direct skills; it keeps
       assert.ok(existsSync(join(root, `.opencode/commands/flow-${verb}.md`)), verb);
     }
     assert.equal(existsSync(join(root, ".specify")), false, "no spec-kit folder");
+    assert.equal(readFileSync(join(root, ".gitignore"), "utf8"), ".claude/worktrees/\n", "FR-3");
     writeFileSync(join(root, ".flow/constitution.md"), "ours\n");
     assert.equal(init(root), false);
     assert.equal(init(root, { force: true }), true);
     assert.equal(readFileSync(join(root, ".flow/constitution.md"), "utf8"), "ours\n");
+    assert.equal(
+      readFileSync(join(root, ".gitignore"), "utf8"),
+      ".claude/worktrees/\n",
+      "added once",
+    );
   } finally {
     rmSync(root, { recursive: true });
   }
