@@ -14,7 +14,7 @@ the hook check that refuses `git worktree add` anywhere else. Then the six repos
 ## Technical Context
 
 - **Language**: plain ESM JavaScript with JSDoc, checked by `tsc` (`checkJs`); Node 24; no runtime dependencies
-- **Members**: figentra/flow `packages/figentra-flow` (`@stackra/vellum`, binary `figentra-flow`)
+- **Members**: figentra/flow `packages/figentra-flow` (`@figentra-oss/flow`, binary `figentra-flow`)
 - **Testing**: `node:test` in `src/__tests__/`, against temporary git repositories with a local bare remote; no
   network, no real Linear call (the client is injected)
 - **Storage**: none (git and `~/.config/figentra-flow/workspace.yaml`)
