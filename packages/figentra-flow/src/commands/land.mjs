@@ -8,7 +8,8 @@
  *   auto-merge at the head instead, never an admin path; `land` on a merged PR runs the steps after the merge
  *   (STA-1856). `--stack` lands a stack bottom-up.
  * Boundary: every rule is read from GitHub's live state and the spec at the PR's head; nothing changes until all
- *   pass. The merge carries `sha`, so GitHub refuses it if the head moved. Steps after the merge only warn (exit 3)
+ *   pass. The merge carries `sha`, so GitHub refuses it if the head moved. Waiting on required checks exits 4. Steps
+ *   after the merge only warn (exit 3)
  *   and never undo it. A stack is brought up to date by a merge commit and a normal push, never a rewrite.
  * Runtime: node
  * Governing contract: Stackra ADR 0503 (decision 5), ADR 0502; STA-1729 phase 3 (the leader's plan stop of
@@ -180,7 +181,8 @@ const AUTO_MERGE = `mutation($id: ID!, $head: GitObjectID!, $title: String!, $bo
 }`;
 
 /**
- * Every path the PR changes, a rename's old path too, and how many files GitHub listed (it lists at most 3000).
+ * Every path the PR changes (a rename's old path too), each listed entry, and how many files GitHub listed (it lists
+ * at most 3000).
  * @param {import("../lib/github.mjs").Api} api
  * @param {string} repo
  * @param {number} number
@@ -188,16 +190,27 @@ const AUTO_MERGE = `mutation($id: ID!, $head: GitObjectID!, $title: String!, $bo
 function changedFiles(api, repo, number) {
   /** @type {string[]} */
   const files = [];
+  /** @type {{ filename: string, previous_filename?: string, status: string }[]} */
+  const entries = [];
   let listed = 0;
   for (let page = 1; page <= 30; page++) {
     const got = list(api("GET", `/repos/${repo}/pulls/${number}/files?per_page=100&page=${page}`));
     listed += got.length;
-    for (const f of got)
+    for (const f of got) {
+      entries.push(f);
       files.push(f.filename, ...(f.previous_filename ? [f.previous_filename] : []));
+    }
     if (got.length < 100) break;
   }
-  return { files, listed };
+  return { files, entries, listed };
 }
+
+/** At this many changed files the approval check refuses, so `land` does too: the owner reviews it. */
+export const MAX_FILES = 300;
+
+/** A branch name as an API path: each segment encoded, the slashes kept. */
+const refPath = (/** @type {string} */ branch) =>
+  branch.split("/").map(encodeURIComponent).join("/");
 
 /** The spec text at `sha` for the branch's key, read through the API; undefined when there is none. */
 function specAt(
@@ -299,9 +312,13 @@ export async function landOne({
   const artifacts = git(root, ["cat-file", "-e", `${head}^{commit}`]).ok
     ? artifactProblems(root, `origin/${base}`, head, loadConfig(root).config.artifacts)
     : [`cannot read the head ${head.slice(0, 12)} to check its files (fetch failed)`];
-  const { files, listed } = changedFiles(api, repo, number);
+  const { files, entries, listed } = changedFiles(api, repo, number);
   if (listed < Number(pr.json.changed_files))
     artifacts.push(`GitHub lists only ${listed} of ${pr.json.changed_files} changed files`);
+  if (listed >= MAX_FILES)
+    artifacts.push(
+      `${listed} files changed, at the approval check's limit of ${MAX_FILES}: the owner reviews it`,
+    );
   const config = loadConfig(root).config;
   // A package.json's root scripts and catalog entries are the owner's too; read both sides from git.
   const forkPoint = git(root, ["merge-base", `origin/${base}`, head]).out;
@@ -309,9 +326,19 @@ export async function landOne({
     const r = git(root, ["show", `${ref}:${path}`]);
     return r.ok ? r.out : undefined;
   };
-  const ownerFindings = files
-    .filter((f) => f.split("/").pop() === "package.json")
-    .flatMap((f) => packageFindings(f, forkPoint ? show(forkPoint, f) : undefined, show(head, f)));
+  /** @type {string[]} */
+  const ownerFindings = [];
+  for (const f of entries.filter((e) => e.filename.split("/").pop() === "package.json")) {
+    // A side that should exist but cannot be read refuses; it never counts as added or removed.
+    const old = f.previous_filename ?? f.filename;
+    const before = f.status === "added" || !forkPoint ? undefined : show(forkPoint, old);
+    const after = f.status === "removed" ? undefined : show(head, f.filename);
+    if (f.status !== "added" && before === undefined)
+      ownerFindings.push(`${old} cannot be read at the merge base`);
+    else if (f.status !== "removed" && after === undefined)
+      ownerFindings.push(`${f.filename} cannot be read at the head`);
+    else ownerFindings.push(...packageFindings(f.filename, before, after));
+  }
   const problems = landRules({
     pr: pr.json,
     statuses,
@@ -371,7 +398,7 @@ export async function landOne({
       log(
         `${NAME} land: #${number}: waiting on ${checks.pending.join(", ")}; \`${NAME} land ${number}\` again once green`,
       );
-      return { code: 0, queued: true, waiting: checks.pending };
+      return { code: 4, queued: true, waiting: checks.pending };
     }
     const asked = api("POST", `/repos/${repo}/actions/workflows/${APPROVE_WORKFLOW}/dispatches`, {
       ref: base,
@@ -462,11 +489,10 @@ async function finish({
     });
   // Only the branch as it was landed: a push after the merge is someone's work.
   await step("delete the branch", () => {
-    const now = api("GET", `/repos/${repo}/git/ref/heads/${encodeURIComponent(branch)}`).json
-      ?.object?.sha;
+    const now = api("GET", `/repos/${repo}/git/ref/heads/${refPath(branch)}`).json?.object?.sha;
     if (now !== head)
       throw new Error(`${branch} is at ${now ?? "nothing"}, not the landed ${head}; kept`);
-    return api("DELETE", `/repos/${repo}/git/refs/heads/${branch}`).ok;
+    return api("DELETE", `/repos/${repo}/git/refs/heads/${refPath(branch)}`).ok;
   });
   await step(
     "comment",
@@ -568,9 +594,9 @@ export async function landStack({
     // The rest of the stack builds on this PR's merge, which now waits on its approval and checks.
     if (result.queued) {
       log(
-        `${NAME} land --stack: #${pr.number} waits on its approval; land the stack again once it merges`,
+        `${NAME} land --stack: #${pr.number} waits on its ${result.waiting ? "checks" : "approval"}; land the stack again once it merges`,
       );
-      return { code: 0 };
+      return { code: result.code, ...(result.waiting ? { waiting: result.waiting } : {}) };
     }
     log(`${NAME} land --stack: ${i + 1}/${chain.length} landed`);
   }

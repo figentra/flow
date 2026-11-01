@@ -57,7 +57,9 @@ function github(over = {}) {
     pr: PR,
     files: [{ filename: "src/a.mjs", status: "modified" }],
     /** @type {Record<string, string>} path@ref → text */
-    contents: {},
+    contents: { [`.github/CODEOWNERS@${BASE}`]: "/.github/workflows/** @figentra-usr\n" },
+    codeOwnerReview: true,
+    dismissFails: false,
     required: [{ context: "figentra-flow/gate" }, { context: "verify", integration_id: 15368 }],
     statuses: [
       { context: "figentra-flow/gate", state: "success", creator: { login: "figentra-gate[bot]" } },
@@ -90,6 +92,13 @@ function github(over = {}) {
     if (path === `/repos/${REPO}/rules/branches/main`)
       return ok([
         { type: "required_status_checks", parameters: { required_status_checks: s.required } },
+        {
+          type: "pull_request",
+          parameters: {
+            required_approving_review_count: 1,
+            require_code_owner_review: s.codeOwnerReview,
+          },
+        },
       ]);
     if (path.startsWith(`/repos/${REPO}/commits/${SHA}/statuses`)) return ok(s.statuses);
     if (path.startsWith(`/repos/${REPO}/commits/${SHA}/check-runs`))
@@ -99,6 +108,8 @@ function github(over = {}) {
   /** @type {import("../lib/approve-check.mjs").Rest} */
   const write = async (method, path, body) => {
     writes.push({ method, path, body });
+    if (s.dismissFails && path.endsWith("/dismissals"))
+      return { ok: false, status: 403, json: undefined };
     return ok({ id: 42 });
   };
   return { read, write, writes };
@@ -209,6 +220,13 @@ test("approve: each unsafe case refuses with its reason", async () => {
       {},
       /the author is flow-approver\[bot\], the approving App/,
     ],
+    [{ codeOwnerReview: false }, {}, /main's ruleset does not require the code owner's review/],
+    [{ contents: {} }, {}, /main has no \.github\/CODEOWNERS/],
+    [
+      { files: [{ filename: "packages/a/package.json", status: "modified" }] },
+      {},
+      /packages\/a\/package\.json cannot be read at the merge base/,
+    ],
   ]);
   for (const [over, input, reason] of cases)
     assert.match(await refusals(over, input), reason, String(reason));
@@ -244,6 +262,26 @@ test("approve: approves at the checked head; a head that moves meanwhile gets th
     moved.writes.map((w) => `${w.method} ${w.path}`),
     [`POST /repos/${REPO}/pulls/7/reviews`, `PUT /repos/${REPO}/pulls/7/reviews/42/dismissals`],
   );
+
+  // A dismissal GitHub refuses: auto-merge goes off and the PR says why.
+  const stuck = github({
+    headAfter: "e".repeat(40),
+    dismissFails: true,
+    pr: { ...PR, node_id: "PR_7" },
+  });
+  assert.equal(await main(env(), { read: stuck.read, write: stuck.write, log: () => {} }), 1);
+  assert.deepEqual(
+    stuck.writes.map((w) => `${w.method} ${w.path}`),
+    [
+      `POST /repos/${REPO}/pulls/7/reviews`,
+      `PUT /repos/${REPO}/pulls/7/reviews/42/dismissals`,
+      "POST /graphql",
+      `POST /repos/${REPO}/issues/7/comments`,
+    ],
+  );
+  assert.match(stuck.writes[2].body.query, /disablePullRequestAutoMerge/);
+  assert.equal(stuck.writes[2].body.variables.id, "PR_7");
+  assert.match(stuck.writes[3].body.body, /could not be dismissed\. Auto-merge is off/);
 });
 
 test("required checks: an App-pinned context counts only that App's newest run; a status only from its trusted login", () => {

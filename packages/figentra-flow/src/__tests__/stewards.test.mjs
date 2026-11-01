@@ -23,7 +23,7 @@ import { join } from "node:path";
 import { sync } from "../commands/sync.mjs";
 import { approveWorkflow } from "../lib/approve-workflow.mjs";
 import { codeowners, OWNER_ONLY, ownerOnlyPaths, packageFindings } from "../lib/owner-only.mjs";
-import { approveSecrets } from "../lib/render.mjs";
+import { approveSecrets, lockedIntegrity } from "../lib/render.mjs";
 
 const OWNER = [
   ".github/workflows/ci.yml",
@@ -84,7 +84,30 @@ test("owner-only: the root scripts and a dependency moved off its catalog are fi
       before,
       JSON.stringify({ scripts: {}, dependencies: { a: "1.2.3" } }),
     ),
-    ['packages/x/package.json: a moved off its catalog to "1.2.3"'],
+    ['packages/x/package.json: a moved off its catalog to "1.2.3" (dependencies)'],
+  );
+  // Moved to another section, still a swap.
+  assert.deepEqual(
+    packageFindings(
+      "packages/x/package.json",
+      before,
+      JSON.stringify({ devDependencies: { a: "^1.0.0" } }),
+    ),
+    ['packages/x/package.json: a moved off its catalog to "^1.0.0" (devDependencies)'],
+  );
+  // The root's version pickers are the owner's, like its scripts.
+  assert.deepEqual(
+    packageFindings(
+      "package.json",
+      before,
+      JSON.stringify({
+        scripts: { build: "x" },
+        dependencies: { a: "catalog:", b: "workspace:*" },
+        pnpm: { overrides: { a: "1.0.0" } },
+        packageManager: "pnpm@1.0.0",
+      }),
+    ),
+    ["package.json: the root pnpm changed", "package.json: the root packageManager changed"],
   );
   assert.deepEqual(packageFindings("packages/x/package.json", undefined, before), []);
   assert.deepEqual(packageFindings("package.json", before, "{"), [
@@ -95,7 +118,12 @@ test("owner-only: the root scripts and a dependency moved off its catalog are fi
 test("CODEOWNERS: every owner-only glob to the owner, anchored at the root unless it matches at any depth; no catch-all", () => {
   const text = codeowners("figentra-usr", ["deploy/**"]);
   const lines = text.split("\n").filter((l) => l && !l.startsWith("#"));
-  assert.equal(lines.length, OWNER_ONLY.length + 1);
+  assert.equal(lines.length, OWNER_ONLY.length + 2);
+  assert.ok(
+    lines.includes("/package.json @figentra-usr"),
+    "GitHub cannot see which fields changed",
+  );
+  assert.match(text, /case-sensitively/);
   assert.ok(lines.includes("/.github/workflows/** @figentra-usr"));
   assert.ok(lines.includes("**/.npmrc @figentra-usr"));
   assert.ok(lines.includes("/deploy/** @figentra-usr"));
@@ -108,6 +136,7 @@ test("CODEOWNERS: every owner-only glob to the owner, anchored at the root unles
 test("approval workflow: the pinned check, in its environment, with the approver's secret names and no value", () => {
   const text = approveWorkflow({
     version: "9.9.9",
+    integrity: "sha512-AbC+/9==",
     appId: "A_ID",
     privateKey: "A_KEY",
     trusted: { "figentra-flow/gate": "figentra-gate[bot]" },
@@ -118,7 +147,17 @@ test("approval workflow: the pinned check, in its environment, with the approver
   assert.match(text, /private-key: \$\{\{ secrets\.A_KEY \}\}/);
   assert.match(text, /permission-pull-requests: write/);
   assert.match(text, /@figentra-oss\/flow@9\.9\.9/);
-  assert.match(text, /src\/lib\/approve-check\.mjs/);
+  assert.match(text, /node flow\/package\/src\/lib\/approve-check\.mjs/);
+  // The tarball is checked against the lockfile's integrity before anything in it runs.
+  assert.match(text, /INTEGRITY: 'sha512-AbC\+\/9=='/);
+  assert.match(text, /npm pack --silent .*@figentra-oss\/flow@9\.9\.9/);
+  assert.match(text, /\[ "\$got" = "\$INTEGRITY" \] \|\| \{/);
+  assert.ok(text.indexOf('"$INTEGRITY" ]') < text.indexOf("node flow/"));
+  assert.doesNotMatch(text, /npm install/);
+  assert.throws(
+    () => approveWorkflow({ version: "1", integrity: "sha1-x", appId: "A", privateKey: "B" }),
+    /not a sha512 integrity/,
+  );
   assert.match(text, /TRUSTED: '\{"figentra-flow\/gate":"figentra-gate\[bot\]"\}'/);
   assert.match(text, /OWNER_ONLY_EXTRA: '\["it''s\/\*\*"\]'/);
   assert.doesNotMatch(text, /actions\/checkout|pull_request_target|--admin/);
@@ -153,11 +192,12 @@ test("sync renders each preset's stewards, the workflow with the approver's name
         new RegExp(`^name: ${id}$`, "m"),
       );
     assert.equal(approveSecrets(root).appId, "FIGENTRA_FLOW_APPROVER_APP_ID");
-    assert.match(
-      readFileSync(join(root, ".github/workflows/figentra-flow-approve.yml"), "utf8"),
-      /secrets\.FIGENTRA_FLOW_APPROVER_APP_ID /,
-    );
+    // No owner, no approval path: neither the workflow nor CODEOWNERS.
+    const workflow = join(root, ".github/workflows/figentra-flow-approve.yml");
+    assert.equal(existsSync(workflow), Boolean(owner));
     assert.equal(existsSync(join(root, ".github/CODEOWNERS")), Boolean(owner));
+    if (owner)
+      assert.match(readFileSync(workflow, "utf8"), /secrets\.FIGENTRA_FLOW_APPROVER_APP_ID /);
   }
 });
 
@@ -186,4 +226,25 @@ test("a repository's own agent overrides the preset's", (t) => {
   );
   sync(root, { log: () => {} });
   assert.match(readFileSync(join(root, ".agents/agents/git-steward.md"), "utf8"), /Ours\./);
+});
+
+test("lockfile integrity: from pnpm-lock.yaml, else package-lock.json, else none", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "flow-integrity-"));
+  t.after(() => rmSync(root, { recursive: true }));
+  assert.equal(lockedIntegrity(root, "@figentra-oss/flow", "1.2.3"), "");
+  writeFileSync(
+    join(root, "package-lock.json"),
+    JSON.stringify({
+      packages: {
+        "node_modules/@figentra-oss/flow": { version: "1.2.3", integrity: "sha512-npm==" },
+      },
+    }),
+  );
+  assert.equal(lockedIntegrity(root, "@figentra-oss/flow", "1.2.3"), "sha512-npm==");
+  writeFileSync(
+    join(root, "pnpm-lock.yaml"),
+    "packages:\n\n  '@figentra-oss/flow@1.2.3':\n    resolution: {integrity: sha512-pnpm+/==}\n    engines: {node: '>=24'}\n",
+  );
+  assert.equal(lockedIntegrity(root, "@figentra-oss/flow", "1.2.3"), "sha512-pnpm+/==");
+  assert.equal(lockedIntegrity(root, "@figentra-oss/flow", "1.2.4"), "");
 });

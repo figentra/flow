@@ -83,9 +83,13 @@ function parse(/** @type {string | undefined} */ text) {
   }
 }
 
+/** Root package.json fields only the owner changes: deploys and releases run the scripts, the rest picks versions. */
+const ROOT_FIELDS = ["scripts", "pnpm", "overrides", "resolutions", "packageManager"];
+
 /**
- * Owner-only findings in one changed package.json: the root one's `scripts` changing (deploys and releases run them),
- * and a dependency whose `catalog:` specifier became anything else.
+ * Owner-only findings in one changed package.json: in the root one, a change to `scripts`, `pnpm` (its `overrides`
+ * among them), `overrides`, `resolutions` or `packageManager`; in any one, a dependency that had a `catalog:`
+ * specifier in any section and now has anything else in any section.
  * @param {string} path repository-relative
  * @param {string | undefined} before the text at the merge base; undefined when added
  * @param {string | undefined} after the text at the head; undefined when removed
@@ -97,35 +101,42 @@ export function packageFindings(path, before, after) {
   if (now === null) return [`${path} is not valid JSON`];
   /** @type {string[]} */
   const findings = [];
-  if (
-    path === "package.json" &&
-    JSON.stringify(old?.scripts ?? {}) !== JSON.stringify(now.scripts ?? {})
-  )
-    findings.push("package.json: the root scripts changed");
+  if (path === "package.json")
+    for (const field of ROOT_FIELDS)
+      if (JSON.stringify(old?.[field] ?? null) !== JSON.stringify(now[field] ?? null))
+        findings.push(`package.json: the root ${field} changed`);
+  // By name across every section, so moving a dependency to another section does not hide the swap.
+  const catalogued = new Set(
+    SECTIONS.flatMap((section) =>
+      Object.entries(old?.[section] ?? {})
+        .filter(([, spec]) => String(spec).startsWith("catalog:"))
+        .map(([name]) => name),
+    ),
+  );
   for (const section of SECTIONS)
-    for (const [name, spec] of Object.entries(old?.[section] ?? {})) {
-      const next = now[section]?.[name];
-      if (
-        String(spec).startsWith("catalog:") &&
-        next !== undefined &&
-        !String(next).startsWith("catalog:")
-      )
-        findings.push(`${path}: ${name} moved off its catalog to "${next}"`);
-    }
+    for (const [name, spec] of Object.entries(now[section] ?? {}))
+      if (catalogued.has(name) && !String(spec).startsWith("catalog:"))
+        findings.push(`${path}: ${name} moved off its catalog to "${spec}" (${section})`);
   return findings;
 }
 
 /**
  * The CODEOWNERS text that makes GitHub itself ask `owner` for every owner-only path (with the ruleset's
- * `require_code_owner_review`). There is no catch-all line, so everything else stays with the approving App. GitHub
- * matches these case-sensitively; `land` and the approval check also match case-insensitively.
+ * `require_code_owner_review`), and for the root package.json, whose owner-only fields GitHub cannot see. There is no
+ * catch-all line, so everything else stays with the approving App. GitHub matches CODEOWNERS case-sensitively, so a
+ * path in another case reaches only `land` and the approval check, which match case-insensitively.
  * @param {string} owner a GitHub login
  * @param {string[]} [extra] the repository's `approve.ownerOnly` globs
  */
 export function codeowners(owner, extra = []) {
   const handle = `@${owner.replace(/^@/, "")}`;
-  const lines = [...OWNER_ONLY, ...extra].map(
+  const lines = [...OWNER_ONLY, "package.json", ...extra].map(
     (g) => `${g.startsWith("**/") ? g : `/${g}`} ${handle}`,
   );
-  return `# Written by \`${NAME} sync\` from the owner-only list (STA-1856); change that list, not this file.\n${lines.join("\n")}\n`;
+  return [
+    `# Written by \`${NAME} sync\` from the owner-only list (STA-1856); change that list, not this file.`,
+    "# GitHub matches these case-sensitively; land and the approval check also catch other cases.",
+    ...lines,
+    "",
+  ].join("\n");
 }
