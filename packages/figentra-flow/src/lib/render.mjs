@@ -112,8 +112,11 @@ export function render(root, { direct = false } = {}) {
       );
     } else out.set(`.agents/skills/${name}/SKILL.md`, skill);
   }
-  for (const [id, text] of agents(root))
+  for (const [id, text] of presetDocs(root, "agents"))
     out.set(direct ? `.claude/agents/${id}.md` : `.agents/agents/${id}.md`, text);
+  // STA-1871: the preset's agent rules (the worktree rule among them).
+  for (const [id, text] of presetDocs(root, "rules"))
+    out.set(direct ? `.claude/rules/${id}.md` : `.agents/rules/${id}.md`, text);
   const { apps, approve } = loadConfig(root).config;
   const ownerOnly = approve?.ownerOnly ?? [];
   // No owner, no approval path: GitHub must be able to ask someone for the owner-only paths (CODEOWNERS).
@@ -160,19 +163,20 @@ export function lockedIntegrity(root, pkg, version) {
 }
 
 /**
- * The preset's agent definitions, id to text; `.flow/overrides/agents/<id>.md` replaces one.
+ * The preset's documents in `folder` (`agents` or `rules`), id to text; `.flow/overrides/<folder>/<id>.md` replaces one.
  * @param {string} root
+ * @param {string} folder
  * @returns {Map<string, string>}
  */
-function agents(root) {
-  const dir = join(presetDir(root), "agents");
+function presetDocs(root, folder) {
+  const dir = join(presetDir(root), folder);
   /** @type {Map<string, string>} */
   const out = new Map();
   if (!existsSync(dir)) return out;
   for (const file of readdirSync(dir)
     .filter((f) => f.endsWith(".md"))
     .toSorted()) {
-    const own = join(root, OVERRIDES, "agents", file);
+    const own = join(root, OVERRIDES, folder, file);
     out.set(file.slice(0, -3), readFileSync(existsSync(own) ? own : join(dir, file), "utf8"));
   }
   return out;

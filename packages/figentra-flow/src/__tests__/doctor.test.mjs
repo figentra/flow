@@ -39,13 +39,15 @@ test("doctor: Node against a >= range", () => {
   assert.equal(meets("24.0.1", ">=24.1.0"), false);
 });
 
+const GB = 1024 ** 3;
+
 test("doctor: an initialised repository passes every offline check", (t) => {
   const r = repo();
   t.after(r.dispose);
-  const all = checks(r.root, { offline: true });
+  const all = checks(r.root, { offline: true, disk: () => ({ free: 100 * GB, total: 200 * GB }) });
   assert.deepEqual(
     all.map((c) => c.id),
-    ["node", "git", "config", "install", "worktrees"],
+    ["node", "git", "config", "install", "worktrees", "worktree-budget", "disk"],
   );
   assert.deepEqual(
     all.filter((c) => !c.ok),

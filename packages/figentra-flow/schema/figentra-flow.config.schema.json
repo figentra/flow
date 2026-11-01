@@ -376,6 +376,10 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "budget": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     },

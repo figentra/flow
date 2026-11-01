@@ -5,7 +5,8 @@
  *   repository's own and is never overwritten).
  *   `figentra-flow init --workspace <dir>…` writes the workspace list instead: every git repository in or directly under
  *   those folders, with its GitHub slug (STA-1729).
- * Boundary: writes only `.flow/` and the rendered skills; refuses an existing `.flow/` unless `--force`. `--workspace` writes only the
+ * Boundary: writes only `.flow/`, what `sync` renders and `.claude/worktrees/README.md` (STA-1871); refuses an existing
+ *   `.flow/` unless `--force`. `--workspace` writes only the
  *   workspace file (`~/.config/figentra-flow/workspace.yaml`, or `FIGENTRA_FLOW_WORKSPACE`).
  *   `figentra-flow init --runner github-actions [--force]` writes only the gate workflow
  *   (`.github/workflows/figentra-flow-gate.yml`) and, when the repository has no config file, a starter one naming
@@ -19,7 +20,7 @@ import { join, resolve } from "node:path";
 import { GATE_WORKFLOW } from "../adapters/runner/github-actions.mjs";
 import { loadConfig } from "../lib/config.mjs";
 import { gateWorkflow } from "../lib/gate-workflow.mjs";
-import { ignoreWorktrees } from "./clean.mjs";
+import { ignoreWorktrees, writeWorktreesReadme } from "./clean.mjs";
 import { hasProjector, sync } from "./sync.mjs";
 import { CONSTITUTION, FLOW_DIR, resolveTemplate } from "../lib/flow-dir.mjs";
 import { git } from "../lib/git.mjs";
@@ -50,6 +51,7 @@ export function init(root, { force = false, log = () => {} } = {}) {
   if (existsSync(join(root, FLOW_DIR)) && !force) return false;
   writeFlowDir(root);
   ignoreWorktrees(root);
+  writeWorktreesReadme(root);
   sync(root, { direct: !hasProjector(root), log });
   return true;
 }
