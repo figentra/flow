@@ -14,8 +14,8 @@
  *   - the base's ruleset requires the code owner's review and the base holds `.github/CODEOWNERS`, so GitHub itself
  *     asks the owner for owner-only paths.
  *   Everything is read at that SHA, so a later push cannot change what was checked. After approving it re-reads the
- *   PR and dismisses its own review if the head moved; if GitHub refuses the dismissal, it turns auto-merge off and
- *   says so on the PR. A refusal is one PR comment.
+ *   PR and dismisses its own review if the head moved. If GitHub refuses the dismissal, the same App requests changes
+ *   (which replaces its approval), turns auto-merge off, and comments what each step did. A refusal is one PR comment.
  * Boundary: GitHub REST only: reads with the job's token, the review and the comment with the App's token. It never
  *   checks out or runs the PR's code and never merges.
  * Runtime: node (GitHub Actions)
@@ -250,26 +250,41 @@ export async function main(env, deps = {}) {
   const now = (await read("GET", `/repos/${repo}/pulls/${number}`)).json?.head?.sha;
   if (now !== sha) {
     const id = review.json?.id;
-    const dismissed =
-      id !== undefined &&
-      (
-        await write("PUT", `/repos/${repo}/pulls/${number}/reviews/${id}/dismissals`, {
-          message: `The head moved to ${now} after ${sha} was checked.`,
-          event: "DISMISS",
-        })
-      ).ok;
-    if (!dismissed) {
-      // The approval may stand on a head nobody checked: stop the merge and say so.
-      await write("POST", "/graphql", { query: AUTO_MERGE_OFF, variables: { id: nodeId } });
-      await write("POST", `/repos/${repo}/issues/${number}/comments`, {
-        body: `The head moved to ${now} after ${sha} was checked, and the approval could not be dismissed. Auto-merge is off; dismiss the approval before anyone merges ([run](${run})).`,
-      });
-      log(
-        `::error::the head moved to ${now}; the approval could not be dismissed; auto-merge turned off`,
-      );
+    const dismissal =
+      id === undefined
+        ? undefined
+        : await write("PUT", `/repos/${repo}/pulls/${number}/reviews/${id}/dismissals`, {
+            message: `The head moved to ${now} after ${sha} was checked.`,
+            event: "DISMISS",
+          });
+    if (dismissal?.ok) {
+      log(`::error::the head moved to ${now} after ${sha} was checked; the approval was dismissed`);
       return 1;
     }
-    log(`::error::the head moved to ${now} after ${sha} was checked; the approval was dismissed`);
+    // The approval may stand on a head nobody checked. The same App's newer review replaces it (pull-requests:
+    // write is enough); auto-merge off is a second guard. The comment says what each step did.
+    const blocked = await write("POST", `/repos/${repo}/pulls/${number}/reviews`, {
+      event: "REQUEST_CHANGES",
+      body: `The head moved to ${now} after ${sha} was checked; this replaces the approval ([run](${run})).`,
+    });
+    const off = await write("POST", "/graphql", {
+      query: AUTO_MERGE_OFF,
+      variables: { id: nodeId },
+    });
+    const offError = off.ok
+      ? off.json?.errors?.map((/** @type {any} */ e) => e.message).join("; ")
+      : `HTTP ${off.status}`;
+    const lines = [
+      `The head moved to ${now} after ${sha} was checked.`,
+      `- Dismissing the approval failed (${id === undefined ? "no review id" : `HTTP ${dismissal?.status}`}).`,
+      blocked.ok
+        ? "- This App now requests changes, which replaces its approval."
+        : `- Requesting changes failed too (HTTP ${blocked.status}): the approval may still stand. Dismiss it by hand before anyone merges.`,
+      offError ? `- Turning auto-merge off failed: ${offError}.` : "- Auto-merge is off.",
+      `([run](${run}))`,
+    ];
+    await write("POST", `/repos/${repo}/issues/${number}/comments`, { body: lines.join("\n") });
+    log(`::error::${lines.slice(0, -1).join(" ")}`);
     return 1;
   }
   log(`Approved ${repo}#${number} at ${sha}`);
