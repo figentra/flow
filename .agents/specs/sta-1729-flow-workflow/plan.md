@@ -905,3 +905,68 @@ waits on whatever the GitHub environment requires.
 `src/__tests__/ship.test.mjs`: the refusals (production, prod, unknown, missing), the reading of a refused dispatch
 (422 for a missing input, 404 for a missing workflow), and the CLI's exit 2 on `ship production` before any config is
 read.
+
+## Phase 5: release and doctor (design, STA-1845 and STA-1846)
+
+Assigned by the leader (2026-11-01): `release` and `doctor` are the remaining commands.
+
+### Architecture overview
+
+`figentra-flow release` reads; it never publishes. A publish needs the registry's trusted-publisher exchange, which
+only the Release workflow's GitHub ID token can make (no registry token exists), and an agent never dispatches that
+workflow. So the command answers the question an agent or the owner actually has: what would the next release
+publish, and what stands in its way. The Release workflow stays the one place that versions, publishes, tags and
+creates GitHub releases. FR-8 and AC-013 are amended to say so.
+
+`figentra-flow doctor` runs local checks, plus one GitHub call unless `--offline`, and reports each one with its fix.
+It reuses the checks other commands already make: `loadConfig`, `installProblems` (the `gate ci` install check),
+`loadTeam` and `connect`.
+
+### Components and responsibilities
+
+- `src/commands/release.mjs`
+  - `changesetsOf(root)`: reads `.changeset/*.md` (not `README.md`) and returns `{ file, bumps: { name: bump } }`
+    from each frontmatter.
+  - `packagesOf(root)`: maps each `package.json` that git tracks to its name, version, `private` and
+    `publishConfig.registry`.
+  - `nextVersions(changesets, packages)`: each package's next version, from the highest bump. `releaseProblems(...)`
+    covers AC-054.
+  - `versionPr(api, repo, branch)`: the open PR from `changeset-release/<branch>`, and whether its body names every
+    next `name@version`. If it doesn't, it is stale until the next Release run, which is a note, not a problem.
+  - `lastRelease(api, repo, branch)`: the last run of `release.yml` on the branch, with its jobs' notice annotations.
+    That is where a skipped publish says why.
+  - `published(registry, name)`: the package document from the registry (built-in `fetch`, no token); 404 means
+    never published.
+  - `run(args)`: `--json` prints `figentra-flow.release/1`, and `--offline` skips GitHub and the registry. Exit 0 with
+    no problems, 1 with problems, 2 outside a git repository.
+- `src/commands/doctor.mjs`
+  - `checks(root, { offline })` returns `{ id, ok, detail, fix }[]` for these checks:
+    - `node`: the running Node meets Flow's `engines`.
+    - `git`: the repository is a git work tree.
+    - `config`: `figentra-flow.config.json` is valid, or absent with defaults.
+    - `install`: `installProblems`.
+    - `worktrees`: `.claude/worktrees/` is ignored.
+    - `team`: the roster, only when one is named.
+    - `credentials`: `connect`, then `GET /repos/{repo}`, skipped offline or without a `credentials` block.
+  - `run(args)`: prints one line per check (the `cli.mjs` glyphs), or `figentra-flow.doctor/1` with `--json`. Exit 0
+    when every check passes, 1 otherwise.
+
+### Error handling
+
+A registry or GitHub call that fails becomes a `detail` line ("registry unreachable: …"), not a crash, and isn't
+counted as a release problem. Only the AC-054 findings set exit 1. A `ConfigError` reaches the binary's existing
+handler (exit 2) in `release`, while `doctor` reports it as the failed `config` check.
+
+### Security and tenancy
+
+There's no new credential. GitHub is reached only through the repository's `credentials` port (AC-034), and the
+registry only by anonymous GET. Neither command writes a file, runs `changeset version`, dispatches a workflow or
+merges a PR.
+
+### Testing strategy
+
+- `src/__tests__/release.test.mjs`: changeset frontmatter parsing, next versions (patch, minor and major, the highest
+  wins, 0.x), each AC-054 finding, and version PR staleness against a fake `api`.
+- `src/__tests__/doctor.test.mjs`: a scratch repository passing every offline check; a hand-edited rendered file
+  failing `install`; an unignored worktree folder failing `worktrees`; invalid config failing `config`; and the
+  binary's exit 1 and `--json` shape.
