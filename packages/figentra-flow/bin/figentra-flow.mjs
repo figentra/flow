@@ -20,6 +20,7 @@ const COMMANDS = [
   "clean",
   "guard",
   "land",
+  "train",
   "app",
   "status",
 ];
