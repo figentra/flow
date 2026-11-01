@@ -217,7 +217,8 @@ export function repoSnapshot(repo, { api, offline = false, now = Date.now(), bus
     prs,
     prsProblem,
     sessions,
-    ...(team ? { byRole: rolesOf([...specs.values()], trees, prs, team) } : {}),
+    // A plain property, not a conditional spread: it keeps this and the error return one normalized union type.
+    byRole: team ? rolesOf([...specs.values()], trees, prs, team) : undefined,
   };
 }
 
