@@ -1,6 +1,6 @@
 # Tasks: Figentra Flow runs the whole development workflow
 
-**Spec**: `.agents/specs/sta-1729-vellum-workflow/spec.md` · **Plan**: `plan.md` · **Linear**: STA-1729
+**Spec**: `.agents/specs/sta-1729-flow-workflow/spec.md` · **Plan**: `plan.md` · **Linear**: STA-1729
 
 Phase 1 is designed and approved; the later phases are placeholders, refined when each phase's design is approved.
 
