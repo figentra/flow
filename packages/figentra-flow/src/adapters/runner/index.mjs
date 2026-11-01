@@ -9,8 +9,11 @@
  * Boundary: spawns the runner's processes and returns their exit code; 127 when the program is not installed.
  * Runtime: node
  * Governing contract: STA-1729 phase A (A3); Stackra ADR 0484 (the testbed).
- * Secrets: none here. `wraps` tells `gate run` whether to wrap the poster with the secrets port: an `ssh` or `local`
- *   host holds no job secrets of its own, while a `command` runner brings its own unless it sets `"secrets": true`.
+ * Secrets: none here. `posts` says where the poster runs: on the `ssh` or `local` box after the check (`box`), or,
+ *   for a `command` runner such as the testbed, on the caller's side after the box returns the check's exit code
+ *   (`caller`, the owner's option C1 of 2026-11-01: a testbed job's environment and docker socket put every project
+ *   secret within reach of the code under test, so the gate App's key never goes to the box). `wraps` tells
+ *   `gate run` whether to wrap a box-side poster with the secrets port.
  */
 import { spawnSync } from "node:child_process";
 import { basename } from "node:path";
@@ -22,7 +25,7 @@ import { githubActionsRunner } from "./github-actions.mjs";
 /**
  * @typedef {{ dir: string, command: string, label: string, flags: string[], sha?: string, branch?: string,
  *             repository?: string, base?: string }} Job
- * @typedef {{ kind: string, wraps: boolean, program: string, run: (job: Job) => number }} Runner
+ * @typedef {{ kind: string, wraps: boolean, program: string, posts?: "box" | "caller", run: (job: Job) => number }} Runner
  */
 
 /** An ssh destination safe to put on a command line: `[user@]host`. */
@@ -88,6 +91,7 @@ export function runnerPort(block, { spawn = spawnSync, root } = {}) {
     return {
       kind: "command",
       wraps: block.secrets === true,
+      posts: "caller",
       program: argv[0],
       run(job) {
         // One pass, so a placeholder inside the check command is never expanded again.

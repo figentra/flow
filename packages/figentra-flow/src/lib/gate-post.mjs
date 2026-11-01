@@ -5,7 +5,9 @@
  *   so the box needs no install; it imports only `node:` modules, and reads the status context, the comment marker
  *   and the environment prefix from the job file (the product's name lives in `product.mjs`, AC-042).
  * Boundary: posts only while the branch tip is still the checked commit; never posts `success` unless the check
- *   exited 0; posts nothing when it cannot mint a token. Exit 0 posted green, 1 posted red, 4 could not post, 5 stale.
+ *   exited 0; posts nothing when it cannot mint a token; runs only when `gate run` started it (`<prefix>GATE_RUN=1`;
+ *   the hook guard refuses a direct call, the owner's option C1). Exit 0 posted green, 1 posted red, 3 not started by
+ *   `gate run`, 4 could not post, 5 stale.
  * Runtime: node (on the testbed box or a `--box` host)
  * Governing contract: Stackra ADR 0503 (decision 4); STA-1729 phase 2 (the leader's plan stop of 2026-10-31).
  * Secrets: `<prefix>GATE_APP_ID` and `<prefix>GATE_PRIVATE_KEY` from the environment only (`infisical run`). The key,
@@ -207,9 +209,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const here = dirname(fileURLToPath(import.meta.url));
   const read = (/** @type {string} */ name) =>
     existsSync(join(here, name)) ? readFileSync(join(here, name), "utf8") : "";
+  const job = JSON.parse(read("job.json"));
+  if (process.env[`${job.envPrefix}GATE_RUN`] !== "1") {
+    console.log("gate: the poster runs only inside `gate run`; nothing posted");
+    process.exit(3);
+  }
   const exit = Number.parseInt(read("exit").trim() || process.argv[2] || "1", 10);
   const result = await post({
-    job: JSON.parse(read("job.json")),
+    job,
     exit: Number.isNaN(exit) ? 1 : exit,
     log: read("log.txt"),
     env: process.env,

@@ -54,6 +54,7 @@ test("command: placeholders in one pass, {flags} spread, the exit code passed th
       args: ["run", "flow gate x@1", "--in=/tmp/job-1", "pnpm verify {dir}", "--no-wait"],
     },
   ]);
+  assert.equal(runnerPort({ kind: "command", run: ["x"] }).posts, "caller");
   assert.equal(runnerPort({ kind: "command", run: ["x"], secrets: true }).wraps, true);
   const missing = runnerPort({ kind: "command", run: ["figentra-flow-no-such-program-42"] });
   assert.equal(missing.run(JOB), 127);
