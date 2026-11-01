@@ -16,6 +16,7 @@ import { github } from "../lib/github.mjs";
 import { NAME, STATUS_CONTEXT } from "../lib/product.mjs";
 import { metrics } from "../lib/metrics.mjs";
 import { snapshot } from "../lib/snapshot.mjs";
+import { statusServer } from "../lib/status-web.mjs";
 import { readSessionCap, readWorkspace } from "../lib/workspace.mjs";
 
 /**
@@ -107,11 +108,34 @@ export function renderMetrics(m) {
   ].join("\n");
 }
 
-/** `figentra-flow status [--repo <path>] [--json] [--offline] [--metrics [--since <n>d]]`. */
+/** `figentra-flow status [--repo <path>] [--json] [--offline] [--metrics [--since <n>d]] [--web [--port <n>]]`. */
 export function run(/** @type {string[]} */ args) {
   const opt = (/** @type {string} */ name) =>
     args.includes(`--${name}`) ? args[args.indexOf(`--${name}`) + 1] : undefined;
   const offline = args.includes("--offline");
+  if (args.includes("--web")) {
+    const port = Number(opt("port") ?? 4747);
+    if (!Number.isInteger(port) || port < 0 || port > 65535) {
+      console.error(`${NAME} status: --port takes a port number`);
+      return 2;
+    }
+    const read = () =>
+      snapshot({
+        repos: reposFor(opt("repo"), process.cwd()),
+        cap: readSessionCap(),
+        offline,
+        busy: busyFolders(),
+        api: offline ? undefined : (root) => github(root),
+      });
+    const server = statusServer(read);
+    // Never resolves: the page is served until the process is stopped (Ctrl-C).
+    return new Promise(() =>
+      server.listen(port, "127.0.0.1", () => {
+        const address = /** @type {import("node:net").AddressInfo} */ (server.address());
+        console.log(`${NAME} status: http://127.0.0.1:${address.port}/ (Ctrl-C stops it)`);
+      }),
+    );
+  }
   if (args.includes("--metrics")) {
     if (offline) {
       console.error(`${NAME} status: --metrics reads GitHub; it cannot run --offline`);
