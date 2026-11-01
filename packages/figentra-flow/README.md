@@ -1,28 +1,31 @@
 # Figentra Flow
 
-Figentra Flow is the spec CLI for Stackra repositories. It runs spec-driven development on
-[GitHub spec-kit](https://github.com/github/spec-kit): it installs spec-kit's `.specify/` folder with the Stackra
-preset, renders the `speckit-*` skills for Claude Code and OpenCode, and holds the gates that keep each spec, its plan,
-its tasks and its tests in step. It is one package, `figentra-flow`, with two binaries, `figentra-flow` and its alias `fflow`, published publicly on npmjs.
+Figentra Flow is the spec CLI for Stackra repositories. It owns spec-driven development end to end (ADR 0510): the
+templates, the presets, the eight `flow-*` commands it renders for Claude Code and OpenCode, the `.flow/` folder, and
+the gates that keep each spec, its plan, its tasks and its tests in step. Its command texts and two templates derive
+from [GitHub spec-kit](https://github.com/github/spec-kit) 1.0.10 (MIT; see `THIRD_PARTY_NOTICES.md`); nothing runs
+spec-kit's `specify`. It is one package, `figentra-flow`, with two binaries, `figentra-flow` and its alias `fflow`, published on the Figentra registry (npmjs later, as `figentra-flow`).
 
 ```sh
 pnpm add -D @figentra-oss/flow             # from the Figentra registry: @figentra-oss:registry in .npmrc
-pnpm exec figentra-flow init         # .specify/ with the Stackra preset
-pnpm exec figentra-flow sync         # install the preset and render the speckit skills (needs the pinned `specify`)
+pnpm exec figentra-flow init         # .flow/ and the flow-* skills, with the configured preset
+pnpm exec figentra-flow sync         # re-render the flow-* skills after a preset or Flow upgrade
 ```
 
 ## Commands
 
 | Command                                                                | What it does                                                                                                                                                               |
 | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `figentra-flow init [--force]`                                         | installs `.specify/` (spec-kit 1.0.10, the Stackra preset, the gate in `setup-plan.sh`)                                                                                    |
-| `figentra-flow sync`                                                   | installs the preset through `specify`, keeps the bundled workflow off, renders OpenCode and Claude                                                                         |
+| `figentra-flow init [--force]`                                         | writes `.flow/` (README, a starter constitution, `.gitignore`) and renders the `flow-*` skills                                                                             |
+| `figentra-flow migrate [--dry-run]`                                    | moves a spec-kit repository onto `.flow/` (constitution, `.specify/` and `.agents/speckit/` deleted, scripts, pins and skips), then syncs                                  |
+| `figentra-flow spec paths\|setup-plan\|setup-tasks\|template`          | the spec folder, its documents and the resolved templates as JSON, for the `flow-*` commands                                                                               |
+| `figentra-flow sync [--direct]`                                        | renders the `flow-*` skills (for the repository's projector, or Claude Code and OpenCode directly) and writes `.flow/lock.json`                                            |
 | `figentra-flow gate run [--ref b] [--box host] [-- flags]`             | the repository's checks through the configured runner (or on `--box`) at the pushed head; the box posts `figentra-flow/gate` as the gate App                               |
 | `figentra-flow land [<pr>] [--stack] [--dry-run] [--manual-ok]`        | squash-merges a PR that is green on `figentra-flow/gate` from the gate App on its head and has its approvals; Linear Done, worktree and branch removed                     |
 | `figentra-flow train <open\|add\|close\|build\|eject\|depart\|status>` | the release train: board green PRs, cut off, build `train/<version>` by merge commits with bisect ejection, depart by fast-forward (see [Release trains](#release-trains)) |
-| `figentra-flow gate plan <spec.md>`                                    | exits 1 until the spec may be planned (run by `setup-plan.sh`)                                                                                                             |
+| `figentra-flow gate plan <spec.md>`                                    | exits 1 until the spec may be planned (run by `figentra-flow spec setup-plan`)                                                                                             |
 | `figentra-flow gate check <dir>` / `tasks <tasks.md>`                  | the stage rules for the spec's `**Status**`; the tasks lint                                                                                                                |
-| `figentra-flow gate lane` / `branch` / `ci` / `dir`                    | the lane check, the branch warning, the CI gate with the spec-kit tripwire, the spec folder                                                                                |
+| `figentra-flow gate lane` / `branch` / `ci` / `dir`                    | the lane check, the branch warning, the CI gate with the install check, the spec folder                                                                                    |
 | `figentra-flow trace trace <dir>` / `drift` / `ci`                     | the FR/P → task → `@covers` test matrix, spec-vs-diff drift, the Done rules                                                                                                |
 | `figentra-flow parse <file>`                                           | what the parsers read from a `spec.md`, `plan.md`, `tasks.md` or `routing.yaml`, as JSON                                                                                   |
 | `figentra-flow linear issue <spec.md>` / `tasks <tasks.md>`            | the spec's Linear issue and one sub-issue per task; `--dry-run` needs no token                                                                                             |
@@ -35,7 +38,7 @@ pnpm exec figentra-flow sync         # install the preset and render the speckit
 | `figentra-flow init --runner github-actions [--force]`                 | writes the gate workflow for the `github-actions` runner, and a starter config when there is none                                                                          |
 
 A repository keeps one-line aliases: `"spec:gate": "figentra-flow gate"`, `"spec:trace": "figentra-flow trace"`,
-`"speckit:sync": "figentra-flow sync"`, and `"spec:linear": "infisical run --env=dev --path=/agents --silent -- figentra-flow linear"`.
+`"spec:sync": "figentra-flow sync"`, and `"spec:linear": "infisical run --env=dev --path=/agents --silent -- figentra-flow linear"`.
 `figentra-flow linear` reads its token from the environment only (`LINEAR_AGENT_TOKEN`, else `LINEAR_API_KEY`) and never
 prints it.
 
@@ -129,16 +132,18 @@ setting you have not made refuses and names it.
 
   Without a runner, `gate run` refuses, naming the key (or pass `--box <ssh host>`).
 
-- `preset` picks the spec-kit preset `sync` installs and the rules the gate holds a spec to:
-  - `neutral` (the default with a config file): spec-kit's commands with only what the gates need (the spec
+- `preset` picks the preset `sync` renders and the rules the gate holds a spec to:
+  - `neutral` (the default): the commands with only what the gates need (the spec
     location, the plan gate, the issue key, tiers and approval stops). The gate keeps the shared rules: the
     clarifications marker, statuses, tiers, approvals, EARS criteria and the design sections.
   - `stackra`: Stackra's preset, which adds the Impact questionnaire, the Constitution Check, deploy modes,
     correctness properties, task routes and the path floors of the tier check.
   - a path to the repository's own preset folder, held to the neutral rules.
 
-  `neutral` and a path need `specify` on PATH to render. There is no other default: without a config file the
-  preset is `neutral`.
+  Without a config file the preset is `neutral`. A repository changes one template or command without forking a
+  preset in `.flow/overrides/` (`<name>.md`, or `commands/flow-<verb>.md`).
+
+- `specs` sets where specs live: `dir` (default `.agents/specs`) and `bugsDir` (default `.agents/specs/bugs`).
 
 Only
 `figentra-flow.config.json` is read; no other file stands in for it.
@@ -245,9 +250,9 @@ trees whose issue is open, keyless trees used in the last 2 hours, and trees hol
 
 ## The flow
 
-Every spec lives in `.agents/specs/sta-<n>-<slug>/`, named by its Linear issue. spec-kit has no project-wide setting
-for the folder, so each wrapped command first runs `figentra-flow gate dir`, which reads the key from the branch name and
-writes `.specify/feature.json`.
+Every spec lives in `.agents/specs/sta-<n>-<slug>/`, named by its Linear issue. Each `flow-*` command first runs
+`figentra-flow gate dir`, which reads the key from the branch name and writes `.flow/current.json`; the
+`figentra-flow spec` subcommands read it.
 
 States: **Draft → Clarified → Planned → Tasked → Implementing → Done**, or Abandoned / Superseded. A status may lag
 behind its artifacts, never run ahead of them.
@@ -262,18 +267,18 @@ behind its artifacts, never run ahead of them.
 | Done         | every live task ticked; every FR and P covered by a test tagged `@covers sta-<n>:FR-001`; every SC has a method    |
 
 Lanes: **full** (a design PR, then one PR per user-story phase), **lite** (a small R0–R1 feature in one PR), **bug**
-(`.specify/bugs/sta-<n>-<slug>/` with a regression test tagged `@covers sta-<n>:BUG`) and **chore** (no spec).
+(`.agents/specs/bugs/sta-<n>-<slug>/` with a regression test tagged `@covers sta-<n>:BUG`) and **chore** (no spec).
 `figentra-flow gate lane` fails a `feat` commit that no lite or full spec reaches through the branch key or a `Refs:` key.
 
 Traceability runs FR/SC → P-### (plan properties, `Validates: FR-003`) → T### (`covers:`, `route:`, `deps:`) →
 tests (`@covers`) → commits (`Refs: STA-n`) → PR. `figentra-flow trace ci` makes it a gate.
 
-The tripwire in `figentra-flow gate ci` catches a spec-kit upgrade that breaks the Stackra wrap: the gate call in
-`setup-plan.sh`, `common.sh` resolving `SPECIFY_FEATURE_DIRECTORY`, `linear-key` numbering, the wrap markers in every
-rendered command, the installed preset equal to its source, and the bundled `speckit` workflow kept disabled.
+The install check in `figentra-flow gate ci` fails when a rendered `flow-*` file differs from `.flow/lock.json` (a hand
+edit), when the lock names another Flow version than the installed one (a forgotten `sync`), or when a spec-kit file
+remains (`.specify/`, `.agents/speckit/`, a `speckit-*` skill: run `figentra-flow migrate`).
 
-`.specify/` keeps its name because spec-kit's `specify` CLI and the skills expect it. A later `figentra-flow migrate` moves it
-to `.figentra-flow/` once Figentra Flow replaces spec-kit rather than wrapping it.
+`.flow/` holds only what the repository owns: `README.md`, `constitution.md`, the optional `overrides/`, `lock.json` and
+the git-ignored `current.json`. Templates, presets and command texts come from the installed package.
 
 ## Develop
 
