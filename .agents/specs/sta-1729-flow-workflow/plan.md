@@ -1,6 +1,6 @@
 # Implementation Plan: Figentra Flow runs the whole development workflow
 
-**Spec**: `.agents/specs/sta-1729-vellum-workflow/spec.md` · **Linear**: STA-1729 · **Date**: 2026-10-31
+**Spec**: `.agents/specs/sta-1729-flow-workflow/spec.md` · **Linear**: STA-1729 · **Date**: 2026-10-31
 
 **Input**: the spec, approved at its stop by the leader on 2026-10-31. This plan is the design of **phase 1** (the
 worktree rule); each later phase adds its own design section here and stops for approval before its tasks.
