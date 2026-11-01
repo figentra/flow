@@ -184,7 +184,7 @@ approved once and the plan is written per phase (each phase's design is a plan.m
   **Answer: yes.**
 - **Phase 1 also** adds `.claude/worktrees/` to `.gitignore` in billing, invoicing, brand, figentra-flow, stackra/notes and
   stackra/pro.
-- **Later phases** fold in stackra-f4's `notes/plans/flow-final-plan.md` (ownership, the move list, old-Figentra Flow
+- **Later phases** fold in stackra-f4's `notes/plans/flow-final-plan.md` (ownership, the move list, old Vellum
   verdicts, the agent-config model) when it lands.
 
 ## Status history
