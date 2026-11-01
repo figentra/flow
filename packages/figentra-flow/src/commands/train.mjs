@@ -46,6 +46,7 @@ const SEMVER = /^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z.-]+)?$/;
  * @typedef {{ code: number, problems?: string[], version?: string, tip?: string }} Result
  */
 
+/** @returns {Result} */
 const fail = (/** @type {string} */ problem, code = 1) => ({ code, problems: [problem] });
 const list = (/** @type {{ json: any }} */ r) => (Array.isArray(r.json) ? r.json : []);
 const short = (/** @type {string | undefined} */ sha) => String(sha ?? "").slice(0, 12);
