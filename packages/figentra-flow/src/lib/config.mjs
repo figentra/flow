@@ -43,6 +43,11 @@ export const SCHEMA = {
     version: { const: 1 },
     preset: str,
     team: str,
+    specs: {
+      type: "object",
+      additionalProperties: false,
+      properties: { dir: str, bugsDir: str },
+    },
     tracker: port(
       {
         linear: { team: str, branchPrefix: str, otherBranchPrefixes: strs, token: strs },
@@ -201,7 +206,7 @@ export function validate(schema, value, path = "") {
 }
 
 /**
- * @typedef {{ version?: number, preset?: string, team?: string, tracker?: any, credentials?: any, runner?: any, secrets?: any,
+ * @typedef {{ version?: number, preset?: string, team?: string, specs?: { dir?: string, bugsDir?: string }, tracker?: any, credentials?: any, runner?: any, secrets?: any,
  *             apps?: { gate?: { slug?: string, login: string }, review?: { slug: string }, owner?: string },
  *             gate?: { check?: string }, clean?: { keep?: string[] }, review?: { required?: string[] },
  *             artifacts?: { paths?: string[], maxBytes?: number },

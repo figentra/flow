@@ -40,7 +40,9 @@ export function locate(cwd) {
   if (!dir) {
     const found = specDir({ root, branch, keys: schemeFor(root) });
     if (found.error)
-      throw new SpecError(`${found.error} (run \`${NAME} gate dir\`, or work on the issue's branch)`);
+      throw new SpecError(
+        `${found.error} (run \`${NAME} gate dir\`, or work on the issue's branch)`,
+      );
     dir = found.dir ?? "";
   }
   const featureDir = join(root, dir);
@@ -79,9 +81,7 @@ export function availableDocs(featureDir, includeTasks) {
 function templateText(root, name) {
   const file = resolveTemplate(root, name);
   if (!file)
-    throw new SpecError(
-      `no ${name} in .flow/overrides/, the preset or ${NAME}'s templates`,
-    );
+    throw new SpecError(`no ${name} in .flow/overrides/, the preset or ${NAME}'s templates`);
   return { file, text: readFileSync(file, "utf8") };
 }
 
@@ -123,8 +123,7 @@ export function paths(at, args) {
  * @param {{ planGate?: (spec: string) => number, log?: (s: string) => void }} [options]
  */
 export function setupPlan(at, { planGate = gate, log = (s) => console.error(s) } = {}) {
-  if (planGate(at.spec))
-    throw new SpecError("the plan gate refused the spec (run /flow-clarify)");
+  if (planGate(at.spec)) throw new SpecError("the plan gate refused the spec (run /flow-clarify)");
   mkdirSync(at.featureDir, { recursive: true });
   if (existsSync(at.plan)) log(`Plan already exists at ${at.plan}, skipping template copy`);
   else {
