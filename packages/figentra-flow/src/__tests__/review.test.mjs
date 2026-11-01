@@ -48,6 +48,7 @@ test("review: the App's unedited PASS on the head and base counts", () => {
   assert.deepEqual(review([comment(`AI-REVIEW: PASS ${SHA} base=main\n\nLooks right.`)], []), {
     verdict: "PASS",
     ignored: [],
+    passes: [{ role: null, session: null }],
   });
 });
 
