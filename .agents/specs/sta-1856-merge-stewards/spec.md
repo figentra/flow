@@ -29,8 +29,9 @@ shipped by Flow"): presets now ship agent definitions. The roster (`team`) stays
   the presets' `agents/` and `preset.yml`)
 - **Cross-service events**: none
 - **Tenancy and data**: none
-- **Secrets**: the rendered workflow names two secrets of the `<NAME>-approve` environment, the App id and the key
-  (`STACKRA_BOT_APP_ID` and `STACKRA_BOT_PRIVATE_KEY` in the stackra preset). It holds no value, and Flow reads none.
+- **Secrets**: the rendered workflow names the approving App's id and key, which are secrets of the `<NAME>-approve`
+  environment (the default branch only). The names are the App's own and are never shared with a bot that pushes.
+  The workflow holds no value, and Flow reads none.
 - **ADR needed**: no. It amends STA-1729 FR-12; core's ADR 0119 gets its amendment when core syncs.
 - **New dependencies**: none
 - **Deploy modes**: same everywhere (a developer tool)
@@ -41,28 +42,66 @@ shipped by Flow"): presets now ship agent definitions. The roster (`team`) stays
 
 ## Requirements
 
-- **FR-1** `land` refuses a PR that changes an owner-only path, and names the paths. The owner-only paths are every
-  workflow and action, secrets and the secret guards, the catalog (`pnpm-workspace.yaml`), the Flow configuration,
-  repo settings and branch protection, and billing or legal files. One list in `src/lib/owner-only.mjs` serves both
-  `land` and the workflow.
+- **FR-1** `land` refuses an owner-only change and names it. Paths are matched case-insensitively. Owner-only means:
+  - every workflow and action (`action.y*ml` anywhere);
+  - what a deploy, promote or release runs: `wrangler.*`, `eas.json`, `runway.yaml`, `.changeset/config.json`, the
+    root package.json's scripts, and the repository's own `approve.ownerOnly` globs;
+  - secrets and the secret guards;
+  - the catalog: `pnpm-workspace.yaml`, `.npmrc` anywhere, and a dependency moved off its `catalog:` entry;
+  - the Flow configuration;
+  - repo settings and branch protection;
+  - billing or legal files (`LICENSE*` and `NOTICE*` anywhere).
+
+  One list in `src/lib/owner-only.mjs` serves `land`, the approval check and CODEOWNERS.
+
 - **FR-2** When the base's ruleset requires an approving review and the head has none, `land` stops short of the
-  merge. It dispatches the installed approval workflow with `pr` and `head`, then turns on auto-merge (squash),
-  pinned to that head. It never uses an admin path. If the workflow is not installed, `land` refuses and says so.
-- **FR-3** `land` on a PR that has already merged finishes it: tracker Done, the merge commit recorded, the worktree
-  removed by `clean`'s rules, the branch deleted and a comment posted.
-- **FR-4** `sync` renders `.github/workflows/<NAME>-approve.yml`. The workflow takes `pr` and `head`. It approves at
-  that head only when the PR is open and not a draft, the head is in the same repository and equals `head`, the
-  author is not the approving App, no changed path (including a rename's old path) is owner-only, and every
-  required check passed or was skipped, with at least one passing. A refused PR gets one comment with the reasons.
-  The App id and key come from secrets of the `<NAME>-approve` environment, by the names the preset gives.
+  merge:
+  - while a required check on the head is still running, `land` waits and asks for nothing;
+  - when a required check failed, or came from an untrusted source, `land` refuses;
+  - when every required check is green, `land` dispatches the installed approval workflow with `pr` and `head`, then
+    turns on auto-merge (squash) pinned to that head.
+
+  It never uses an admin path. If the workflow is not installed, `land` refuses and says so.
+
+- **FR-3** `land` on a PR that has already merged finishes it, but only when the PR merged into the default branch.
+  Finishing means tracker Done, the merge commit recorded, the worktree removed by `clean`'s rules and a comment
+  posted. The branch is deleted only while it still points at the landed head.
+- **FR-4** `sync` renders `.github/workflows/<NAME>-approve.yml`. The workflow runs `approve-check.mjs` from the
+  pinned package version. Everything is read at the checked head: the files from the merge base through `compare`,
+  and the checks from that commit's check runs and statuses against the ruleset's required contexts. The workflow
+  approves at that head only when all of these hold:
+  - the run is on the default branch;
+  - the `<NAME>-approve` environment allows that branch alone;
+  - the PR is open and not a draft;
+  - the head is in the same repository and equals `head`;
+  - the author is not the approving App;
+  - nothing in the change is owner-only (FR-1), including a rename's old path;
+  - every required check is green from its trusted source (the ruleset's `integration_id`, or the login
+    `approve.checks` or the gate App names), with at least one success.
+
+  After approving, the workflow re-reads the PR. If the head moved, it dismisses its own review. A refused PR gets
+  one comment with the reasons. The approving App's id and key are secrets of that environment, under names of their
+  own (`<PREFIX>APPROVER_APP_ID` and `<PREFIX>APPROVER_PRIVATE_KEY` unless the preset names others). A name that is
+  not a valid secret name is refused.
+
 - **FR-5** Presets ship agent definitions in `agents/`. `sync` renders them to `.agents/agents/<id>.md`, or to
   `.claude/agents/<id>.md` with `--direct`; `.flow/overrides/agents/` overrides them. Neutral ships `git-steward`,
   `ci-steward` and `tracker-steward`. Stackra ships `git-steward`, `ci-steward` and `linear-steward`, in core's
   agent format.
-- **FR-6** Tests cover the owner-only list, the rendered workflow, the new paths through `land`, and the rendered
-  agents.
+- **FR-6** Tests cover:
+  - the owner-only list and the package findings;
+  - CODEOWNERS and the rendered workflow;
+  - the approval check against a stubbed GitHub: a check still running, only skipped checks, a spoofed status, an
+    owner-only rename, a catalog swap, a moved head, an unprotected environment, and a dismissal after the head moved;
+  - the new paths through `land`;
+  - the rendered agents.
+- **FR-7** With `apps.owner` configured, `sync` renders `.github/CODEOWNERS`, which maps every owner-only glob to the
+  owner with no catch-all. GitHub then asks the owner for those paths itself (`require_code_owner_review`), and the
+  workflow's checks are defence in depth.
 
 ## Status history
 
 - 2026-11-01: Draft → Clarified (owner decision relayed by the leader session; core PR #191 is the first draft)
 - 2026-11-01: Clarified → Planned — Approved by owner 2026-11-01 (relayed by the leader session)
+- 2026-11-01: revised after the independent review (security BLOCK, code notes): checks and files pinned to the head,
+  trusted check sources, CODEOWNERS, the wider owner-only list, distinct approver secrets, a protected environment

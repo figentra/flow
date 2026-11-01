@@ -30,7 +30,8 @@ import { loadTeam } from "../lib/team.mjs";
 import { artifactProblems } from "../lib/artifacts.mjs";
 import { say } from "../lib/cli.mjs";
 import { loadConfig } from "../lib/config.mjs";
-import { ownerOnlyPaths } from "../lib/owner-only.mjs";
+import { ownerOnlyPaths, packageFindings } from "../lib/owner-only.mjs";
+import { requiredCheckState, requiredContexts } from "../lib/required-checks.mjs";
 import { APPROVE_WORKFLOW, LANDED_KEY, NAME, STATUS_CONTEXT } from "../lib/product.mjs";
 import { defaultBranch, fetch, git, mainCheckout, remote, worktrees } from "../lib/git.mjs";
 
@@ -93,7 +94,8 @@ export function connect(root) {
  * @param {{ pr: any, statuses: any[], base: string, spec?: string, gateApp?: string, reviewer?: string,
  *           required: boolean, files?: string[],
  *           manualOk?: boolean, stack?: boolean, review?: { verdict: string | null, ignored: string[] },
- *           artifacts?: string[], reviewTiers?: string[] }} input
+ *           artifacts?: string[], reviewTiers?: string[], files?: string[], ownerOnly?: string[],
+ *           ownerFindings?: string[] }} input
  * @returns {string[]}
  */
 export function landRules({
@@ -105,6 +107,8 @@ export function landRules({
   reviewer,
   required,
   files = [],
+  ownerOnly = [],
+  ownerFindings = [],
   manualOk = false,
   stack = false,
   review,
@@ -113,9 +117,10 @@ export function landRules({
 }) {
   const problems = [...artifacts];
   // STA-1856 FR-1: what only the owner approves never lands through an agent.
-  const owned = ownerOnlyPaths(files);
+  const owned = ownerOnlyPaths(files, ownerOnly);
   if (owned.length)
     problems.push(`owner-only paths, so the owner lands it: ${owned.slice(0, 20).join(", ")}`);
+  for (const f of ownerFindings) problems.push(`owner-only change, so the owner lands it: ${f}`);
   if (pr.state !== "open") problems.push(`the PR is ${pr.merged ? "already merged" : pr.state}`);
   if (pr.draft) problems.push("the PR is a draft");
   if (pr.mergeable_state === "dirty") problems.push(`the PR conflicts with ${pr.base?.ref}`);
@@ -224,7 +229,8 @@ function specAt(
  * Lands one PR.
  * @param {{ root: string, repo: string, base: string, number: number, dry?: boolean, manualOk?: boolean,
  *           gateApp?: string, reviewer?: string, owner?: string, deps: LandDeps }} options
- * @returns {Promise<{ code: number, problems?: string[], merged?: string, queued?: boolean }>}
+ * @returns {Promise<{ code: number, problems?: string[], merged?: string, queued?: boolean,
+ *   waiting?: string[] }>}
  */
 export async function landOne({
   root,
@@ -247,8 +253,20 @@ export async function landOne({
   const key = scheme.parse(branch);
   // STA-1856 FR-3: an auto-merged PR comes back here to finish.
   if (pr.json.merged && pr.json.merge_commit_sha) {
+    if (pr.json.base?.ref !== base)
+      return { code: 1, problems: [`#${number} merged into ${pr.json.base?.ref}, not ${base}`] };
     log(`${NAME} land: #${number} merged as ${pr.json.merge_commit_sha.slice(0, 12)}; finishing`);
-    return finish({ root, repo, number, branch, key, sha: pr.json.merge_commit_sha, scheme, deps });
+    return finish({
+      root,
+      repo,
+      number,
+      branch,
+      head,
+      key,
+      sha: pr.json.merge_commit_sha,
+      scheme,
+      deps,
+    });
   }
   const statuses = api("GET", `/repos/${repo}/commits/${head}/statuses?per_page=100`).json ?? [];
   const rules = api("GET", `/repos/${repo}/rules/branches/${base}`);
@@ -284,6 +302,16 @@ export async function landOne({
   const { files, listed } = changedFiles(api, repo, number);
   if (listed < Number(pr.json.changed_files))
     artifacts.push(`GitHub lists only ${listed} of ${pr.json.changed_files} changed files`);
+  const config = loadConfig(root).config;
+  // A package.json's root scripts and catalog entries are the owner's too; read both sides from git.
+  const forkPoint = git(root, ["merge-base", `origin/${base}`, head]).out;
+  const show = (/** @type {string} */ ref, /** @type {string} */ path) => {
+    const r = git(root, ["show", `${ref}:${path}`]);
+    return r.ok ? r.out : undefined;
+  };
+  const ownerFindings = files
+    .filter((f) => f.split("/").pop() === "package.json")
+    .flatMap((f) => packageFindings(f, forkPoint ? show(forkPoint, f) : undefined, show(head, f)));
   const problems = landRules({
     pr: pr.json,
     statuses,
@@ -292,11 +320,13 @@ export async function landOne({
     review,
     artifacts,
     files,
+    ownerOnly: config.approve?.ownerOnly,
+    ownerFindings,
     gateApp,
     reviewer,
     required,
     manualOk,
-    reviewTiers: loadConfig(root).config.review?.required,
+    reviewTiers: config.review?.required,
   });
   // AC-051 to AC-053: with a roster, the reviewer is not the builder, the builder's role stays in its paths, and an
   // owner-kept spec's approvals are the owner's.
@@ -327,6 +357,22 @@ export async function landOne({
           `${base}'s ruleset requires an approving review and .github/workflows/${APPROVE_WORKFLOW} is not installed (run \`${NAME} sync\`)`,
         ],
       };
+    // The approval checks every required check on the head; asking before they are green only gets a refusal.
+    const checks = requiredCheckState({
+      required: requiredContexts(rules.ok ? (rules.json ?? []) : []),
+      statuses,
+      checkRuns:
+        api("GET", `/repos/${repo}/commits/${head}/check-runs?per_page=100`).json?.check_runs ?? [],
+      trusted: { ...(gateApp ? { [STATUS_CONTEXT]: gateApp } : {}), ...config.approve?.checks },
+    });
+    const bad = [...checks.failed.map((c) => `${c} failed`), ...checks.untrusted];
+    if (bad.length) return { code: 1, problems: bad.map((b) => `required check: ${b}`) };
+    if (checks.pending.length) {
+      log(
+        `${NAME} land: #${number}: waiting on ${checks.pending.join(", ")}; \`${NAME} land ${number}\` again once green`,
+      );
+      return { code: 0, queued: true, waiting: checks.pending };
+    }
     const asked = api("POST", `/repos/${repo}/actions/workflows/${APPROVE_WORKFLOW}/dispatches`, {
       ref: base,
       inputs: { pr: String(number), head },
@@ -358,17 +404,29 @@ export async function landOne({
   if (!merge.ok) return { code: 1, problems: [`GitHub refused the merge: ${merge.err}`] };
   const sha = merge.json.sha;
   log(`${NAME} land: #${number} landed on ${base} as ${sha.slice(0, 12)}`);
-  return finish({ root, repo, number, branch, key, sha, scheme, manualOk, deps });
+  return finish({ root, repo, number, branch, head, key, sha, scheme, manualOk, deps });
 }
 
 /**
  * The steps after a merge: tracker Done, the merge commit recorded, the worktree removed, the branch deleted and a
  * comment. Each only warns (exit 3); none undoes the merge.
- * @param {{ root: string, repo: string, number: number, branch: string, key: string | undefined, sha: string,
- *           scheme: import("../adapters/tracker/index.mjs").KeyScheme, manualOk?: boolean, deps: LandDeps }} options
+ * @param {{ root: string, repo: string, number: number, branch: string, head: string, key: string | undefined,
+ *           sha: string, scheme: import("../adapters/tracker/index.mjs").KeyScheme, manualOk?: boolean,
+ *           deps: LandDeps }} options
  * @returns {Promise<{ code: number, merged: string }>}
  */
-async function finish({ root, repo, number, branch, key, sha, scheme, manualOk = false, deps }) {
+async function finish({
+  root,
+  repo,
+  number,
+  branch,
+  head,
+  key,
+  sha,
+  scheme,
+  manualOk = false,
+  deps,
+}) {
   const { api, log, warn } = deps;
   let warned = false;
   const step = async (/** @type {string} */ what, /** @type {() => unknown} */ fn) => {
@@ -402,10 +460,14 @@ async function finish({ root, repo, number, branch, key, sha, scheme, manualOk =
       for (const k of r.kept)
         log(`${NAME} land: kept ${k.path}: ${k.reason} (${NAME} clean takes it later)`);
     });
-  await step(
-    "delete the branch",
-    () => api("DELETE", `/repos/${repo}/git/refs/heads/${branch}`).ok,
-  );
+  // Only the branch as it was landed: a push after the merge is someone's work.
+  await step("delete the branch", () => {
+    const now = api("GET", `/repos/${repo}/git/ref/heads/${encodeURIComponent(branch)}`).json
+      ?.object?.sha;
+    if (now !== head)
+      throw new Error(`${branch} is at ${now ?? "nothing"}, not the landed ${head}; kept`);
+    return api("DELETE", `/repos/${repo}/git/refs/heads/${branch}`).ok;
+  });
   await step(
     "comment",
     () =>
@@ -567,7 +629,9 @@ export async function run(/** @type {string[]} */ args) {
     : await landOne({ ...options, dry: args.includes("--dry-run") });
   for (const p of result.problems ?? []) console.error(`${NAME} land: ${p}`);
   const dry = args.includes("--dry-run") && !args.includes("--stack");
-  if ("queued" in result && result.queued)
+  if ("waiting" in result && result.waiting)
+    say("blocked", `${NAME} land: required checks still running; land again once green`);
+  else if ("queued" in result && result.queued)
     say(
       "approved",
       `${NAME} land: approval requested; GitHub merges it when every required check passes`,

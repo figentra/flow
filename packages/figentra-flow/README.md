@@ -172,8 +172,17 @@ check exited 0. Nothing secret reaches the comment or the log. Exit codes: 0 gre
 - approved as its spec's tier requires (ADR 0502), and at Tasked or later for a feature or big spec.
 - for a change with a spec: reviewed. The `stackra-reviewer` App's unedited `AI-REVIEW: PASS <head> base=<base>`
   comment, never from the change's own authors, is on its head (ADR 0230). Trivial work, with no spec, is exempt.
-- free of owner-only paths (`src/lib/owner-only.mjs`): workflows and actions, secrets and the secret guards, the
-  catalog, this configuration, repo settings and branch protection, and billing or legal files. The owner lands those.
+- free of owner-only changes (`src/lib/owner-only.mjs`, matched case-insensitively). Those are:
+  - workflows and actions;
+  - what a deploy, promote or release runs (`wrangler.*`, `eas.json`, `runway.yaml`, `.changeset/config.json`, the
+    root package.json's scripts, and `approve.ownerOnly`);
+  - secrets and the secret guards;
+  - the catalog, including a dependency moved off `catalog:`;
+  - this configuration;
+  - repo settings and branch protection;
+  - billing or legal files.
+
+  The owner lands those.
 
 It lists every failing rule. Then it squash-merges with GitHub's `sha` guard, so the merge fails if the head moved. A
 `Refs:` line and the co-author trailers go into the squash commit. After the merge it:
@@ -181,19 +190,35 @@ It lists every failing rule. Then it squash-merges with GitHub's `sha` guard, so
 1. sets the Linear issue Done;
 2. records the merge commit on the branch, so `figentra-flow clean` counts the squashed branch as saved;
 3. removes the worktree under `clean`'s rules;
-4. deletes the remote branch;
+4. deletes the remote branch, only while it still points at the landed head;
 5. comments on the PR.
 
-When the base's ruleset requires an approving review and the head has none, `land` does not merge. It dispatches
-`.github/workflows/figentra-flow-approve.yml` (which `sync` installs) with the PR and its head, then turns on
-auto-merge (squash) at that head. It never uses an admin path.
+### When the ruleset requires an approving review
 
-The workflow runs in the `figentra-flow-approve` environment, which must allow only the default branch. There it
-re-checks four things: the owner-only paths, the head, the author (never the approving App itself), and the required
-checks. If any check fails, it comments the reasons. If all pass, it approves as the App whose id and key secrets the
-preset's `approve` names.
+When the base's ruleset requires an approving review and the head has none, `land` does not merge.
 
-GitHub merges once every required check passes. After that, `land <n>` on the merged PR runs steps 1 to 5.
+- If a required check is still running, `land` waits and asks for nothing. Run it again once the checks are green.
+- If a required check failed, or came from an untrusted source, `land` refuses.
+- If every required check is green, `land` dispatches `.github/workflows/figentra-flow-approve.yml`, which `sync`
+  installs, with the PR and its head. It then turns on auto-merge (squash) at that head. It never uses an admin
+  path.
+
+The workflow runs `approve-check.mjs` from this package, at the version `sync` pinned. It runs in the
+`figentra-flow-approve` environment and refuses unless that environment allows only the default branch. It reads
+everything at the checked head: the files from the merge base, and each required check from its trusted source. A
+trusted source is the App the ruleset pins (`integration_id`), or the login `approve.checks` or the gate App names.
+The author must not be the approving App.
+
+The workflow then either approves at that head or comments the reasons. After approving, it re-reads the PR and
+dismisses its own review if the head moved. The App's id and key are secrets of that environment, under names of
+their own: `FIGENTRA_FLOW_APPROVER_APP_ID` and `FIGENTRA_FLOW_APPROVER_PRIVATE_KEY`, unless the preset's `approve`
+names others.
+
+With `apps.owner` set, `sync` also writes `.github/CODEOWNERS`, which maps every owner-only glob to the owner, so
+GitHub itself asks the owner for those paths.
+
+GitHub merges once the approval and every required check are in. After that, `land <n>` on the merged PR runs steps 1
+to 5.
 
 GitHub calls use only the credentials the configuration names in `credentials`. `wrapper` runs your own command
 that gives `gh` a bot's token, and `gh-user` uses your own `gh` login, only because you said so. With neither, `land` refuses: Figentra Flow never falls back to a personal login.

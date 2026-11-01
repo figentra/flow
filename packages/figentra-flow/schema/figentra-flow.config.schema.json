@@ -346,6 +346,26 @@
         }
       }
     },
+    "approve": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ownerOnly": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "checks": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
     "clean": {
       "type": "object",
       "additionalProperties": false,

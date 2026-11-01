@@ -140,7 +140,13 @@ test("squash message: one Refs line and each co-author once", () => {
  * A repository with a two-commit branch in its worktree, and a GitHub stand-in whose merge squashes it onto main and
  * pushes, as GitHub would.
  */
-function world({ failMerge = false, review = false, merged = false } = {}) {
+function world({
+  failMerge = false,
+  review = false,
+  merged = false,
+  /** @type {{ context: string, integration_id?: number }[]} */ required = [],
+  moved = false,
+} = {}) {
   const r = repo();
   const branch = "figentra/sta-5-land";
   const path = join(r.root, ".claude", "worktrees", "sta-5-land");
@@ -176,12 +182,16 @@ function world({ failMerge = false, review = false, merged = false } = {}) {
       return ok([
         {
           type: "required_status_checks",
-          parameters: { required_status_checks: [{ context: "figentra-flow/gate" }] },
+          parameters: {
+            required_status_checks: [{ context: "figentra-flow/gate" }, ...required],
+          },
         },
         ...(review
           ? [{ type: "pull_request", parameters: { required_approving_review_count: 1 } }]
           : []),
       ]);
+    if (p === `/repos/figentra/flow/git/ref/heads/${encodeURIComponent(branch)}`)
+      return ok({ object: { sha: moved ? "e".repeat(40) : head } });
     if (p.startsWith("/repos/figentra/flow/contents/"))
       return { ok: false, json: undefined, err: "HTTP 404" };
     if (p.startsWith("/repos/figentra/flow/pulls/7/commits"))
@@ -326,6 +336,15 @@ test("rules: with no gate App configured nothing lands", () => {
 test("rules: a PR that changes an owner-only path is the owner's to land (STA-1856 FR-1)", () => {
   const ok = { pr: pr(), statuses: GREEN, base: "main", required: true, gateApp: GATE_APP };
   assert.deepEqual(landRules({ ...ok, files: ["src/a.mjs", ".agents/agents/git-steward.md"] }), []);
+  assert.match(landRules({ ...ok, files: [".GitHub/Workflows/x.yml"] }).join(), /owner-only paths/);
+  assert.match(
+    landRules({ ...ok, files: ["deploy/run.sh"], ownerOnly: ["deploy/**"] }).join(),
+    /owner-only paths, so the owner lands it: deploy\/run\.sh/,
+  );
+  assert.match(
+    landRules({ ...ok, ownerFindings: ["package.json: the root scripts changed"] }).join(),
+    /owner-only change, so the owner lands it: package\.json: the root scripts changed/,
+  );
   assert.match(
     landRules({
       ...ok,
@@ -402,5 +421,70 @@ test("land: a merged PR only finishes: Done, the worktree, the branch and a comm
       `DELETE /repos/figentra/flow/git/refs/heads/${w.branch}`,
       "POST /repos/figentra/flow/issues/7/comments",
     ],
+  );
+});
+
+test("land: required checks still running wait, without asking for the approval; an unpinned one refuses", async (t) => {
+  const w = world({ review: true, required: [{ context: "verify", integration_id: 15368 }] });
+  t.after(w.r.dispose);
+  mkdirSync(join(w.r.root, ".github/workflows"), { recursive: true });
+  writeFileSync(join(w.r.root, ".github/workflows/figentra-flow-approve.yml"), "name: x\n");
+  const deps = { api: w.api, done: async () => {}, ...quiet };
+  const base = {
+    root: w.r.root,
+    repo: "figentra/flow",
+    base: "main",
+    number: 7,
+    gateApp: GATE_APP,
+    deps,
+  };
+  const waiting = await landOne(base);
+  assert.deepEqual(waiting, { code: 0, queued: true, waiting: ["verify"] });
+  assert.deepEqual(
+    w.calls.filter((c) => c.method !== "GET"),
+    [],
+    "nothing dispatched",
+  );
+
+  const loose = world({ review: true, required: [{ context: "ci" }] });
+  t.after(loose.r.dispose);
+  mkdirSync(join(loose.r.root, ".github/workflows"), { recursive: true });
+  writeFileSync(join(loose.r.root, ".github/workflows/figentra-flow-approve.yml"), "name: x\n");
+  const refused = await landOne({ ...base, root: loose.r.root, deps: { ...deps, api: loose.api } });
+  assert.equal(refused.code, 1);
+  assert.match(refused.problems?.join() ?? "", /required check: ci is pinned to no App/);
+});
+
+test("land: a merged PR finishes only on its base, and keeps a branch that moved after the merge", async (t) => {
+  const elsewhere = world({ merged: true });
+  t.after(elsewhere.r.dispose);
+  const deps = { done: async () => {}, ...quiet };
+  const other = await landOne({
+    root: elsewhere.r.root,
+    repo: "figentra/flow",
+    base: "release",
+    number: 7,
+    gateApp: GATE_APP,
+    deps: { ...deps, api: elsewhere.api },
+  });
+  assert.deepEqual(other, { code: 1, problems: ["#7 merged into main, not release"] });
+
+  const moved = world({ merged: true, moved: true });
+  t.after(moved.r.dispose);
+  /** @type {string[]} */
+  const warnings = [];
+  const kept = await landOne({
+    root: moved.r.root,
+    repo: "figentra/flow",
+    base: "main",
+    number: 7,
+    gateApp: GATE_APP,
+    deps: { ...deps, api: moved.api, warn: (s) => void warnings.push(s) },
+  });
+  assert.equal(kept.code, 3);
+  assert.match(warnings.join(), /delete the branch: .* is at e{40}, not the landed/);
+  assert.equal(
+    moved.calls.some((c) => c.method === "DELETE"),
+    false,
   );
 });

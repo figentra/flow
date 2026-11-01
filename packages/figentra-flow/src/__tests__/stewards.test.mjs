@@ -1,9 +1,14 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold STA-1856 to its contract: the owner-only list takes each category and leaves ordinary code; the
- *   workflow's pattern agrees with it; the rendered approval workflow is pinned to the environment, names the preset's
- *   secret names and no value, and approves only at the checked head; `sync` renders each preset's stewards (neutral:
- *   git, ci, tracker; stackra: git, ci, linear) and a repository override wins.
+ * Purpose: hold STA-1856 to its contract:
+ *   - the owner-only list takes each category in any letter case and leaves ordinary code alone;
+ *   - a package.json's root scripts and a dependency moved off its catalog are findings;
+ *   - CODEOWNERS maps every owner-only glob to the owner, with no catch-all;
+ *   - the rendered workflow runs the pinned check in its environment with the approver's own secret names, and holds
+ *     no value;
+ *   - `sync` renders each preset's stewards (neutral: git, ci, tracker; stackra: git, ci, linear), CODEOWNERS only
+ *     with an owner, and refuses a secret name that is not one;
+ *   - a repository override wins.
  * Boundary: temporary folders; no network, no GitHub.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1856.
@@ -11,62 +16,111 @@
 // @covers sta-1856:FR-1 sta-1856:FR-4 sta-1856:FR-5 sta-1856:FR-6
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { sync } from "../commands/sync.mjs";
 import { approveWorkflow } from "../lib/approve-workflow.mjs";
-import { ownerOnlyPaths, ownerOnlyPattern } from "../lib/owner-only.mjs";
+import { codeowners, OWNER_ONLY, ownerOnlyPaths, packageFindings } from "../lib/owner-only.mjs";
 import { approveSecrets } from "../lib/render.mjs";
 
 const OWNER = [
   ".github/workflows/ci.yml",
+  ".GitHub/Workflows/CI.yml",
   ".github/actions/setup/action.yml",
+  "tools/ship/action.yaml",
+  "workers/static/wrangler.jsonc",
+  "apps/mobile/eas.json",
+  ".changeset/config.json",
   ".github/rulesets/main.json",
   ".github/CODEOWNERS",
   "pnpm-workspace.yaml",
+  "packages/x/.npmrc",
   "figentra-flow.config.json",
+  "sub/.infisical.json",
   ".agents/hooks/_rules.mjs",
   ".claude/settings.json",
   "services/a/.env.example",
   "certs/signing.p12",
-  "apps/console/src/billing/plan.ts",
+  "apps/console/src/Billing/plan.ts",
   "docs/legal/terms.md",
   "LICENSE",
+  "packages/ui/LICENSE.md",
   ".github/NOTICE",
 ];
 const ORDINARY = [
   "packages/ui/src/button.tsx",
-  "packages/ui/LICENSE",
   ".agents/agents/git-steward.md",
   "package.json",
   ".github/pull_request_template.md",
   "src/lib/billing-notes.mjs",
 ];
 
-test("owner-only: every category is the owner's, ordinary code is not, and the workflow's pattern agrees", () => {
+test("owner-only: every category in any case is the owner's, ordinary code is not, and a repository adds its own", () => {
   assert.deepEqual(ownerOnlyPaths([...OWNER, ...ORDINARY]), OWNER);
-  const re = new RegExp(ownerOnlyPattern());
+  assert.deepEqual(ownerOnlyPaths(["scripts/deploy.sh"], ["scripts/deploy*"]), [
+    "scripts/deploy.sh",
+  ]);
+});
+
+test("owner-only: the root scripts and a dependency moved off its catalog are findings; other changes are not", () => {
+  const before = JSON.stringify({
+    scripts: { build: "x" },
+    dependencies: { a: "catalog:", b: "workspace:*" },
+  });
+  assert.deepEqual(packageFindings("package.json", before, before), []);
   assert.deepEqual(
-    OWNER.filter((p) => !re.test(p)),
-    [],
+    packageFindings(
+      "package.json",
+      before,
+      JSON.stringify({ scripts: { build: "y" }, dependencies: { a: "catalog:" } }),
+    ),
+    ["package.json: the root scripts changed"],
   );
   assert.deepEqual(
-    ORDINARY.filter((p) => re.test(p)),
-    [],
+    packageFindings(
+      "packages/x/package.json",
+      before,
+      JSON.stringify({ scripts: {}, dependencies: { a: "1.2.3" } }),
+    ),
+    ['packages/x/package.json: a moved off its catalog to "1.2.3"'],
+  );
+  assert.deepEqual(packageFindings("packages/x/package.json", undefined, before), []);
+  assert.deepEqual(packageFindings("package.json", before, "{"), [
+    "package.json is not valid JSON",
+  ]);
+});
+
+test("CODEOWNERS: every owner-only glob to the owner, anchored at the root unless it matches at any depth; no catch-all", () => {
+  const text = codeowners("figentra-usr", ["deploy/**"]);
+  const lines = text.split("\n").filter((l) => l && !l.startsWith("#"));
+  assert.equal(lines.length, OWNER_ONLY.length + 1);
+  assert.ok(lines.includes("/.github/workflows/** @figentra-usr"));
+  assert.ok(lines.includes("**/.npmrc @figentra-usr"));
+  assert.ok(lines.includes("/deploy/** @figentra-usr"));
+  assert.equal(
+    lines.some((l) => l.startsWith("* ")),
+    false,
   );
 });
 
-test("approval workflow: environment-scoped secrets by name, pinned head, no checkout, the owner-only pattern", () => {
-  const text = approveWorkflow({ appId: "A_ID", privateKey: "A_KEY" });
+test("approval workflow: the pinned check, in its environment, with the approver's secret names and no value", () => {
+  const text = approveWorkflow({
+    version: "9.9.9",
+    appId: "A_ID",
+    privateKey: "A_KEY",
+    trusted: { "figentra-flow/gate": "figentra-gate[bot]" },
+    ownerOnly: ["it's/**"],
+  });
   assert.match(text, /^ {4}environment: figentra-flow-approve$/m);
   assert.match(text, /app-id: \$\{\{ secrets\.A_ID \}\}/);
   assert.match(text, /private-key: \$\{\{ secrets\.A_KEY \}\}/);
   assert.match(text, /permission-pull-requests: write/);
-  assert.match(text, /-f commit_id="\$sha" -f event=APPROVE/);
-  assert.match(text, /\[ "\$sha" = "\$EXPECTED_HEAD" \]/);
-  assert.ok(text.includes(`OWNER_ONLY: '${ownerOnlyPattern()}'`));
+  assert.match(text, /@figentra-oss\/flow@9\.9\.9/);
+  assert.match(text, /src\/lib\/approve-check\.mjs/);
+  assert.match(text, /TRUSTED: '\{"figentra-flow\/gate":"figentra-gate\[bot\]"\}'/);
+  assert.match(text, /OWNER_ONLY_EXTRA: '\["it''s\/\*\*"\]'/);
   assert.doesNotMatch(text, /actions\/checkout|pull_request_target|--admin/);
   assert.doesNotMatch(
     text,
@@ -75,16 +129,19 @@ test("approval workflow: environment-scoped secrets by name, pinned head, no che
   );
 });
 
-test("sync renders each preset's stewards and the approval workflow with its secret names", (t) => {
-  /** @type {[string, string[], string][]} */
+test("sync renders each preset's stewards, the workflow with the approver's names, and CODEOWNERS only with an owner", (t) => {
+  /** @type {[string, string[], string | undefined][]} */
   const presets = [
-    ["neutral", ["ci-steward", "git-steward", "tracker-steward"], "FIGENTRA_FLOW_APPROVE_APP_ID"],
-    ["stackra", ["ci-steward", "git-steward", "linear-steward"], "STACKRA_BOT_APP_ID"],
+    ["neutral", ["ci-steward", "git-steward", "tracker-steward"], undefined],
+    ["stackra", ["ci-steward", "git-steward", "linear-steward"], "figentra-usr"],
   ];
-  for (const [preset, ids, appId] of presets) {
+  for (const [preset, ids, owner] of presets) {
     const root = mkdtempSync(join(tmpdir(), `flow-stewards-${preset}-`));
     t.after(() => rmSync(root, { recursive: true }));
-    writeFileSync(join(root, "figentra-flow.config.json"), JSON.stringify({ version: 1, preset }));
+    writeFileSync(
+      join(root, "figentra-flow.config.json"),
+      JSON.stringify({ version: 1, preset, ...(owner ? { apps: { owner } } : {}) }),
+    );
     const { files } = sync(root, { direct: true, log: () => {} });
     assert.deepEqual(
       files.filter((f) => f.startsWith(".claude/agents/")),
@@ -95,12 +152,28 @@ test("sync renders each preset's stewards and the approval workflow with its sec
         readFileSync(join(root, `.claude/agents/${id}.md`), "utf8"),
         new RegExp(`^name: ${id}$`, "m"),
       );
-    assert.equal(approveSecrets(root).appId, appId);
+    assert.equal(approveSecrets(root).appId, "FIGENTRA_FLOW_APPROVER_APP_ID");
     assert.match(
       readFileSync(join(root, ".github/workflows/figentra-flow-approve.yml"), "utf8"),
-      new RegExp(`secrets\\.${appId} `),
+      /secrets\.FIGENTRA_FLOW_APPROVER_APP_ID /,
     );
+    assert.equal(existsSync(join(root, ".github/CODEOWNERS")), Boolean(owner));
   }
+});
+
+test("sync refuses a preset whose approval secret name is not a secret name", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "flow-secret-name-"));
+  t.after(() => rmSync(root, { recursive: true }));
+  mkdirSync(join(root, "presets/ours"), { recursive: true });
+  writeFileSync(
+    join(root, "presets/ours/preset.yml"),
+    'preset:\n  id: "ours"\napprove:\n  app_id: "bad name"\n',
+  );
+  writeFileSync(
+    join(root, "figentra-flow.config.json"),
+    JSON.stringify({ version: 1, preset: "presets/ours" }),
+  );
+  assert.throws(() => approveSecrets(root), /approve names "bad name", not a secret name/);
 });
 
 test("a repository's own agent overrides the preset's", (t) => {

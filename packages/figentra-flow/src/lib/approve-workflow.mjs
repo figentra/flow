@@ -1,30 +1,35 @@
 /**
  * Figentra Flow file contract:
- * Purpose: the approval workflow `sync` renders into a repository (STA-1856 FR-4): dispatched with `pr` and `head`, it
- *   approves the PR as a GitHub App at that head after re-checking in code what an author could get around: the PR is
- *   open and not a draft, its head is in this repository and equals `head`, its author is not the approving App, no
- *   changed path (a rename's old one too) is owner-only (`ownerOnlyPattern`), and every required check passed or was
- *   skipped, with one passing. A refused PR gets one comment with the reasons and the run fails.
+ * Purpose: the approval workflow `sync` renders into a repository (STA-1856 FR-4). It is dispatched with `pr` and
+ *   `head`, mints the approving App's token, and runs `approve-check.mjs` from this exact package version. That script
+ *   holds every rule, and its tests live here. The workflow runs in `APPROVE_ENVIRONMENT`, which must allow the
+ *   default branch only; the check refuses when it does not.
  * Boundary: returns text; writes nothing. The workflow never checks out or runs the PR's code and never merges (auto
  *   merge does, after every required check).
  * Runtime: node
- * Governing contract: STA-1856 FR-4.
- * Secrets: names the App id and key secrets the preset gives, held by the `APPROVE_ENVIRONMENT` environment (default
- *   branch only, so a branch cannot mint the token); holds no value.
+ * Governing contract: STA-1856 FR-4 (the security review of 2026-11-01).
+ * Secrets: names the approving App's id and key secrets, which are distinct from any bot that pushes; holds no value.
  */
-import { ownerOnlyPattern } from "./owner-only.mjs";
-import { APPROVE_ENVIRONMENT, NAME } from "./product.mjs";
+import { SETUP_NODE } from "./gate-workflow.mjs";
+import { APPROVE_ENVIRONMENT, NAME, PACKAGE, REGISTRY } from "./product.mjs";
 
 const APP_TOKEN =
   "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0";
 
 /**
  * The workflow's YAML.
- * @param {{ appId: string, privateKey: string }} secrets the names of the App id and key secrets
+ * @param {{ version: string, appId: string, privateKey: string, trusted?: Record<string, string>,
+ *           ownerOnly?: string[] }} options the package version to run, the App secret names, the trusted check
+ *   sources (context to login) and the repository's extra owner-only globs
  */
-export function approveWorkflow({ appId, privateKey }) {
+export function approveWorkflow({ version, appId, privateKey, trusted = {}, ownerOnly = [] }) {
+  const pkg = `${PACKAGE}@${version}`;
+  const scope =
+    PACKAGE.startsWith("@") && REGISTRY ? ` --${PACKAGE.split("/")[0]}:registry=${REGISTRY}` : "";
+  // JSON in a single-quoted YAML scalar: a quote is doubled.
+  const yamlJson = (/** @type {unknown} */ v) => `'${JSON.stringify(v).replaceAll("'", "''")}'`;
   return `# Written by \`${NAME} sync\`; \`${NAME} land\` dispatches it when the ruleset requires a review (STA-1856).
-# Change the owner-only list in ${NAME}, not here: \`${NAME} gate ci\` fails on a hand edit.
+# Every rule is in ${PACKAGE}'s approve-check.mjs, at the version below; \`${NAME} gate ci\` fails on a hand edit.
 name: ${NAME} approve
 run-name: ${NAME} approve PR \${{ inputs.pr }} at \${{ inputs.head }}
 
@@ -48,16 +53,20 @@ concurrency:
 
 jobs:
   approve:
-    # The App's key is only in this environment, which allows the default branch only.
+    # The App's key is only in this environment; the check refuses unless it admits the default branch alone.
     environment: ${APPROVE_ENVIRONMENT}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
+      actions: read
+      checks: read
       contents: read
       pull-requests: read
-      checks: read
       statuses: read
     steps:
+      - uses: ${SETUP_NODE}
+        with:
+          node-version: 24
       - name: App token
         id: app
         uses: ${APP_TOKEN}
@@ -65,55 +74,20 @@ jobs:
           app-id: \${{ secrets.${appId} }}
           private-key: \${{ secrets.${privateKey} }}
           permission-pull-requests: write
-
       - name: Check and approve
         env:
-          GH_TOKEN: \${{ github.token }}
+          GITHUB_TOKEN: \${{ github.token }}
           APP_TOKEN: \${{ steps.app.outputs.token }}
           APPROVER: \${{ steps.app.outputs.app-slug }}[bot]
           REPO: \${{ github.repository }}
           PR: \${{ inputs.pr }}
           EXPECTED_HEAD: \${{ inputs.head }}
+          ENVIRONMENT: ${APPROVE_ENVIRONMENT}
           RUN_URL: \${{ github.server_url }}/\${{ github.repository }}/actions/runs/\${{ github.run_id }}
-          OWNER_ONLY: '${ownerOnlyPattern()}'
+          TRUSTED: ${yamlJson(trusted)}
+          OWNER_ONLY_EXTRA: ${yamlJson(ownerOnly)}
         run: |
-          set -euo pipefail
-          refuse=()
-          [[ $EXPECTED_HEAD =~ ^[0-9a-f]{40}$ ]] || refuse+=("\\\`head\\\` is not a 40-hex SHA")
-
-          pr=$(gh api "repos/$REPO/pulls/$PR")
-          sha=$(jq -r .head.sha <<<"$pr")
-          [ "$(jq -r .state <<<"$pr")" = open ] || refuse+=("the PR is not open")
-          [ "$(jq -r .draft <<<"$pr")" = false ] || refuse+=("the PR is a draft")
-          [ "$(jq -r .head.repo.full_name <<<"$pr")" = "$REPO" ] || refuse+=("the head is not in $REPO")
-          [ "$sha" = "$EXPECTED_HEAD" ] || refuse+=("the head is $sha, not the $EXPECTED_HEAD that was checked")
-          [ "$(jq -r .user.login <<<"$pr")" != "$APPROVER" ] || refuse+=("the author is $APPROVER, the approving App")
-
-          # A rename counts from both sides: moving a file out of an owner-only path is owner-only too.
-          files=$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \\
-            --jq '.[] | .filename, (.previous_filename // empty)' | sort -u)
-          listed=$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' | wc -l)
-          [ "$listed" -ge "$(jq -r .changed_files <<<"$pr")" ] || refuse+=("GitHub lists only $listed changed files")
-          owned=$(grep -P "$OWNER_ONLY" <<<"$files" || true)
-          [ -z "$owned" ] || refuse+=("owner-only paths: $(head -20 <<<"$owned" | paste -sd, | sed 's/,/, /g')")
-
-          checks=$(gh pr checks "$PR" --repo "$REPO" --required --json name,bucket 2>/dev/null) || true
-          if ! jq -e 'type == "array" and length > 0' <<<"$checks" >/dev/null 2>&1; then
-            refuse+=("no required check is reported")
-          else
-            red=$(jq -r '.[] | select(.bucket != "pass" and .bucket != "skipping") | "\\(.name) (\\(.bucket))"' <<<"$checks")
-            [ -z "$red" ] || refuse+=("required checks not green: $(paste -sd, <<<"$red" | sed 's/,/, /g')")
-            jq -e 'any(.[]; .bucket == "pass")' <<<"$checks" >/dev/null || refuse+=("no required check passed")
-          fi
-
-          if ((\${#refuse[@]})); then
-            body=$(printf '${NAME} approve refused ([run](%s)):\\n\\n' "$RUN_URL"; printf -- '- %s\\n' "\${refuse[@]}")
-            GH_TOKEN=$APP_TOKEN gh pr comment "$PR" --repo "$REPO" --body "$body"
-            printf '::error::%s\\n' "\${refuse[@]}"
-            exit 1
-          fi
-          GH_TOKEN=$APP_TOKEN gh api -X POST "repos/$REPO/pulls/$PR/reviews" -f commit_id="$sha" -f event=APPROVE \\
-            -f body="Approved at $sha by ${NAME} approve: no owner-only path, required checks green ([run]($RUN_URL))." >/dev/null
-          echo "Approved $REPO#$PR at $sha as $APPROVER"
+          npm install --no-save --ignore-scripts${scope} --prefix "$RUNNER_TEMP/flow" ${pkg}
+          node "$RUNNER_TEMP/flow/node_modules/${PACKAGE}/src/lib/approve-check.mjs"
 `;
 }

@@ -3,8 +3,8 @@
  * Purpose: the `flow-*` skills and commands a repository carries (ADR 0510): rendered from its preset's command
  *   documents either as neutral skill documents for the repository's own projector (`.agents/skills/flow-<verb>/`) or,
  *   with `direct`, as Claude Code skills and OpenCode commands; the preset's agent definitions (`agents/`, as
- *   `.agents/agents/<id>.md` or, with `direct`, `.claude/agents/<id>.md`) and the approval workflow, whose secret
- *   names come from `preset.yml`'s `approve` (STA-1856); `.flow/lock.json` records the Flow version, the preset
+ *   `.agents/agents/<id>.md` or, with `direct`, `.claude/agents/<id>.md`), the approval workflow (its secret names
+ *   from `preset.yml`'s `approve`) and, with `apps.owner`, a CODEOWNERS for the owner-only paths (STA-1856); `.flow/lock.json` records the Flow version, the preset
  *   and each rendered file's hash; `installProblems` is the check that replaces spec-kit's tripwire: no hand edit, no
  *   forgotten `sync`, and no spec-kit leftover.
  * Boundary: `render` and `installProblems` read; `writeRendered` writes the rendered files and the lock and removes
@@ -20,7 +20,8 @@ import { dirname, join } from "node:path";
 import { approveWorkflow } from "./approve-workflow.mjs";
 import { loadConfig } from "./config.mjs";
 import { LOCK, OVERRIDES, presetDir } from "./flow-dir.mjs";
-import { APPROVE_WORKFLOW, ENV_PREFIX, NAME, VERSION } from "./product.mjs";
+import { codeowners } from "./owner-only.mjs";
+import { APPROVE_WORKFLOW, ENV_PREFIX, NAME, STATUS_CONTEXT, VERSION } from "./product.mjs";
 import { parseYaml, YamlError } from "./yaml.mjs";
 
 /** The eight commands, in workflow order. */
@@ -106,7 +107,20 @@ export function render(root, { direct = false } = {}) {
   }
   for (const [id, text] of agents(root))
     out.set(direct ? `.claude/agents/${id}.md` : `.agents/agents/${id}.md`, text);
-  out.set(`.github/workflows/${APPROVE_WORKFLOW}`, approveWorkflow(approveSecrets(root)));
+  const { apps, approve } = loadConfig(root).config;
+  const ownerOnly = approve?.ownerOnly ?? [];
+  out.set(
+    `.github/workflows/${APPROVE_WORKFLOW}`,
+    approveWorkflow({
+      version: VERSION,
+      ...approveSecrets(root),
+      // The gate's status counts only from the gate App; a repository adds its own sources in `approve.checks`.
+      trusted: { ...(apps?.gate ? { [STATUS_CONTEXT]: apps.gate.login } : {}), ...approve?.checks },
+      ownerOnly,
+    }),
+  );
+  // GitHub asks the owner for owner-only paths itself (with `require_code_owner_review`); no owner, no file.
+  if (apps?.owner) out.set(".github/CODEOWNERS", codeowners(apps.owner, ownerOnly));
   return out;
 }
 
@@ -129,9 +143,12 @@ function agents(root) {
   return out;
 }
 
+/** A secret name GitHub accepts. */
+const SECRET_NAME = /^[A-Z_][A-Z0-9_]*$/;
+
 /**
- * The approval workflow's secret names: `preset.yml`'s `approve.app_id` and `approve.private_key`, else
- * `<PREFIX>APPROVE_APP_ID` and `<PREFIX>APPROVE_PRIVATE_KEY`.
+ * The approving App's secret names: `preset.yml`'s `approve.app_id` and `approve.private_key`, else
+ * `<PREFIX>APPROVER_APP_ID` and `<PREFIX>APPROVER_PRIVATE_KEY`. They name an App of their own, never a bot that pushes.
  * @param {string} root
  */
 export function approveSecrets(root) {
@@ -144,10 +161,16 @@ export function approveSecrets(root) {
     // A repository's own preset.yml outside the YAML subset keeps the default names.
     if (!(error instanceof YamlError)) throw error;
   }
-  return {
-    appId: approve?.app_id ?? `${ENV_PREFIX}APPROVE_APP_ID`,
-    privateKey: approve?.private_key ?? `${ENV_PREFIX}APPROVE_PRIVATE_KEY`,
+  const names = {
+    appId: approve?.app_id ?? `${ENV_PREFIX}APPROVER_APP_ID`,
+    privateKey: approve?.private_key ?? `${ENV_PREFIX}APPROVER_PRIVATE_KEY`,
   };
+  for (const name of Object.values(names))
+    if (!SECRET_NAME.test(name))
+      throw new Error(
+        `${file}: approve names "${name}", not a secret name (${SECRET_NAME.source})`,
+      );
+  return names;
 }
 
 /**

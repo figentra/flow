@@ -114,6 +114,14 @@ export const SCHEMA = {
       },
     },
     gate: { type: "object", additionalProperties: false, properties: { check: str } },
+    approve: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        ownerOnly: { type: "array", items: str },
+        checks: { type: "object", additionalProperties: str },
+      },
+    },
     clean: {
       type: "object",
       additionalProperties: false,
@@ -208,7 +216,8 @@ export function validate(schema, value, path = "") {
 /**
  * @typedef {{ version?: number, preset?: string, team?: string, specs?: { dir?: string, bugsDir?: string }, tracker?: any, credentials?: any, runner?: any, secrets?: any,
  *             apps?: { gate?: { slug?: string, login: string }, review?: { slug: string }, owner?: string },
- *             gate?: { check?: string }, clean?: { keep?: string[] }, review?: { required?: string[] },
+ *             gate?: { check?: string }, approve?: { ownerOnly?: string[], checks?: Record<string, string> },
+ *             clean?: { keep?: string[] }, review?: { required?: string[] },
  *             artifacts?: { paths?: string[], maxBytes?: number },
  *             train?: { cutoff?: number, eject?: "bisect" | "manual", after?: string[], label?: string } }} Config
  * @typedef {{ config: Config, source: string | undefined, warnings: string[], errors: string[] }} Loaded
