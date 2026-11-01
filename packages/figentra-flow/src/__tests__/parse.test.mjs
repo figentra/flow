@@ -17,6 +17,7 @@ test("parse picks the parser from the file name", () => {
     parallel: false,
     covers: ["FR-001"],
     route: undefined,
+    role: undefined,
     deps: [],
     paths: [],
     key: undefined,
