@@ -24,8 +24,18 @@ const readers = {
     throw new Error("GitHub is unreachable");
   },
 };
-const call = (/** @type {number} */ id, /** @type {string} */ method, /** @type {any} */ params) =>
-  handle({ jsonrpc: "2.0", id, method, params }, readers);
+/**
+ * The shapes these tests read from a reply; `handle` itself types `result` as unknown.
+ * @typedef {{ protocolVersion: string, capabilities: object, serverInfo: { name: string, version: string },
+ *   tools: typeof TOOLS, content: { type: string, text: string }[], isError?: boolean }} Result
+ * @typedef {{ jsonrpc: string, id?: number, result?: Result, error?: { code: number, message: string } }} Reply
+ */
+const call = async (
+  /** @type {number} */ id,
+  /** @type {string} */ method,
+  /** @type {any} */ params,
+) =>
+  /** @type {Reply | undefined} */ (await handle({ jsonrpc: "2.0", id, method, params }, readers));
 
 test("mcp: initialize negotiates the protocol and announces only tools; notifications get no answer", async () => {
   const init = await call(1, "initialize", {
