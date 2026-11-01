@@ -1,96 +1,67 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow sync` (core's `speckit-sync`, moved unchanged) — install the Stackra spec-kit preset into
- *   `.specify/presets/`, keep the bundled `speckit` workflow disabled, and re-render both integrations (spec-kit
- *   registers preset commands for the active integration only, so OpenCode first, then Claude). The preset is the
- *   configuration's `preset`: a bundled one (`neutral`, `stackra`) or a path to the repository's own preset folder.
- *   A configuration without one gets `neutral`; a repository with no config file keeps what it used before (its
- *   `.agents/speckit/presets/` when it has one, else the bundled `stackra`) until the config files land.
- *   Without `specify` on PATH it copies the bundled, already rendered `speckit-*` skills and commands of the
- *   `stackra` preset instead; the other presets need `specify`.
- *   The installed copies are generated and committed; `figentra-flow gate ci` (tripwire) fails when they drift from the source.
- * Boundary: writes only `.specify/` (through the pinned `specify`), or `.claude/skills/speckit-*` and
- *   `.opencode/commands/speckit.*` when it falls back.
+ * Purpose: `figentra-flow sync [--direct]` (ADR 0510): renders the repository's preset commands (and any
+ *   `.flow/overrides/commands/`) into the `flow-*` skills, writes `.flow/lock.json` and removes spec-kit's rendered
+ *   `speckit-*` skills and commands. By default it writes neutral skill documents into `.agents/skills/flow-<verb>/` and
+ *   then runs the repository's own projector (`pnpm run agents:sync`) when its package.json has one; `--direct`
+ *   renders Claude Code skills and OpenCode commands itself, for a repository without a projector. Nothing runs
+ *   spec-kit's `specify`.
+ * Boundary: writes only the rendered files, `.flow/lock.json`, and what the repository's own `agents:sync` writes.
  * Runtime: node
- * Governing contract: ADR 0120 (SDLC specs); ADR 0027 (CLI tools pinned in mise).
- * Needs: the pinned `specify` on PATH (mise.toml) for the full sync. Local only; CI never runs it.
+ * Governing contract: ADR 0510; STA-1729 (F3).
  * Secrets: none.
  */
 import { spawnSync } from "node:child_process";
-import { chmodSync, cpSync, existsSync, readdirSync, rmSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { loadConfig } from "../lib/config.mjs";
+import { git } from "../lib/git.mjs";
+import { NAME } from "../lib/product.mjs";
+import { render, writeRendered } from "../lib/render.mjs";
 
-const ROOT = process.cwd();
-export const PRESETS = ".agents/speckit/presets";
-/** The package's own copies: the preset source, `.specify/`, and the rendered skills and commands. */
+/** The package's assets folder. */
 export const ASSETS = fileURLToPath(new URL("../../assets", import.meta.url));
 
-/** The `specify` calls, in order, that bring `.specify/` in line with the sources in `dir`. */
-export function steps(presets, installed, dir = PRESETS) {
-  return [
-    ...presets.map((id) => [
-      "preset",
-      installed.includes(id) ? "update" : "add",
-      ...(installed.includes(id) ? [id] : []),
-      "--dev",
-      `${dir}/${id}`,
-    ]),
-    ["workflow", "disable", "speckit"],
-    ["integration", "use", "opencode"],
-    ["integration", "use", "claude"],
-  ];
-}
-
-/** Copy the bundled rendered `speckit-*` skills and commands into `root`. */
-export function installSkills(root) {
-  cpSync(join(ASSETS, "claude/skills"), join(root, ".claude/skills"), { recursive: true });
-  cpSync(join(ASSETS, "opencode/commands"), join(root, ".opencode/commands"), { recursive: true });
-}
-
-/** The bundled presets. */
+/** The presets bundled with Flow. */
 export const BUNDLED = ["neutral", "stackra"];
 
 /**
- * The folder holding the presets to install, and their ids.
+ * Whether the repository's package.json has an `agents:sync` projector.
  * @param {string} root
- * @returns {{ dir: string, presets: string[] }}
  */
-export function presetSource(root) {
-  const preset = loadConfig(root).config.preset;
-  if (preset && BUNDLED.includes(preset))
-    return { dir: join(ASSETS, "presets"), presets: [preset] };
-  if (preset)
-    return { dir: dirname(resolve(root, preset)), presets: [basename(resolve(root, preset))] };
-  return { dir: join(ASSETS, "presets"), presets: ["neutral"] };
+export function hasProjector(root) {
+  const manifest = join(root, "package.json");
+  if (!existsSync(manifest)) return false;
+  return Boolean(JSON.parse(readFileSync(manifest, "utf8")).scripts?.["agents:sync"]);
 }
 
-export function run() {
-  const list = (p) => (existsSync(join(ROOT, p)) ? readdirSync(join(ROOT, p)) : []);
-  const { dir, presets } = presetSource(ROOT);
-  const installed = list(".specify/presets").filter((n) => !n.startsWith("."));
-  for (const args of steps(presets, installed, dir)) {
-    console.log(`$ specify ${args.join(" ")}`);
-    const r = spawnSync("specify", args, { cwd: ROOT, stdio: "inherit" });
-    if (/** @type {NodeJS.ErrnoException | undefined} */ (r.error)?.code === "ENOENT") {
-      if (presets.join() !== "stackra") {
-        console.error(
-          `specify is not on PATH: the ${presets.join(", ")} preset renders through it (install spec-kit's specify)`,
-        );
-        return 1;
-      }
-      console.log("specify is not on PATH: installing the bundled speckit skills and commands");
-      installSkills(ROOT);
-      return 0;
-    }
-    // `workflow disable` fails when it is already disabled; nothing else may.
-    if (r.status !== 0 && args[0] !== "workflow") return r.status ?? 1;
+/**
+ * Renders and writes the `flow-*` files of `root`.
+ * @param {string} root
+ * @param {{ direct?: boolean, log?: (s: string) => void }} [options]
+ */
+export function sync(root, { direct = false, log = console.log } = {}) {
+  const files = render(root, { direct });
+  const removed = writeRendered(root, files);
+  for (const p of removed) log(`${NAME} sync: removed ${p} (spec-kit)`);
+  log(`${NAME} sync: rendered ${files.size} file(s); .flow/lock.json written`);
+  return { files: [...files.keys()], removed };
+}
+
+/** `figentra-flow sync [--direct]`. */
+export function run(/** @type {string[]} */ args = []) {
+  const top = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
+  const root = top.ok ? top.out : process.cwd();
+  const direct = args.includes("--direct");
+  sync(root, { direct });
+  if (direct) return 0;
+  if (!hasProjector(root)) {
+    console.log(
+      `${NAME} sync: no agents:sync script projects .agents/skills; run \`${NAME} sync --direct\` to render Claude Code and OpenCode files`,
+    );
+    return 0;
   }
-  rmSync(join(ROOT, ".specify/.workflow-install.lock"), { force: true });
-  const bash = join(ROOT, ".specify/scripts/bash");
-  for (const f of list(".specify/scripts/bash"))
-    if (f.endsWith(".sh")) chmodSync(join(bash, f), 0o755);
-  return 0;
+  const r = spawnSync("pnpm", ["run", "agents:sync"], { cwd: root, stdio: "inherit" });
+  return r.status ?? 1;
 }

@@ -1,11 +1,11 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow init [--force]` — install `.specify/` (spec-kit's folder, with the Stackra preset in
- *   `.specify/presets/stackra`) into the current repository from the copy bundled in this package, and start the
- *   repository's constitution from spec-kit's template (the constitution is the repository's own).
+ * Purpose: `figentra-flow init [--force]` — install `.flow/` (ADR 0510: README, a starter `constitution.md`,
+ *   `.gitignore`) into the current repository and render the `flow-*` skills with `sync` (the constitution is the
+ *   repository's own and is never overwritten).
  *   `figentra-flow init --workspace <dir>…` writes the workspace list instead: every git repository in or directly under
  *   those folders, with its GitHub slug (STA-1729).
- * Boundary: writes only `.specify/`; refuses an existing `.specify/` unless `--force`. `--workspace` writes only the
+ * Boundary: writes only `.flow/` and the rendered skills; refuses an existing `.flow/` unless `--force`. `--workspace` writes only the
  *   workspace file (`~/.config/figentra-flow/workspace.yaml`, or `FIGENTRA_FLOW_WORKSPACE`).
  *   `figentra-flow init --runner github-actions [--force]` writes only the gate workflow
  *   (`.github/workflows/figentra-flow-gate.yml`) and, when the repository has no config file, a starter one naming
@@ -14,32 +14,46 @@
  * Governing contract: ADR 0120; ADR 0121.
  * Secrets: none.
  */
-import {
-  chmodSync,
-  copyFileSync,
-  cpSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  writeFileSync,
-} from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { GATE_WORKFLOW } from "../adapters/runner/github-actions.mjs";
 import { loadConfig } from "../lib/config.mjs";
 import { gateWorkflow } from "../lib/gate-workflow.mjs";
-import { ASSETS } from "./sync.mjs";
+import { hasProjector, sync } from "./sync.mjs";
+import { CONSTITUTION, FLOW_DIR, resolveTemplate } from "../lib/flow-dir.mjs";
+import { git } from "../lib/git.mjs";
 import { findRepos, workspaceFile, writeWorkspace } from "../lib/workspace.mjs";
 import { CONFIG_FILE, ENV_PREFIX, NAME, PACKAGE, VERSION } from "../lib/product.mjs";
 
-export function init(root, { force = false } = {}) {
-  const target = join(root, ".specify");
+/** What `.flow/README.md` says. */
+const README = `# .flow
+
+This folder belongs to Figentra Flow (\`${NAME}\`, ADR 0510). Do not hand-edit what it generates.
+
+- \`constitution.md\`: the repository's principles; the \`flow-*\` commands read it.
+- \`overrides/\`: optional. A template (\`overrides/<name>.md\`) or a command (\`overrides/commands/flow-<verb>.md\`)
+  here wins over the preset.
+- \`lock.json\`: what \`${NAME} sync\` rendered; \`${NAME} gate ci\` fails when a rendered file is edited by hand.
+- \`current.json\`: the spec folder \`${NAME} gate dir\` chose (git-ignored).
+`;
+
+/**
+ * Installs `.flow/` into `root` (README, a starter constitution from the template, `.gitignore`) and renders the
+ * \`flow-*\` skills: through the repository's projector when its package.json has \`agents:sync\`, else directly.
+ * Refuses an existing `.flow/` unless `force`; an existing constitution is always kept.
+ * @param {string} root
+ * @param {{ force?: boolean, log?: (s: string) => void }} [options]
+ */
+export function init(root, { force = false, log = () => {} } = {}) {
+  const target = join(root, FLOW_DIR);
   if (existsSync(target) && !force) return false;
-  cpSync(join(ASSETS, "specify"), target, { recursive: true, force: true });
-  const constitution = join(target, "memory/constitution.md");
-  if (!existsSync(constitution))
-    copyFileSync(join(target, "templates/constitution-template.md"), constitution);
-  const bash = join(target, "scripts/bash");
-  for (const f of readdirSync(bash)) if (f.endsWith(".sh")) chmodSync(join(bash, f), 0o755);
+  mkdirSync(target, { recursive: true });
+  writeFileSync(join(target, "README.md"), README);
+  writeFileSync(join(target, ".gitignore"), "current.json\n");
+  const constitution = join(root, CONSTITUTION);
+  const template = resolveTemplate(root, "constitution-template");
+  if (!existsSync(constitution) && template) copyFileSync(template, constitution);
+  sync(root, { direct: !hasProjector(root), log });
   return true;
 }
 
@@ -105,10 +119,15 @@ export function run(args) {
     console.log(`${NAME} init: wrote ${repos.length} repositories to ${workspaceFile()}`);
     return 0;
   }
-  if (!init(process.cwd(), { force: args.includes("--force") })) {
-    console.error(`${NAME} init: .specify/ already exists (pass --force to overwrite)`);
+  const top = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
+  if (
+    !init(top.ok ? top.out : process.cwd(), { force: args.includes("--force"), log: console.log })
+  ) {
+    console.error(`${NAME} init: .flow/ already exists (pass --force to re-render it)`);
     return 1;
   }
-  console.log(`${NAME} init: installed .specify/ with the Stackra preset; next, \`${NAME} sync\``);
+  console.log(
+    `${NAME} init: installed .flow/; specs go in .agents/specs/ (start with /flow-specify)`,
+  );
   return 0;
 }
