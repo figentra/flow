@@ -814,7 +814,7 @@ function stageGate(dir, { requireReady = false } = {}) {
         plan: readIf(join(dir, "plan.md")),
         known: knownRoutes(),
       })
-    : ["spec.md is missing"];
+    : [existsSync(dir) ? "spec.md is missing" : "no such spec folder"];
   const status = statusOf(readIf(spec));
   if (requireReady && !["abandoned", "superseded"].includes(status) && !atLeast(status, "tasked"))
     problems.push(
@@ -864,7 +864,13 @@ function changedSpecs(base) {
 
 const git = (...a) => {
   try {
-    return execFileSync("git", a, { cwd: ROOT, encoding: "utf8", maxBuffer: 64 << 20 });
+    // stderr is piped: a missing path at the base (a spec new on this branch) is an expected miss, not output
+    return execFileSync("git", a, {
+      cwd: ROOT,
+      encoding: "utf8",
+      maxBuffer: 64 << 20,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
   } catch {
     return "";
   }
