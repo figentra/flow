@@ -2,8 +2,8 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/brand/banner-dark.png" />
-    <img src=".github/assets/brand/banner-light.png" alt="Figentra Flow" width="640" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://github.com/figentra/brand/raw/069bb209e8f2b79fe8378c8845030ec767da04c7/brands/flow/3d/stills/flow-3d-og-dark-en.png" />
+    <img src="https://github.com/figentra/brand/raw/069bb209e8f2b79fe8378c8845030ec767da04c7/brands/flow/3d/stills/flow-3d-og-light-en.png" alt="Figentra Flow" width="640" />
   </picture>
 </p>
 

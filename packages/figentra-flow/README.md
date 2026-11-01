@@ -61,9 +61,9 @@ repo: figentra/pay # required: owner/name, for the badges and links
 tagline: Payments, wallet and payouts for every Figentra product. # required: one line, same as the GitHub description
 status: In progress # required: Live | In progress | Planned
 statusNote: dev pilot (pay#18) # optional: after the status, 80 characters at most
-banner: # optional: the brand kit's images, committed in the repository
-  light: .github/assets/brand/banner-light.png
-  dark: .github/assets/brand/banner-dark.png
+banner: # optional: the brand kit's images at a pinned figentra/brand ref (pulled, never copied)
+  light: https://github.com/figentra/brand/raw/brand-pay@1.0.3/brands/pay/3d/stills/pay-3d-og-light-en.png
+  dark: https://github.com/figentra/brand/raw/brand-pay@1.0.3/brands/pay/3d/stills/pay-3d-og-dark-en.png
 package: "@figentra/pay" # optional: the release badge's text (default "latest")
 licence: Commercial # optional: overrides what LICENSE says (MIT, else Proprietary)
 ci: ci.yml # optional: the CI workflow for the badge (default ci.yml)
