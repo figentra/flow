@@ -1,0 +1,109 @@
+/**
+ * Figentra Flow file contract:
+ * Purpose: hold `figentra-flow migrate` to ADR 0510 decision 8 on a core-shaped repository: `--dry-run` lists every step
+ *   and writes nothing; the run moves the constitution to `.flow/`, deletes `.specify/` and `.agents/speckit/`, points
+ *   the config's preset at the bundled one, renames `speckit:sync` to `spec:sync`, drops the `specify` pin with its
+ *   comment, points `.specify/**` skips at `.flow/**`, removes the rendered `speckit-*` skills and renders `flow-*`;
+ *   the result passes the install check, and a second run finds nothing to move.
+ * Boundary: a temporary folder; no network, no projector.
+ * Runtime: node
+ * Governing contract: ADR 0022; ADR 0510.
+ */
+// @covers sta-1729:FR-11
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+
+import { migrate } from "../commands/migrate.mjs";
+import { CONFIG_FILE } from "../lib/product.mjs";
+import { installProblems } from "../lib/render.mjs";
+
+const quiet = { log: () => {} };
+
+/** A repository shaped like core before the switch. */
+function coreLike() {
+  const root = mkdtempSync(join(tmpdir(), "flow-migrate-"));
+  const files = {
+    ".specify/memory/constitution.md": "# Our constitution\n",
+    ".specify/scripts/bash/common.sh": "#!/bin/sh\n",
+    ".agents/speckit/presets/stackra/preset.yml": 'preset:\n  id: "stackra"\n',
+    ".claude/skills/speckit-plan/SKILL.md": "old\n",
+    ".opencode/commands/speckit.plan.md": "old\n",
+    [CONFIG_FILE]: JSON.stringify({ version: 1, preset: ".agents/speckit/presets/stackra" }),
+    "package.json": JSON.stringify(
+      {
+        scripts: {
+          format: "oxfmt --write . && git ls-files -z '*.sh' ':!.specify/**' | xargs -0 shfmt -w",
+          "speckit:sync": "figentra-flow sync",
+          "spec:gate": "figentra-flow gate",
+        },
+      },
+      null,
+      2,
+    ),
+    "mise.toml":
+      '[tools]\nnode = "24"\n# spec-kit\'s `specify` (ADR 0121 D15): upgrade only in a dedicated PR\n# then `pnpm speckit:sync`\n"pipx:specify-cli" = "1.0.10"\ngitleaks = "8"\n',
+    "lefthook.yml": 'pre-commit:\n  exclude:\n    - ".specify/**"\n',
+    ".oxfmtrc.jsonc": '{ "ignorePatterns": [".specify/**"] }\n',
+  };
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(root, path)), { recursive: true });
+    writeFileSync(join(root, path), text);
+  }
+  return root;
+}
+
+test("migrate --dry-run lists every step and writes nothing", () => {
+  const root = coreLike();
+  try {
+    const steps = migrate(root, { dry: true, ...quiet });
+    assert.deepEqual(steps, [
+      "move .specify/memory/constitution.md to .flow/constitution.md",
+      "delete .specify/",
+      "delete .agents/speckit/",
+      `set "preset" to the bundled "stackra" in ${CONFIG_FILE}`,
+      "rename the speckit:sync script to spec:sync (`figentra-flow sync`)",
+      "drop the pipx:specify-cli pin from mise.toml",
+      "point the .specify/** skip in package.json at .flow/**",
+      "point the .specify/** skip in lefthook.yml at .flow/**",
+      "point the .specify/** skip in .oxfmtrc.jsonc at .flow/**",
+    ]);
+    assert.ok(existsSync(join(root, ".specify")));
+    assert.equal(existsSync(join(root, ".flow")), false);
+  } finally {
+    rmSync(root, { recursive: true });
+  }
+});
+
+test("migrate moves a core-shaped repository onto .flow/; it passes the install check; a re-run finds nothing", () => {
+  const root = coreLike();
+  try {
+    assert.equal(migrate(root, quiet).length, 9);
+    const read = (/** @type {string} */ p) => readFileSync(join(root, p), "utf8");
+    assert.equal(read(".flow/constitution.md"), "# Our constitution\n");
+    for (const gone of [
+      ".specify",
+      ".agents/speckit",
+      ".claude/skills/speckit-plan",
+      ".opencode/commands/speckit.plan.md",
+    ])
+      assert.equal(existsSync(join(root, gone)), false, gone);
+    assert.equal(JSON.parse(read(CONFIG_FILE)).preset, "stackra");
+    const scripts = JSON.parse(read("package.json")).scripts;
+    assert.equal(scripts["spec:sync"], "figentra-flow sync");
+    assert.equal(scripts["speckit:sync"], undefined);
+    assert.match(scripts.format, /':!\.flow\/\*\*'/);
+    assert.equal(read("mise.toml"), '[tools]\nnode = "24"\ngitleaks = "8"\n');
+    assert.match(read("lefthook.yml"), /"\.flow\/\*\*"/);
+    assert.match(read(".oxfmtrc.jsonc"), /"\.flow\/\*\*"/);
+    assert.ok(existsSync(join(root, ".claude/skills/flow-plan/SKILL.md")));
+    assert.match(read(".claude/skills/flow-plan/SKILL.md"), /## Stackra: feature directory/);
+    assert.deepEqual(installProblems(root), []);
+    assert.deepEqual(migrate(root, quiet), [], "nothing left to move");
+    assert.equal(read(".flow/constitution.md"), "# Our constitution\n", "the constitution is kept");
+  } finally {
+    rmSync(root, { recursive: true });
+  }
+});
