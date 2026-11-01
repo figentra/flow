@@ -26,6 +26,7 @@ const COMMANDS = [
   "mcp",
   "team",
   "spec",
+  "migrate",
 ];
 const [command, ...args] = process.argv.slice(2);
 if (!COMMANDS.includes(command)) {

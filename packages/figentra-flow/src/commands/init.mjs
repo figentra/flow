@@ -45,16 +45,24 @@ This folder belongs to Figentra Flow (\`${NAME}\`, ADR 0510). Do not hand-edit w
  * @param {{ force?: boolean, log?: (s: string) => void }} [options]
  */
 export function init(root, { force = false, log = () => {} } = {}) {
+  if (existsSync(join(root, FLOW_DIR)) && !force) return false;
+  writeFlowDir(root);
+  sync(root, { direct: !hasProjector(root), log });
+  return true;
+}
+
+/**
+ * Writes `.flow/`'s README and `.gitignore`, and a starter constitution when the repository has none.
+ * @param {string} root
+ */
+export function writeFlowDir(root) {
   const target = join(root, FLOW_DIR);
-  if (existsSync(target) && !force) return false;
   mkdirSync(target, { recursive: true });
   writeFileSync(join(target, "README.md"), README);
   writeFileSync(join(target, ".gitignore"), "current.json\n");
   const constitution = join(root, CONSTITUTION);
   const template = resolveTemplate(root, "constitution-template");
   if (!existsSync(constitution) && template) copyFileSync(template, constitution);
-  sync(root, { direct: !hasProjector(root), log });
-  return true;
 }
 
 /**
