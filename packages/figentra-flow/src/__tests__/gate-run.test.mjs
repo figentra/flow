@@ -182,16 +182,70 @@ test("check command: pnpm verify by default, the repository's own, and the spec 
   );
 });
 
+// @covers sta-1729:FR-5
+test("gate run with a caller-posting runner (C1): the box gets only the check; this side posts its exit code", async (t) => {
+  const r = ghRepo();
+  t.after(r.dispose);
+  commit(r.root, "a.txt");
+  sh(r.root, "push", "-q", "origin", "main");
+  /** @type {any} */
+  let box;
+  /** @type {any} */
+  let posted;
+  const caller = {
+    ...fake((job) => {
+      box = {
+        command: job.command,
+        poster: existsSync(join(job.dir, ".figentra-flow-gate", "post.mjs")),
+        job: existsSync(join(job.dir, ".figentra-flow-gate", "job.json")),
+      };
+      return 1;
+    }),
+    posts: /** @type {"caller"} */ ("caller"),
+  };
+  const result = await gateRun({
+    cwd: r.root,
+    tip: tipOf(r.origin),
+    runner: caller,
+    post: (dir) => {
+      posted = {
+        exit: readFileSync(join(dir, ".figentra-flow-gate", "exit"), "utf8"),
+        poster: existsSync(join(dir, ".figentra-flow-gate", "post.mjs")),
+        job: JSON.parse(readFileSync(join(dir, ".figentra-flow-gate", "job.json"), "utf8")),
+      };
+      return 1;
+    },
+  });
+  const sha = sh(r.root, "rev-parse", "HEAD");
+  assert.deepEqual(result, { code: 1, sha });
+  assert.deepEqual(
+    box,
+    { command: box.command, poster: false, job: false },
+    "nothing to post with reaches the box",
+  );
+  assert.doesNotMatch(box.command, /post\.mjs|GATE_RUN|infisical/);
+  assert.deepEqual(posted, { exit: "1\n", poster: true, job: posted.job });
+  assert.equal(posted.job.sha, sha);
+  const unposted = await gateRun({
+    cwd: r.root,
+    tip: tipOf(r.origin),
+    runner: { ...caller, run: () => 0 },
+    post: () => 4,
+  });
+  assert.equal(unposted.code, 4, "a green check that could not be posted is not green");
+  assert.match(unposted.problem ?? "", /was not posted \(poster exit 4\)/);
+});
+
 test("box command: the check's log and exit are kept for the poster; the secrets port wraps the poster", () => {
   assert.equal(
     boxCommand("pnpm verify"),
-    "{ pnpm verify; echo $? > .figentra-flow-gate/exit; } 2>&1 | tee .figentra-flow-gate/log.txt; node .figentra-flow-gate/post.mjs",
+    "{ pnpm verify; echo $? > .figentra-flow-gate/exit; } 2>&1 | tee .figentra-flow-gate/log.txt; FIGENTRA_FLOW_GATE_RUN=1 node .figentra-flow-gate/post.mjs",
   );
   assert.match(
     boxCommand("x", {
       wrap: (c) => secretsPort({ kind: "infisical", paths: { gate: "/ci/gate" } }).wrap(c, "gate"),
     }),
-    /; infisical run --silent --path=\/ci\/gate -- node \.figentra-flow-gate\/post\.mjs$/,
+    /; infisical run --silent --path=\/ci\/gate -- FIGENTRA_FLOW_GATE_RUN=1 node \.figentra-flow-gate\/post\.mjs$/,
   );
 });
 

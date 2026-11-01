@@ -3,16 +3,20 @@
  * Purpose: `figentra-flow gate run [--ref <branch>] [--box <ssh host>] [-- <runner flags>]`, the caller's side of the
  *   gate: check that the head is committed and pushed, clone exactly that commit into a temporary folder with the
  *   box poster beside it, and run the repository's check command through the runner port (`runner` in the
- *   configuration, or `--box <host>` for one run). The box posts `figentra-flow/gate`; this side only passes its exit
- *   code through.
+ *   configuration, or `--box <host>` for one run). An `ssh` or `local` box posts `figentra-flow/gate` after the
+ *   check; for a `command` runner (the testbed) the box returns only the check's exit code and this side posts, inside
+ *   `gate run` only (the owner's option C1 of 2026-11-01; the hook guard refuses a direct poster call).
  * Boundary: runs no check on the caller's machine (FR-9). Refuses a dirty tree, a detached head without `--ref`, a
  *   head that is not the remote branch tip, and a missing runner, before any box is claimed; a runner program that
  *   is not installed is refused after. Removes its temporary
  *   folder when the run ends.
  * Runtime: node
  * Governing contract: Stackra ADR 0503 (decision 4), ADR 0484 (the testbed); STA-1729 phase 2.
- * Secrets: none here. The box reads the gate App's key through `infisical run` (`/ci/gate`); this side never sees it.
+ * Secrets: the gate App's key is read through the secrets port's `gate` scope (`infisical run`, `/ci/gate`) by the
+ *   poster process only: on the box for `ssh` and `local`, on this side for a `command` runner. It never reaches a
+ *   testbed box, and this process never reads it.
  */
+import { spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -60,7 +64,21 @@ export function checkCommand(dir) {
  * @param {{ wrap?: (command: string) => string }} [options]
  */
 export function boxCommand(check, { wrap = (command) => command } = {}) {
-  return `{ ${check}; echo $? > ${GATE_DIR}/exit; } 2>&1 | tee ${GATE_DIR}/log.txt; ${wrap(`node ${GATE_DIR}/post.mjs`)}`;
+  return `{ ${check}; echo $? > ${GATE_DIR}/exit; } 2>&1 | tee ${GATE_DIR}/log.txt; ${wrap(posterCommand())}`;
+}
+
+/** The poster's command line: it refuses to run without the variable only `gate run` sets. */
+export const posterCommand = () => `${ENV_PREFIX}GATE_RUN=1 node ${GATE_DIR}/post.mjs`;
+
+/**
+ * Runs the poster on this side in `dir` (the job's folder), through the secrets port's `gate` scope.
+ * @param {string} dir
+ * @param {(command: string) => string} wrap
+ * @returns {number} the poster's exit code
+ */
+function postHere(dir, wrap) {
+  const r = spawnSync("sh", ["-c", wrap(posterCommand())], { cwd: dir, stdio: "inherit" });
+  return r.status ?? 4;
 }
 
 /**
@@ -73,7 +91,8 @@ export const slugOf = (url) => url.match(/github\.com[:/]+([^/]+\/[^/]+?)(?:\.gi
  * Runs the gate for the head of `cwd`.
  * @param {{ cwd: string, ref?: string, box?: string, flags?: string[],
  *           runner?: import("../adapters/runner/index.mjs").Runner,
- *           tip?: (root: string, branch: string) => string | undefined, now?: () => Date }} options
+ *           tip?: (root: string, branch: string) => string | undefined, now?: () => Date,
+ *           post?: (dir: string) => number }} options
  * @returns {Promise<{ code: number, problem?: string, sha?: string }>}
  */
 export async function gateRun(options) {
@@ -124,8 +143,10 @@ export async function gateRun(options) {
       const r = git(root, args);
       if (!r.ok) return { code: 2, problem: `git ${args.join(" ")} failed: ${r.err}` };
     }
+    const callerPosts = runner.posts === "caller";
     mkdirSync(join(dir, GATE_DIR));
-    copyFileSync(POSTER, join(dir, GATE_DIR, "post.mjs"));
+    // A caller-posting runner's box gets neither the poster nor the job file: it runs the check and returns its exit.
+    if (!callerPosts) copyFileSync(POSTER, join(dir, GATE_DIR, "post.mjs"));
     const job = {
       sha,
       branch,
@@ -135,10 +156,12 @@ export async function gateRun(options) {
       marker: GATE_MARKER,
       envPrefix: ENV_PREFIX,
     };
-    writeFileSync(join(dir, GATE_DIR, "job.json"), `${JSON.stringify(job, null, 2)}\n`);
-    // The poster runs under the secrets port's `gate` scope unless the runner brings its own (a testbed job, ADR 0484).
+    const writeJob = () =>
+      writeFileSync(join(dir, GATE_DIR, "job.json"), `${JSON.stringify(job, null, 2)}\n`);
+    if (!callerPosts) writeJob();
+    // A box-side poster runs under the secrets port's `gate` scope unless the runner brings its own.
     const wrap = runner.wraps ? (/** @type {string} */ c) => secrets.wrap(c, "gate") : undefined;
-    const command = boxCommand(checkCommand(dir), { wrap });
+    const command = callerPosts ? checkCommand(dir) : boxCommand(checkCommand(dir), { wrap });
     const code = runner.run({
       dir,
       command,
@@ -155,7 +178,18 @@ export async function gateRun(options) {
         problem: `\`${runner.program}\` is not on PATH (the ${runner.kind} runner); install it, set "runner", or pass --box <ssh host>`,
         sha,
       };
-    return { code, sha };
+    if (!callerPosts) return { code, sha };
+    // C1: the box returned the check's exit code; this side posts it, under the `gate` scope, then removes the poster.
+    writeJob();
+    writeFileSync(join(dir, GATE_DIR, "exit"), `${code}\n`);
+    copyFileSync(POSTER, join(dir, GATE_DIR, "post.mjs"));
+    const posted = (options.post ?? ((d) => postHere(d, (c) => secrets.wrap(c, "gate"))))(dir);
+    if (posted === 0 || posted === 1) return { code, sha };
+    return {
+      code: code || 4,
+      problem: `the check exited ${code}, but ${STATUS_CONTEXT} was not posted (poster exit ${posted})`,
+      sha,
+    };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

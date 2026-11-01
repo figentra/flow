@@ -114,6 +114,8 @@ jobs:
         env:
           ${ENV_PREFIX}GATE_APP_ID: \${{ secrets.${ENV_PREFIX}GATE_APP_ID }}
           ${ENV_PREFIX}GATE_PRIVATE_KEY: \${{ secrets.${ENV_PREFIX}GATE_PRIVATE_KEY }}
+          # the poster runs only when its caller says so (the hook guard refuses a direct call elsewhere)
+          ${ENV_PREFIX}GATE_RUN: "1"
           SHA: \${{ inputs.sha }}
           BRANCH: \${{ inputs.branch }}
           REPOSITORY: \${{ github.repository }}
