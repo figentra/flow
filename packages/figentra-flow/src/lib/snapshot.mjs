@@ -4,7 +4,8 @@
  *   repository of the workspace, its specs (status, tier, session, gate problems), its worktrees (branch, key, head,
  *   dirty, idle, in use, ahead and behind), its open PRs (gate on the head, the counted AI review, stacked) and its
  *   sessions (a spec's `**Session**`, with the worktree carrying the spec's key and that head's gate), plus a warning
- *   when more sessions build than the cap allows.
+ *   when more sessions build than the cap allows. With a roster, each spec's role and owner stops, and `byRole`: the
+ *   specs grouped by role with their sessions and counts (AC-050).
  * Boundary: reads git, the spec files and GitHub (through the credentials port; never with `offline`); stores nothing,
  *   writes nothing. A repository that is missing or unreadable, and a GitHub failure, are reported in place.
  * Runtime: node
@@ -16,6 +17,7 @@ import { join } from "node:path";
 
 import { schemeFor } from "../adapters/tracker/index.mjs";
 import {
+  checkApproval,
   checkStage,
   presetId,
   presetOf,
@@ -28,6 +30,8 @@ import { loadConfig } from "./config.mjs";
 import { defaultBranch, git, idleHours, inUse, isClean, worktrees } from "./git.mjs";
 import { STATUS_CONTEXT } from "./product.mjs";
 import { aiReview } from "./review.mjs";
+import { ownerStopsOf, roleOf } from "./roles.mjs";
+import { loadTeam } from "./team.mjs";
 
 /** The snapshot's schema; a breaking change raises it. */
 export const SNAPSHOT_VERSION = "figentra-flow.status/1";
@@ -47,9 +51,9 @@ export const sessionOf = (/** @type {string} */ text) =>
 /**
  * The specs under one checkout's `.agents/specs`.
  * @param {string} checkout
- * @param {{ keys: any, rules: any }} context
+ * @param {{ keys: any, rules: any, team?: import("./team.mjs").Team }} context
  */
-function specsIn(checkout, { keys, rules }) {
+function specsIn(checkout, { keys, rules, team }) {
   const base = join(checkout, SPECS_DIR);
   if (!existsSync(base)) return [];
   return readdirSync(base)
@@ -63,12 +67,17 @@ function specsIn(checkout, { keys, rules }) {
         status: statusOf(text) || null,
         tier: tierOf(text) ?? null,
         session: sessionOf(text) ?? null,
+        role: roleOf(text) ?? null,
+        ownerStops: ownerStopsOf(text) ?? null,
+        // An owner-kept spec with a stage approval missing waits on the owner.
+        ownerWaiting: Boolean(ownerStopsOf(text)?.length) && checkApproval(text).length > 0,
         problems: checkStage(folder, text, {
           files: readdirSync(dir),
           tasks: readIf(join(dir, "tasks.md")),
           plan: readIf(join(dir, "plan.md")),
           keys,
           rules,
+          team,
         }),
       };
     });
@@ -152,8 +161,11 @@ export function repoSnapshot(repo, { api, offline = false, now = Date.now(), bus
   let rules;
   /** @type {any} */
   let config;
+  /** @type {import("./team.mjs").Team | undefined} */
+  let team;
   try {
     config = loadConfig(root);
+    team = loadTeam(root);
     keys = schemeFor(root);
     rules = RULES[presetId(presetOf(root), root) ?? "neutral"] ?? RULES.neutral;
   } catch (error) {
@@ -172,9 +184,9 @@ export function repoSnapshot(repo, { api, offline = false, now = Date.now(), bus
   }));
   // The default branch's specs, then each worktree's copy of its own key.
   /** @type {Map<string, ReturnType<typeof specsIn>[number] & { from?: string }>} */
-  const specs = new Map(specsIn(root, { keys, rules }).map((s) => [s.folder, s]));
+  const specs = new Map(specsIn(root, { keys, rules, team }).map((s) => [s.folder, s]));
   for (const tree of trees)
-    for (const s of specsIn(tree.path, { keys, rules }))
+    for (const s of specsIn(tree.path, { keys, rules, team }))
       if (tree.key && s.key === tree.key) specs.set(s.folder, { ...s, from: tree.path });
   const slug = repo.github || undefined;
   /** @type {any[]} */
@@ -205,7 +217,48 @@ export function repoSnapshot(repo, { api, offline = false, now = Date.now(), bus
     prs,
     prsProblem,
     sessions,
+    // A plain property, not a conditional spread: it keeps this and the error return one normalized union type.
+    byRole: team ? rolesOf([...specs.values()], trees, prs, team) : undefined,
   };
+}
+
+/**
+ * The specs grouped by role (AC-050): each role of the roster, and `null` for specs with none, with its sessions (the
+ * role file's and its specs'), its specs and the counts in progress (Tasked or Implementing), in review (an open PR on
+ * the spec's worktree), blocked (a gate problem or a red gate) and waiting on the owner.
+ * @param {any[]} specs
+ * @param {any[]} trees
+ * @param {any[]} prs
+ * @param {import("./team.mjs").Team} team
+ */
+export function rolesOf(specs, trees, prs, team) {
+  const ids = [...team.roles.keys(), null];
+  return ids
+    .map((id) => {
+      const mine = specs.filter((s) => (s.role ?? null) === id);
+      const prsOf = (/** @type {any} */ s) =>
+        trees
+          .filter((t) => s.key && t.key === s.key)
+          .flatMap((t) => prs.filter((p) => p.branch === t.branch));
+      const sessions = new Set([
+        ...((id && team.roles.get(id)?.sessions) || []),
+        ...mine.map((s) => s.session).filter(Boolean),
+      ]);
+      return {
+        role: id,
+        sessions: [...sessions],
+        specs: mine.map((s) => s.key ?? s.folder),
+        inProgress: mine.filter((s) => BUILDING.has(s.status)).length,
+        inReview: mine.filter((s) => prsOf(s).length).length,
+        blocked: mine.filter(
+          (s) =>
+            s.problems.length ||
+            prsOf(s).some((p) => p.gate?.state === "failure" || p.gate?.state === "error"),
+        ).length,
+        ownerWaiting: mine.filter((s) => s.ownerWaiting).length,
+      };
+    })
+    .filter((r) => r.role !== null || r.specs.length);
 }
 
 /**
