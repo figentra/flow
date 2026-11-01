@@ -18,13 +18,13 @@
 
 **Linear project**: [project name, or "none"]
 
-**Clarifications status**: pending <!-- /speckit.clarify sets this to "complete" when nothing is open -->
+**Clarifications status**: pending <!-- /flow-clarify sets this to "complete" when nothing is open -->
 
-**Analyze**: — <!-- after /speckit.analyze: "<date> clean (C0 H# M#)"; Tasked needs C0 -->
+**Analyze**: — <!-- after /flow-analyze: "<date> clean (C0 H# M#)"; Tasked needs C0 -->
 
 **Input**: User description: "$ARGUMENTS"
 
-## Impact _(mandatory, answer every line before /speckit.clarify completes)_
+## Impact _(mandatory, answer every line before /flow-clarify completes)_
 
 <!-- Write "none" for a line that does not apply; never leave a [placeholder] or NEEDS CLARIFICATION. -->
 

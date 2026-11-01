@@ -12,7 +12,7 @@
 
 **Issue**: [KEY-n] <!-- the issue for this spec; the plan gate needs a real key equal to the folder's -->
 
-**Clarifications status**: pending <!-- /speckit.clarify sets this to "complete" when nothing is open -->
+**Clarifications status**: pending <!-- /flow-clarify sets this to "complete" when nothing is open -->
 
 **Input**: User description: "$ARGUMENTS"
 
