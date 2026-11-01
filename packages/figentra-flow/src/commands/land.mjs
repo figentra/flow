@@ -94,7 +94,7 @@ export function connect(root) {
  * @param {{ pr: any, statuses: any[], base: string, spec?: string, gateApp?: string, reviewer?: string,
  *           required: boolean, files?: string[],
  *           manualOk?: boolean, stack?: boolean, review?: { verdict: string | null, ignored: string[] },
- *           artifacts?: string[], reviewTiers?: string[], files?: string[], ownerOnly?: string[],
+ *           artifacts?: string[], reviewTiers?: string[], ownerOnly?: string[],
  *           ownerFindings?: string[] }} input
  * @returns {string[]}
  */

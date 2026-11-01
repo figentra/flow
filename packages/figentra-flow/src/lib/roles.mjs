@@ -160,7 +160,7 @@ export function pathProblems(team, role, slug, files) {
   if (!r || !Array.isArray(r.changes)) return [];
   const own = r.changes.filter((c) => c.repo === "*" || c.repo === slug);
   if (r.changes.length && !own.length) return [];
-  const globs = own.flatMap((c) => c.paths).map(globRe);
+  const globs = own.flatMap((c) => c.paths).map((g) => globRe(g));
   return files
     .filter((f) => !globs.some((g) => g.test(f)))
     .map(
