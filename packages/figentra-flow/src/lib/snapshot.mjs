@@ -183,6 +183,7 @@ export function repoSnapshot(repo, { api, offline = false, now = Date.now(), bus
     ...aheadBehind(t.path, t.branch),
   }));
   // The default branch's specs, then each worktree's copy of its own key.
+  /** @type {Map<string, ReturnType<typeof specsIn>[number] & { from?: string }>} */
   const specs = new Map(specsIn(root, { keys, rules, team }).map((s) => [s.folder, s]));
   for (const tree of trees)
     for (const s of specsIn(tree.path, { keys, rules, team }))
@@ -216,7 +217,8 @@ export function repoSnapshot(repo, { api, offline = false, now = Date.now(), bus
     prs,
     prsProblem,
     sessions,
-    ...(team ? { byRole: rolesOf([...specs.values()], trees, prs, team) } : {}),
+    // A plain property, not a conditional spread: it keeps this and the error return one normalized union type.
+    byRole: team ? rolesOf([...specs.values()], trees, prs, team) : undefined,
   };
 }
 
