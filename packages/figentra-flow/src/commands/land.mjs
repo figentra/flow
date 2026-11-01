@@ -13,12 +13,14 @@
  * Secrets: none here. GitHub calls go through `gh` (or the repository's `bot:gh`), Linear through the environment's
  *   token, which is never read into output.
  */
-import { checkApproval, statusOf, tierOf } from "./gate.mjs";
+import { checkApproval, ownerApprovalProblems, statusOf, tierOf } from "./gate.mjs";
 import { clean } from "./clean.mjs";
 import { gateRun, slugOf } from "./gate-run.mjs";
 import { trackerFor } from "../adapters/tracker/index.mjs";
 import { github } from "../lib/github.mjs";
 import { aiReview } from "../lib/review.mjs";
+import { pathProblems, reviewerProblems, roleOf } from "../lib/roles.mjs";
+import { loadTeam } from "../lib/team.mjs";
 import { artifactProblems } from "../lib/artifacts.mjs";
 import { say } from "../lib/cli.mjs";
 import { loadConfig } from "../lib/config.mjs";
@@ -241,6 +243,19 @@ export async function landOne({
     manualOk,
     reviewTiers: loadConfig(root).config.review?.required,
   });
+  // AC-051 to AC-053: with a roster, the reviewer is not the builder, the builder's role stays in its paths, and an
+  // owner-kept spec's approvals are the owner's.
+  const team = loadTeam(root);
+  if (team && spec !== undefined) {
+    const files = list(api("GET", `/repos/${repo}/pulls/${number}/files?per_page=100`)).map(
+      (/** @type {any} */ f) => f.filename,
+    );
+    problems.push(
+      ...reviewerProblems(team, spec, review.passes),
+      ...ownerApprovalProblems(spec, owner).map((p) => `spec: ${p}`),
+      ...pathProblems(team, roleOf(spec), repo, files),
+    );
+  }
   if (problems.length) return { code: 1, problems };
   if (dry) {
     log(

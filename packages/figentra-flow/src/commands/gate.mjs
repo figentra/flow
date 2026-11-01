@@ -44,7 +44,13 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { schemeFor, trackerFor } from "../adapters/tracker/index.mjs";
 import { say } from "../lib/cli.mjs";
-import { checkSpecRoles, checkTaskRoles } from "../lib/roles.mjs";
+import {
+  checkSpecRoles,
+  checkTaskRoles,
+  ownerStopsOf,
+  pathProblems,
+  roleOf,
+} from "../lib/roles.mjs";
 import { loadTeam } from "../lib/team.mjs";
 import { loadConfig } from "../lib/config.mjs";
 import { DISPLAY_NAME, ENV_PREFIX, NAME, PACKAGE } from "../lib/product.mjs";
@@ -341,6 +347,7 @@ export function checkStage(
         tiered: tier === "feature" || tier === "big",
         pastClarified: atLeast(status, "planned"),
       }),
+      ...ownerApprovalProblems(text, loadConfig(ROOT).config.apps?.owner),
     );
   if (tier !== undefined && tier !== "trivial") problems.push(...checkCriteria(text));
   const history =
@@ -516,6 +523,30 @@ export function approvedAt(text, stage) {
     if (found) return { who: found[1] ?? "", date: found[2] ?? "" };
   }
   return undefined;
+}
+
+/**
+ * AC-053: an owner-kept spec's stage approvals come from the owner only: "Approved by owner …" or by the configured
+ * owner login. Without `**Owner stops**` (or with none) nothing is checked here.
+ * @param {string} text
+ * @param {string | undefined} [owner] the configuration's `apps.owner`
+ * @returns {string[]}
+ */
+export function ownerApprovalProblems(text, owner) {
+  const stops = ownerStopsOf(text);
+  if (!stops?.length) return [];
+  /** @type {string[]} */
+  const problems = [];
+  for (const stage of STAGES) {
+    const found = approvedAt(text, stage);
+    if (!found) continue;
+    const who = found.who.trim();
+    if (!/^owner\b/i.test(who) && (!owner || who.toLowerCase() !== owner.toLowerCase()))
+      problems.push(
+        `the ${stage} approval is by ${who}, but the spec touches ${stops.join(", ")}: only the owner approves it`,
+      );
+  }
+  return problems;
 }
 
 /**
@@ -967,6 +998,20 @@ const prCommits = (base) =>
     .map((c) => c.trim())
     .filter(Boolean);
 
+/** AC-052: the diff against what the branch's own spec's role may change here; nothing without a roster. */
+function roleGate(base) {
+  const team = loadTeam(ROOT);
+  if (!team) return [];
+  const dir = join(ROOT, SPECS_DIR);
+  const own = (existsSync(dir) ? readdirSync(dir) : []).find((f) => isOwnSpec(f, currentBranch()));
+  if (own === undefined) return [];
+  const slug = git("remote", "get-url", "origin").match(
+    /github\.com[:/]+([^/]+\/[^/\s]+?)(?:\.git)?\/?\s*$/,
+  )?.[1];
+  const files = git("diff", "--name-only", `${base}...HEAD`).split("\n").filter(Boolean);
+  return pathProblems(team, roleOf(readIf(join(dir, own, "spec.md"))), slug, files);
+}
+
 function laneGate(base) {
   const branch = currentBranch();
   const lane = checkLane({ commits: prCommits(base), branch, ...specIndex() });
@@ -1104,6 +1149,7 @@ export function run([mode, ...args]) {
     }
     failures += report(laneGate(base));
     failures += report(loadTeam(ROOT)?.problems.map((p) => `team: ${p}`) ?? []);
+    failures += report(roleGate(base));
     say(
       failures ? "blocked" : "approved",
       failures ? `spec-gate: ${failures} problem(s)` : "spec-gate: the specs pass",
