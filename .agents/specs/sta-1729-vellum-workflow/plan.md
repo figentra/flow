@@ -1,4 +1,4 @@
-# Implementation Plan: Vellum runs the whole development workflow
+# Implementation Plan: Figentra Flow runs the whole development workflow
 
 **Spec**: `.agents/specs/sta-1729-vellum-workflow/spec.md` · **Linear**: STA-1729 · **Date**: 2026-10-31
 
@@ -7,22 +7,22 @@ worktree rule); each later phase adds its own design section here and stops for 
 
 ## Summary
 
-Phase 1 makes `<repo>/.claude/worktrees/<name>` the only place a worktree lives: `vellum start` creates it (branch and
-Linear), `vellum clean` removes the finished ones, adopts the stray ones and fixes `.gitignore`, and `vellum guard` is
+Phase 1 makes `<repo>/.claude/worktrees/<name>` the only place a worktree lives: `figentra-flow start` creates it (branch and
+Linear), `figentra-flow clean` removes the finished ones, adopts the stray ones and fixes `.gitignore`, and `figentra-flow guard` is
 the hook check that refuses `git worktree add` anywhere else. Then the six repositories without the ignore line get it.
 
 ## Technical Context
 
 - **Language**: plain ESM JavaScript with JSDoc, checked by `tsc` (`checkJs`); Node 24; no runtime dependencies
-- **Members**: figentra/vellum `packages/figentra-flow` (`@stackra/vellum`, binary `vellum`)
+- **Members**: figentra/flow `packages/figentra-flow` (`@stackra/vellum`, binary `figentra-flow`)
 - **Testing**: `node:test` in `src/__tests__/`, against temporary git repositories with a local bare remote; no
   network, no real Linear call (the client is injected)
-- **Storage**: none (git and `~/.config/vellum/workspace.yaml`)
-- **Runtime target**: the `vellum` CLI, run in the repository it acts on
+- **Storage**: none (git and `~/.config/figentra-flow/workspace.yaml`)
+- **Runtime target**: the `figentra-flow` CLI, run in the repository it acts on
 
 ## Architecture overview
 
-Three new commands on the existing dispatcher (`bin/vellum.mjs`): `start`, `clean` and `guard`. They share two small
+Three new commands on the existing dispatcher (`bin/figentra-flow.mjs`): `start`, `clean` and `guard`. They share two small
 libraries: `lib/git.mjs` (run git, parse `git worktree list --porcelain`, find the repository's main checkout, the
 default branch and whether a commit is on a remote) and `lib/workspace.mjs` (read and write the workspace list).
 Network git goes through the repository's own wrapper when it has one (`pnpm bot:git -- …`, the Figentra guard's
@@ -31,12 +31,12 @@ never blocks (ADR 0065 rule 7).
 
 ## Components and responsibilities
 
-- **`vellum start <STA-n> [--slug s] [--install] [--dry-run]`**: resolve the main checkout (also when run inside a
+- **`figentra-flow start <STA-n> [--slug s] [--install] [--dry-run]`**: resolve the main checkout (also when run inside a
   worktree), fetch, read the default branch (`origin/HEAD`), derive the slug from the Linear title (lower-case words,
   at most 5 words and 40 characters) unless `--slug`, refuse when the folder or the branch (local or remote) exists,
   then `git worktree add <repo>/.claude/worktrees/sta-n-<slug> -b figentra/sta-n-<slug> origin/<default>`, move STA-n
   to In Progress with a comment naming the branch, and run `pnpm install` only with `--install`.
-- **`vellum clean [--dry-run] [--adopt] [--fix-ignore] [--all]`**: for each worktree of the repository (or of every
+- **`figentra-flow clean [--dry-run] [--adopt] [--fix-ignore] [--all]`**: for each worktree of the repository (or of every
   workspace repository with `--all`), the leader's revisions of 2026-10-31 included:
   - **skip** a tester worktree (`g-*`, `*-gate`, `land-*`, `tpl-core`, `c6-lock*`, `template-wt-lean`);
   - **clean**: `git status --porcelain` is empty (untracked files count);
@@ -57,16 +57,16 @@ never blocks (ADR 0065 rule 7).
   - `--adopt`: move each clean, non-tester worktree outside `.claude/worktrees/` inside with `git worktree move`, and
     list the tester ones for stackra-f4 and the dirty ones for their owner;
   - `--fix-ignore`: add `.claude/worktrees/` to `.gitignore` when missing and say a commit is needed.
-- **`vellum guard [--print-settings]`**: read the agent's PreToolUse JSON from stdin; for a Bash command with
+- **`figentra-flow guard [--print-settings]`**: read the agent's PreToolUse JSON from stdin; for a Bash command with
   `git … worktree add <path>` (including `-C <dir>` and `cd <dir> &&`), resolve the path against the command's
   directory and deny unless it is under that repository's `.claude/worktrees/`; anything else passes with no output.
   `--print-settings` prints the exact `.claude/settings.json` hook entry.
-- **`vellum init --workspace <dir>…`**: find the git repositories under the given folders and write
-  `~/.config/vellum/workspace.yaml` (path and GitHub slug per repository).
+- **`figentra-flow init --workspace <dir>…`**: find the git repositories under the given folders and write
+  `~/.config/figentra-flow/workspace.yaml` (path and GitHub slug per repository).
 
 ## Files and folders
 
-- `packages/figentra-flow/bin/vellum.mjs`: add `start`, `clean` and `guard` to the commands
+- `packages/figentra-flow/bin/figentra-flow.mjs`: add `start`, `clean` and `guard` to the commands
 - `packages/figentra-flow/src/commands/start.mjs`, `clean.mjs`, `guard.mjs` (new); `init.mjs` (the `--workspace` option)
 - `packages/figentra-flow/src/lib/git.mjs`, `workspace.mjs` (new)
 - `packages/figentra-flow/src/__tests__/start.test.mjs`, `clean.test.mjs`, `guard.test.mjs`, `workspace.test.mjs` (new)
@@ -80,11 +80,11 @@ none
 
 ## Contracts
 
-- CLI: `vellum start`, `vellum clean`, `vellum guard`, `vellum init --workspace`, with the options above; exit 0 on
+- CLI: `figentra-flow start`, `figentra-flow clean`, `figentra-flow guard`, `figentra-flow init --workspace`, with the options above; exit 0 on
   success, 1 on a refusal or a failed step, 2 on a usage error.
 - The guard's output is Claude Code's PreToolUse hook contract: `{ "hookSpecificOutput": { "hookEventName":
 "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": … } }` on a denial, nothing otherwise.
-- `~/.config/vellum/workspace.yaml`: a `repos:` list of `{ path, github }`.
+- `~/.config/figentra-flow/workspace.yaml`: a `repos:` list of `{ path, github }`.
 
 ## Error handling
 
@@ -96,7 +96,7 @@ warning after the worktree exists. The guard fails open on input it cannot parse
 ## Security and tenancy
 
 No secret is read or printed: the Linear token comes from the calling wrapper's environment, network git from the
-repository's bot wrapper. `vellum clean` never deletes a worktree with uncommitted or unpushed work, nor a tester's.
+repository's bot wrapper. `figentra-flow clean` never deletes a worktree with uncommitted or unpushed work, nor a tester's.
 
 ## Testing strategy
 
@@ -107,17 +107,17 @@ the Mac. Each test carries `@covers sta-1729:AC-###`.
 
 ## Rollout
 
-1. Land the commands in Vellum and publish with the next Vellum release.
+1. Land the commands in Figentra Flow and publish with the next Figentra Flow release.
 2. The leader takes the printed guard entry to the owner, who wires it into each repository's `.claude/settings.json`
    (and core's `_rules.mjs`).
 3. Add `.claude/worktrees/` to the six repositories' `.gitignore`.
-4. Run `vellum clean --adopt --dry-run --all`, review the list with the leader and stackra-f4, then run it for real.
+4. Run `figentra-flow clean --adopt --dry-run --all`, review the list with the leader and stackra-f4, then run it for real.
 
 ## Constitution Check
 
 | Law                                   | Result | Note                                                    |
 | ------------------------------------- | ------ | ------------------------------------------------------- |
-| Boundaries (tier direction, ADR 0003) | N/A    | Vellum is its own repository with one package           |
+| Boundaries (tier direction, ADR 0003) | N/A    | Figentra Flow is its own repository with one package    |
 | Secrets (ADR 0009)                    | PASS   | tokens only from the wrapper's environment, never read  |
 | Security                              | PASS   | never deletes unpushed or dirty work; tester trees kept |
 | HTTP and events                       | N/A    | a CLI, no endpoint or event                             |
@@ -128,7 +128,7 @@ the Mac. Each test carries `@covers sta-1729:AC-###`.
 | Versions and catalogs                 | PASS   | no dependency                                           |
 | Deploy modes (ADR 0076)               | PASS   | a developer tool, same everywhere                       |
 | Licence tier (ADR 0077)               | PASS   | free                                                    |
-| Docs and ADRs                         | PASS   | ADR 0503 in core; Vellum README and AGENTS.md           |
+| Docs and ADRs                         | PASS   | ADR 0503 in core; Figentra Flow README and AGENTS.md    |
 
 ## Deploy modes
 
@@ -140,11 +140,11 @@ the Mac. Each test carries `@covers sta-1729:AC-###`.
 
 ## Correctness properties
 
-- **P-001**: `vellum start` creates exactly one branch and one worktree under `.claude/worktrees/`, or changes nothing — Validates: FR-1
+- **P-001**: `figentra-flow start` creates exactly one branch and one worktree under `.claude/worktrees/`, or changes nothing — Validates: FR-1
 - **P-002**: the guard denies a `worktree add` path outside `.claude/worktrees/` and passes every other command — Validates: FR-2
 - **P-003**: `--fix-ignore` leaves every repository ignoring `.claude/worktrees/` exactly once — Validates: FR-3
-- **P-004**: `vellum clean` removes a tree only when it is clean, saved (on a remote or landed by patch), finished (issue closed, or idle 2 hours without a key) and free of precious ignored files, and never a tester tree — Validates: FR-4
-- **P-005**: the gate posts `vellum/gate` only on the commit it checked, only while that commit is still the branch tip, only from the box with the gate App, and never `success` unless the check command exited 0 (phase 2) — Validates: FR-5
+- **P-004**: `figentra-flow clean` removes a tree only when it is clean, saved (on a remote or landed by patch), finished (issue closed, or idle 2 hours without a key) and free of precious ignored files, and never a tester tree — Validates: FR-4
+- **P-005**: the gate posts `figentra-flow/gate` only on the commit it checked, only while that commit is still the branch tip, only from the box with the gate App, and never `success` unless the check command exited 0 (phase 2) — Validates: FR-5
 - **P-006**: phase 3's land merges only on a green gate and recorded approvals (designed in phase 3) — Validates: FR-6
 - **P-007**: phase 4's status lists every workspace repository (designed in phase 4) — Validates: FR-7
 - **P-008**: phase 5's release publishes only to the Stackra registry and ship never reaches production (designed in phase 5) — Validates: FR-8
@@ -155,32 +155,32 @@ the Mac. Each test carries `@covers sta-1729:AC-###`.
 
 ## Phase 2: the gate (design, for the leader's plan stop)
 
-Phase 2 makes one result count: `vellum gate run` checks the exact head of a branch on a testbed box and the box posts
-the `vellum/gate` commit status on that head. Covers FR-5, FR-9, AC-008, AC-009 and P-005.
+Phase 2 makes one result count: `figentra-flow gate run` checks the exact head of a branch on a testbed box and the box posts
+the `figentra-flow/gate` commit status on that head. Covers FR-5, FR-9, AC-008, AC-009 and P-005.
 
 ### Architecture overview
 
-`vellum gate` already holds the spec gate (`plan`, `check`, `tasks`, `lane`, `branch`, `ci`, `dir`). Phase 2 adds two
+`figentra-flow gate` already holds the spec gate (`plan`, `check`, `tasks`, `lane`, `branch`, `ci`, `dir`). Phase 2 adds two
 modes beside them, so nothing existing moves:
 
-1. `vellum gate run [--ref <branch>] [--no-wait]` on the builder's Mac (or any caller). It resolves the head, exports
+1. `figentra-flow gate run [--ref <branch>] [--no-wait]` on the builder's Mac (or any caller). It resolves the head, exports
    exactly that commit, and hands it to `stackra testbed run` with the box command. It never runs a check itself.
-2. `vellum gate post` runs **on the box**, inside the testbed job container, after the checks. It posts the status
+2. `figentra-flow gate post` runs **on the box**, inside the testbed job container, after the checks. It posts the status
    and the report with the gate App's token, which only the box can read.
 
 ```text
-builder ── vellum gate run ──► git archive <sha> ─► temp dir ─► stackra testbed run "<session> gate" <dir> "<box cmd>"
+builder ── figentra-flow gate run ──► git archive <sha> ─► temp dir ─► stackra testbed run "<session> gate" <dir> "<box cmd>"
                                                                      │  (box: container per job, Infisical secrets)
                                                                      ▼
-                       pnpm install --frozen-lockfile && <verify> ; node .vellum-gate/post.mjs <exit> <sha> <branch>
+                       pnpm install --frozen-lockfile && <verify> ; node .figentra-flow-gate/post.mjs <exit> <sha> <branch>
                                                                      │
                                                                      ▼
-                                     GitHub: commit status `vellum/gate` on <sha> + PR comment (gate App)
+                                     GitHub: commit status `figentra-flow/gate` on <sha> + PR comment (gate App)
 ```
 
-The status is unforgeable because of who can post it, not where Vellum runs. The poster is a GitHub App, the
+The status is unforgeable because of who can post it, not where Figentra Flow runs. The poster is a GitHub App, the
 "Stackra Gate" App. Its key lives only in Infisical `/ci/gate`, which only the testbed's gate identity reads (ADR 0484
-decision 7). Phase 6's branch rule requires `vellum/gate` **from that App** (a ruleset's required check bound to the
+decision 7). Phase 6's branch rule requires `figentra-flow/gate` **from that App** (a ruleset's required check bound to the
 App's integration id), so a status posted with any other token, the agents' `bot:gh` one included, does not count.
 
 ### Components and responsibilities
@@ -191,23 +191,23 @@ App's integration id), so a status posted with any other token, the agents' `bot
     repository's `bot:git` when it has one), because a status may only describe a pushed commit (AC-009);
   - exports the commit with `git archive <sha>` into a temp folder, so untracked, ignored and uncommitted files never
     reach the box;
-  - writes `.vellum-gate/post.mjs` and `.vellum-gate/job.json` (sha, branch, repository slug, PR number when there is
+  - writes `.figentra-flow-gate/post.mjs` and `.figentra-flow-gate/job.json` (sha, branch, repository slug, PR number when there is
     one) into that folder;
   - calls `stackra testbed run "<session> gate <repo>@<short sha>" <dir> "<box cmd>"` and passes its exit code
     through: 0 green, 1 red, 73 busy, 75 no healthy box.
-- `src/lib/gate-post.mjs`, a dependency-free Node script that `run` copies into the job (the box has no Vellum
+- `src/lib/gate-post.mjs`, a dependency-free Node script that `run` copies into the job (the box has no Figentra Flow
   installed, so this needs no publish):
   - reads `job.json` and the verify exit code;
-  - mints an installation token from `VELLUM_GATE_APP_ID` and `VELLUM_GATE_PRIVATE_KEY` (environment only, from
+  - mints an installation token from `FIGENTRA_FLOW_GATE_APP_ID` and `FIGENTRA_FLOW_GATE_PRIVATE_KEY` (environment only, from
     `infisical run`; never printed or written);
   - checks the branch tip again and posts only if it is still `<sha>`; otherwise it reports "stale" and posts nothing
     (AC-009);
-  - posts `vellum/gate` with `success` or `failure`, plus a description (the failing step, or the counts);
+  - posts `figentra-flow/gate` with `success` or `failure`, plus a description (the failing step, or the counts);
   - posts or updates one PR comment holding the report: each step, its duration, and the tail of a failing step's
     log, with secrets masked by Infisical.
-- The box command: `pnpm install --frozen-lockfile && pnpm verify && vellum-spec; node .vellum-gate/post.mjs $?`.
-  `vellum-spec` is `pnpm exec vellum gate ci` when the repository has Vellum, and skipped otherwise. The repository
-  can name its own check command in `package.json` `"vellum": { "gate": "<cmd>" }`; the default is `pnpm verify`.
+- The box command: `pnpm install --frozen-lockfile && pnpm verify && figentra-flow-spec; node .figentra-flow-gate/post.mjs $?`.
+  `figentra-flow-spec` is `pnpm exec figentra-flow gate ci` when the repository has Figentra Flow, and skipped otherwise. The repository
+  can name its own check command in `package.json` `"figentra-flow": { "gate": "<cmd>" }`; the default is `pnpm verify`.
 
 ### Files and folders
 
@@ -225,13 +225,13 @@ None. The gate keeps no state: the commit status is the record, and the PR comme
 ### Contracts
 
 - CLI:
-  - `vellum gate run [--ref <branch>] [--no-wait] [--on-demand]`: exit 0 green, 1 red, 2 usage or refused, 73 every
+  - `figentra-flow gate run [--ref <branch>] [--no-wait] [--on-demand]`: exit 0 green, 1 red, 2 usage or refused, 73 every
     box busy (with `--no-wait`), 75 no healthy box.
-  - `vellum gate post <exit-code>`: box-only. It refuses unless `VELLUM_GATE_APP_ID` is set.
-- GitHub: commit status context `vellum/gate`, with state `success` or `failure`. `pending` is never left behind: the
+  - `figentra-flow gate post <exit-code>`: box-only. It refuses unless `FIGENTRA_FLOW_GATE_APP_ID` is set.
+- GitHub: commit status context `figentra-flow/gate`, with state `success` or `failure`. `pending` is never left behind: the
   box posts once, at the end. The description is at most 140 characters, and the target URL is the PR comment.
 - Testbed: `stackra testbed run` from `@stackra/cli` (ADR 0484) on the caller's PATH or as `pnpm exec stackra`.
-  Vellum does not depend on the package; a missing `stackra` is a refusal that names it.
+  Figentra Flow does not depend on the package; a missing `stackra` is a refusal that names it.
 
 ### Error handling
 
@@ -244,7 +244,7 @@ None. The gate keeps no state: the commit status is the record, and the PR comme
 ### Security and tenancy
 
 - The App key is read only on the box through `infisical run` with the job's named paths (ADR 0484 decision 7). The
-  caller's Mac never holds it, and Vellum never prints, logs or passes it on a command line. The installation token
+  caller's Mac never holds it, and Figentra Flow never prints, logs or passes it on a command line. The installation token
   lives in memory for one run.
 - The App needs only `statuses: write` and `pull_requests: write` on the repositories it gates.
 - The exported tree is `git archive` of a pushed commit, so the box checks exactly what will merge.
@@ -254,7 +254,7 @@ None. The gate keeps no state: the commit status is the record, and the PR comme
 
 - `gate-run`: a temporary repository with a local bare origin and an injected testbed runner, covering:
   - the refusals: dirty, unpushed, stale, no `stackra`;
-  - the archive holds only committed files, plus `.vellum-gate/`;
+  - the archive holds only committed files, plus `.figentra-flow-gate/`;
   - exit codes pass through.
 - `gate-post`: an injected `fetch`, covering:
   - `success` and `failure` bodies on the right sha;
@@ -262,28 +262,28 @@ None. The gate keeps no state: the commit status is the record, and the PR comme
   - nothing posted when the token mint fails;
   - one comment updated, not duplicated;
   - the JWT signed with a throwaway test key generated in the test.
-- No network, no real App and no box in tests. The first real run is f4's acceptance on vellum itself.
+- No network, no real App and no box in tests. The first real run is f4's acceptance on figentra-flow itself.
 
 ### Rollout
 
 1. Owner:
    - creates the "Stackra Gate" App (statuses and pull requests: write) and installs it on the gated repositories;
-   - puts `VELLUM_GATE_APP_ID` and `VELLUM_GATE_PRIVATE_KEY` in Infisical `/ci/gate`;
+   - puts `FIGENTRA_FLOW_GATE_APP_ID` and `FIGENTRA_FLOW_GATE_PRIVATE_KEY` in Infisical `/ci/gate`;
    - adds `/ci/gate` to the testbed's allowed job paths in `infra-testbed`.
 2. Depends on `stackra testbed` landing in core (branch `figentra/sta-1626-testbed`, ADR 0484). Until it does, f4
    gates by hand as today.
-3. f4's acceptance: `vellum gate run` on a vellum PR posts `vellum/gate` from the App on its head, green and then
+3. f4's acceptance: `figentra-flow gate run` on a figentra-flow PR posts `figentra-flow/gate` from the App on its head, green and then
    red on a deliberately broken commit.
 4. Phase 6 makes it required per repository, bound to the App.
 
 ### Phase 2 correctness properties
 
-P-005 (above, made concrete for phase 2) and P-009's part: `vellum gate run` runs no check on the caller's machine.
+P-005 (above, made concrete for phase 2) and P-009's part: `figentra-flow gate run` runs no check on the caller's machine.
 
 ### Decisions at the plan stop (leader, 2026-10-31)
 
-1. **A new "Stackra Gate" App**, used only to post `vellum/gate`. The ruleset trusts only that App.
-2. **`vellum gate ci` runs wherever Vellum is installed.** Phase 6 installs Vellum in every repository, so the
+1. **A new "Stackra Gate" App**, used only to post `figentra-flow/gate`. The ruleset trusts only that App.
+2. **`figentra-flow gate ci` runs wherever Figentra Flow is installed.** Phase 6 installs Figentra Flow in every repository, so the
    "when present" branch only covers the transition.
 3. **`--box <ssh host>` ships now** as f4's manual path. Once `stackra testbed` lands (STA-1626), testbed is the
    default and `--box` stays as the override. On a `--box` host the poster runs under
@@ -292,23 +292,23 @@ P-005 (above, made concrete for phase 2) and P-009's part: `vellum gate run` run
    environment whose name looks secret are kept out of the PR comment and the box log. A log tail is redacted
    before it is posted.
 
-The box command is POSIX `sh`. The check runs in a group whose output is written to `.vellum-gate/log.txt` and
-whose exit code goes to `.vellum-gate/exit`. The poster reads both. Its exit code is 0 when it posted green, 1 when
-it posted red, 4 when it could not post, and 5 when the head went stale. So `vellum gate run` exits with the gate's
+The box command is POSIX `sh`. The check runs in a group whose output is written to `.figentra-flow-gate/log.txt` and
+whose exit code goes to `.figentra-flow-gate/exit`. The poster reads both. Its exit code is 0 when it posted green, 1 when
+it posted red, 4 when it could not post, and 5 when the head went stale. So `figentra-flow gate run` exits with the gate's
 result.
 
 The exported tree is a local clone of the repository at `<sha>`, not a `git archive`. It carries
-`refs/remotes/origin/<default>` and the GitHub `origin` URL, because `vellum gate ci` diffs against the default
+`refs/remotes/origin/<default>` and the GitHub `origin` URL, because `figentra-flow gate ci` diffs against the default
 branch. Nothing uncommitted or untracked is in it.
 
 ## Phase 3: land (design, for the leader's plan stop)
 
-Phase 3 turns the lander's checklist, done by hand by stackra-f4 today, into `vellum land`. It covers FR-6, AC-010,
+Phase 3 turns the lander's checklist, done by hand by stackra-f4 today, into `figentra-flow land`. It covers FR-6, AC-010,
 AC-011, AC-017 and P-006, and adds AC-029.
 
 ### Architecture overview
 
-`vellum land [<pr>] [--stack] [--dry-run]` runs where the lander runs: the tester's session, or any session the
+`figentra-flow land [<pr>] [--stack] [--dry-run]` runs where the lander runs: the tester's session, or any session the
 leader names. Its guarantee rests on GitHub, not on who runs it:
 
 1. **Check:** every rule below is checked against GitHub's live state. Every failing rule is reported, not only the
@@ -323,28 +323,28 @@ leader names. Its guarantee rests on GitHub, not on who runs it:
    - comment on the PR.
 
 ```text
-vellum land ──► GitHub: PR, statuses, mergeability ──► rules ──► PUT /pulls/{n}/merge {squash, sha: head}
+figentra-flow land ──► GitHub: PR, statuses, mergeability ──► rules ──► PUT /pulls/{n}/merge {squash, sha: head}
                                      ▲                                │
                      spec on disk (tier, approvals)                   ├─► Linear Done (key from the branch)
-                                                                      ├─► git config branch.<b>.vellumLanded <merge sha>
+                                                                      ├─► git config branch.<b>.figentraFlowLanded <merge sha>
                                                                       ├─► clean (that worktree only, AC-027 applies)
                                                                       └─► DELETE refs/heads/<b>; PR comment
 ```
 
 GitHub calls go through `gh api`, through the repository's own `bot:gh` wrapper when it has one, the same way network
-git goes through `bot:git`. Vellum never handles a token.
+git goes through `bot:git`. Figentra Flow never handles a token.
 
 ### Components and responsibilities
 
-- `src/commands/land.mjs`: `vellum land`:
+- `src/commands/land.mjs`: `figentra-flow land`:
   - `landRules(pr, ctx)`: a pure function from the PR, the head's statuses and the spec text to a list of problems;
   - `land()`: the merge and the steps after it;
   - `landStack()`: the `--stack` loop.
 - **Rules**, each one line in the refusal:
   1. The PR is open, not a draft, and not conflicting (`mergeable_state` is not `dirty`).
   2. Its base is the default branch. Otherwise: "stacked on `<base>`: land that first, or use `--stack`".
-  3. `vellum/gate` on the **head** sha is `success`, is the newest status of that context, and was posted by the gate
-     App (the status creator equals `vellum.gateApp`, default `stackra-gate[bot]`). Each failure is named: "no
+  3. `figentra-flow/gate` on the **head** sha is `success`, is the newest status of that context, and was posted by the gate
+     App (the status creator equals `figentra-flow.gateApp`, default `stackra-gate[bot]`). Each failure is named: "no
      gate", "gate red", "gate on an older commit", or "gate posted by `<login>`, not the gate App" (AC-011).
   4. The PR title is a conventional commit header (`type(scope)?: subject`, at most 100 characters). It becomes the
      squash commit's title.
@@ -357,12 +357,12 @@ git goes through `bot:git`. Vellum never handles a token.
   - `sha` is the checked head.
 - **After the merge.** Each step warns on failure and never undoes the merge:
   - Linear Done, with a comment naming the merge commit (ADR 0065 rule 7);
-  - `git config branch.<b>.vellumLanded <merge sha>` in the main checkout;
+  - `git config branch.<b>.figentraFlowLanded <merge sha>` in the main checkout;
   - `clean({ only: [worktree] })`, so the in-use, dirty and precious-file rules still hold. A kept tree is printed
-    with its reason, and a later `vellum clean` takes it;
+    with its reason, and a later `figentra-flow clean` takes it;
   - delete the remote branch;
-  - a PR comment: "Landed by vellum land as `<merge sha>`".
-- **`clean` change (AC-029):** a tree whose branch carries `vellumLanded`, with that commit on `origin/<default>`,
+  - a PR comment: "Landed by figentra-flow land as `<merge sha>`".
+- **`clean` change (AC-029):** a tree whose branch carries `figentraFlowLanded`, with that commit on `origin/<default>`,
   counts as saved. A squash commit has a different patch id from the branch's commits, so `git cherry` alone would
   call a landed multi-commit branch unsaved forever.
 - **`--stack` (AC-017):**
@@ -371,30 +371,30 @@ git goes through `bot:git`. Vellum never handles a token.
   - It then brings the next PR up to date by **merging** `origin/<default>` into its branch in its own worktree and
     pushing normally (no rebase, no force: the owner's rule). GitHub retargets it to the default branch when the
     landed branch is deleted.
-  - It runs `vellum gate run` there, and continues only on green.
+  - It runs `figentra-flow gate run` there, and continues only on green.
   - It stops at the first PR that fails a rule, or has no local worktree, and names it.
 
 ### Files and folders
 
-- `packages/figentra-flow/src/commands/land.mjs`, with `land` on the dispatcher in `bin/vellum.mjs`.
+- `packages/figentra-flow/src/commands/land.mjs`, with `land` on the dispatcher in `bin/figentra-flow.mjs`.
 - `packages/figentra-flow/src/lib/github.mjs`: `gh(root, args)` through `bot:gh` when present, and `api(root, method, path, body?)`
   returning parsed JSON.
-- `packages/figentra-flow/src/commands/clean.mjs`: the `only` option and the `vellumLanded` saved rule.
-- `packages/figentra-flow/src/lib/git.mjs`: `isSaved` reads `branch.<b>.vellumLanded`.
+- `packages/figentra-flow/src/commands/clean.mjs`: the `only` option and the `figentraFlowLanded` saved rule.
+- `packages/figentra-flow/src/lib/git.mjs`: `isSaved` reads `branch.<b>.figentraFlowLanded`.
 - Tests: `land.test.mjs` (the rules, the merge request and the steps after it, with the GitHub calls injected),
   `land-stack.test.mjs`, and a `clean.test.mjs` case for AC-029.
 
 ### Data models and migrations
 
-None. The one piece of state is the git config key `branch.<b>.vellumLanded`, in the main checkout. It is removed with
+None. The one piece of state is the git config key `branch.<b>.figentraFlowLanded`, in the main checkout. It is removed with
 the branch when `clean` deletes the branch.
 
 ### Contracts
 
-- CLI: `vellum land [<pr>] [--stack] [--dry-run]`.
+- CLI: `figentra-flow land [<pr>] [--stack] [--dry-run]`.
   - Exit codes: 0 landed (or would land, with `--dry-run`), 1 refused (every reason printed), 2 usage or no PR, 3
     merged with a follow-up step that only warned.
-- `package.json` `"vellum": { "gateApp": "<login>" }` overrides the trusted status creator.
+- `package.json` `"figentra-flow": { "gateApp": "<login>" }` overrides the trusted status creator.
 - GitHub calls:
   - `GET /repos/{r}/pulls/{n}` and `/pulls/{n}/commits`;
   - `GET /repos/{r}/commits/{sha}/statuses`;
@@ -415,9 +415,9 @@ the branch when `clean` deletes the branch.
 
 ### Security and tenancy
 
-- **No new trust:** branch protection's required `vellum/gate`, bound to the gate App in phase 6, is what GitHub
+- **No new trust:** branch protection's required `figentra-flow/gate`, bound to the gate App in phase 6, is what GitHub
   enforces. `land`'s own check of the status creator is the same rule, applied before the merge.
-- **No token handling:** `gh` gets its token from the `bot:gh` wrapper (Infisical). Vellum never reads, prints or
+- **No token handling:** `gh` gets its token from the `bot:gh` wrapper (Infisical). Figentra Flow never reads, prints or
   stores it.
 - **Owner-only stops:** `land` never records an approval, and refuses a spec whose stop is not recorded. Production
   promote stays `runway promote`, owner-only (phase 5).
@@ -439,54 +439,54 @@ the branch when `clean` deletes the branch.
   - the bottom PR lands;
   - the next PR is updated by a merge commit, never a rewrite;
   - a red gate stops the stack.
-- `clean`: a branch with `vellumLanded` on `origin/main` is removed even though `git cherry` shows `+`.
+- `clean`: a branch with `figentraFlowLanded` on `origin/main` is removed even though `git cherry` shows `+`.
 
 ### Rollout
 
 1. Land after phase 2. `land` trusts only what the phase 2 poster writes.
-2. f4's acceptance on vellum PRs:
+2. f4's acceptance on figentra-flow PRs:
    - a scratch PR with no gate, a red gate and a stale gate is refused, each with its reason;
    - a feature spec missing `Approved by` is refused;
    - a green PR lands as one squash commit, and its worktree is gone.
-3. Then f4 uses `vellum land` instead of hand landing, one repository at a time. Phase 6 makes the required check bind
+3. Then f4 uses `figentra-flow land` instead of hand landing, one repository at a time. Phase 6 makes the required check bind
    to the gate App.
 
 ### Decisions at the plan stop (leader, 2026-10-31)
 
 1. **Stacks are updated by merge.** The no-force rule wins, and the squash on land flattens the history anyway.
 2. **`stackra-gate[bot]` is the trusted creator.** GitHub reserves the `[bot]` suffix for Apps. This check is defence in
-   depth only; the guarantee is the ruleset requiring `vellum/gate` from the App's integration id (phase 6).
-3. **Any session may run `land`.** There is no `VELLUM_LANDER` convention: the required check plus `checkApproval` is
+   depth only; the guarantee is the ruleset requiring `figentra-flow/gate` from the App's integration id (phase 6).
+3. **Any session may run `land`.** There is no `FIGENTRA_FLOW_LANDER` convention: the required check plus `checkApproval` is
    the guarantee.
 4. **Before phase 6** switches a repository's ruleset, `land` refuses there unless `--manual-ok` is passed (AC-030).
    It reads `GET /repos/{r}/rules/branches/{default}` and looks for a `required_status_checks` rule naming
-   `vellum/gate`. Only stackra-f4 passes `--manual-ok`, during the transition. The flag is printed in the PR comment.
+   `figentra-flow/gate`. Only stackra-f4 passes `--manual-ok`, during the transition. The flag is printed in the PR comment.
 5. AC-029 stays.
 6. **The AI review is a land rule** (added 2026-10-31, AC-031). Every change with a spec (small, feature or big) needs
    the counted ADR 0230 verdict on its head; trivial work has no spec and is exempt. The verdict is
    `AI-REVIEW: PASS <40-hex head> base=<base>` from the `stackra-reviewer` App, matched by App identity, unedited and
    not by the PR's author or the head commit's author or committer; a FAIL for the head beats a PASS. The owner's
    APPROVED review with `owner-approval` on the head also counts. It is ported from core's `pr-merge.mjs` without its
-   patch-id survival, because land merges the exact head. `vellum review`, run by a different agent than the builder
+   patch-id survival, because land merges the exact head. `figentra-flow review`, run by a different agent than the builder
    and posting through `pnpm bot:review`, is designed after land (T035).
 
 ## Phase 4: status, the MCP server and metrics (design, for the leader's plan stop)
 
 Phase 4 gives one place that shows what is in flight. It covers FR-7, AC-012, AC-024, AC-026 and P-007, and adds
-AC-032 and AC-033. It also brings back, rewritten, the old Vellum's MCP server and metrics (owner decision D1). All
+AC-032 and AC-033. It also brings back, rewritten, the old Figentra Flow's MCP server and metrics (owner decision D1). All
 three are read-only views of one snapshot of the repositories in `workspace.yaml`.
 
 ### Architecture overview
 
 ```text
-workspace.yaml ──► snapshot(repos) ──┬─► vellum status [--json]          (people)
-  (vellum init --workspace)          ├─► vellum mcp  (stdio, read-only)   (agents)
-                                     └─► vellum status --metrics          (delivery numbers)
+workspace.yaml ──► snapshot(repos) ──┬─► figentra-flow status [--json]          (people)
+  (figentra-flow init --workspace)          ├─► figentra-flow mcp  (stdio, read-only)   (agents)
+                                     └─► figentra-flow status --metrics          (delivery numbers)
 snapshot per repository:
   git (local, no network) ── worktrees: branch, head, dirty, idle, in use, ahead/behind origin
   specs (default branch and each worktree) ── status, tier, approvals, **Session**, gate check problems
   GitHub through the repository's bot wrapper (skipped with --offline) ── open PRs: head, mergeable,
-                                                        vellum/gate on the head, the counted AI review, base
+                                                        figentra-flow/gate on the head, the counted AI review, base
 ```
 
 Nothing is stored. Each call rebuilds the snapshot from git, the spec files and GitHub, so it cannot drift from the
@@ -496,7 +496,7 @@ file (an owner step).
 ### Components and responsibilities
 
 - `src/lib/snapshot.mjs` builds `snapshot({ repos, api, offline, now })`, which returns
-  `{ version: "vellum.status/1", takenAt, repos: [...] }`. Each repository entry carries:
+  `{ version: "figentra-flow.status/1", takenAt, repos: [...] }`. Each repository entry carries:
   - `specs`: `{ key, folder, status, tier, session, problems }`. Specs are read from the default branch and from each
     worktree; a worktree's copy wins for its own key.
   - `worktrees`: `{ path, branch, key, head, dirty, idleHours, inUse, ahead, behind }`.
@@ -510,27 +510,27 @@ file (an owner step).
     - It is `building` when the spec is Tasked or Implementing.
   - `warnings`: the excess when more building sessions exist than `cap` allows. `cap` is `workspace.yaml`'s
     `sessionCap`, default 2, raised only by the owner (AC-026).
-- `src/commands/status.mjs` is `vellum status [--repo <path>] [--json] [--offline] [--metrics [--since 30d]]`. It
+- `src/commands/status.mjs` is `figentra-flow status [--repo <path>] [--json] [--offline] [--metrics [--since 30d]]`. It
   renders one block per repository with four sections: specs by status, worktrees, PRs and sessions. `--json` prints
   the snapshot itself.
 - `src/lib/metrics.mjs` is `metrics({ repos, api, since })`. It covers the PRs merged in the window, per repository
-  and in total, using the old Vellum's numbers now that their data exists:
+  and in total, using the old Figentra Flow's numbers now that their data exists:
   - lead time, from PR opened to merged (median and p90);
   - cycle time, from the first commit to merged;
-  - gate runs per PR, and the share that were red (`vellum/gate` statuses over the PR's commits);
+  - gate runs per PR, and the share that were red (`figentra-flow/gate` statuses over the PR's commits);
   - rework: heads pushed after the first gate;
   - review rounds: `AI-REVIEW: FAIL` verdicts before the PASS;
   - approval latency: the dates in each merged spec's Status history, from Draft to its last approval;
   - open-work age, from the snapshot.
-- `src/commands/mcp.mjs` is `vellum mcp`, a stdio MCP server.
+- `src/commands/mcp.mjs` is `figentra-flow mcp`, a stdio MCP server.
   - It speaks JSON-RPC 2.0 by hand (`initialize`, `tools/list`, `tools/call`), in keeping with the package having no
     dependencies.
   - It offers five read-only tools, each returning JSON text:
-    - `vellum_status` (`repo?`, `offline?`);
-    - `vellum_spec` (`repo`, `key`): the spec's status, tier, approvals and `vellum gate check` problems;
-    - `vellum_trace` (`repo`, `key`): the FR/AC → task → test matrix;
-    - `vellum_worktrees` (`repo?`);
-    - `vellum_metrics` (`since?`).
+    - `figentra_flow_status` (`repo?`, `offline?`);
+    - `figentra_flow_spec` (`repo`, `key`): the spec's status, tier, approvals and `figentra-flow gate check` problems;
+    - `figentra_flow_trace` (`repo`, `key`): the FR/AC → task → test matrix;
+    - `figentra_flow_worktrees` (`repo?`);
+    - `figentra_flow_metrics` (`since?`).
   - No tool writes, merges, lands, starts or cleans (AC-033).
 
 ### Files and folders
@@ -546,18 +546,18 @@ file (an owner step).
 
 ### Data models and migrations
 
-There is no stored data and no migration. The snapshot schema is versioned (`vellum.status/1`) so MCP tools and
+There is no stored data and no migration. The snapshot schema is versioned (`figentra-flow.status/1`) so MCP tools and
 `--json` readers can rely on it; a breaking change raises the version. `workspace.yaml` gains one optional key,
 `sessionCap`.
 
 ### Contracts
 
-- CLI: `vellum status [--repo <path>] [--json] [--offline] [--metrics [--since <n>d]]`. It exits 0, or 1 when a
+- CLI: `figentra-flow status [--repo <path>] [--json] [--offline] [--metrics [--since <n>d]]`. It exits 0, or 1 when a
   warning (AC-026) is present, so a script can alert.
-- `vellum mcp` speaks MCP over stdio. Each tool's input schema is JSON Schema, and each result is one text content
+- `figentra-flow mcp` speaks MCP over stdio. Each tool's input schema is JSON Schema, and each result is one text content
   item holding JSON.
-- Registration: a repository's `.mcp.yaml` holds `vellum: { command: pnpm, args: [exec, vellum, mcp] }`, which
-  `stackra agents sync` renders into `.mcp.json`. Vellum documents this entry and never writes it itself.
+- Registration: a repository's `.mcp.yaml` holds `figentra-flow: { command: pnpm, args: [exec, figentra-flow, mcp] }`, which
+  `stackra agents sync` renders into `.mcp.json`. Figentra Flow documents this entry and never writes it itself.
 
 ### Error handling
 
@@ -575,7 +575,7 @@ There is no stored data and no migration. The snapshot schema is versioned (`vel
 - No tokens: GitHub goes through the repository's bot wrapper (see the decisions below). No token, no environment
   value and no file outside the repositories reaches the output. Spec text and PR titles appear as they are, since
   they are already in the repositories.
-- Sessions: a session is a name written in a spec. Vellum does not read the app's session list or anything outside the
+- Sessions: a session is a name written in a spec. Figentra Flow does not read the app's session list or anything outside the
   repositories.
 
 ### Testing strategy
@@ -598,11 +598,11 @@ There is no stored data and no migration. The snapshot schema is versioned (`vel
 
 ### Rollout
 
-1. Lands after phase 3. `vellum init --workspace` (phase 1) already writes the repositories.
-2. f4's acceptance: on the Mac's workspace, `vellum status` lists every repository's specs, worktrees, gates and PRs.
+1. Lands after phase 3. `figentra-flow init --workspace` (phase 1) already writes the repositories.
+2. f4's acceptance: on the Mac's workspace, `figentra-flow status` lists every repository's specs, worktrees, gates and PRs.
    These must match GitHub's open PR list and `git worktree list`, and for core they must agree with
    `state-of-work.md`.
-3. The owner registers `vellum mcp` in the repositories' `.mcp.yaml` and decides when `state-of-work.md` retires.
+3. The owner registers `figentra-flow mcp` in the repositories' `.mcp.yaml` and decides when `state-of-work.md` retires.
 
 ### Decisions at the plan stop (leader, 2026-10-31)
 
@@ -618,19 +618,19 @@ There is no stored data and no migration. The snapshot schema is versioned (`vel
 
 ## Phase A: a neutral core with adapters (design, for the leader's plan stop)
 
-Owner direction of 2026-10-31: Vellum becomes a product anyone can use, with no Stackra or Figentra coupling in its
-core. Every Figentra choice moves into a `vellum.config` file in our repositories. The product is being renamed (the
+Owner direction of 2026-10-31: Figentra Flow becomes a product anyone can use, with no Stackra or Figentra coupling in its
+core. Every Figentra choice moves into a `figentra-flow.config` file in our repositories. The product is being renamed (the
 new name comes later), so its name lives in one module. Phase A comes after the credentials fix (AC-034) and before
 phase 4, whose GitHub and tracker reads go through these adapters. It covers FR-11 and AC-035 to AC-042.
 
 ### Architecture overview
 
 The core keeps the workflow: specs and their gates, worktrees, the gate, land, status and release. It reaches the
-outside world only through six ports. A repository chooses an adapter for each port in `vellum.config.json`.
+outside world only through six ports. A repository chooses an adapter for each port in `figentra-flow.config.json`.
 
 ```text
-                    ┌────────────── vellum core (no vendor names) ──────────────┐
- vellum.config.json │ spec gates · worktrees · gate · land · status · release │
+                    ┌────────────── figentra-flow core (no vendor names) ──────────────┐
+ figentra-flow.config.json │ spec gates · worktrees · gate · land · status · release │
    (per repo)       └──┬────────┬──────────┬──────────┬──────────┬──────────┬──┘
                        │        │          │          │          │          │
                   credentials  tracker   runner     apps      secrets    preset
@@ -655,17 +655,17 @@ Today's code becomes adapters in place:
 
 - **The product module, `src/lib/product.mjs`.** It is the one place the product's name appears:
   - the CLI name and the binary;
-  - the config file name (`vellum.config.json`);
-  - the status context (`vellum/gate`);
+  - the config file name (`figentra-flow.config.json`);
+  - the status context (`figentra-flow/gate`);
   - the comment markers;
-  - the environment prefix (`VELLUM_`);
-  - the user config folder (`~/.config/vellum`).
+  - the environment prefix (`FIGENTRA_FLOW_`);
+  - the user config folder (`~/.config/figentra-flow`).
 
   Every other file imports from it. A rename then touches this module, `package.json` and the docs (AC-042).
 
 - **The config module, `src/lib/config.mjs`.**
-  - `loadConfig(root)` reads `vellum.config.json` from the repository root, validates it against the shipped JSON
-    schema (`schema/vellum.config.schema.json`), and refuses an unknown key or a wrong type, naming the path (AC-035).
+  - `loadConfig(root)` reads `figentra-flow.config.json` from the repository root, validates it against the shipped JSON
+    schema (`schema/figentra-flow.config.schema.json`), and refuses an unknown key or a wrong type, naming the path (AC-035).
   - Each port's adapter is built from its block.
   - A port with no block refuses when a command needs it, naming the key to set. There are no Figentra defaults: with
     no config, `start` asks for a tracker, `land` asks for credentials, and `gate run` asks for a runner (AC-036).
@@ -687,8 +687,8 @@ Today's code becomes adapters in place:
   - The spec folder name follows the key (`.agents/specs/<key>-<slug>/`). The gate's key and branch checks read the
     adapter's patterns instead of `STA-` and `figentra/` (AC-037).
 - **Runner port** (`run({ dir, command, label, sha }) → exit code`, AC-038):
-  - `github-actions` is the default for outside users. `vellum init --runner github-actions` writes
-    `.github/workflows/vellum-gate.yml`, a `workflow_dispatch` with `sha` and `branch` inputs that checks out the
+  - `github-actions` is the default for outside users. `figentra-flow init --runner github-actions` writes
+    `.github/workflows/figentra-flow-gate.yml`, a `workflow_dispatch` with `sha` and `branch` inputs that checks out the
     commit, runs the check and then the poster with the gate App's key from repository secrets. `gate run` dispatches
     it through the credentials port, follows the run, and passes its conclusion through.
   - `ssh` takes `host` and is today's `--box`.
@@ -703,15 +703,15 @@ Today's code becomes adapters in place:
     `apps.review.slug`. Nothing is hard-coded: `stackra-gate[bot]`, `stackra-reviewer` and `figentra-usr` leave the
     code.
   - The poster reads `<PREFIX>GATE_APP_ID` and `<PREFIX>GATE_PRIVATE_KEY`.
-  - `vellum app create gate|review` runs GitHub's App-manifest flow, for a human only. It refuses when stdin is not a
+  - `figentra-flow app create gate|review` runs GitHub's App-manifest flow, for a human only. It refuses when stdin is not a
     terminal or an agent environment is detected.
     1. It serves a one-page form on `127.0.0.1` that POSTs the manifest (name, permissions: statuses and pull requests
        write for the gate, issues write for review, no webhook) to GitHub.
     2. It receives the `code` on the local callback and exchanges it at `POST /app-manifests/{code}/conversions`.
     3. It hands the private key straight to the secrets port's `store`, never to the screen or a log. With the `env`
        adapter, that is a 0600 file at a path the human names.
-    4. It prints the App id and login to paste into `vellum.config.json`.
-- **Secrets port** (AC-040). It never reads a value into Vellum.
+    4. It prints the App id and login to paste into `figentra-flow.config.json`.
+- **Secrets port** (AC-040). It never reads a value into Figentra Flow.
   - The interface is `wrap(command, scope) → command`, for the runner and poster side, and `store(name, value)`, for
     `app create` only.
   - `env`: `wrap` returns the command unchanged, so values come from the environment the caller set; `store` writes
@@ -727,7 +727,7 @@ Today's code becomes adapters in place:
   - A path names a repository's own preset folder, which replaces today's `.agents/speckit/presets` detection.
 - **Other keys:**
   - `clean.keep` holds the tester's worktree name patterns (today's `TESTER` regex).
-  - `gate.check` holds the check command (today's `package.json` `vellum.gate`).
+  - `gate.check` holds the check command (today's `package.json` `figentra-flow.gate`).
   - `review.required` holds the tiers that need the AI review (default `small, feature, big`).
 
 ### Files and folders
@@ -737,17 +737,17 @@ Today's code becomes adapters in place:
   - `src/adapters/credentials.mjs`, `tracker/{linear,github-issues,jira}.mjs`,
     `runner/{github-actions,ssh,local,command}.mjs`, `secrets/{env,infisical}.mjs` and `apps.mjs`;
   - `src/commands/app.mjs`;
-  - `schema/vellum.config.schema.json`;
+  - `schema/figentra-flow.config.schema.json`;
   - `assets/presets/neutral/`;
-  - `assets/workflows/vellum-gate.yml`.
+  - `assets/workflows/figentra-flow-gate.yml`.
 - Changed: every command reads `loadConfig(root)` and the product module, instead of a constant or `package.json`'s
-  `vellum` key. `lib/linear.mjs` moves to `adapters/tracker/linear.mjs`.
-- Our repositories gain `vellum.config.json` (W9). Core's carries the Figentra choices below.
+  `figentra-flow` key. `lib/linear.mjs` moves to `adapters/tracker/linear.mjs`.
+- Our repositories gain `figentra-flow.config.json` (W9). Core's carries the Figentra choices below.
 
 ### Data models and migrations
 
-`vellum.config.json` is versioned as `{ "$schema": "…/vellum.config.schema.json", "version": 1, … }`. Today's
-`package.json` `"vellum"` keys (`credentials`, `gate`, `gateApp`) are read once more with a deprecation warning, then
+`figentra-flow.config.json` is versioned as `{ "$schema": "…/figentra-flow.config.schema.json", "version": 1, … }`. Today's
+`package.json` `"figentra-flow"` keys (`credentials`, `gate`, `gateApp`) are read once more with a deprecation warning, then
 dropped in the next minor version. There is no other state.
 
 Figentra's configuration, as core will carry it:
@@ -785,10 +785,10 @@ Figentra's configuration, as core will carry it:
 ### Contracts
 
 - CLI:
-  - `vellum config check` validates the file and prints the resolved adapters, never a secret.
-  - `vellum init --runner <kind> --tracker <kind>` writes a starter config, plus the gate workflow for
+  - `figentra-flow config check` validates the file and prints the resolved adapters, never a secret.
+  - `figentra-flow init --runner <kind> --tracker <kind>` writes a starter config, plus the gate workflow for
     `github-actions`.
-  - `vellum app create gate|review` is described above.
+  - `figentra-flow app create gate|review` is described above.
 - Adapters are plain ES modules exporting a factory `(block, context) → port`. The core imports only built-ins;
   external plug-ins are a later decision.
 - The status context, the comment markers and the `AI-REVIEW:` line stay byte-compatible, so PRs gated before the
@@ -805,7 +805,7 @@ Figentra's configuration, as core will carry it:
 
 ### Security and tenancy
 
-- Secret values never enter Vellum's memory except in `app create`'s one hand-off from GitHub to the secrets port.
+- Secret values never enter Figentra Flow's memory except in `app create`'s one hand-off from GitHub to the secrets port.
   Everywhere else the secrets port wraps commands.
 - `app create` refuses in a non-interactive or agent session, because creating an identity is the owner's act.
 - Credentials never fall back to a personal login (AC-034 carries over).
@@ -836,32 +836,32 @@ Figentra's configuration, as core will carry it:
 1. **A1**: the product and config modules, the credentials and secrets ports, and the deprecation path.
 2. **A2**: the tracker port: `linear` moved, `github-issues` added, `jira` added.
 3. **A3**: the runner port: `ssh`, `local` and `command`, then `github-actions` with its workflow.
-4. **A4**: apps from config, and `vellum app create`.
+4. **A4**: apps from config, and `figentra-flow app create`.
 5. **A5**: the `neutral` preset.
-6. **A6**: our repositories get `vellum.config.json` (core first, then vellum itself, os, the products), and our Apps
-   are created as Figentra Gate and Figentra Review by the owner with `vellum app create`.
+6. **A6**: our repositories get `figentra-flow.config.json` (core first, then figentra-flow itself, os, the products), and our Apps
+   are created as Figentra Gate and Figentra Review by the owner with `figentra-flow app create`.
 
 Each step lands green on f4's box. Phase 4 follows A6.
 
 ### Decisions at the plan stop (leader, 2026-10-31)
 
-1. **`vellum.config.json` with the shipped schema; unknown keys refused.** No `.mjs` config, so a config never runs
+1. **`figentra-flow.config.json` with the shipped schema; unknown keys refused.** No `.mjs` config, so a config never runs
    code.
 2. **The testbed is a `command` runner.** There is no plug-in loader; plug-ins come only if an outside user needs
    something `command` cannot do.
-3. **`github-actions` is the outsiders' default.** ADR 0503's "GitHub keeps only Release plus `vellum/gate`" is our
+3. **`github-actions` is the outsiders' default.** ADR 0503's "GitHub keeps only Release plus `figentra-flow/gate`" is our
    policy, expressed by our config choosing `command`.
 4. **`app create` is human-only.** The key goes through the secrets port in the owner's one hand-off (ADR 0257);
    agents never see it.
 5. **Jira later.** A2 ships `linear` and `github-issues`, with the port shaped for Jira, which comes when there is a
    site to test against.
-6. **Old `package.json` `"vellum"` keys** keep working with a deprecation warning for one minor version.
+6. **Old `package.json` `"figentra-flow"` keys** keep working with a deprecation warning for one minor version.
 7. **A tracker failure in `gate plan`** is reported as a warning, never swallowed (A2 tests it).
 8. **The product name stays in `product.mjs`.** Nothing is renamed until the owner picks the new name.
 9. **The artifact guard (leader, 2026-10-31, AC-043).** `gate run` and `land` refuse a diff that adds paths under
    `.cache/`, `node_modules/`, `dist/`, `.turbo/` or `coverage/`, or any one file over 5 MB. Both the list and the size
-   are `vellum.config.json`'s `artifacts`.
+   are `figentra-flow.config.json`'s `artifacts`.
 
 A finding outside this design: `gate.mjs` calls `pnpm --silent linear …`, and pnpm 12 refused `-s` (37f62ef). The
-tracker port removes the call. Until then, Linear stage comments from `vellum gate plan` may fail quietly, because
+tracker port removes the call. Until then, Linear stage comments from `figentra-flow gate plan` may fail quietly, because
 they are best-effort.
