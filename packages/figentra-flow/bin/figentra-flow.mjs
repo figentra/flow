@@ -23,6 +23,7 @@ const COMMANDS = [
   "train",
   "app",
   "status",
+  "mcp",
 ];
 const [command, ...args] = process.argv.slice(2);
 if (!COMMANDS.includes(command)) {
