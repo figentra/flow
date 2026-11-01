@@ -39,7 +39,9 @@ import { commit, repo, sh } from "./__fixtures__/repo.mjs";
 
 const GATE_APP = "figentra-gate[bot]";
 const REPO = "figentra/flow";
-const green = () => [{ context: "figentra-flow/gate", state: "success", creator: { login: GATE_APP } }];
+const green = () => [
+  { context: "figentra-flow/gate", state: "success", creator: { login: GATE_APP } },
+];
 const red = () => [
   {
     context: "figentra-flow/gate",
@@ -68,20 +70,24 @@ function hub(seed = {}) {
   const api = (method, path, body) => {
     calls.push({ method, path, body });
     let m;
-    if ((m = path.match(/^\/repos\/([^/]+\/[^/]+)\/milestones\?/))) return ok(milestones[m[1]] ?? []);
+    if ((m = path.match(/^\/repos\/([^/]+\/[^/]+)\/milestones\?/)))
+      return ok(milestones[m[1]] ?? []);
     if (method === "POST" && (m = path.match(/^\/repos\/([^/]+\/[^/]+)\/milestones$/))) {
       const list = (milestones[m[1]] ??= []);
       const made = {
         number: list.length + 1,
         state: "open",
         created_at: new Date().toISOString(),
-        ...(/** @type {object} */ (body)),
+        .../** @type {object} */ (body),
       };
       list.push(made);
       return ok(made);
     }
     if (method === "PATCH" && (m = path.match(/^\/repos\/([^/]+\/[^/]+)\/milestones\/(\d+)$/))) {
-      Object.assign(milestones[m[1]].find((x) => x.number === Number(m[2])), body);
+      Object.assign(
+        milestones[m[1]].find((x) => x.number === Number(m[2])),
+        body,
+      );
       return ok({});
     }
     if ((m = path.match(/\/pulls\/(\d+)$/))) return prs[m[1]] ? ok(prs[m[1]]) : missing;
@@ -89,7 +95,8 @@ function hub(seed = {}) {
     if ((m = path.match(/\/git\/ref\/heads\/(.+)$/)))
       return refs[m[1]] ? ok({ object: { sha: refs[m[1]] } }) : missing;
     if (path.includes("/compare/")) return ok({ status: seed.compare ?? "ahead" });
-    if ((m = path.match(/^\/repos\/([^/]+\/[^/]+)\/releases/))) return ok(seed.releases?.[m[1]] ?? []);
+    if ((m = path.match(/^\/repos\/([^/]+\/[^/]+)\/releases/)))
+      return ok(seed.releases?.[m[1]] ?? []);
     return ok({});
   };
   const writes = () => calls.filter((c) => c.method !== "GET").map((c) => `${c.method} ${c.path}`);
@@ -143,16 +150,32 @@ const trainOf = (/** @type {ReturnType<typeof hub>} */ h, i = 0) =>
   stateOf(h.milestones[REPO][i].description);
 
 test("state, versions and the cut-off: the state line round-trips; changesets give the highest bump", () => {
-  const state = { members: [3, 1], ejected: [{ pr: 2, reason: "red" }], waiting: [9], closed: true };
+  const state = {
+    members: [3, 1],
+    ejected: [{ pr: 2, reason: "red" }],
+    waiting: [9],
+    closed: true,
+  };
   assert.deepEqual(stateOf(stateText("1.2.3", state)), state);
-  assert.deepEqual(stateOf("written by hand"), { members: [], ejected: [], waiting: [], closed: false });
+  assert.deepEqual(stateOf("written by hand"), {
+    members: [],
+    ejected: [],
+    waiting: [],
+    closed: false,
+  });
   assert.equal(bump("0.2.1", "patch"), "0.2.2");
   assert.equal(bump("0.2.1", "minor"), "0.3.0");
   assert.equal(bump("0.2.1", "major"), "1.0.0");
   const sets = ['---\n"@x/a": patch\n"@x/b": minor\n---\n\nnote', "---\nunknown: major\n---\n"];
   assert.equal(nextVersion(sets, { "@x/a": "0.2.1", "@x/b": "0.2.1" }), "0.3.0");
   assert.equal(nextVersion([], { "@x/a": "0.2.1" }), undefined);
-  const t = { number: 1, version: "1.0.0", open: true, created: "2026-11-01T00:00:00Z", state: stateOf("") };
+  const t = {
+    number: 1,
+    version: "1.0.0",
+    open: true,
+    created: "2026-11-01T00:00:00Z",
+    state: stateOf(""),
+  };
   const at = Date.parse("2026-11-01T00:00:00Z");
   assert.equal(cutOff(t, DEFAULTS), false);
   assert.equal(cutOff(t, { ...DEFAULTS, cutoff: 24 }, at + 23 * 3_600_000), false);
@@ -202,7 +225,12 @@ test("add: refuses a PR that is not green on its exact head, or not on the defau
     const s = /** @type {any} */ (seed);
     const h = hub({
       milestones: { [REPO]: [milestone("1.0.0")] },
-      prs: { 7: pr(7, head, { ...(s.base ? { base: { ref: s.base } } : {}), ...(s.state ? { state: s.state } : {}) }) },
+      prs: {
+        7: pr(7, head, {
+          ...(s.base ? { base: { ref: s.base } } : {}),
+          ...(s.state ? { state: s.state } : {}),
+        }),
+      },
       statuses: s.statuses,
     });
     const r = await trainAdd(ctx(h), 7);
@@ -229,7 +257,9 @@ test("add: a green PR boards in order with the label and milestone; after the cu
     `PATCH /repos/${REPO}/issues/7`,
     `PATCH /repos/${REPO}/milestones/1`,
   ]);
-  assert.deepEqual(h.calls.find((c) => c.path.endsWith("/issues/7/labels"))?.body, { labels: ["train:1.0.0"] });
+  assert.deepEqual(h.calls.find((c) => c.path.endsWith("/issues/7/labels"))?.body, {
+    labels: ["train:1.0.0"],
+  });
   assert.deepEqual(trainOf(h).members, [3, 7]);
   assert.equal((await trainAdd(ctx(h), 7)).code, 1);
 
@@ -237,7 +267,10 @@ test("add: a green PR boards in order with the label and milestone; after the cu
   assert.equal((await trainClose(ctx(late))).code, 0);
   assert.equal((await trainAdd(ctx(late), 7)).code, 0);
   assert.deepEqual(trainOf(late), { members: [3], ejected: [], waiting: [7], closed: true });
-  assert.equal(late.calls.some((c) => c.path.endsWith("/issues/7/labels")), false);
+  assert.equal(
+    late.calls.some((c) => c.path.endsWith("/issues/7/labels")),
+    false,
+  );
 });
 
 test("close: cuts the train off once; --dry-run writes nothing", async () => {
@@ -270,7 +303,11 @@ function station(changes) {
     statuses[head] = green();
   }
   const members = Object.keys(changes).map(Number);
-  const h = hub({ milestones: { [REPO]: [milestone("1.0.0", { members, closed: true })] }, prs, statuses });
+  const h = hub({
+    milestones: { [REPO]: [milestone("1.0.0", { members, closed: true })] },
+    prs,
+    statuses,
+  });
   /** @type {string[]} */
   const gated = [];
   /** A box that is red while `bad.txt` is in the checked-out tree. */
@@ -295,11 +332,20 @@ test("build: merges in board order with merge commits, ejects a conflicting memb
   assert.match(trainOf(s.h).ejected[0].reason, /conflicts with main and #1 on the train/);
   const comment = s.h.calls.find((x) => x.path.endsWith("/issues/2/comments"));
   assert.match(comment?.body.body, /Ejected from train 1\.0\.0.*conflicts/s);
-  assert.ok(s.h.calls.some((x) => x.method === "DELETE" && x.path.endsWith("/issues/2/labels/train%3A1.0.0")));
+  assert.ok(
+    s.h.calls.some(
+      (x) => x.method === "DELETE" && x.path.endsWith("/issues/2/labels/train%3A1.0.0"),
+    ),
+  );
   // One gate run, on the tip; the tip is two merge commits on main, no member rewritten.
   assert.equal(s.gated.length, 1);
   assert.equal(s.gated[0], `train/1.0.0@${r.tip}`);
-  assert.deepEqual(trainFiles(s.r.origin).sort(), ["README.md", "a.txt", "c.txt", "figentra-flow.config.json"]);
+  assert.deepEqual(trainFiles(s.r.origin).sort(), [
+    "README.md",
+    "a.txt",
+    "c.txt",
+    "figentra-flow.config.json",
+  ]);
   const parents = sh(s.r.origin, "rev-list", "--parents", "-n", "1", "train/1.0.0").split(" ");
   assert.equal(parents.length, 3);
   assert.equal(parents[2], s.prs[3].head.sha);
@@ -318,8 +364,14 @@ test("build: on red, bisect gates prefixes, ejects the first breaking member wit
   const r = await trainBuild(c);
   assert.equal(r.code, 0, JSON.stringify(r));
   assert.deepEqual(trainOf(s.h).members, [1, 3, 4]);
-  assert.deepEqual(trainOf(s.h).ejected.map((e) => e.pr), [2]);
-  assert.match(trainOf(s.h).ejected[0].reason, /turns red with it: figentra-flow\/gate failed on [0-9a-f]{12}/);
+  assert.deepEqual(
+    trainOf(s.h).ejected.map((e) => e.pr),
+    [2],
+  );
+  assert.match(
+    trainOf(s.h).ejected[0].reason,
+    /turns red with it: figentra-flow\/gate failed on [0-9a-f]{12}/,
+  );
   // The tip (red), prefix 2 (red), prefix 1 (green), then the rebuilt tip (green): four gate runs.
   assert.equal(s.gated.length, 4);
   assert.equal(s.gated.at(-1), `train/1.0.0@${r.tip}`);
@@ -364,11 +416,17 @@ test("depart: refuses unless figentra-flow/gate is green on the tip's exact sha"
     const h = built({ statuses });
     const r = await trainDepart(ctx(h));
     assert.equal(r.code, 1);
-    assert.match(r.problems?.join() ?? "", /train\/1\.0\.0: (no figentra-flow\/gate on the head f{12}|figentra-flow\/gate is failure)/);
+    assert.match(
+      r.problems?.join() ?? "",
+      /train\/1\.0\.0: (no figentra-flow\/gate on the head f{12}|figentra-flow\/gate is failure)/,
+    );
     assert.deepEqual(h.writes(), []);
   }
   const unbuilt = built({ refs: {} });
-  assert.match((await trainDepart(ctx(unbuilt))).problems?.join() ?? "", /train\/1\.0\.0 does not exist/);
+  assert.match(
+    (await trainDepart(ctx(unbuilt))).problems?.join() ?? "",
+    /train\/1\.0\.0 does not exist/,
+  );
 });
 
 test("depart: a fast-forward only, then the milestone closes and the next train opens with the waiting PRs", async (t) => {
@@ -376,7 +434,10 @@ test("depart: a fast-forward only, then the milestone closes and the next train 
     const h = built({ compare: status });
     const r = await trainDepart(ctx(h));
     assert.equal(r.code, 1);
-    assert.match(r.problems?.join() ?? "", new RegExp(`not a fast-forward of main \\(${status}\\)`));
+    assert.match(
+      r.problems?.join() ?? "",
+      new RegExp(`not a fast-forward of main \\(${status}\\)`),
+    );
     assert.deepEqual(h.writes(), []);
   }
   const dry = built();
@@ -427,13 +488,19 @@ test("depart: a refused fast-forward stops; a failed step after it only warns (e
 
 test("depart: train.after holds the train until the upstream train's version is published", async () => {
   const upstream = {
-    "figentra/stackra": [milestone("0.3.0", { closed: true }, { state: "closed" }), milestone("0.3.1", {}, { number: 2 })],
+    "figentra/stackra": [
+      milestone("0.3.0", { closed: true }, { state: "closed" }),
+      milestone("0.3.1", {}, { number: 2 }),
+    ],
   };
   const cfg = { after: ["figentra/stackra"] };
   const held = built({ milestones: { [REPO]: built().milestones[REPO], ...upstream } });
   const r = await trainDepart(ctx(held, { cfg }));
   assert.equal(r.code, 1);
-  assert.match(r.problems?.join() ?? "", /after figentra\/stackra: its train 0\.3\.0 is not published yet/);
+  assert.match(
+    r.problems?.join() ?? "",
+    /after figentra\/stackra: its train 0\.3\.0 is not published yet/,
+  );
   assert.deepEqual(held.writes(), []);
 
   const freed = built({
@@ -447,7 +514,9 @@ test("depart: train.after holds the train until the upstream train's version is 
 test("status: the members with their gates, the ejections, the waiting PRs, the tip and the upstream chain", async () => {
   const h = hub({
     milestones: {
-      [REPO]: [milestone("1.0.0", { members: [1], ejected: [{ pr: 2, reason: "red" }], waiting: [9] })],
+      [REPO]: [
+        milestone("1.0.0", { members: [1], ejected: [{ pr: 2, reason: "red" }], waiting: [9] }),
+      ],
       "figentra/stackra": [milestone("0.3.0", {}, { state: "closed" })],
     },
     prs: { 1: pr(1, "1".repeat(40)) },

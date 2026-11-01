@@ -210,7 +210,10 @@ export function upstreamProblems(api, up, label) {
     : [`after ${up}: its train ${v} is not published yet; this train departs after it`];
 }
 
-/** `train open [<version>]`: the milestone and the label; the version is next from changesets unless given. */
+/**
+ * `train open [<version>]`: the milestone and the label; the version is next from changesets unless given.
+ * @returns {Promise<Result>}
+ */
 export async function trainOpen(/** @type {Ctx} */ ctx, /** @type {string | undefined} */ version) {
   const { api, log } = ctx.deps;
   const all = trains(api, ctx.repo, ctx.cfg.label);
@@ -222,7 +225,9 @@ export async function trainOpen(/** @type {Ctx} */ ctx, /** @type {string | unde
     return fail(`train ${version} exists already`);
   let v = version ?? changesetVersion(ctx.root);
   if (!v)
-    return fail(`no changeset names a package to bump; pass the version: ${NAME} train open <x.y.z>`);
+    return fail(
+      `no changeset names a package to bump; pass the version: ${NAME} train open <x.y.z>`,
+    );
   // The departed train's changesets stay on the branch until its Version Packages PR lands.
   while (all.some((t) => t.version === v)) v = bump(v, "patch");
   const name = `${ctx.cfg.label}${v}`;
@@ -247,7 +252,10 @@ export async function trainOpen(/** @type {Ctx} */ ctx, /** @type {string | unde
   return { code: 0, version: v };
 }
 
-/** `train add <pr>`: board a PR that is open, on the default branch and green on its exact head; after the cut-off it waits for the next train. */
+/**
+ * `train add <pr>`: board a PR that is open, on the default branch and green on its exact head; after the cut-off it waits for the next train.
+ * @returns {Promise<Result>}
+ */
 export async function trainAdd(/** @type {Ctx} */ ctx, /** @type {number} */ number) {
   const { api, log } = ctx.deps;
   const t = current(ctx);
@@ -290,19 +298,26 @@ export async function trainAdd(/** @type {Ctx} */ ctx, /** @type {number} */ num
   return { code: 0 };
 }
 
-/** `train close`: the cut-off; a PR added after it waits for the next train. */
+/**
+ * `train close`: the cut-off; a PR added after it waits for the next train.
+ * @returns {Promise<Result>}
+ */
 export async function trainClose(/** @type {Ctx} */ ctx) {
   const t = current(ctx);
   if (!t) return fail(`no train is open (${NAME} train open)`);
   if (t.state.closed) return fail(`train ${t.version} is cut off already`);
   if (ctx.dry) {
-    ctx.deps.log(`${NAME} train: would cut off train ${t.version} (${t.state.members.length} members)`);
+    ctx.deps.log(
+      `${NAME} train: would cut off train ${t.version} (${t.state.members.length} members)`,
+    );
     return { code: 0 };
   }
   t.state.closed = true;
   const saved = save(ctx, t);
   if (!saved.ok) return fail(`cutting off failed: ${saved.err}`);
-  ctx.deps.log(`${NAME} train: train ${t.version} is cut off with ${t.state.members.length} members`);
+  ctx.deps.log(
+    `${NAME} train: train ${t.version} is cut off with ${t.state.members.length} members`,
+  );
   return { code: 0 };
 }
 
@@ -322,10 +337,12 @@ async function eject(
     ["record the ejection", () => save(ctx, t)],
     [
       "remove the label",
-      () =>
-        api("DELETE", `/repos/${ctx.repo}/issues/${n}/labels/${encodeURIComponent(name)}`),
+      () => api("DELETE", `/repos/${ctx.repo}/issues/${n}/labels/${encodeURIComponent(name)}`),
     ],
-    ["clear the milestone", () => api("PATCH", `/repos/${ctx.repo}/issues/${n}`, { milestone: null })],
+    [
+      "clear the milestone",
+      () => api("PATCH", `/repos/${ctx.repo}/issues/${n}`, { milestone: null }),
+    ],
     [
       "comment",
       () =>
@@ -345,7 +362,11 @@ async function eject(
  * boards, whose head moved, or that conflicts is ejected and the build goes on.
  * @returns {Promise<Result & { merged?: { pr: number, sha: string }[] }>}
  */
-async function assemble(/** @type {Ctx} */ ctx, /** @type {Train} */ t, /** @type {string} */ tree) {
+async function assemble(
+  /** @type {Ctx} */ ctx,
+  /** @type {Train} */ t,
+  /** @type {string} */ tree,
+) {
   const { api } = ctx.deps;
   const start = git(tree, ["checkout", "-q", "--detach", `origin/${ctx.base}`]);
   if (!start.ok) return fail(`checking out origin/${ctx.base} failed: ${start.err}`, 2);
@@ -366,13 +387,27 @@ async function assemble(/** @type {Ctx} */ ctx, /** @type {Train} */ t, /** @typ
       await eject(ctx, t, n, "its head moved during the build");
       continue;
     }
-    const m = git(tree, ["merge", "--no-ff", "--no-edit", "-q", "-m", `Merge #${n}: ${pr.json.title}`, ref]);
+    const m = git(tree, [
+      "merge",
+      "--no-ff",
+      "--no-edit",
+      "-q",
+      "-m",
+      `Merge #${n}: ${pr.json.title}`,
+      ref,
+    ]);
     if (!m.ok) {
       const conflicted = git(tree, ["diff", "--name-only", "--diff-filter=U"]).out !== "";
       git(tree, ["merge", "--abort"]);
-      if (!conflicted) return fail(`merging #${n} failed: ${m.err || "git merge exited non-zero"}`, 2);
+      if (!conflicted)
+        return fail(`merging #${n} failed: ${m.err || "git merge exited non-zero"}`, 2);
       const before = merged.map((x) => `#${x.pr}`).join(", ");
-      await eject(ctx, t, n, `it conflicts with ${ctx.base}${before ? ` and ${before}` : ""} on the train`);
+      await eject(
+        ctx,
+        t,
+        n,
+        `it conflicts with ${ctx.base}${before ? ` and ${before}` : ""} on the train`,
+      );
       continue;
     }
     merged.push({ pr: n, sha: git(tree, ["rev-parse", "HEAD"]).out });
@@ -427,7 +462,10 @@ async function bisect(
   return { code: 0, pr: merged[hi - 1].pr, sha: merged[hi - 1].sha };
 }
 
-/** `train build`: `train/<version>` from the default branch, the members merged in order, gated; ejects on red. */
+/**
+ * `train build`: `train/<version>` from the default branch, the members merged in order, gated; ejects on red.
+ * @returns {Promise<Result>}
+ */
 export async function trainBuild(/** @type {Ctx} */ ctx) {
   const { api, log, warn } = ctx.deps;
   const t = current(ctx);
@@ -452,25 +490,31 @@ export async function trainBuild(/** @type {Ctx} */ ctx) {
     for (;;) {
       const built = await assemble(ctx, t, tree);
       if (built.code || !built.merged) return built;
-      if (!built.merged.length) return fail(`every member was ejected; train ${t.version} has nothing to build`);
+      if (!built.merged.length)
+        return fail(`every member was ejected; train ${t.version} has nothing to build`);
       const tip = built.merged[built.merged.length - 1].sha;
       const gated = await gateAt(ctx, tree, branch, tip);
       if (gated.problems) return gated;
       if (gated.code === 0) {
-        log(`${NAME} train: ${branch} at ${short(tip)} is green (${built.merged.length} members); ${NAME} train depart`);
+        log(
+          `${NAME} train: ${branch} at ${short(tip)} is green (${built.merged.length} members); ${NAME} train depart`,
+        );
         return { code: 0, tip };
       }
       if (gated.code !== 1)
-        return fail(`gate run exited ${gated.code} on ${branch}: the gate did not run, so nothing is ejected`, 2);
+        return fail(
+          `gate run exited ${gated.code} on ${branch}: the gate did not run, so nothing is ejected`,
+          2,
+        );
       if (ctx.cfg.eject === "manual")
         return fail(
           `${branch} at ${short(tip)} is red; train.eject is manual: find the breaking member, \`${NAME} train eject <pr>\`, then build again`,
         );
       const culprit = await bisect(ctx, tree, branch, built.merged);
       if (culprit.code || culprit.pr === undefined) return culprit;
-      const red = list(api("GET", `/repos/${ctx.repo}/commits/${culprit.sha}/statuses?per_page=100`)).find(
-        (s) => s.context === STATUS_CONTEXT,
-      );
+      const red = list(
+        api("GET", `/repos/${ctx.repo}/commits/${culprit.sha}/statuses?per_page=100`),
+      ).find((s) => s.context === STATUS_CONTEXT);
       // shortcut: the box keeps the check's log; the eject names the red status and its report link, not the lines.
       await eject(
         ctx,
@@ -485,7 +529,10 @@ export async function trainBuild(/** @type {Ctx} */ ctx) {
   }
 }
 
-/** `train eject <pr>`: the manual eject, for `train.eject: "manual"`. */
+/**
+ * `train eject <pr>`: the manual eject, for `train.eject: "manual"`.
+ * @returns {Promise<Result>}
+ */
 export async function trainEject(/** @type {Ctx} */ ctx, /** @type {number} */ number) {
   const t = current(ctx);
   if (!t) return fail(`no train is open (${NAME} train open)`);
@@ -501,6 +548,7 @@ export async function trainEject(/** @type {Ctx} */ ctx, /** @type {number} */ n
 /**
  * `train depart`: fast-forward the default branch to the train's tip, only when `figentra-flow/gate` is green on
  * that exact sha and every `train.after` upstream is published; then close the milestone and open the next train.
+ * @returns {Promise<Result>}
  */
 export async function trainDepart(/** @type {Ctx} */ ctx) {
   const { api, log, warn } = ctx.deps;
@@ -525,10 +573,15 @@ export async function trainDepart(/** @type {Ctx} */ ctx) {
   }
   if (problems.length || !tip) return { code: 1, problems };
   if (ctx.dry) {
-    log(`${NAME} train: would fast-forward ${ctx.base} to ${branch} at ${short(tip)}, close the milestone and open the next train`);
+    log(
+      `${NAME} train: would fast-forward ${ctx.base} to ${branch} at ${short(tip)}, close the milestone and open the next train`,
+    );
     return { code: 0, tip };
   }
-  const ff = api("PATCH", `/repos/${ctx.repo}/git/refs/heads/${ctx.base}`, { sha: tip, force: false });
+  const ff = api("PATCH", `/repos/${ctx.repo}/git/refs/heads/${ctx.base}`, {
+    sha: tip,
+    force: false,
+  });
   if (!ff.ok) return fail(`GitHub refused the fast-forward: ${ff.err}`);
   log(`${NAME} train: train ${t.version} departed: ${ctx.base} is at ${short(tip)}`);
 
@@ -563,7 +616,10 @@ export async function trainDepart(/** @type {Ctx} */ ctx) {
   return { code: warned ? 3 : 0, tip };
 }
 
-/** `train status`: the open train's members and their gates, ejections, waiting PRs, its tip and the upstream chain. */
+/**
+ * `train status`: the open train's members and their gates, ejections, waiting PRs, its tip and the upstream chain.
+ * @returns {Promise<Result>}
+ */
 export async function trainStatus(/** @type {Ctx} */ ctx) {
   const { api, log } = ctx.deps;
   const gateOf = (/** @type {string} */ sha) =>
@@ -573,21 +629,29 @@ export async function trainStatus(/** @type {Ctx} */ ctx) {
   const t = current(ctx);
   if (!t) log(`${NAME} train: no train is open (${NAME} train open)`);
   else {
-    log(`train ${t.version} (${cutOff(t, ctx.cfg, ctx.deps.now?.()) ? "cut off" : "boarding"}), milestone #${t.number}`);
+    log(
+      `train ${t.version} (${cutOff(t, ctx.cfg, ctx.deps.now?.()) ? "cut off" : "boarding"}), milestone #${t.number}`,
+    );
     for (const n of t.state.members) {
       const pr = api("GET", `/repos/${ctx.repo}/pulls/${n}`).json ?? {};
-      log(`  #${n} ${pr.title ?? ""}: ${STATUS_CONTEXT} ${pr.head?.sha ? `${gateOf(pr.head.sha)} on ${short(pr.head.sha)}` : "unknown"}`);
+      log(
+        `  #${n} ${pr.title ?? ""}: ${STATUS_CONTEXT} ${pr.head?.sha ? `${gateOf(pr.head.sha)} on ${short(pr.head.sha)}` : "unknown"}`,
+      );
     }
     for (const e of t.state.ejected) log(`  ejected #${e.pr}: ${e.reason}`);
     if (t.state.waiting.length)
       log(`  waiting for the next train: ${t.state.waiting.map((n) => `#${n}`).join(", ")}`);
     const ref = api("GET", `/repos/${ctx.repo}/git/ref/heads/train/${t.version}`);
     const tip = ref.ok ? ref.json?.object?.sha : undefined;
-    log(`  train/${t.version}: ${tip ? `${short(tip)}, ${STATUS_CONTEXT} ${gateOf(tip)}` : "not built"}`);
+    log(
+      `  train/${t.version}: ${tip ? `${short(tip)}, ${STATUS_CONTEXT} ${gateOf(tip)}` : "not built"}`,
+    );
   }
   for (const up of ctx.cfg.after) {
     const problems = upstreamProblems(api, up, ctx.cfg.label);
-    log(`  after ${up}: ${problems.length ? problems.join("; ").replace(`after ${up}: `, "") : "published"}`);
+    log(
+      `  after ${up}: ${problems.length ? problems.join("; ").replace(`after ${up}: `, "") : "published"}`,
+    );
   }
   return { code: 0 };
 }

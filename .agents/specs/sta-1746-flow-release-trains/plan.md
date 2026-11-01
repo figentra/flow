@@ -110,20 +110,20 @@ the tree. Each test carries `@covers sta-1746:AC-###`. The tester runs it on a b
 
 ## Constitution Check
 
-| Law                                   | Result | Note                                                      |
-| ------------------------------------- | ------ | --------------------------------------------------------- |
-| Boundaries (tier direction, ADR 0003) | N/A    | Figentra Flow is its own repository with one package      |
-| Secrets (ADR 0009)                    | PASS   | no secret read; GitHub through the credentials port       |
-| Security                              | PASS   | depart is a fast-forward of an exact-sha green tip only   |
-| HTTP and events                       | N/A    | a CLI, no endpoint or event                               |
-| Tenancy                               | N/A    | no tenant data                                            |
-| Delegation                            | PASS   | one builder; the tester gates and lands                   |
-| Not built yet (ADR 0011)              | PASS   | nothing on the list                                       |
-| Test placement (ADR 0022)             | PASS   | `src/__tests__/` beside the subjects                      |
-| Versions and catalogs                 | PASS   | no dependency                                             |
-| Deploy modes (ADR 0076)               | PASS   | a developer tool, same everywhere                         |
-| Licence tier (ADR 0077)               | PASS   | free                                                      |
-| Docs and ADRs                         | PASS   | README and AGENTS.md; no ADR needed                       |
+| Law                                   | Result | Note                                                    |
+| ------------------------------------- | ------ | ------------------------------------------------------- |
+| Boundaries (tier direction, ADR 0003) | N/A    | Figentra Flow is its own repository with one package    |
+| Secrets (ADR 0009)                    | PASS   | no secret read; GitHub through the credentials port     |
+| Security                              | PASS   | depart is a fast-forward of an exact-sha green tip only |
+| HTTP and events                       | N/A    | a CLI, no endpoint or event                             |
+| Tenancy                               | N/A    | no tenant data                                          |
+| Delegation                            | PASS   | one builder; the tester gates and lands                 |
+| Not built yet (ADR 0011)              | PASS   | nothing on the list                                     |
+| Test placement (ADR 0022)             | PASS   | `src/__tests__/` beside the subjects                    |
+| Versions and catalogs                 | PASS   | no dependency                                           |
+| Deploy modes (ADR 0076)               | PASS   | a developer tool, same everywhere                       |
+| Licence tier (ADR 0077)               | PASS   | free                                                    |
+| Docs and ADRs                         | PASS   | README and AGENTS.md; no ADR needed                     |
 
 ## Deploy modes
 

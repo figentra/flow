@@ -127,7 +127,8 @@ export const SCHEMA = {
         paths: { type: "array", items: str },
         maxBytes: { type: "integer", minimum: 1 },
       },
-    },    train: {
+    },
+    train: {
       type: "object",
       additionalProperties: false,
       properties: {
