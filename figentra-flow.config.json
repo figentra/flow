@@ -43,5 +43,10 @@
   },
   "clean": {
     "keep": ["g-*", "*-gate", "land-*", "tpl-core", "c6-lock*", "template-wt-lean"]
+  },
+  "train": {
+    "label": "train:",
+    "eject": "bisect",
+    "after": []
   }
 }

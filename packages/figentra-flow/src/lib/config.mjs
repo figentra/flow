@@ -128,6 +128,16 @@ export const SCHEMA = {
         maxBytes: { type: "integer", minimum: 1 },
       },
     },
+    train: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        cutoff: { type: "integer", minimum: 1 },
+        eject: { enum: ["bisect", "manual"] },
+        after: { type: "array", items: str },
+        label: str,
+      },
+    },
   },
 };
 
@@ -193,7 +203,8 @@ export function validate(schema, value, path = "") {
  * @typedef {{ version?: number, preset?: string, tracker?: any, credentials?: any, runner?: any, secrets?: any,
  *             apps?: { gate?: { slug?: string, login: string }, review?: { slug: string }, owner?: string },
  *             gate?: { check?: string }, clean?: { keep?: string[] }, review?: { required?: string[] },
- *             artifacts?: { paths?: string[], maxBytes?: number } }} Config
+ *             artifacts?: { paths?: string[], maxBytes?: number },
+ *             train?: { cutoff?: number, eject?: "bisect" | "manual", after?: string[], label?: string } }} Config
  * @typedef {{ config: Config, source: string | undefined, warnings: string[], errors: string[] }} Loaded
  */
 
