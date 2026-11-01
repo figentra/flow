@@ -36,6 +36,10 @@ If `land` or the approval workflow refuses, report the reason. Never route aroun
 - **Stacks.** Use `fflow land <n> --stack`. It lands bottom-up and stops at the first PR that cannot go.
 - **Clean-up.** Run `fflow clean --dry-run`, then `fflow clean`. It removes a worktree only when the worktree is
   clean, saved, finished, has no stray ignored files, and no session is inside it. It never uses `--force`.
+- **The budget.** If `fflow clean` or `fflow doctor` warns that the repository is over its worktree budget, run
+  `fflow clean --budget --dry-run` and report what it lists. Then run `fflow clean --budget`. It preserves
+  uncommitted work on `keep/` branches and backs up ignored files before removing idle worktrees whose work is
+  merged or pushed. Report the `keep/` branches it made.
 - **Folder moves.** `fflow clean --adopt` moves a stray worktree inside. If a folder was moved by hand, run
   `git worktree repair <new path>`, then `git worktree prune --dry-run`, and report the result.
 

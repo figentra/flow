@@ -12,13 +12,22 @@
  *     reflog (a detached HEAD or a builder sub-agent tree);
  *   - free of ignored files outside the usual caches (`.env`, `ios/`, `android/` keep it).
  *   A stray tree is adopted only when it is not in use and idle for 2 hours. Every kept tree is reported with its reason, and the space freed is reported.
- * Boundary: `git worktree remove` (never `--force`), `git branch -D` of a removed tree's own branch, `git worktree
- *   move` with `--adopt`, and one appended `.gitignore` line with `--fix-ignore`. `--dry-run` changes nothing.
+ *   The budget (STA-1871): every run counts the linked worktrees against `clean.budget` (default 10), warns above it
+ *   and lists the candidates: trees under `.claude/worktrees/` idle for 24 hours whose head is merged or pushed, not
+ *   in use, locked or a tester's. `--budget` removes them after preserving what they hold: uncommitted work and a
+ *   detached HEAD on a new local `keep/<repo>-<name>` branch, ignored files outside the caches in a `tar.gz` under
+ *   `~/Backups/<NAME>/`. Any failed step keeps that tree. Every run also writes `.claude/worktrees/README.md` when
+ *   it is missing.
+ * Boundary: `git worktree remove` (never `--force`), `git branch -D` of a removed finished tree's own branch (the
+ *   budget deletes no branch), `git switch -c keep/…` and one commit there (hooks run), `tar`, `git worktree move`
+ *   with `--adopt`, and one appended `.gitignore` line with `--fix-ignore`. `--dry-run` changes nothing.
  * Runtime: node
  * Governing contract: Stackra ADR 0503 (decision 6); STA-1729 (the leader's revisions of 2026-10-31).
  * Secrets: the Linear token only from the environment the calling wrapper sets; never read or printed.
  */
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
 
 import { trackerFor } from "../adapters/tracker/index.mjs";
@@ -42,6 +51,40 @@ import { readWorkspace } from "../lib/workspace.mjs";
 
 /** How long a keyless worktree must sit untouched before it is removed. */
 export const IDLE_HOURS = 2;
+
+/** Linked worktrees a repository holds before `clean` warns (`clean.budget` overrides it). */
+export const BUDGET = 10;
+
+/** How long a worktree must sit untouched before the budget takes it. */
+export const BUDGET_IDLE_HOURS = 24;
+
+/** What `.claude/worktrees/README.md` says, for people browsing the folder (it is git-ignored, so local). */
+export const WORKTREES_README = `# .claude/worktrees
+
+Agent and developer worktrees for this repository; \`${NAME} clean\` keeps them in check.
+
+- One worktree per active task, only here.
+- \`${NAME} land\` removes a worktree after its pull request merges; a session removes its own when it ends.
+- Never leave a detached HEAD with commits: put them on a branch.
+- Never delete ignored outputs (\`.env\`, builds you cannot rebuild) without a backup.
+- Above the budget (\`clean.budget\`, default ${BUDGET}), \`${NAME} clean --budget\` removes trees idle for ${BUDGET_IDLE_HOURS} h whose
+  work is merged or pushed. It keeps uncommitted work on a \`keep/\` branch, backs up ignored files under
+  \`~/Backups/${NAME}/\`, and never deletes a branch.
+`;
+
+/**
+ * Writes `.claude/worktrees/README.md` at `root` unless it exists.
+ * @param {string} root
+ * @returns {boolean} whether it was written
+ */
+export function writeWorktreesReadme(root) {
+  const dir = join(root, ".claude", "worktrees");
+  const file = join(dir, "README.md");
+  if (existsSync(file)) return false;
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(file, WORKTREES_README);
+  return true;
+}
 
 /** The issue states that finish a keyed worktree. */
 const FINISHED = new Set(["Done", "Canceled", "Cancelled", "Duplicate"]);
@@ -85,13 +128,18 @@ export function ignoresWorktrees(root) {
 
 /**
  * @typedef {{ path: string, reason: string }} Kept
- * @typedef {{ removed: string[], kept: Kept[], adopted: string[], forTester: string[], freedKb: number, ignoreFixed: boolean }} Report
+ * @typedef {{ limit: number, count: number, candidates: string[], swept: string[], preserved: string[],
+ *             kept: Kept[] }} Budget
+ * @typedef {{ removed: string[], kept: Kept[], adopted: string[], forTester: string[], freedKb: number,
+ *             ignoreFixed: boolean, budget?: Budget }} Report
  */
 
 /**
  * Cleans the repository at `cwd`.
  * @param {{ cwd: string, dry?: boolean, adopt?: boolean, fixIgnore?: boolean, issues?: Issues, now?: number,
- *           busy?: string[], only?: string[] }} options   `only`: act on these worktree paths alone (`figentra-flow land`)
+ *           busy?: string[], only?: string[], budget?: boolean, backupDir?: string }} options   `only`: act on these
+ *   worktree paths alone (`figentra-flow land`); `budget`: sweep the budget candidates; `backupDir`: where ignored
+ *   files go (default `~/Backups/<NAME>/`)
  * @returns {Promise<Report>}
  */
 export async function clean(options) {
@@ -236,14 +284,131 @@ export async function clean(options) {
     if (!dry) ignoreWorktrees(root);
     report.ignoreFixed = true;
   }
+  if (!only) {
+    if (!dry) writeWorktreesReadme(root);
+    report.budget = budget(root, report, {
+      apply: Boolean(options.budget) && !dry,
+      now,
+      busy,
+      keepNames,
+      base,
+      backupDir: options.backupDir ?? join(homedir(), "Backups", NAME),
+    });
+  }
   return report;
+}
+
+/**
+ * The budget pass (STA-1871 FR-3, FR-4): count what is left, list the candidates, and with `apply` sweep them.
+ * @param {string} root
+ * @param {Report} report the main pass's report; a swept tree's space is added to it
+ * @param {{ apply: boolean, now: number, busy: string[] | undefined, keepNames: string[], base: string,
+ *           backupDir: string }} options
+ * @returns {Budget}
+ */
+function budget(root, report, { apply, now, busy, keepNames, base, backupDir }) {
+  const inside = join(resolve(root), ".claude", "worktrees") + sep;
+  const left = worktrees(root).filter((t) => !report.removed.includes(t.path));
+  /** @type {Budget} */
+  const out = {
+    limit: loadConfig(root).config.clean?.budget ?? BUDGET,
+    count: left.length,
+    candidates: [],
+    swept: [],
+    preserved: [],
+    kept: [],
+  };
+  if (busy === undefined) return out;
+  // Path order, so the report and the sweep never depend on git's listing order.
+  for (const tree of left.toSorted((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))) {
+    if (
+      !resolve(tree.path).startsWith(inside) ||
+      keepNames.some((pattern) => matches(basename(tree.path), pattern)) ||
+      inUse(tree.path, busy) ||
+      tree.locked ||
+      !existsSync(tree.path) ||
+      idleHours(tree.path, now) < BUDGET_IDLE_HOURS
+    )
+      continue;
+    const landed =
+      tree.branch && git(root, ["config", "--get", `branch.${tree.branch}.${LANDED_KEY}`]).out;
+    const merged =
+      Boolean(landed) && git(root, ["merge-base", "--is-ancestor", landed, `origin/${base}`]).ok;
+    if (!merged && !isSaved(tree.path, base)) continue;
+    out.candidates.push(tree.path);
+    if (!apply) continue;
+    const kb = sizeKb(tree.path);
+    const why = sweep(root, tree, { now, backupDir, preserved: out.preserved });
+    if (why) out.kept.push({ path: tree.path, reason: why });
+    else {
+      out.swept.push(tree.path);
+      report.freedKb += kb;
+    }
+  }
+  return out;
+}
+
+/**
+ * Preserves what one worktree holds, then removes it; the reason it stays, or undefined when it went.
+ * @param {string} root
+ * @param {import("../lib/git.mjs").Worktree} tree
+ * @param {{ now: number, backupDir: string, preserved: string[] }} options
+ */
+function sweep(root, tree, { now, backupDir, preserved }) {
+  const name = basename(tree.path);
+  const stamp = new Date(now).toISOString().replace(/\D/g, "").slice(0, 14);
+  const dirty = !isClean(tree.path);
+  if (dirty || tree.detached) {
+    let keep = `keep/${basename(root)}-${name}`;
+    if (git(root, ["show-ref", "--verify", "--quiet", `refs/heads/${keep}`]).ok)
+      keep += `-${stamp}`;
+    const branched = git(tree.path, ["switch", "-q", "-c", keep]);
+    if (!branched.ok) return `could not create ${keep}: ${branched.err}`;
+    if (dirty) {
+      const added = git(tree.path, ["add", "-A"]);
+      const committed = added.ok
+        ? git(tree.path, [
+            "commit",
+            "-q",
+            "-m",
+            `wip: preserved by ${NAME} clean --budget (uncommitted work, unreviewed)`,
+          ])
+        : added;
+      if (!committed.ok) {
+        // Put the tree back as it was (unstaged, on its own head); the branch made a moment ago holds no new commit.
+        git(tree.path, ["reset", "-q"]);
+        git(
+          tree.path,
+          tree.detached
+            ? ["switch", "-q", "--detach", tree.head]
+            : ["switch", "-q", String(tree.branch)],
+        );
+        git(tree.path, ["branch", "-D", keep]);
+        return `the preservation commit on ${keep} failed: ${committed.err}`;
+      }
+    }
+    preserved.push(`${tree.path} → ${keep}`);
+  }
+  const precious = preciousIgnored(tree.path);
+  if (precious.length) {
+    mkdirSync(backupDir, { recursive: true });
+    const file = join(backupDir, `${basename(root)}__${name}-${stamp}.tgz`);
+    const tar = spawnSync("tar", ["-czf", file, "-C", tree.path, "--", ...precious], {
+      encoding: "utf8",
+    });
+    if (tar.status !== 0)
+      return `the backup of ignored files failed: ${(tar.stderr ?? "").trim() || tar.error?.message}`;
+    preserved.push(`${tree.path} ignored files → ${file}`);
+  }
+  const removed = git(root, ["worktree", "remove", tree.path]);
+  return removed.ok ? undefined : `remove failed: ${removed.err}`;
 }
 
 /** A size in kilobytes as megabytes or gigabytes. */
 export const human = (kb) =>
   kb >= 1_048_576 ? `${(kb / 1_048_576).toFixed(1)} GB` : `${(kb / 1024).toFixed(0)} MB`;
 
-/** `figentra-flow clean [--dry-run] [--adopt] [--fix-ignore] [--all]`. */
+/** `figentra-flow clean [--dry-run] [--adopt] [--fix-ignore] [--budget] [--all]`. */
 export async function run(args) {
   const dry = args.includes("--dry-run");
   const roots = args.includes("--all") ? readWorkspace().map((r) => r.path) : [process.cwd()];
@@ -259,6 +424,7 @@ export async function run(args) {
       dry,
       adopt: args.includes("--adopt"),
       fixIgnore: args.includes("--fix-ignore"),
+      budget: args.includes("--budget"),
     });
     freed += r.freedKb;
     console.log(
@@ -270,6 +436,21 @@ export async function run(args) {
     for (const t of r.forTester) console.log(`  for stackra-f4: ${t}`);
     if (r.ignoreFixed)
       console.log(`  ${dry ? "would add" : "added"} .claude/worktrees/ to .gitignore; commit it`);
+    const b = r.budget;
+    if (b) {
+      if (b.count > b.limit)
+        console.log(
+          `  warning: ${b.count} worktrees, over the budget of ${b.limit}${args.includes("--budget") ? "" : ` (\`${NAME} clean --budget\` removes the idle ones)`}`,
+        );
+      if (!args.includes("--budget") || dry)
+        for (const c of b.candidates)
+          console.log(
+            `  ${args.includes("--budget") ? "would sweep" : "idle"}  ${c} (${BUDGET_IDLE_HOURS} h or more, merged or pushed)`,
+          );
+      for (const p of b.swept) console.log(`  swept    ${p}`);
+      for (const p of b.preserved) console.log(`  kept     ${p}`);
+      for (const k of b.kept) console.log(`  kept     ${k.path}: ${k.reason}`);
+    }
   }
   console.log(`${NAME} clean: ${dry ? "would free" : "freed"} ${human(freed)}`);
   return 0;
