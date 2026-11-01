@@ -172,6 +172,8 @@ check exited 0. Nothing secret reaches the comment or the log. Exit codes: 0 gre
 - approved as its spec's tier requires (ADR 0502), and at Tasked or later for a feature or big spec.
 - for a change with a spec: reviewed. The `stackra-reviewer` App's unedited `AI-REVIEW: PASS <head> base=<base>`
   comment, never from the change's own authors, is on its head (ADR 0230). Trivial work, with no spec, is exempt.
+- free of owner-only paths (`src/lib/owner-only.mjs`): workflows and actions, secrets and the secret guards, the
+  catalog, this configuration, repo settings and branch protection, and billing or legal files. The owner lands those.
 
 It lists every failing rule. Then it squash-merges with GitHub's `sha` guard, so the merge fails if the head moved. A
 `Refs:` line and the co-author trailers go into the squash commit. After the merge it:
@@ -181,6 +183,17 @@ It lists every failing rule. Then it squash-merges with GitHub's `sha` guard, so
 3. removes the worktree under `clean`'s rules;
 4. deletes the remote branch;
 5. comments on the PR.
+
+When the base's ruleset requires an approving review and the head has none, `land` does not merge. It dispatches
+`.github/workflows/figentra-flow-approve.yml` (which `sync` installs) with the PR and its head, then turns on
+auto-merge (squash) at that head. It never uses an admin path.
+
+The workflow runs in the `figentra-flow-approve` environment, which must allow only the default branch. There it
+re-checks four things: the owner-only paths, the head, the author (never the approving App itself), and the required
+checks. If any check fails, it comments the reasons. If all pass, it approves as the App whose id and key secrets the
+preset's `approve` names.
+
+GitHub merges once every required check passes. After that, `land <n>` on the merged PR runs steps 1 to 5.
 
 GitHub calls use only the credentials the configuration names in `credentials`. `wrapper` runs your own command
 that gives `gh` a bot's token, and `gh-user` uses your own `gh` login, only because you said so. With neither, `land` refuses: Figentra Flow never falls back to a personal login.

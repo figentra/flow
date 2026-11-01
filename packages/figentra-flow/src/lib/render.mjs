@@ -2,7 +2,9 @@
  * Figentra Flow file contract:
  * Purpose: the `flow-*` skills and commands a repository carries (ADR 0510): rendered from its preset's command
  *   documents either as neutral skill documents for the repository's own projector (`.agents/skills/flow-<verb>/`) or,
- *   with `direct`, as Claude Code skills and OpenCode commands; `.flow/lock.json` records the Flow version, the preset
+ *   with `direct`, as Claude Code skills and OpenCode commands; the preset's agent definitions (`agents/`, as
+ *   `.agents/agents/<id>.md` or, with `direct`, `.claude/agents/<id>.md`) and the approval workflow, whose secret
+ *   names come from `preset.yml`'s `approve` (STA-1856); `.flow/lock.json` records the Flow version, the preset
  *   and each rendered file's hash; `installProblems` is the check that replaces spec-kit's tripwire: no hand edit, no
  *   forgotten `sync`, and no spec-kit leftover.
  * Boundary: `render` and `installProblems` read; `writeRendered` writes the rendered files and the lock and removes
@@ -15,9 +17,11 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+import { approveWorkflow } from "./approve-workflow.mjs";
 import { loadConfig } from "./config.mjs";
 import { LOCK, OVERRIDES, presetDir } from "./flow-dir.mjs";
-import { NAME, VERSION } from "./product.mjs";
+import { APPROVE_WORKFLOW, ENV_PREFIX, NAME, VERSION } from "./product.mjs";
+import { parseYaml, YamlError } from "./yaml.mjs";
 
 /** The eight commands, in workflow order. */
 export const VERBS = [
@@ -100,7 +104,49 @@ export function render(root, { direct = false } = {}) {
       );
     } else out.set(`.agents/skills/${name}/SKILL.md`, skill);
   }
+  for (const [id, text] of agents(root))
+    out.set(direct ? `.claude/agents/${id}.md` : `.agents/agents/${id}.md`, text);
+  out.set(`.github/workflows/${APPROVE_WORKFLOW}`, approveWorkflow(approveSecrets(root)));
   return out;
+}
+
+/**
+ * The preset's agent definitions, id to text; `.flow/overrides/agents/<id>.md` replaces one.
+ * @param {string} root
+ * @returns {Map<string, string>}
+ */
+function agents(root) {
+  const dir = join(presetDir(root), "agents");
+  /** @type {Map<string, string>} */
+  const out = new Map();
+  if (!existsSync(dir)) return out;
+  for (const file of readdirSync(dir)
+    .filter((f) => f.endsWith(".md"))
+    .toSorted()) {
+    const own = join(root, OVERRIDES, "agents", file);
+    out.set(file.slice(0, -3), readFileSync(existsSync(own) ? own : join(dir, file), "utf8"));
+  }
+  return out;
+}
+
+/**
+ * The approval workflow's secret names: `preset.yml`'s `approve.app_id` and `approve.private_key`, else
+ * `<PREFIX>APPROVE_APP_ID` and `<PREFIX>APPROVE_PRIVATE_KEY`.
+ * @param {string} root
+ */
+export function approveSecrets(root) {
+  const file = join(presetDir(root), "preset.yml");
+  let approve;
+  try {
+    approve = existsSync(file) ? parseYaml(readFileSync(file, "utf8"))?.approve : undefined;
+  } catch (error) {
+    // A repository's own preset.yml outside the YAML subset keeps the default names.
+    if (!(error instanceof YamlError)) throw error;
+  }
+  return {
+    appId: approve?.app_id ?? `${ENV_PREFIX}APPROVE_APP_ID`,
+    privateKey: approve?.private_key ?? `${ENV_PREFIX}APPROVE_PRIVATE_KEY`,
+  };
 }
 
 /**

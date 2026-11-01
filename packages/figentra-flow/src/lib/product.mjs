@@ -56,3 +56,9 @@ export const USER_DIR = [".config", NAME];
 
 /** The branch config key `land` records its squash commit under (`branch.<b>.<key>`, AC-029). */
 export const LANDED_KEY = `${NAME.replace(/-(\w)/g, (_, c) => c.toUpperCase())}Landed`;
+
+/** The approval workflow `sync` renders (STA-1856); `land` dispatches it when a review is required. */
+export const APPROVE_WORKFLOW = `${NAME}-approve.yml`;
+
+/** The GitHub environment holding the approving App's id and key; it allows the default branch only. */
+export const APPROVE_ENVIRONMENT = `${NAME}-approve`;

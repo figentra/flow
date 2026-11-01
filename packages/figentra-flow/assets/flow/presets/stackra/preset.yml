@@ -5,3 +5,6 @@ preset:
   description: "Specs in .agents/specs/sta-<n>-<slug>, mandatory Impact questionnaire, clarifications marker, Linear link, and a plan gate"
   author: "stackra"
   license: "MIT"
+approve:
+  app_id: "STACKRA_BOT_APP_ID"
+  private_key: "STACKRA_BOT_PRIVATE_KEY"
