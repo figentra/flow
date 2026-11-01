@@ -19,7 +19,7 @@ description: "Task list template (Stackra v2): every task covers spec IDs and na
   - `deps:` names earlier tasks; dependencies are acyclic.
   - `[P]` tasks in one phase are a wave: they never share a backticked path.
 - Phases: Setup, Foundational, one per user story (US1…USn), Polish. Each phase heading carries its Linear key once
-  `/speckit.taskstoissues` has run (`## Phase 3: US1 … [STA-m]`); task lines carry ` [STA-m]` at the end.
+  `/flow-tasks` has run (`## Phase 3: US1 … [STA-m]`); task lines carry ` [STA-m]` at the end.
 - Tests sit in `__tests__/` beside their subject (ADR 0022) and carry `@covers sta-n:FR-###` (spec-trace).
 - Do not keep sample tasks.
 
