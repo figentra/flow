@@ -1,0 +1,7 @@
+preset:
+  id: "neutral"
+  name: "Neutral clarify-first workflow"
+  version: "1.0.0"
+  description: "Specs in .agents/specs/<key>-<slug>, a clarifications marker, the issue key, tiers and approval stops, and a plan gate"
+  author: "figentra"
+  license: "MIT"
