@@ -596,7 +596,9 @@ export async function landStack({
       log(
         `${NAME} land --stack: #${pr.number} waits on its ${result.waiting ? "checks" : "approval"}; land the stack again once it merges`,
       );
-      return { code: result.code, ...(result.waiting ? { waiting: result.waiting } : {}) };
+      return result.waiting
+        ? { code: result.code, waiting: result.waiting }
+        : { code: result.code };
     }
     log(`${NAME} land --stack: ${i + 1}/${chain.length} landed`);
   }
