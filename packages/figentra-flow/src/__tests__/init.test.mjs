@@ -73,7 +73,6 @@ test("with a projector, sync writes neutral .agents/skills documents; it removes
       ".agents/agents/git-steward.md",
       ".agents/agents/tracker-steward.md",
       ".agents/rules/worktrees.md",
-      ".github/workflows/figentra-flow-approve.yml",
     ]);
     assert.deepEqual(removed.toSorted(), [
       ".claude/skills/speckit-plan",

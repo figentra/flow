@@ -21,7 +21,14 @@ import { approveWorkflow } from "./approve-workflow.mjs";
 import { loadConfig } from "./config.mjs";
 import { LOCK, OVERRIDES, presetDir } from "./flow-dir.mjs";
 import { codeowners } from "./owner-only.mjs";
-import { APPROVE_WORKFLOW, ENV_PREFIX, NAME, STATUS_CONTEXT, VERSION } from "./product.mjs";
+import {
+  APPROVE_WORKFLOW,
+  ENV_PREFIX,
+  NAME,
+  PACKAGE,
+  STATUS_CONTEXT,
+  VERSION,
+} from "./product.mjs";
 import { parseYaml, YamlError } from "./yaml.mjs";
 
 /** The eight commands, in workflow order. */
@@ -112,10 +119,13 @@ export function render(root, { direct = false } = {}) {
     out.set(direct ? `.claude/rules/${id}.md` : `.agents/rules/${id}.md`, text);
   const { apps, approve } = loadConfig(root).config;
   const ownerOnly = approve?.ownerOnly ?? [];
+  // No owner, no approval path: GitHub must be able to ask someone for the owner-only paths (CODEOWNERS).
+  if (!apps?.owner) return out;
   out.set(
     `.github/workflows/${APPROVE_WORKFLOW}`,
     approveWorkflow({
       version: VERSION,
+      integrity: lockedIntegrity(root, PACKAGE, VERSION),
       ...approveSecrets(root),
       // The gate's status counts only from the gate App; a repository adds its own sources in `approve.checks`.
       trusted: { ...(apps?.gate ? { [STATUS_CONTEXT]: apps.gate.login } : {}), ...approve?.checks },
@@ -123,8 +133,33 @@ export function render(root, { direct = false } = {}) {
     }),
   );
   // GitHub asks the owner for owner-only paths itself (with `require_code_owner_review`); no owner, no file.
-  if (apps?.owner) out.set(".github/CODEOWNERS", codeowners(apps.owner, ownerOnly));
+  out.set(".github/CODEOWNERS", codeowners(apps.owner, ownerOnly));
   return out;
+}
+
+/**
+ * The integrity the repository's lockfile records for `pkg@version` (`pnpm-lock.yaml`, else `package-lock.json`), or
+ * "" when it records none; the approval workflow then refuses to run.
+ * @param {string} root
+ * @param {string} pkg
+ * @param {string} version
+ */
+export function lockedIntegrity(root, pkg, version) {
+  const pnpm = join(root, "pnpm-lock.yaml");
+  if (existsSync(pnpm)) {
+    const key = `${pkg}@${version}`.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+    const m = readFileSync(pnpm, "utf8").match(
+      new RegExp(`^ {2}'?${key}'?:\\n {4}resolution: \\{integrity: (sha512-[A-Za-z0-9+/]+=*)`, "m"),
+    );
+    if (m) return m[1];
+  }
+  const npm = join(root, "package-lock.json");
+  if (existsSync(npm)) {
+    const entry = JSON.parse(readFileSync(npm, "utf8")).packages?.[`node_modules/${pkg}`];
+    if (entry?.version === version && String(entry.integrity).startsWith("sha512-"))
+      return entry.integrity;
+  }
+  return "";
 }
 
 /**

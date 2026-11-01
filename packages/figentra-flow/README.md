@@ -214,8 +214,16 @@ dismisses its own review if the head moved. The App's id and key are secrets of 
 their own: `FIGENTRA_FLOW_APPROVER_APP_ID` and `FIGENTRA_FLOW_APPROVER_PRIVATE_KEY`, unless the preset's `approve`
 names others.
 
-With `apps.owner` set, `sync` also writes `.github/CODEOWNERS`, which maps every owner-only glob to the owner, so
-GitHub itself asks the owner for those paths.
+The approval path needs an owner. Without `apps.owner`, `sync` writes neither the workflow nor CODEOWNERS. With it,
+`sync` writes `.github/CODEOWNERS`, which maps every owner-only glob and the root `package.json` to the owner, so
+GitHub itself asks the owner for those paths. The check refuses unless the base's ruleset requires the code owner's
+review and the base has that file.
+
+GitHub matches CODEOWNERS case-sensitively. A path in another case reaches only `land` and the check, which match
+case-insensitively.
+
+The workflow runs only the tarball whose sha512 matches the integrity that the repository's lockfile recorded for
+this Flow version when `sync` ran. Without that integrity it refuses to run.
 
 GitHub merges once the approval and every required check are in. After that, `land <n>` on the merged PR runs steps 1
 to 5.

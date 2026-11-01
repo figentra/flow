@@ -146,6 +146,7 @@ function world({
   merged = false,
   /** @type {{ context: string, integration_id?: number }[]} */ required = [],
   moved = false,
+  /** @type {{ filename: string, status: string }[]} */ files = [],
 } = {}) {
   const r = repo();
   const branch = "figentra/sta-5-land";
@@ -190,7 +191,9 @@ function world({
           ? [{ type: "pull_request", parameters: { required_approving_review_count: 1 } }]
           : []),
       ]);
-    if (p === `/repos/figentra/flow/git/ref/heads/${encodeURIComponent(branch)}`)
+    if (p.startsWith("/repos/figentra/flow/pulls/7/files"))
+      return ok(p.endsWith("page=1") ? files : []);
+    if (p === `/repos/figentra/flow/git/ref/heads/${branch}`)
       return ok({ object: { sha: moved ? "e".repeat(40) : head } });
     if (p.startsWith("/repos/figentra/flow/contents/"))
       return { ok: false, json: undefined, err: "HTTP 404" };
@@ -439,7 +442,7 @@ test("land: required checks still running wait, without asking for the approval;
     deps,
   };
   const waiting = await landOne(base);
-  assert.deepEqual(waiting, { code: 0, queued: true, waiting: ["verify"] });
+  assert.deepEqual(waiting, { code: 4, queued: true, waiting: ["verify"] });
   assert.deepEqual(
     w.calls.filter((c) => c.method !== "GET"),
     [],
@@ -487,4 +490,59 @@ test("land: a merged PR finishes only on its base, and keeps a branch that moved
     moved.calls.some((c) => c.method === "DELETE"),
     false,
   );
+});
+
+test("land: the branch's slash stays a path separator in both the read and the delete", async (t) => {
+  const w = world();
+  t.after(w.r.dispose);
+  await landOne({
+    root: w.r.root,
+    repo: "figentra/flow",
+    base: "main",
+    number: 7,
+    gateApp: GATE_APP,
+    deps: { api: w.api, done: async () => {}, ...quiet },
+  });
+  const refs = w.calls.filter((c) => c.path.includes("/git/ref"));
+  assert.deepEqual(
+    refs.map((c) => `${c.method} ${c.path}`),
+    [
+      "GET /repos/figentra/flow/git/ref/heads/figentra/sta-5-land",
+      "DELETE /repos/figentra/flow/git/refs/heads/figentra/sta-5-land",
+    ],
+  );
+});
+
+test("land: an unreadable package.json refuses, and so do 300 changed files", async (t) => {
+  const deps = { done: async () => {}, ...quiet };
+  const unread = world({ files: [{ filename: "packages/x/package.json", status: "modified" }] });
+  t.after(unread.r.dispose);
+  const a = await landOne({
+    root: unread.r.root,
+    repo: "figentra/flow",
+    base: "main",
+    number: 7,
+    gateApp: GATE_APP,
+    deps: { ...deps, api: unread.api },
+  });
+  assert.equal(a.code, 1);
+  assert.match(
+    a.problems?.join() ?? "",
+    /packages\/x\/package\.json cannot be read at the merge base/,
+  );
+
+  const many = world({
+    files: Array.from({ length: 300 }, (_, i) => ({ filename: `f${i}.txt`, status: "added" })),
+  });
+  t.after(many.r.dispose);
+  const b = await landOne({
+    root: many.r.root,
+    repo: "figentra/flow",
+    base: "main",
+    number: 7,
+    gateApp: GATE_APP,
+    deps: { ...deps, api: many.api },
+  });
+  assert.equal(b.code, 1);
+  assert.match(b.problems?.join() ?? "", /300 files changed, at the approval check's limit of 300/);
 });

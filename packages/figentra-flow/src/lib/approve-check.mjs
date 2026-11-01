@@ -10,9 +10,12 @@
  *   - the author is not the approving App;
  *   - nothing between the merge base and that head is owner-only (paths, a rename's old path, root scripts, a
  *     dependency moved off its catalog);
- *   - every required check on that head is green from its trusted source, with one success.
+ *   - every required check on that head is green from its trusted source, with one success;
+ *   - the base's ruleset requires the code owner's review and the base holds `.github/CODEOWNERS`, so GitHub itself
+ *     asks the owner for owner-only paths.
  *   Everything is read at that SHA, so a later push cannot change what was checked. After approving it re-reads the
- *   PR and dismisses its own review if the head moved. A refusal is one PR comment.
+ *   PR and dismisses its own review if the head moved; if GitHub refuses the dismissal, it turns auto-merge off and
+ *   says so on the PR. A refusal is one PR comment.
  * Boundary: GitHub REST only: reads with the job's token, the review and the comment with the App's token. It never
  *   checks out or runs the PR's code and never merges.
  * Runtime: node (GitHub Actions)
@@ -53,7 +56,7 @@ async function textAt(api, repo, path, ref) {
  * Every reason not to approve, and the head it checked.
  * @param {{ api: Rest, repo: string, number: number, expectedHead: string, approver: string, ref: string,
  *           environment: string, trusted?: Record<string, string>, extraOwnerOnly?: string[] }} input
- * @returns {Promise<{ refuse: string[], sha?: string }>}
+ * @returns {Promise<{ refuse: string[], sha?: string, nodeId?: string }>}
  */
 export async function decide({
   api,
@@ -116,23 +119,39 @@ export async function decide({
     const owned = ownerOnlyPaths(paths, extraOwnerOnly);
     if (owned.length) refuse.push(`owner-only paths: ${owned.slice(0, 20).join(", ")}`);
     const base = cmp.json.merge_base_commit?.sha;
-    for (const f of files.filter((/** @type {any} */ x) => basename(x.filename) === "package.json"))
-      refuse.push(
-        ...packageFindings(
-          f.filename,
-          f.status === "added"
-            ? undefined
-            : await textAt(api, repo, f.previous_filename ?? f.filename, base),
-          f.status === "removed" ? undefined : await textAt(api, repo, f.filename, sha),
-        ),
-      );
+    for (const f of files.filter(
+      (/** @type {any} */ x) => basename(x.filename) === "package.json",
+    )) {
+      // A side that should exist but cannot be read refuses; it never counts as added or removed.
+      const before =
+        f.status === "added"
+          ? undefined
+          : await textAt(api, repo, f.previous_filename ?? f.filename, base);
+      const after = f.status === "removed" ? undefined : await textAt(api, repo, f.filename, sha);
+      if (f.status !== "added" && before === undefined)
+        refuse.push(`${f.previous_filename ?? f.filename} cannot be read at the merge base`);
+      else if (f.status !== "removed" && after === undefined)
+        refuse.push(`${f.filename} cannot be read at the head`);
+      else refuse.push(...packageFindings(f.filename, before, after));
+    }
   }
 
   // Required checks on exactly this head, from their trusted sources.
   const rules = (
     await api("GET", `/repos/${repo}/rules/branches/${encodeURIComponent(p.base.ref)}`)
   ).json;
-  const required = requiredContexts(Array.isArray(rules) ? rules : []);
+  const ruleList = Array.isArray(rules) ? rules : [];
+  // GitHub itself must ask the owner for owner-only paths; this check is defence in depth.
+  if (
+    !ruleList.some(
+      (/** @type {any} */ r) =>
+        r?.type === "pull_request" && r.parameters?.require_code_owner_review === true,
+    )
+  )
+    refuse.push(`${p.base.ref}'s ruleset does not require the code owner's review`);
+  if ((await textAt(api, repo, ".github/CODEOWNERS", p.base.sha)) === undefined)
+    refuse.push(`${p.base.ref} has no .github/CODEOWNERS (\`figentra-flow sync\` writes it)`);
+  const required = requiredContexts(ruleList);
   if (!required.length) refuse.push(`${p.base.ref} requires no status check`);
   else {
     const state = requiredCheckState({
@@ -156,8 +175,13 @@ export async function decide({
     )
       refuse.push("no required check succeeded (all were skipped)");
   }
-  return { refuse, sha };
+  return { refuse, sha, nodeId: p.node_id };
 }
+
+/** Turns auto-merge off on the PR with node `id`. */
+const AUTO_MERGE_OFF = `mutation($id: ID!) {
+  disablePullRequestAutoMerge(input: { pullRequestId: $id }) { clientMutationId }
+}`;
 
 /**
  * GitHub REST with `token`.
@@ -195,7 +219,7 @@ export async function main(env, deps = {}) {
   const repo = String(env.REPO);
   const number = Number(env.PR);
   const run = String(env.RUN_URL ?? "");
-  const { refuse, sha } = await decide({
+  const { refuse, sha, nodeId } = await decide({
     api: read,
     repo,
     number,
@@ -225,10 +249,26 @@ export async function main(env, deps = {}) {
   // A push between the check and the review: take the approval back.
   const now = (await read("GET", `/repos/${repo}/pulls/${number}`)).json?.head?.sha;
   if (now !== sha) {
-    await write("PUT", `/repos/${repo}/pulls/${number}/reviews/${review.json?.id}/dismissals`, {
-      message: `The head moved to ${now} after ${sha} was checked.`,
-      event: "DISMISS",
-    });
+    const id = review.json?.id;
+    const dismissed =
+      id !== undefined &&
+      (
+        await write("PUT", `/repos/${repo}/pulls/${number}/reviews/${id}/dismissals`, {
+          message: `The head moved to ${now} after ${sha} was checked.`,
+          event: "DISMISS",
+        })
+      ).ok;
+    if (!dismissed) {
+      // The approval may stand on a head nobody checked: stop the merge and say so.
+      await write("POST", "/graphql", { query: AUTO_MERGE_OFF, variables: { id: nodeId } });
+      await write("POST", `/repos/${repo}/issues/${number}/comments`, {
+        body: `The head moved to ${now} after ${sha} was checked, and the approval could not be dismissed. Auto-merge is off; dismiss the approval before anyone merges ([run](${run})).`,
+      });
+      log(
+        `::error::the head moved to ${now}; the approval could not be dismissed; auto-merge turned off`,
+      );
+      return 1;
+    }
     log(`::error::the head moved to ${now} after ${sha} was checked; the approval was dismissed`);
     return 1;
   }
