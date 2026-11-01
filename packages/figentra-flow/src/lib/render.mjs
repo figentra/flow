@@ -2,7 +2,9 @@
  * Figentra Flow file contract:
  * Purpose: the `flow-*` skills and commands a repository carries (ADR 0510): rendered from its preset's command
  *   documents either as neutral skill documents for the repository's own projector (`.agents/skills/flow-<verb>/`) or,
- *   with `direct`, as Claude Code skills and OpenCode commands; `.flow/lock.json` records the Flow version, the preset
+ *   with `direct`, as Claude Code skills and OpenCode commands; the preset's agent definitions (`agents/`, as
+ *   `.agents/agents/<id>.md` or, with `direct`, `.claude/agents/<id>.md`), the approval workflow (its secret names
+ *   from `preset.yml`'s `approve`) and, with `apps.owner`, a CODEOWNERS for the owner-only paths (STA-1856); `.flow/lock.json` records the Flow version, the preset
  *   and each rendered file's hash; `installProblems` is the check that replaces spec-kit's tripwire: no hand edit, no
  *   forgotten `sync`, and no spec-kit leftover.
  * Boundary: `render` and `installProblems` read; `writeRendered` writes the rendered files and the lock and removes
@@ -15,9 +17,19 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+import { approveWorkflow } from "./approve-workflow.mjs";
 import { loadConfig } from "./config.mjs";
 import { LOCK, OVERRIDES, presetDir } from "./flow-dir.mjs";
-import { NAME, VERSION } from "./product.mjs";
+import { codeowners } from "./owner-only.mjs";
+import {
+  APPROVE_WORKFLOW,
+  ENV_PREFIX,
+  NAME,
+  PACKAGE,
+  STATUS_CONTEXT,
+  VERSION,
+} from "./product.mjs";
+import { parseYaml, YamlError } from "./yaml.mjs";
 
 /** The eight commands, in workflow order. */
 export const VERBS = [
@@ -100,7 +112,100 @@ export function render(root, { direct = false } = {}) {
       );
     } else out.set(`.agents/skills/${name}/SKILL.md`, skill);
   }
+  for (const [id, text] of agents(root))
+    out.set(direct ? `.claude/agents/${id}.md` : `.agents/agents/${id}.md`, text);
+  const { apps, approve } = loadConfig(root).config;
+  const ownerOnly = approve?.ownerOnly ?? [];
+  // No owner, no approval path: GitHub must be able to ask someone for the owner-only paths (CODEOWNERS).
+  if (!apps?.owner) return out;
+  out.set(
+    `.github/workflows/${APPROVE_WORKFLOW}`,
+    approveWorkflow({
+      version: VERSION,
+      integrity: lockedIntegrity(root, PACKAGE, VERSION),
+      ...approveSecrets(root),
+      // The gate's status counts only from the gate App; a repository adds its own sources in `approve.checks`.
+      trusted: { ...(apps?.gate ? { [STATUS_CONTEXT]: apps.gate.login } : {}), ...approve?.checks },
+      ownerOnly,
+    }),
+  );
+  // GitHub asks the owner for owner-only paths itself (with `require_code_owner_review`); no owner, no file.
+  out.set(".github/CODEOWNERS", codeowners(apps.owner, ownerOnly));
   return out;
+}
+
+/**
+ * The integrity the repository's lockfile records for `pkg@version` (`pnpm-lock.yaml`, else `package-lock.json`), or
+ * "" when it records none; the approval workflow then refuses to run.
+ * @param {string} root
+ * @param {string} pkg
+ * @param {string} version
+ */
+export function lockedIntegrity(root, pkg, version) {
+  const pnpm = join(root, "pnpm-lock.yaml");
+  if (existsSync(pnpm)) {
+    const key = `${pkg}@${version}`.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+    const m = readFileSync(pnpm, "utf8").match(
+      new RegExp(`^ {2}'?${key}'?:\\n {4}resolution: \\{integrity: (sha512-[A-Za-z0-9+/]+=*)`, "m"),
+    );
+    if (m) return m[1];
+  }
+  const npm = join(root, "package-lock.json");
+  if (existsSync(npm)) {
+    const entry = JSON.parse(readFileSync(npm, "utf8")).packages?.[`node_modules/${pkg}`];
+    if (entry?.version === version && String(entry.integrity).startsWith("sha512-"))
+      return entry.integrity;
+  }
+  return "";
+}
+
+/**
+ * The preset's agent definitions, id to text; `.flow/overrides/agents/<id>.md` replaces one.
+ * @param {string} root
+ * @returns {Map<string, string>}
+ */
+function agents(root) {
+  const dir = join(presetDir(root), "agents");
+  /** @type {Map<string, string>} */
+  const out = new Map();
+  if (!existsSync(dir)) return out;
+  for (const file of readdirSync(dir)
+    .filter((f) => f.endsWith(".md"))
+    .toSorted()) {
+    const own = join(root, OVERRIDES, "agents", file);
+    out.set(file.slice(0, -3), readFileSync(existsSync(own) ? own : join(dir, file), "utf8"));
+  }
+  return out;
+}
+
+/** A secret name GitHub accepts. */
+const SECRET_NAME = /^[A-Z_][A-Z0-9_]*$/;
+
+/**
+ * The approving App's secret names: `preset.yml`'s `approve.app_id` and `approve.private_key`, else
+ * `<PREFIX>APPROVER_APP_ID` and `<PREFIX>APPROVER_PRIVATE_KEY`. They name an App of their own, never a bot that pushes.
+ * @param {string} root
+ */
+export function approveSecrets(root) {
+  const file = join(presetDir(root), "preset.yml");
+  /** @type {{ app_id?: string, private_key?: string } | undefined} */
+  let approve;
+  try {
+    approve = existsSync(file) ? parseYaml(readFileSync(file, "utf8"))?.approve : undefined;
+  } catch (error) {
+    // A repository's own preset.yml outside the YAML subset keeps the default names.
+    if (!(error instanceof YamlError)) throw error;
+  }
+  const names = {
+    appId: approve?.app_id ?? `${ENV_PREFIX}APPROVER_APP_ID`,
+    privateKey: approve?.private_key ?? `${ENV_PREFIX}APPROVER_PRIVATE_KEY`,
+  };
+  for (const name of Object.values(names))
+    if (!SECRET_NAME.test(name))
+      throw new Error(
+        `${file}: approve names "${name}", not a secret name (${SECRET_NAME.source})`,
+      );
+  return names;
 }
 
 /**

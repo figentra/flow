@@ -2,7 +2,7 @@
  * Figentra Flow file contract:
  * Purpose: hold `figentra-flow init` and `sync` to ADR 0510: `init` writes `.flow/` (README, a starter constitution from
  *   Flow's template, `.gitignore`) and renders the `flow-*` skills directly when the repository has no projector, or
- *   neutral `.agents/skills/flow-<verb>` documents when it has `agents:sync`; an existing `.flow/` is refused unless
+ *   neutral `.agents/skills/flow-<verb>` documents, the preset's agents and the approval workflow when it has `agents:sync`; an existing `.flow/` is refused unless
  *   forced, and the constitution is never overwritten; `sync` removes spec-kit's rendered skills and commands and
  *   records every file it wrote in `.flow/lock.json`; a repository override wins over the preset's command.
  * Boundary: writes only temp directories; node:test and node:assert.
@@ -62,10 +62,12 @@ test("with a projector, sync writes neutral .agents/skills documents; it removes
     mkdirSync(join(root, ".opencode/commands"), { recursive: true });
     writeFileSync(join(root, ".opencode/commands/speckit.plan.md"), "old\n");
     const { files, removed } = sync(root, quiet);
-    assert.deepEqual(
-      files,
-      VERBS.map((v) => `.agents/skills/flow-${v}/SKILL.md`),
-    );
+    assert.deepEqual(files, [
+      ...VERBS.map((v) => `.agents/skills/flow-${v}/SKILL.md`),
+      ".agents/agents/ci-steward.md",
+      ".agents/agents/git-steward.md",
+      ".agents/agents/tracker-steward.md",
+    ]);
     assert.deepEqual(removed.toSorted(), [
       ".claude/skills/speckit-plan",
       ".opencode/commands/speckit.plan.md",

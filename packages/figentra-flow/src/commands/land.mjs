@@ -2,17 +2,24 @@
  * Figentra Flow file contract:
  * Purpose: `figentra-flow land [<pr>] [--stack] [--dry-run] [--manual-ok]`, the lander's checklist as code: squash-merge a PR
  *   only when it is open, clean, based on the default branch, green on `figentra-flow/gate` from the gate App on its exact
- *   head, conventionally titled and its spec's approvals are recorded; then set Linear Done, record the merge commit,
- *   remove the worktree through `clean`'s rules, delete the branch and comment. `--stack` lands a stack bottom-up.
+ *   head, conventionally titled, its spec's approvals are recorded and it changes no owner-only path; then set Linear
+ *   Done, record the merge commit, remove the worktree through `clean`'s rules, delete the branch and comment. When the
+ *   base's ruleset requires an approving review the head lacks, it dispatches the approval workflow and turns on
+ *   auto-merge at the head instead, never an admin path; `land` on a merged PR runs the steps after the merge
+ *   (STA-1856). `--stack` lands a stack bottom-up.
  * Boundary: every rule is read from GitHub's live state and the spec at the PR's head; nothing changes until all
- *   pass. The merge carries `sha`, so GitHub refuses it if the head moved. Steps after the merge only warn (exit 3)
+ *   pass. The merge carries `sha`, so GitHub refuses it if the head moved. Waiting on required checks exits 4. Steps
+ *   after the merge only warn (exit 3)
  *   and never undo it. A stack is brought up to date by a merge commit and a normal push, never a rewrite.
  * Runtime: node
  * Governing contract: Stackra ADR 0503 (decision 5), ADR 0502; STA-1729 phase 3 (the leader's plan stop of
- *   2026-10-31).
+ *   2026-10-31); STA-1856 (FR-1 to FR-3).
  * Secrets: none here. GitHub calls go through `gh` (or the repository's `bot:gh`), Linear through the environment's
  *   token, which is never read into output.
  */
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
 import { checkApproval, ownerApprovalProblems, statusOf, tierOf } from "./gate.mjs";
 import { clean } from "./clean.mjs";
 import { gateRun, slugOf } from "./gate-run.mjs";
@@ -24,7 +31,9 @@ import { loadTeam } from "../lib/team.mjs";
 import { artifactProblems } from "../lib/artifacts.mjs";
 import { say } from "../lib/cli.mjs";
 import { loadConfig } from "../lib/config.mjs";
-import { LANDED_KEY, NAME, STATUS_CONTEXT } from "../lib/product.mjs";
+import { ownerOnlyPaths, packageFindings } from "../lib/owner-only.mjs";
+import { requiredCheckState, requiredContexts } from "../lib/required-checks.mjs";
+import { APPROVE_WORKFLOW, LANDED_KEY, NAME, STATUS_CONTEXT } from "../lib/product.mjs";
 import { defaultBranch, fetch, git, mainCheckout, remote, worktrees } from "../lib/git.mjs";
 
 /** The tiers whose changes need the AI review when the configuration's `review.required` names none. */
@@ -84,9 +93,10 @@ export function connect(root) {
 /**
  * Every reason the PR may not land; empty means it may.
  * @param {{ pr: any, statuses: any[], base: string, spec?: string, gateApp?: string, reviewer?: string,
- *           required: boolean,
+ *           required: boolean, files?: string[],
  *           manualOk?: boolean, stack?: boolean, review?: { verdict: string | null, ignored: string[] },
- *           artifacts?: string[], reviewTiers?: string[] }} input
+ *           artifacts?: string[], reviewTiers?: string[], ownerOnly?: string[],
+ *           ownerFindings?: string[] }} input
  * @returns {string[]}
  */
 export function landRules({
@@ -97,6 +107,9 @@ export function landRules({
   gateApp,
   reviewer,
   required,
+  files = [],
+  ownerOnly = [],
+  ownerFindings = [],
   manualOk = false,
   stack = false,
   review,
@@ -104,6 +117,11 @@ export function landRules({
   reviewTiers = REVIEW_TIERS,
 }) {
   const problems = [...artifacts];
+  // STA-1856 FR-1: what only the owner approves never lands through an agent.
+  const owned = ownerOnlyPaths(files, ownerOnly);
+  if (owned.length)
+    problems.push(`owner-only paths, so the owner lands it: ${owned.slice(0, 20).join(", ")}`);
+  for (const f of ownerFindings) problems.push(`owner-only change, so the owner lands it: ${f}`);
   if (pr.state !== "open") problems.push(`the PR is ${pr.merged ? "already merged" : pr.state}`);
   if (pr.draft) problems.push("the PR is a draft");
   if (pr.mergeable_state === "dirty") problems.push(`the PR conflicts with ${pr.base?.ref}`);
@@ -156,6 +174,44 @@ export function squashMessage(/** @type {string | undefined} */ key, /** @type {
 /** A list response's items; none when the call failed or answered something else. */
 const list = (/** @type {{ json: any }} */ r) => (Array.isArray(r.json) ? r.json : []);
 
+/** Turns on auto-merge (squash), pinned to the head that was checked. */
+const AUTO_MERGE = `mutation($id: ID!, $head: GitObjectID!, $title: String!, $body: String!) {
+  enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: SQUASH, expectedHeadOid: $head,
+    commitHeadline: $title, commitBody: $body }) { clientMutationId }
+}`;
+
+/**
+ * Every path the PR changes (a rename's old path too), each listed entry, and how many files GitHub listed (it lists
+ * at most 3000).
+ * @param {import("../lib/github.mjs").Api} api
+ * @param {string} repo
+ * @param {number} number
+ */
+function changedFiles(api, repo, number) {
+  /** @type {string[]} */
+  const files = [];
+  /** @type {{ filename: string, previous_filename?: string, status: string }[]} */
+  const entries = [];
+  let listed = 0;
+  for (let page = 1; page <= 30; page++) {
+    const got = list(api("GET", `/repos/${repo}/pulls/${number}/files?per_page=100&page=${page}`));
+    listed += got.length;
+    for (const f of got) {
+      entries.push(f);
+      files.push(f.filename, ...(f.previous_filename ? [f.previous_filename] : []));
+    }
+    if (got.length < 100) break;
+  }
+  return { files, entries, listed };
+}
+
+/** At this many changed files the approval check refuses, so `land` does too: the owner reviews it. */
+export const MAX_FILES = 300;
+
+/** A branch name as an API path: each segment encoded, the slashes kept. */
+const refPath = (/** @type {string} */ branch) =>
+  branch.split("/").map(encodeURIComponent).join("/");
+
 /** The spec text at `sha` for the branch's key, read through the API; undefined when there is none. */
 function specAt(
   /** @type {import("../lib/github.mjs").Api} */ api,
@@ -186,7 +242,8 @@ function specAt(
  * Lands one PR.
  * @param {{ root: string, repo: string, base: string, number: number, dry?: boolean, manualOk?: boolean,
  *           gateApp?: string, reviewer?: string, owner?: string, deps: LandDeps }} options
- * @returns {Promise<{ code: number, problems?: string[], merged?: string }>}
+ * @returns {Promise<{ code: number, problems?: string[], merged?: string, queued?: boolean,
+ *   waiting?: string[] }>}
  */
 export async function landOne({
   root,
@@ -200,11 +257,30 @@ export async function landOne({
   owner,
   deps,
 }) {
-  const { api, log, warn } = deps;
+  const { api, log } = deps;
   const pr = api("GET", `/repos/${repo}/pulls/${number}`);
   if (!pr.ok) return { code: 2, problems: [`PR #${number}: ${pr.err}`] };
   const head = pr.json.head.sha;
   const branch = pr.json.head.ref;
+  const scheme = deps.scheme ?? trackerFor(root, { warn: () => {} }).scheme;
+  const key = scheme.parse(branch);
+  // STA-1856 FR-3: an auto-merged PR comes back here to finish.
+  if (pr.json.merged && pr.json.merge_commit_sha) {
+    if (pr.json.base?.ref !== base)
+      return { code: 1, problems: [`#${number} merged into ${pr.json.base?.ref}, not ${base}`] };
+    log(`${NAME} land: #${number} merged as ${pr.json.merge_commit_sha.slice(0, 12)}; finishing`);
+    return finish({
+      root,
+      repo,
+      number,
+      branch,
+      head,
+      key,
+      sha: pr.json.merge_commit_sha,
+      scheme,
+      deps,
+    });
+  }
   const statuses = api("GET", `/repos/${repo}/commits/${head}/statuses?per_page=100`).json ?? [];
   const rules = api("GET", `/repos/${repo}/rules/branches/${base}`);
   const required = (rules.ok ? (rules.json ?? []) : []).some(
@@ -214,14 +290,20 @@ export async function landOne({
         (/** @type {any} */ c) => c.context === STATUS_CONTEXT,
       ),
   );
-  const scheme = deps.scheme ?? trackerFor(root, { warn: () => {} }).scheme;
-  const key = scheme.parse(branch);
+  const needsReview = (rules.ok ? (rules.json ?? []) : []).some(
+    (/** @type {any} */ r) =>
+      r.type === "pull_request" && (r.parameters?.required_approving_review_count ?? 0) > 0,
+  );
   const spec = specAt(api, repo, head, key);
   const commit = api("GET", `/repos/${repo}/commits/${head}`).json ?? {};
+  const reviews = list(api("GET", `/repos/${repo}/pulls/${number}/reviews?per_page=100`));
+  const approved = reviews.some(
+    (/** @type {any} */ r) => r.state === "APPROVED" && r.commit_id === head,
+  );
   const review = aiReview(
     { sha: head, base: pr.json.base.ref },
     list(api("GET", `/repos/${repo}/issues/${number}/comments?per_page=100`)),
-    list(api("GET", `/repos/${repo}/pulls/${number}/reviews?per_page=100`)),
+    reviews,
     [pr.json.user?.login, commit.author?.login, commit.committer?.login],
     { reviewer, owner },
   );
@@ -230,6 +312,33 @@ export async function landOne({
   const artifacts = git(root, ["cat-file", "-e", `${head}^{commit}`]).ok
     ? artifactProblems(root, `origin/${base}`, head, loadConfig(root).config.artifacts)
     : [`cannot read the head ${head.slice(0, 12)} to check its files (fetch failed)`];
+  const { files, entries, listed } = changedFiles(api, repo, number);
+  if (listed < Number(pr.json.changed_files))
+    artifacts.push(`GitHub lists only ${listed} of ${pr.json.changed_files} changed files`);
+  if (listed >= MAX_FILES)
+    artifacts.push(
+      `${listed} files changed, at the approval check's limit of ${MAX_FILES}: the owner reviews it`,
+    );
+  const config = loadConfig(root).config;
+  // A package.json's root scripts and catalog entries are the owner's too; read both sides from git.
+  const forkPoint = git(root, ["merge-base", `origin/${base}`, head]).out;
+  const show = (/** @type {string} */ ref, /** @type {string} */ path) => {
+    const r = git(root, ["show", `${ref}:${path}`]);
+    return r.ok ? r.out : undefined;
+  };
+  /** @type {string[]} */
+  const ownerFindings = [];
+  for (const f of entries.filter((e) => e.filename.split("/").pop() === "package.json")) {
+    // A side that should exist but cannot be read refuses; it never counts as added or removed.
+    const old = f.previous_filename ?? f.filename;
+    const before = f.status === "added" || !forkPoint ? undefined : show(forkPoint, old);
+    const after = f.status === "removed" ? undefined : show(head, f.filename);
+    if (f.status !== "added" && before === undefined)
+      ownerFindings.push(`${old} cannot be read at the merge base`);
+    else if (f.status !== "removed" && after === undefined)
+      ownerFindings.push(`${f.filename} cannot be read at the head`);
+    else ownerFindings.push(...packageFindings(f.filename, before, after));
+  }
   const problems = landRules({
     pr: pr.json,
     statuses,
@@ -237,19 +346,19 @@ export async function landOne({
     spec,
     review,
     artifacts,
+    files,
+    ownerOnly: config.approve?.ownerOnly,
+    ownerFindings,
     gateApp,
     reviewer,
     required,
     manualOk,
-    reviewTiers: loadConfig(root).config.review?.required,
+    reviewTiers: config.review?.required,
   });
   // AC-051 to AC-053: with a roster, the reviewer is not the builder, the builder's role stays in its paths, and an
   // owner-kept spec's approvals are the owner's.
   const team = loadTeam(root);
   if (team && spec !== undefined) {
-    const files = list(api("GET", `/repos/${repo}/pulls/${number}/files?per_page=100`)).map(
-      (/** @type {any} */ f) => f.filename,
-    );
     problems.push(
       ...reviewerProblems(team, spec, review.passes),
       ...ownerApprovalProblems(spec, owner).map((p) => `spec: ${p}`),
@@ -257,14 +366,62 @@ export async function landOne({
     );
   }
   if (problems.length) return { code: 1, problems };
+  const queue = needsReview && !approved;
   if (dry) {
     log(
-      `${NAME} land: would squash-merge #${number} (${branch} at ${head.slice(0, 12)}) into ${base}`,
+      `${NAME} land: would ${queue ? "request the approval and auto-merge" : "squash-merge"} #${number} (${branch} at ${head.slice(0, 12)}) into ${base}`,
     );
     return { code: 0 };
   }
 
   const commits = api("GET", `/repos/${repo}/pulls/${number}/commits?per_page=100`).json ?? [];
+  // STA-1856 FR-2: a required review comes from the approval workflow; auto-merge waits for it and every check.
+  if (queue) {
+    if (!existsSync(join(root, ".github", "workflows", APPROVE_WORKFLOW)))
+      return {
+        code: 1,
+        problems: [
+          `${base}'s ruleset requires an approving review and .github/workflows/${APPROVE_WORKFLOW} is not installed (run \`${NAME} sync\`)`,
+        ],
+      };
+    // The approval checks every required check on the head; asking before they are green only gets a refusal.
+    const checks = requiredCheckState({
+      required: requiredContexts(rules.ok ? (rules.json ?? []) : []),
+      statuses,
+      checkRuns:
+        api("GET", `/repos/${repo}/commits/${head}/check-runs?per_page=100`).json?.check_runs ?? [],
+      trusted: { ...(gateApp ? { [STATUS_CONTEXT]: gateApp } : {}), ...config.approve?.checks },
+    });
+    const bad = [...checks.failed.map((c) => `${c} failed`), ...checks.untrusted];
+    if (bad.length) return { code: 1, problems: bad.map((b) => `required check: ${b}`) };
+    if (checks.pending.length) {
+      log(
+        `${NAME} land: #${number}: waiting on ${checks.pending.join(", ")}; \`${NAME} land ${number}\` again once green`,
+      );
+      return { code: 4, queued: true, waiting: checks.pending };
+    }
+    const asked = api("POST", `/repos/${repo}/actions/workflows/${APPROVE_WORKFLOW}/dispatches`, {
+      ref: base,
+      inputs: { pr: String(number), head },
+    });
+    if (!asked.ok) return { code: 1, problems: [`the approval request was refused: ${asked.err}`] };
+    const auto = api("POST", "/graphql", {
+      query: AUTO_MERGE,
+      variables: {
+        id: pr.json.node_id,
+        head,
+        title: `${pr.json.title} (#${number})`,
+        body: squashMessage(key, commits),
+      },
+    });
+    const error = auto.json?.errors?.[0]?.message;
+    if (!auto.ok || error)
+      return { code: 1, problems: [`auto-merge was not turned on: ${error ?? auto.err}`] };
+    log(
+      `${NAME} land: #${number}: approval requested, auto-merge on at ${head.slice(0, 12)}; \`${NAME} land ${number}\` finishes it once merged`,
+    );
+    return { code: 0, queued: true };
+  }
   const merge = api("PUT", `/repos/${repo}/pulls/${number}/merge`, {
     merge_method: "squash",
     sha: head,
@@ -274,7 +431,30 @@ export async function landOne({
   if (!merge.ok) return { code: 1, problems: [`GitHub refused the merge: ${merge.err}`] };
   const sha = merge.json.sha;
   log(`${NAME} land: #${number} landed on ${base} as ${sha.slice(0, 12)}`);
+  return finish({ root, repo, number, branch, head, key, sha, scheme, manualOk, deps });
+}
 
+/**
+ * The steps after a merge: tracker Done, the merge commit recorded, the worktree removed, the branch deleted and a
+ * comment. Each only warns (exit 3); none undoes the merge.
+ * @param {{ root: string, repo: string, number: number, branch: string, head: string, key: string | undefined,
+ *           sha: string, scheme: import("../adapters/tracker/index.mjs").KeyScheme, manualOk?: boolean,
+ *           deps: LandDeps }} options
+ * @returns {Promise<{ code: number, merged: string }>}
+ */
+async function finish({
+  root,
+  repo,
+  number,
+  branch,
+  head,
+  key,
+  sha,
+  scheme,
+  manualOk = false,
+  deps,
+}) {
+  const { api, log, warn } = deps;
   let warned = false;
   const step = async (/** @type {string} */ what, /** @type {() => unknown} */ fn) => {
     try {
@@ -307,10 +487,13 @@ export async function landOne({
       for (const k of r.kept)
         log(`${NAME} land: kept ${k.path}: ${k.reason} (${NAME} clean takes it later)`);
     });
-  await step(
-    "delete the branch",
-    () => api("DELETE", `/repos/${repo}/git/refs/heads/${branch}`).ok,
-  );
+  // Only the branch as it was landed: a push after the merge is someone's work.
+  await step("delete the branch", () => {
+    const now = api("GET", `/repos/${repo}/git/ref/heads/${refPath(branch)}`).json?.object?.sha;
+    if (now !== head)
+      throw new Error(`${branch} is at ${now ?? "nothing"}, not the landed ${head}; kept`);
+    return api("DELETE", `/repos/${repo}/git/refs/heads/${refPath(branch)}`).ok;
+  });
   await step(
     "comment",
     () =>
@@ -408,6 +591,15 @@ export async function landStack({
     });
     if (result.code === 1 || result.code === 2)
       return { ...result, problems: (result.problems ?? []).map((p) => `#${pr.number}: ${p}`) };
+    // The rest of the stack builds on this PR's merge, which now waits on its approval and checks.
+    if (result.queued) {
+      log(
+        `${NAME} land --stack: #${pr.number} waits on its ${result.waiting ? "checks" : "approval"}; land the stack again once it merges`,
+      );
+      return result.waiting
+        ? { code: result.code, problems: [], waiting: result.waiting }
+        : { code: result.code, problems: [] };
+    }
     log(`${NAME} land --stack: ${i + 1}/${chain.length} landed`);
   }
   return { code: 0 };
@@ -465,7 +657,14 @@ export async function run(/** @type {string[]} */ args) {
     : await landOne({ ...options, dry: args.includes("--dry-run") });
   for (const p of result.problems ?? []) console.error(`${NAME} land: ${p}`);
   const dry = args.includes("--dry-run") && !args.includes("--stack");
-  if (result.code === 0 || result.code === 3)
+  if ("waiting" in result && result.waiting)
+    say("blocked", `${NAME} land: required checks still running; land again once green`);
+  else if ("queued" in result && result.queued)
+    say(
+      "approved",
+      `${NAME} land: approval requested; GitHub merges it when every required check passes`,
+    );
+  else if (result.code === 0 || result.code === 3)
     say(dry ? "approved" : "shipped", `${NAME} land: ${dry ? "ready to land" : "landed"}`);
   else say("blocked", `${NAME} land: not landed`);
   return result.code;

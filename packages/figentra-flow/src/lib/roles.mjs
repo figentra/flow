@@ -125,8 +125,9 @@ export function checkTaskRoles(tasksText, team) {
  * A roster path glob as a regular expression: a double star spans any depth (also none, so `services/` plus a
  * double star includes `services`), and `*` and `?` stay within one segment.
  * @param {string} glob
+ * @param {string} [flags] RegExp flags; the owner-only list passes `is` (STA-1856)
  */
-export function globRe(glob) {
+export function globRe(glob, flags = "") {
   let re = "";
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i];
@@ -143,7 +144,7 @@ export function globRe(glob) {
     else if (c === "?") re += "[^/]";
     else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
   }
-  return new RegExp(`^${re}$`);
+  return new RegExp(`^${re}$`, flags);
 }
 
 /**
@@ -159,7 +160,7 @@ export function pathProblems(team, role, slug, files) {
   if (!r || !Array.isArray(r.changes)) return [];
   const own = r.changes.filter((c) => c.repo === "*" || c.repo === slug);
   if (r.changes.length && !own.length) return [];
-  const globs = own.flatMap((c) => c.paths).map(globRe);
+  const globs = own.flatMap((c) => c.paths).map((g) => globRe(g));
   return files
     .filter((f) => !globs.some((g) => g.test(f)))
     .map(
