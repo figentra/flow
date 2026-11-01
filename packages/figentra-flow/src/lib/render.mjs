@@ -136,6 +136,7 @@ function agents(root) {
  */
 export function approveSecrets(root) {
   const file = join(presetDir(root), "preset.yml");
+  /** @type {{ app_id?: string, private_key?: string } | undefined} */
   let approve;
   try {
     approve = existsSync(file) ? parseYaml(readFileSync(file, "utf8"))?.approve : undefined;
