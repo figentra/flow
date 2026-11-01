@@ -15,7 +15,7 @@
  */
 import { checkApproval, statusOf, tierOf } from "./gate.mjs";
 import { clean } from "./clean.mjs";
-import { gateRun } from "./gate-run.mjs";
+import { gateRun, slugOf } from "./gate-run.mjs";
 import { trackerFor } from "../adapters/tracker/index.mjs";
 import { github } from "../lib/github.mjs";
 import { aiReview } from "../lib/review.mjs";
@@ -31,6 +31,53 @@ export const REVIEW_TIERS = ["small", "feature", "big"];
 /** A conventional commit header (the squash commit's title). */
 export const CONVENTIONAL =
   /^(?:build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(?:\([\w./-]+\))?!?: \S/;
+
+/**
+ * Why `statuses` (a commit's, newest first) do not make that commit green: `figentra-flow/gate` must be `success`,
+ * posted by the configured gate App. Shared by `land` and `train`.
+ * @param {any[]} statuses
+ * @param {string | undefined} sha  the commit, for the message
+ * @param {string | undefined} gateApp
+ * @returns {string[]}
+ */
+export function gateProblems(statuses, sha, gateApp) {
+  const problems = [];
+  // The trusted gate status creator comes only from the configuration (defence in depth; the ruleset is the
+  // guarantee).
+  if (!gateApp)
+    problems.push("no gate App is configured: set apps.gate.login in the configuration");
+  const head = String(sha ?? "").slice(0, 12);
+  // GitHub lists a commit's statuses newest first; the newest of the context counts.
+  const gate = statuses.find((s) => s.context === STATUS_CONTEXT);
+  if (!gate)
+    problems.push(
+      `no ${STATUS_CONTEXT} on the head ${head} (run \`${NAME} gate run\`; an older commit's gate does not count)`,
+    );
+  else if (gate.state !== "success")
+    problems.push(`${STATUS_CONTEXT} is ${gate.state} on the head ${head}`);
+  else if (gate.creator?.login !== gateApp)
+    problems.push(
+      `${STATUS_CONTEXT} on the head was posted by ${gate.creator?.login ?? "nobody"}, not ${gateApp}`,
+    );
+  return problems;
+}
+
+/**
+ * The GitHub `owner/name` of `root`'s origin and the API with the configured credentials, or why there is none
+ * (AC-034: never a silent fallback to the caller's own gh login).
+ * @param {string} root
+ * @returns {{ repo?: string, api?: import("../lib/github.mjs").Api, problem?: string }}
+ */
+export function connect(root) {
+  const url = git(root, ["remote", "get-url", "origin"]).out;
+  const repo = slugOf(url);
+  if (!repo) return { problem: `origin (${url}) is not a GitHub repository` };
+  try {
+    return { repo, api: github(root) };
+  } catch (error) {
+    return { problem: /** @type {Error} */ (error).message };
+  }
+}
 
 /**
  * Every reason the PR may not land; empty means it may.
@@ -55,28 +102,12 @@ export function landRules({
   reviewTiers = REVIEW_TIERS,
 }) {
   const problems = [...artifacts];
-  // The trusted gate status creator comes only from the configuration (defence in depth; the ruleset is the
-  // guarantee).
-  if (!gateApp)
-    problems.push("no gate App is configured: set apps.gate.login in the configuration");
-  const head = String(pr.head?.sha ?? "").slice(0, 12);
   if (pr.state !== "open") problems.push(`the PR is ${pr.merged ? "already merged" : pr.state}`);
   if (pr.draft) problems.push("the PR is a draft");
   if (pr.mergeable_state === "dirty") problems.push(`the PR conflicts with ${pr.base?.ref}`);
   if (pr.base?.ref !== base && !stack)
     problems.push(`stacked on \`${pr.base?.ref}\`: land that first, or use --stack`);
-  // GitHub lists a commit's statuses newest first; the newest of the context counts.
-  const gate = statuses.find((s) => s.context === STATUS_CONTEXT);
-  if (!gate)
-    problems.push(
-      `no ${STATUS_CONTEXT} on the head ${head} (run \`${NAME} gate run\`; an older commit's gate does not count)`,
-    );
-  else if (gate.state !== "success")
-    problems.push(`${STATUS_CONTEXT} is ${gate.state} on the head ${head}`);
-  else if (gate.creator?.login !== gateApp)
-    problems.push(
-      `${STATUS_CONTEXT} on the head was posted by ${gate.creator?.login ?? "nobody"}, not ${gateApp}`,
-    );
+  problems.push(...gateProblems(statuses, pr.head?.sha, gateApp));
   const title = String(pr.title ?? "");
   if (!CONVENTIONAL.test(title) || title.length > 100)
     problems.push(
@@ -375,23 +406,8 @@ export async function run(/** @type {string[]} */ args) {
     console.error(`${NAME} land: not in a git repository`);
     return 2;
   }
-  const url = git(root, ["remote", "get-url", "origin"]).out;
-  const repo = url.match(/github\.com[:/]+([^/]+\/[^/]+?)(?:\.git)?\/?$/)?.[1];
-  if (!repo) {
-    console.error(`${NAME} land: origin (${url}) is not a GitHub repository`);
-    return 2;
-  }
-  // AC-034: never a silent fallback to the caller's own gh login.
-  let refusal = "";
-  const api = (() => {
-    try {
-      return github(root);
-    } catch (error) {
-      refusal = /** @type {Error} */ (error).message;
-      return undefined;
-    }
-  })();
-  if (!api) {
+  const { repo, api, problem: refusal } = connect(root);
+  if (!repo || !api) {
     console.error(`${NAME} land: ${refusal}`);
     return 2;
   }
