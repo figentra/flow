@@ -39,6 +39,7 @@ import {
 import { keyScheme } from "../adapters/tracker/index.mjs";
 import { labelsFor, specLinks, unlinkedTasks } from "../commands/linear.mjs";
 import { init } from "../commands/init.mjs";
+import { FLOW_ASSETS } from "../lib/flow-dir.mjs";
 import { installProblems } from "../lib/render.mjs";
 import { CONFIG_FILE } from "../lib/product.mjs";
 
@@ -430,7 +431,8 @@ test("spec-gate plan exits 1 on a pending spec, and spec-linear --dry-run needs 
   }
 });
 
-const presetTemplate = (n) => readFileSync(join(ASSETS, "presets/stackra/templates", n), "utf8");
+const presetTemplate = (n) =>
+  readFileSync(join(FLOW_ASSETS, "presets/stackra/templates", n), "utf8");
 
 test("the v2 templates carry the state machine, Impact v2, Amendments, Status history and the task line format", () => {
   const specT = presetTemplate("spec-template.md");
