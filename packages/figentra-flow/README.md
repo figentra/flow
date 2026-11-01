@@ -30,6 +30,7 @@ pnpm exec figentra-flow sync         # install the preset and render the speckit
 | `figentra-flow clean [--dry-run] [--adopt] [--fix-ignore] [--all]`     | removes finished worktrees (clean, saved, issue Done or idle 2 h), reports what it kept and the space freed                                                                |
 | `figentra-flow guard [--print-settings]`                               | the PreToolUse hook that denies `git worktree add` outside `.claude/worktrees/`                                                                                            |
 | `figentra-flow init --workspace <dir>…`                                | writes the workspace list (`~/.config/figentra-flow/workspace.yaml`) that `--all` acts on                                                                                  |
+| `figentra-flow status [--repo p] [--json] [--offline]`                 | specs by status, worktrees, open PRs with their gate and review, and sessions, for every repository of the workspace                                                       |
 | `figentra-flow init --runner github-actions [--force]`                 | writes the gate workflow for the `github-actions` runner, and a starter config when there is none                                                                          |
 
 A repository keeps one-line aliases: `"spec:gate": "figentra-flow gate"`, `"spec:trace": "figentra-flow trace"`,
@@ -178,6 +179,17 @@ that gives `gh` a bot's token, and `gh-user` uses your own `gh` login, only beca
 Until a repository's ruleset requires `figentra-flow/gate` (phase 6), `land` refuses there without `--manual-ok`, which only
 the tester passes. A stack's next PR is brought up to date by merging the default branch and pushing: no rebase, no
 force push. The stack is gated again before that PR lands.
+
+## Status
+
+`figentra-flow status` shows what is in flight, rebuilt on each call from git, the spec files and GitHub (nothing is
+stored). For each repository of the workspace list (or `--repo <path>`, or the current one) it lists the specs by
+status with their tier, session and gate problems (a worktree's copy wins for its own key); the worktrees with their
+branch, key, dirty state, idle hours, whether a process works in them, and ahead/behind; the open PRs with
+`figentra-flow/gate` on the head, the counted AI review and whether they are stacked; and the sessions, each a
+spec's `**Session**:` with the worktree carrying its key and that head's gate. More building sessions (a spec at
+Tasked or Implementing) than `sessionCap:` in the workspace file (default 2) is a warning, and the exit code is 1.
+`--json` prints the snapshot (`figentra-flow.status/1`); `--offline` makes no GitHub call.
 
 ## Release trains
 

@@ -22,6 +22,7 @@ const COMMANDS = [
   "land",
   "train",
   "app",
+  "status",
 ];
 const [command, ...args] = process.argv.slice(2);
 if (!COMMANDS.includes(command)) {
