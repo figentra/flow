@@ -383,6 +383,34 @@
         }
       }
     },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "install": {
+          "type": "string",
+          "minLength": 1
+        },
+        "setup": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "branch": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "review": {
       "type": "object",
       "additionalProperties": false,

@@ -130,6 +130,16 @@ export const SCHEMA = {
         budget: { type: "integer", minimum: 1 },
       },
     },
+    baseline: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        tasks: { type: "array", items: str, minItems: 1 },
+        install: str,
+        setup: { type: "array", items: { type: "object" } },
+        branch: str,
+      },
+    },
     review: {
       type: "object",
       additionalProperties: false,
@@ -221,6 +231,7 @@ export function validate(schema, value, path = "") {
  *             apps?: { gate?: { slug?: string, login: string }, review?: { slug: string }, owner?: string },
  *             gate?: { check?: string }, approve?: { ownerOnly?: string[], checks?: Record<string, string> },
  *             clean?: { keep?: string[], budget?: number }, review?: { required?: string[] },
+ *             baseline?: { tasks?: string[], install?: string, setup?: Record<string, unknown>[], branch?: string },
  *             artifacts?: { paths?: string[], maxBytes?: number },
  *             train?: { cutoff?: number, eject?: "bisect" | "manual", after?: string[], label?: string } }} Config
  * @typedef {{ config: Config, source: string | undefined, warnings: string[], errors: string[] }} Loaded

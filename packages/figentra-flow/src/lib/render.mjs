@@ -18,11 +18,13 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { dirname, join } from "node:path";
 
 import { approveWorkflow } from "./approve-workflow.mjs";
+import { baselineWorkflow } from "./baseline-workflow.mjs";
 import { loadConfig } from "./config.mjs";
 import { LOCK, OVERRIDES, presetDir } from "./flow-dir.mjs";
 import { codeowners } from "./owner-only.mjs";
 import {
   APPROVE_WORKFLOW,
+  BASELINE_WORKFLOW,
   ENV_PREFIX,
   NAME,
   PACKAGE,
@@ -120,7 +122,9 @@ export function render(root, { direct = false } = {}) {
     out.set(direct ? `.claude/rules/${id}.md` : `.agents/rules/${id}.md`, text);
   const readme = renderReadme(root);
   if (readme !== undefined) out.set("README.md", readme);
-  const { apps, approve } = loadConfig(root).config;
+  const { apps, approve, baseline } = loadConfig(root).config;
+  // STA-1942: only a repository whose main is red asks for the baseline gate.
+  if (baseline) out.set(`.github/workflows/${BASELINE_WORKFLOW}`, baselineWorkflow(baseline));
   const ownerOnly = approve?.ownerOnly ?? [];
   // No owner, no approval path: GitHub must be able to ask someone for the owner-only paths (CODEOWNERS).
   if (!apps?.owner) return out;

@@ -62,3 +62,9 @@ export const APPROVE_WORKFLOW = `${NAME}-approve.yml`;
 
 /** The GitHub environment holding the approving App's id and key; it allows the default branch only. */
 export const APPROVE_ENVIRONMENT = `${NAME}-approve`;
+
+/** The baseline workflow `sync` renders when the config has `baseline` (STA-1942); its job is the check. */
+export const BASELINE_WORKFLOW = `${NAME}-baseline.yml`;
+
+/** The baseline workflow's job name, and so the check a red-main repository requires instead of its full gate. */
+export const BASELINE_CHECK = "Baseline";

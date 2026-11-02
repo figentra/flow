@@ -265,6 +265,31 @@ this Flow version when `sync` ran. Without that integrity it refuses to run.
 GitHub merges once the approval and every required check are in. After that, `land <n>` on the merged PR runs steps 1
 to 5.
 
+### When main is red: the baseline gate
+
+A repository whose main already fails some tasks can require the `Baseline` check instead of its full gate, so routine
+PRs can still land (STA-1942). Add `baseline` to the config:
+
+```json
+"baseline": {
+  "tasks": ["lint", "typecheck", "test", "build"],
+  "install": "pnpm install --frozen-lockfile",
+  "setup": [{ "name": "Registry auth", "uses": "./.github/actions/registry-auth", "with": { "token": "${{ secrets.STACKRA_REGISTRY_TOKEN }}" } }]
+}
+```
+
+`sync` then renders `.github/workflows/figentra-flow-baseline.yml`. Its `Baseline` job runs the `setup` steps as
+written, the install, and one `turbo run <tasks> --continue --summarize`, then `figentra-flow gate baseline save`:
+
+- on a push to the default branch, it uploads the results as `figentra-flow-baseline-<sha>`;
+- on a pull request, `gate baseline check` compares them with the baseline of the base commit, or of its nearest
+  ancestor that has one. The check fails on a task that passed on main, or a new task that fails, and fails closed
+  when no baseline exists. The job summary lists new failures, fixed tasks and tasks still failing.
+
+Only an artifact from a push run on the default branch, at exactly that commit, counts as a baseline. Security checks
+(gitleaks, CodeQL, dependency review, the secrets checks) stay required on their own; `Baseline` replaces only the full
+gate's requirement, and only while main is red.
+
 GitHub calls use only the credentials the configuration names in `credentials`. `wrapper` runs your own command
 that gives `gh` a bot's token, and `gh-user` uses your own `gh` login, only because you said so. With neither, `land` refuses: Figentra Flow never falls back to a personal login.
 

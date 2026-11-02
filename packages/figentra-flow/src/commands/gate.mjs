@@ -8,6 +8,8 @@
  * Governing contract: ADR 0120 (SDLC spec location, lanes and change risk); ADR 0121; ADR 0065 (rule 7).
  *
  *   run [--ref b] [--box host] [-- flags]  the checks through the runner (or on `--box`); the box posts `figentra-flow/gate`
+ *   baseline save|check         the baseline gate (STA-1942, gate-baseline.mjs): a PR passes when it adds no failure
+ *                               to main's
  *   plan <spec.md>              exit 1 unless the spec may be planned (run by setup-plan.sh)
  *   check <dir>                 the stage rules for the spec's declared `**Status**`
  *   tasks <tasks.md>            tasks lint: ids, covers, routes, deps, coverage, waves
@@ -963,6 +965,8 @@ function report(problems) {
 }
 
 export function run([mode, ...args]) {
+  // STA-1942: the baseline gate, for a repository whose main is red
+  if (mode === "baseline") return import("./gate-baseline.mjs").then((m) => m.run(args));
   // phase 2: the checks on a box, posted as `figentra-flow/gate` (STA-1729)
   if (mode === "run") return import("./gate-run.mjs").then((m) => m.run(args));
   // the check command alone, for a runner that runs it itself (the github-actions workflow's `check` job)
