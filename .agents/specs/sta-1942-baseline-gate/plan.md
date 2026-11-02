@@ -29,7 +29,7 @@ workflow that `sync` renders when the config asks for it. The rest is the owner'
 
 ## Contracts
 
-- Artifact: `figentra-flow-baseline-<sha>`, kept 90 days, holding `baseline.json`:
+- Artifact: `fflow-baseline-<sha>`, kept 90 days, holding `baseline.json`:
   `{ version: 1, sha, reader: "turbo", tasks: { "<pkg>#<task>": "pass" | "fail" } }`.
 - Search: the ancestors come from `GET /repos/{repo}/commits?sha=<base>&per_page=30`; then, per SHA,
   `GET /repos/{repo}/actions/artifacts?name=…`. A candidate counts only when it isn't expired, its

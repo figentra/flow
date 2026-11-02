@@ -1,15 +1,15 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow init [--force]` — install `.flow/` (ADR 0510: README, a starter `constitution.md`,
+ * Purpose: `fflow init [--force]` — install `.flow/` (ADR 0510: README, a starter `constitution.md`,
  *   `.gitignore`) into the current repository and render the `flow-*` skills with `sync` (the constitution is the
  *   repository's own and is never overwritten).
- *   `figentra-flow init --workspace <dir>…` writes the workspace list instead: every git repository in or directly under
+ *   `fflow init --workspace <dir>…` writes the workspace list instead: every git repository in or directly under
  *   those folders, with its GitHub slug (STA-1729).
  * Boundary: writes only `.flow/`, what `sync` renders and `.claude/worktrees/README.md` (STA-1871); refuses an existing
  *   `.flow/` unless `--force`. `--workspace` writes only the
- *   workspace file (`~/.config/figentra-flow/workspace.yaml`, or `FIGENTRA_FLOW_WORKSPACE`).
- *   `figentra-flow init --runner github-actions [--force]` writes only the gate workflow
- *   (`.github/workflows/figentra-flow-gate.yml`) and, when the repository has no config file, a starter one naming
+ *   workspace file (`~/.config/fflow/workspace.yaml`, or `FFLOW_WORKSPACE`).
+ *   `fflow init --runner github-actions [--force]` writes only the gate workflow
+ *   (`.github/workflows/fflow-gate.yml`) and, when the repository has no config file, a starter one naming
  *   that runner; it refuses an existing workflow unless `--force` and never edits an existing config file.
  * Runtime: node
  * Governing contract: ADR 0120; ADR 0121.

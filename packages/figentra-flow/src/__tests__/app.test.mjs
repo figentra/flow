@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold `figentra-flow app create` to AC-039: an agent, CI or non-terminal session is refused; the manifest
+ * Purpose: hold `fflow app create` to AC-039: an agent, CI or non-terminal session is refused; the manifest
  *   asks for no webhook and only the role's permissions; the local page posts it to GitHub and only the callback with
  *   the one-time state yields the code; the conversion keeps the id, slug and key; the key goes to the secrets port and
  *   never to the output.
@@ -125,8 +125,8 @@ test("create: the key reaches the secrets port only; the output names the App an
   assert.deepEqual(
     stored.map(([name, , options]) => [name, options.scope]),
     [
-      ["FIGENTRA_FLOW_GATE_PRIVATE_KEY", "gate"],
-      ["FIGENTRA_FLOW_GATE_APP_ID", "gate"],
+      ["FFLOW_GATE_PRIVATE_KEY", "gate"],
+      ["FFLOW_GATE_APP_ID", "gate"],
     ],
   );
   assert.equal(stored[0][1], PEM);

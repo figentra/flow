@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow train open|add|close|build|eject|depart|status`, the repository's release train (STA-1746):
+ * Purpose: `fflow train open|add|close|build|eject|depart|status`, the repository's release train (STA-1746):
  *   open a train (a GitHub milestone and a `<label><version>` label, the version next from changesets), board green
  *   PRs in order, cut off, build `train/<version>` from the default branch by merge commits (ejecting a conflicting
  *   member), gate it and, on red, eject the first breaking member by gating prefixes (`train.eject: "bisect"`) or stop
@@ -10,7 +10,7 @@
  *   marked line in its milestone's description; nothing is stored locally. Members are merged with merge commits,
  *   never rebased or squashed. `train/<version>` is Flow's scratch branch: a candidate that does not descend from it
  *   replaces it by delete and push, never a forced push. Depart is a fast-forward only (`force: false`), refused
- *   unless `figentra-flow/gate` is green on the tip's exact sha; the steps after it only warn (exit 3). Every
+ *   unless `fflow/gate` is green on the tip's exact sha; the steps after it only warn (exit 3). Every
  *   mutating subcommand takes `--dry-run`.
  * Runtime: node
  * Governing contract: STA-1746 (owner approval 2026-11-01); Stackra ADR 0503; STA-1729 phase 3 (land's gate rule).
@@ -26,7 +26,7 @@ import { NAME, STATUS_CONTEXT } from "../lib/product.mjs";
 import { defaultBranch, fetch, git, mainCheckout, remote, remoteTip } from "../lib/git.mjs";
 
 /**
- * The `train` settings' defaults; `figentra-flow.config.json`'s `train` block overrides each. No `cutoff`: the cut-off
+ * The `train` settings' defaults; `flow.config.json`'s `train` block overrides each. No `cutoff`: the cut-off
  * is `train close` by hand.
  * @type {TrainConfig}
  */
@@ -547,7 +547,7 @@ export async function trainEject(/** @type {Ctx} */ ctx, /** @type {number} */ n
 }
 
 /**
- * `train depart`: fast-forward the default branch to the train's tip, only when `figentra-flow/gate` is green on
+ * `train depart`: fast-forward the default branch to the train's tip, only when `fflow/gate` is green on
  * that exact sha and every `train.after` upstream is published; then close the milestone and open the next train.
  * @returns {Promise<Result>}
  */
@@ -659,7 +659,7 @@ export async function trainStatus(/** @type {Ctx} */ ctx) {
 
 const SUBCOMMANDS = ["open", "add", "close", "build", "eject", "depart", "status"];
 
-/** `figentra-flow train <open [<version>]|add <pr>|close|build|eject <pr>|depart|status> [--dry-run]`. */
+/** `fflow train <open [<version>]|add <pr>|close|build|eject <pr>|depart|status> [--dry-run]`. */
 export async function run(/** @type {string[]} */ args) {
   const [sub, ...rest] = args;
   const usage = `usage: ${NAME} train <open [<x.y.z>]|add <pr>|close|build|eject <pr>|depart|status> [--dry-run]`;

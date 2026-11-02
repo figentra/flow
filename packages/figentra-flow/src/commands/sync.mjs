@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow sync [--direct]` (ADR 0510): renders the repository's preset commands (and any
+ * Purpose: `fflow sync [--direct]` (ADR 0510): renders the repository's preset commands (and any
  *   `.flow/overrides/commands/`) into the `flow-*` skills, writes `.flow/lock.json` and removes spec-kit's rendered
  *   `speckit-*` skills and commands. By default it writes neutral skill documents into `.agents/skills/flow-<verb>/` and
  *   then runs the repository's own projector (`pnpm run agents:sync`) when its package.json has one; `--direct`
@@ -18,7 +18,8 @@ import { fileURLToPath } from "node:url";
 
 import { git } from "../lib/git.mjs";
 import { NAME } from "../lib/product.mjs";
-import { render, writeRendered } from "../lib/render.mjs";
+import { ConfigError } from "../lib/config.mjs";
+import { migrateLegacy, render, writeRendered } from "../lib/render.mjs";
 
 /** The package's assets folder. */
 export const ASSETS = fileURLToPath(new URL("../../assets", import.meta.url));
@@ -42,6 +43,9 @@ export function hasProjector(root) {
  * @param {{ direct?: boolean, log?: (s: string) => void }} [options]
  */
 export function sync(root, { direct = false, log = console.log } = {}) {
+  const migrated = migrateLegacy(root);
+  if (migrated.error) throw new ConfigError(migrated.error);
+  for (const line of migrated.done) log(`${NAME} sync: ${line} (the ${NAME} rename)`);
   const files = render(root, { direct });
   const removed = writeRendered(root, files);
   for (const p of removed) log(`${NAME} sync: removed ${p} (spec-kit)`);
@@ -49,7 +53,7 @@ export function sync(root, { direct = false, log = console.log } = {}) {
   return { files: [...files.keys()], removed };
 }
 
-/** `figentra-flow sync [--direct]`. */
+/** `fflow sync [--direct]`. */
 export function run(/** @type {string[]} */ args = []) {
   const top = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
   const root = top.ok ? top.out : process.cwd();

@@ -6,8 +6,8 @@ derived-from: github/spec-kit 1.0.10 (MIT)
 ## Workflow: feature directory (runs first)
 
 Specs live in `.agents/specs/<key>-<slug>/`, keyed by the spec's issue, never in `specs/`. Before anything else run
-`figentra-flow gate dir` (add `--key <key>` when the branch name carries no key). It prints the spec folder for the
-branch's issue key and writes `.flow/current.json`, which every `figentra-flow spec` call reads. If it fails, STOP and report it; never fall back to a numbered
+`fflow gate dir` (add `--key <key>` when the branch name carries no key). It prints the spec folder for the
+branch's issue key and writes `.flow/current.json`, which every `fflow spec` call reads. If it fails, STOP and report it; never fall back to a numbered
 folder.
 
 ## User Input
@@ -26,7 +26,7 @@ Note: This clarification workflow is expected to run (and be completed) BEFORE i
 
 Execution steps:
 
-1. Run `figentra-flow spec paths --json --paths-only` from repo root **once** (combined `--json --paths-only` mode / `-Json -PathsOnly`). Parse minimal JSON payload fields:
+1. Run `fflow spec paths --json --paths-only` from repo root **once** (combined `--json --paths-only` mode / `-Json -PathsOnly`). Parse minimal JSON payload fields:
    - `FEATURE_DIR`
    - `FEATURE_SPEC`
    - (Optionally capture `IMPL_PLAN`, `TASKS` for future chained flows.)
@@ -227,7 +227,7 @@ When no `[NEEDS CLARIFICATION` marker remains anywhere in the spec and `**Issue*
 belong to the approver come only from them; never answer them yourself.
 
 When it is complete, set `**Status**: Clarified`, append `<date> · Draft → Clarified · <you> · <note>` to
-`## Status history`, and verify with `figentra-flow gate plan <spec.md>` and `figentra-flow gate check <folder>`.
+`## Status history`, and verify with `fflow gate plan <spec.md>` and `fflow gate check <folder>`.
 
 ## Workflow: approval stop
 

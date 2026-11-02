@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold `figentra-flow mcp` to AC-033 and the MCP shapes of `initialize`, `tools/list` and `tools/call`: the
+ * Purpose: hold `fflow mcp` to AC-033 and the MCP shapes of `initialize`, `tools/list` and `tools/call`: the
  *   tool list is exactly the five read tools, each call returns one text item holding the reader's JSON, a reader's
  *   own failure is `isError`, and an unknown method, an unknown tool, bad arguments or a malformed request is a JSON-RPC
  *   error; notifications get no answer.
@@ -45,7 +45,7 @@ test("mcp: initialize negotiates the protocol and announces only tools; notifica
   });
   assert.equal(init?.result.protocolVersion, "2025-03-26");
   assert.deepEqual(init?.result.capabilities, { tools: { listChanged: false } });
-  assert.equal(init?.result.serverInfo.name, "figentra-flow");
+  assert.equal(init?.result.serverInfo.name, "fflow");
   assert.equal(
     (await call(2, "initialize", { protocolVersion: "1999-01-01" }))?.result.protocolVersion,
     PROTOCOLS[0],
@@ -61,13 +61,7 @@ test("mcp: the tool list is exactly the five read tools, none of which writes (A
   const listed = (await call(1, "tools/list"))?.result.tools;
   assert.deepEqual(
     listed.map((/** @type {any} */ t) => t.name),
-    [
-      "figentra_flow_status",
-      "figentra_flow_spec",
-      "figentra_flow_trace",
-      "figentra_flow_worktrees",
-      "figentra_flow_metrics",
-    ],
+    ["fflow_status", "fflow_spec", "fflow_trace", "fflow_worktrees", "fflow_metrics"],
   );
   for (const tool of listed) {
     assert.equal(typeof tool.description, "string");
@@ -79,7 +73,7 @@ test("mcp: the tool list is exactly the five read tools, none of which writes (A
 
 test("mcp: tools/call returns the reader's JSON as one text item; a reader's failure is isError", async () => {
   const answer = await call(1, "tools/call", {
-    name: "figentra_flow_spec",
+    name: "fflow_spec",
     arguments: { repo: "/r", key: "STA-1" },
   });
   assert.equal(answer?.result.content.length, 1);
@@ -89,16 +83,14 @@ test("mcp: tools/call returns the reader's JSON as one text item; a reader's fai
     args: { repo: "/r", key: "STA-1" },
   });
   assert.deepEqual(
-    JSON.parse(
-      (await call(2, "tools/call", { name: "figentra_flow_status" }))?.result.content[0].text,
-    ),
+    JSON.parse((await call(2, "tools/call", { name: "fflow_status" }))?.result.content[0].text),
     {
       tool: "status",
       args: {},
     },
   );
   const failed = await call(3, "tools/call", {
-    name: "figentra_flow_metrics",
+    name: "fflow_metrics",
     arguments: { since: 7 },
   });
   assert.equal(failed?.result.isError, true);
@@ -107,19 +99,18 @@ test("mcp: tools/call returns the reader's JSON as one text item; a reader's fai
 
 test("mcp: unknown method, unknown tool, bad arguments and a malformed request are JSON-RPC errors", async () => {
   assert.equal((await call(1, "resources/list"))?.error.code, -32601);
-  assert.equal((await call(2, "tools/call", { name: "figentra_flow_land" }))?.error.code, -32602);
+  assert.equal((await call(2, "tools/call", { name: "fflow_land" }))?.error.code, -32602);
   for (const args of [
     { repo: "/r" },
     { repo: "/r", key: 3 },
     { repo: "/r", key: "x", force: true },
   ])
     assert.equal(
-      (await call(3, "tools/call", { name: "figentra_flow_trace", arguments: args }))?.error.code,
+      (await call(3, "tools/call", { name: "fflow_trace", arguments: args }))?.error.code,
       -32602,
     );
   assert.equal(
-    (await call(4, "tools/call", { name: "figentra_flow_metrics", arguments: { since: 0 } }))?.error
-      .code,
+    (await call(4, "tools/call", { name: "fflow_metrics", arguments: { since: 0 } }))?.error.code,
     -32602,
   );
   assert.equal((await handle({ id: 5, method: "ping" }, readers))?.error.code, -32600);

@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold `figentra-flow migrate` to ADR 0510 decision 8 on a core-shaped repository: `--dry-run` lists every step
+ * Purpose: hold `fflow migrate` to ADR 0510 decision 8 on a core-shaped repository: `--dry-run` lists every step
  *   and writes nothing; the run moves the constitution to `.flow/`, deletes `.specify/` and `.agents/speckit/`, points
  *   the config's preset at the bundled one, renames `speckit:sync` to `spec:sync`, drops the `specify` pin with its
  *   comment, points `.specify/**` skips at `.flow/**`, removes the rendered `speckit-*` skills and renders `flow-*`;
@@ -36,8 +36,8 @@ function coreLike() {
       {
         scripts: {
           format: "oxfmt --write . && git ls-files -z '*.sh' ':!.specify/**' | xargs -0 shfmt -w",
-          "speckit:sync": "figentra-flow sync",
-          "spec:gate": "figentra-flow gate",
+          "speckit:sync": "fflow sync",
+          "spec:gate": "fflow gate",
         },
       },
       null,
@@ -64,7 +64,7 @@ test("migrate --dry-run lists every step and writes nothing", () => {
       "delete .specify/",
       "delete .agents/speckit/",
       `set "preset" to the bundled "stackra" in ${CONFIG_FILE}`,
-      "rename the speckit:sync script to spec:sync (`figentra-flow sync`)",
+      "rename the speckit:sync script to spec:sync (`fflow sync`)",
       "drop the pipx:specify-cli pin from mise.toml",
       "point the .specify/** skip in package.json at .flow/**",
       "point the .specify/** skip in lefthook.yml at .flow/**",
@@ -92,7 +92,7 @@ test("migrate moves a core-shaped repository onto .flow/; it passes the install 
       assert.equal(existsSync(join(root, gone)), false, gone);
     assert.equal(JSON.parse(read(CONFIG_FILE)).preset, "stackra");
     const scripts = JSON.parse(read("package.json")).scripts;
-    assert.equal(scripts["spec:sync"], "figentra-flow sync");
+    assert.equal(scripts["spec:sync"], "fflow sync");
     assert.equal(scripts["speckit:sync"], undefined);
     assert.match(scripts.format, /':!\.flow\/\*\*'/);
     assert.equal(read("mise.toml"), '[tools]\nnode = "24"\ngitleaks = "8"\n');

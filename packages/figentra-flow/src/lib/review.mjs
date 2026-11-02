@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: the independent AI review of Stackra ADR 0230, as `figentra-flow land` reads it: the counted verdict on a PR's
+ * Purpose: the independent AI review of Stackra ADR 0230, as `fflow land` reads it: the counted verdict on a PR's
  *   head from the `stackra-reviewer` App (matched by App identity, never a login string), unedited, first line
  *   `AI-REVIEW: PASS <40-hex head> base=<base>`, never from the PR's author or the head commit's author or committer;
  *   or the owner's APPROVED review on the head with the `owner-approval` token. A FAIL for the head beats any PASS.

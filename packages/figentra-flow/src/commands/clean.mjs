@@ -1,13 +1,13 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow clean [--dry-run] [--adopt] [--fix-ignore] [--all]` — remove the finished worktrees of the
+ * Purpose: `fflow clean [--dry-run] [--adopt] [--fix-ignore] [--all]` — remove the finished worktrees of the
  *   repository (or of every workspace repository with `--all`), move stray ones inside, and make `.gitignore` ignore
  *   `.claude/worktrees/`. A worktree is removed only when it is
  *   - not a tester's (`g-*`, `*-gate`, `land-*`, `tpl-core`, `c6-lock*`, `template-wt-lean`);
  *   - not in use: no running process (a session, a dev server, a shell) has its working folder inside it;
  *   - clean (no change, untracked files included);
  *   - saved: its head on a remote ref, or every commit landed by patch (`git cherry`), since core lands by cherry-pick,
- *     or the squash commit `figentra-flow land` recorded (`branch.<b>.figentraFlowLanded`) on the default branch;
+ *     or the squash commit `fflow land` recorded (`branch.<b>.figentraFlowLanded`) on the default branch;
  *   - finished: its issue Done or Canceled when its name carries a key, else idle for 2 hours or more by its HEAD
  *     reflog (a detached HEAD or a builder sub-agent tree);
  *   - free of ignored files outside the usual caches (`.env`, `ios/`, `android/` keep it).
@@ -33,7 +33,7 @@ import { basename, join, resolve, sep } from "node:path";
 import { trackerFor } from "../adapters/tracker/index.mjs";
 import { matches } from "../lib/artifacts.mjs";
 import { loadConfig } from "../lib/config.mjs";
-import { LANDED_KEY, NAME } from "../lib/product.mjs";
+import { LANDED_KEY, LEGACY_LANDED_KEY, NAME } from "../lib/product.mjs";
 import {
   busyFolders,
   defaultBranch,
@@ -48,6 +48,12 @@ import {
   worktrees,
 } from "../lib/git.mjs";
 import { readWorkspace } from "../lib/workspace.mjs";
+
+/** The commit `land` recorded for `branch`, under the current key or the one before 0.2.2. */
+const landedAt = (/** @type {string} */ root, /** @type {string | undefined} */ branch) =>
+  branch &&
+  (git(root, ["config", "--get", `branch.${branch}.${LANDED_KEY}`]).out ||
+    git(root, ["config", "--get", `branch.${branch}.${LEGACY_LANDED_KEY}`]).out);
 
 /** How long a keyless worktree must sit untouched before it is removed. */
 export const IDLE_HOURS = 2;
@@ -138,7 +144,7 @@ export function ignoresWorktrees(root) {
  * Cleans the repository at `cwd`.
  * @param {{ cwd: string, dry?: boolean, adopt?: boolean, fixIgnore?: boolean, issues?: Issues, now?: number,
  *           busy?: string[], only?: string[], budget?: boolean, backupDir?: string }} options   `only`: act on these
- *   worktree paths alone (`figentra-flow land`); `budget`: sweep the budget candidates; `backupDir`: where ignored
+ *   worktree paths alone (`fflow land`); `budget`: sweep the budget candidates; `backupDir`: where ignored
  *   files go (default `~/Backups/<NAME>/`)
  * @returns {Promise<Report>}
  */
@@ -233,9 +239,8 @@ export async function clean(options) {
       report.adopted.push(`${tree.path} → ${target}`);
       continue;
     }
-    // AC-029: a squash merge has its own patch id, so `figentra-flow land` records the merge commit on the branch.
-    const landed =
-      tree.branch && git(root, ["config", "--get", `branch.${tree.branch}.${LANDED_KEY}`]).out;
+    // AC-029: a squash merge has its own patch id, so `fflow land` records the merge commit on the branch.
+    const landed = landedAt(root, tree.branch);
     const landedOnBase =
       Boolean(landed) && git(root, ["merge-base", "--is-ancestor", landed, `origin/${base}`]).ok;
     if (!landedOnBase && !isSaved(tree.path, base)) {
@@ -330,8 +335,7 @@ function budget(root, report, { apply, now, busy, keepNames, base, backupDir }) 
       idleHours(tree.path, now) < BUDGET_IDLE_HOURS
     )
       continue;
-    const landed =
-      tree.branch && git(root, ["config", "--get", `branch.${tree.branch}.${LANDED_KEY}`]).out;
+    const landed = landedAt(root, tree.branch);
     const merged =
       Boolean(landed) && git(root, ["merge-base", "--is-ancestor", landed, `origin/${base}`]).ok;
     if (!merged && !isSaved(tree.path, base)) continue;
@@ -408,7 +412,7 @@ function sweep(root, tree, { now, backupDir, preserved }) {
 export const human = (kb) =>
   kb >= 1_048_576 ? `${(kb / 1_048_576).toFixed(1)} GB` : `${(kb / 1024).toFixed(0)} MB`;
 
-/** `figentra-flow clean [--dry-run] [--adopt] [--fix-ignore] [--budget] [--all]`. */
+/** `fflow clean [--dry-run] [--adopt] [--fix-ignore] [--budget] [--all]`. */
 export async function run(args) {
   const dry = args.includes("--dry-run");
   const roots = args.includes("--all") ? readWorkspace().map((r) => r.path) : [process.cwd()];

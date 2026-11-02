@@ -37,7 +37,7 @@ const OWNER = [
   ".github/CODEOWNERS",
   "pnpm-workspace.yaml",
   "packages/x/.npmrc",
-  "figentra-flow.config.json",
+  "flow.config.json",
   "sub/.infisical.json",
   ".agents/hooks/_rules.mjs",
   ".claude/settings.json",
@@ -139,10 +139,10 @@ test("approval workflow: the pinned check, in its environment, with the approver
     integrity: "sha512-AbC+/9==",
     appId: "A_ID",
     privateKey: "A_KEY",
-    trusted: { "figentra-flow/gate": "figentra-gate[bot]" },
+    trusted: { "fflow/gate": "figentra-gate[bot]" },
     ownerOnly: ["it's/**"],
   });
-  assert.match(text, /^ {4}environment: figentra-flow-approve$/m);
+  assert.match(text, /^ {4}environment: fflow-approve$/m);
   assert.match(text, /app-id: \$\{\{ secrets\.A_ID \}\}/);
   assert.match(text, /private-key: \$\{\{ secrets\.A_KEY \}\}/);
   assert.match(text, /permission-pull-requests: write/);
@@ -158,7 +158,7 @@ test("approval workflow: the pinned check, in its environment, with the approver
     () => approveWorkflow({ version: "1", integrity: "sha1-x", appId: "A", privateKey: "B" }),
     /not a sha512 integrity/,
   );
-  assert.match(text, /TRUSTED: '\{"figentra-flow\/gate":"figentra-gate\[bot\]"\}'/);
+  assert.match(text, /TRUSTED: '\{"fflow\/gate":"figentra-gate\[bot\]"\}'/);
   assert.match(text, /OWNER_ONLY_EXTRA: '\["it''s\/\*\*"\]'/);
   assert.doesNotMatch(text, /actions\/checkout|pull_request_target|--admin/);
   assert.doesNotMatch(
@@ -178,7 +178,7 @@ test("sync renders each preset's stewards, the workflow with the approver's name
     const root = mkdtempSync(join(tmpdir(), `flow-stewards-${preset}-`));
     t.after(() => rmSync(root, { recursive: true }));
     writeFileSync(
-      join(root, "figentra-flow.config.json"),
+      join(root, "flow.config.json"),
       JSON.stringify({ version: 1, preset, ...(owner ? { apps: { owner } } : {}) }),
     );
     const { files } = sync(root, { direct: true, log: () => {} });
@@ -191,13 +191,12 @@ test("sync renders each preset's stewards, the workflow with the approver's name
         readFileSync(join(root, `.claude/agents/${id}.md`), "utf8"),
         new RegExp(`^name: ${id}$`, "m"),
       );
-    assert.equal(approveSecrets(root).appId, "FIGENTRA_FLOW_APPROVER_APP_ID");
+    assert.equal(approveSecrets(root).appId, "FFLOW_APPROVER_APP_ID");
     // No owner, no approval path: neither the workflow nor CODEOWNERS.
-    const workflow = join(root, ".github/workflows/figentra-flow-approve.yml");
+    const workflow = join(root, ".github/workflows/fflow-approve.yml");
     assert.equal(existsSync(workflow), Boolean(owner));
     assert.equal(existsSync(join(root, ".github/CODEOWNERS")), Boolean(owner));
-    if (owner)
-      assert.match(readFileSync(workflow, "utf8"), /secrets\.FIGENTRA_FLOW_APPROVER_APP_ID /);
+    if (owner) assert.match(readFileSync(workflow, "utf8"), /secrets\.FFLOW_APPROVER_APP_ID /);
   }
 });
 
@@ -210,7 +209,7 @@ test("sync refuses a preset whose approval secret name is not a secret name", (t
     'preset:\n  id: "ours"\napprove:\n  app_id: "bad name"\n',
   );
   writeFileSync(
-    join(root, "figentra-flow.config.json"),
+    join(root, "flow.config.json"),
     JSON.stringify({ version: 1, preset: "presets/ours" }),
   );
   assert.throws(() => approveSecrets(root), /approve names "bad name", not a secret name/);

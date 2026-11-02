@@ -1,7 +1,7 @@
 // Figentra Flow file contract:
 // Purpose: oxfmt settings, matching Stackra core's line width. The bundled spec-kit assets are copies of what
-//          `specify` renders and are kept byte for byte, so they are not formatted; nor is what `figentra-flow sync`
-//          renders here, whose bytes .flow/lock.json pins (`gate ci` fails on a reformatted file).
+//          `specify` renders and are kept byte for byte, so they are not formatted; nor is what `fflow sync`
+//          renders here (the README among them), whose bytes .flow/lock.json pins (`gate ci` fails on a reformatted file).
 {
   "printWidth": 100,
   "ignorePatterns": [
@@ -11,6 +11,8 @@
     ".agents/skills/**",
     ".agents/agents/**",
     ".agents/rules/**",
-    ".github/workflows/figentra-flow-approve.yml",
+    ".github/workflows/fflow-approve.yml",
+    ".github/workflows/fflow-baseline.yml",
+    "README.md",
   ],
 }

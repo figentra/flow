@@ -1,9 +1,13 @@
 /**
  * Figentra Flow file contract:
  * Purpose: hold STA-1942 to its contract:
- *   - the turbo reader passes only a task that ran and exited 0, and skips `<NONEXISTENT>`;
- *   - a PR passes when its failed set is a subset of main's; a new failure, or a new task that fails, fails it; a
- *     fixed task passes and is listed;
+ *   - the turbo reader passes only a task that ran and exited 0, marks one that never ran `skip`, and drops
+ *     `<NONEXISTENT>`;
+ *   - a PR passes when its failed set is a subset of main's; a new failure, a new task that fails, a task main ran
+ *     but the PR dropped or skipped, a red must-pass task, or more failures than main has, blocks it; a fixed task
+ *     is listed;
+ *   - the 0.2.2 rename: `sync` renames the old config file once (failing when both exist) and removes the old-named
+ *     workflows; the old binary prints one notice;
  *   - the baseline search walks the ancestors, ignores an artifact a pull request run or another branch made, and
  *     fails closed when it finds none;
  *   - `sync` renders the workflow only with `baseline` configured, with the repository's setup steps verbatim.
@@ -11,16 +15,19 @@
  * Runtime: node
  * Governing contract: ADR 0022; STA-1942.
  */
-// @covers sta-1942:FR-1 sta-1942:FR-2 sta-1942:FR-3 sta-1942:FR-4 sta-1942:FR-5 sta-1942:FR-6 sta-1942:FR-7
+// @covers sta-1942:FR-1 sta-1942:FR-2 sta-1942:FR-3 sta-1942:FR-4 sta-1942:FR-5 sta-1942:FR-6 sta-1942:FR-7 sta-1942:FR-8
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { run } from "../commands/gate-baseline.mjs";
 import { sync } from "../commands/sync.mjs";
 import { artifactName, compare, findBaseline, READERS, summaryTable } from "../lib/baseline.mjs";
+import { loadConfig } from "../lib/config.mjs";
 import { BASELINE_WORKFLOW } from "../lib/product.mjs";
 
 /** A turbo run summary: `exit` per task id, `undefined` for a task that never ran. */
@@ -36,10 +43,10 @@ const summary = (/** @type {Record<string, number | undefined>} */ exit) => ({
   })),
 });
 
-test("the turbo reader: exit 0 passes; a failure or a task that never ran fails; <NONEXISTENT> is no task", () => {
+test("the turbo reader: exit 0 passes, a failure fails, a task that never ran is skip; <NONEXISTENT> is no task", () => {
   const s = summary({ "a#lint": 0, "a#typecheck": 2, "a#test": undefined });
   s.tasks.push({ taskId: "b#build", task: "build", package: "b", command: "<NONEXISTENT>" });
-  assert.deepEqual(READERS.turbo(s), { "a#lint": "pass", "a#typecheck": "fail", "a#test": "fail" });
+  assert.deepEqual(READERS.turbo(s), { "a#lint": "pass", "a#typecheck": "fail", "a#test": "skip" });
 });
 
 test("compare: the subset passes, a new failure and a new failing task fail, a fixed task is listed", () => {
@@ -50,8 +57,11 @@ test("compare: the subset passes, a new failure and a new failing task fail, a f
     {
       ok: true,
       newFailures: [],
+      missing: [],
+      mustPassFailures: [],
       fixed: [],
       stillFailing: ["a#lint", "a#test"],
+      debt: { base: 2, pr: 2 },
     },
   );
   // a new failure: b#build passed on main
@@ -68,7 +78,40 @@ test("compare: the subset passes, a new failure and a new failing task fail, a f
   const better = compare(main, READERS.turbo(summary({ "a#lint": 0, "a#test": 1, "b#build": 0 })));
   assert.equal(better.ok, true);
   assert.deepEqual(better.fixed, ["a#lint"]);
-  assert.match(summaryTable(better, "abc"), /\| none \| `a#lint` \| `a#test` \|/);
+  assert.match(summaryTable(better, "abc"), /\| none \| none \| none \| `a#lint` \| `a#test` \|/);
+  assert.match(summaryTable(better, "abc"), /not a release certificate/);
+});
+
+test("compare: a task main ran but the PR dropped or skipped blocks, even one red on main", () => {
+  const main = READERS.turbo(summary({ "a#lint": 2, "a#test": 0, "b#build": 0 }));
+  // deleting a#lint (red on main) and b#build would shrink the failures but not the inventory
+  const dropped = compare(main, READERS.turbo(summary({ "a#test": 0 })));
+  assert.equal(dropped.ok, false);
+  assert.deepEqual(dropped.missing, ["a#lint", "b#build"]);
+  // a task that is listed but never ran counts as missing, not as fixed
+  const skipped = compare(
+    main,
+    READERS.turbo(summary({ "a#lint": undefined, "a#test": 0, "b#build": 0 })),
+  );
+  assert.deepEqual([skipped.ok, skipped.missing, skipped.fixed], [false, ["a#lint"], []]);
+});
+
+test("compare: a must-pass task blocks when red, even when it is red on main", () => {
+  const main = READERS.turbo(summary({ "api#test:isolation": 1, "a#lint": 2 }));
+  const pr = READERS.turbo(summary({ "api#test:isolation": 1, "a#lint": 2 }));
+  assert.equal(compare(main, pr).ok, true);
+  const strict = compare(main, pr, { mustPass: ["*#test:isolation", "*#secrets"] });
+  assert.deepEqual([strict.ok, strict.mustPassFailures], [false, ["api#test:isolation"]]);
+  // missing from the PR is not green either
+  const gone = compare(main, READERS.turbo(summary({ "a#lint": 2 })), { mustPass: ["api#*"] });
+  assert.deepEqual(gone.mustPassFailures, ["api#test:isolation"]);
+});
+
+test("compare: the failure count may not grow, even through tasks main skipped", () => {
+  const main = { "a#lint": "fail", "b#test": "skip" };
+  // b#test never ran on main: its failure here is new, and the debt grows from 1 to 2
+  const r = compare(/** @type {any} */ (main), { "a#lint": "fail", "b#test": "fail" });
+  assert.deepEqual([r.ok, r.newFailures, r.debt], [false, ["b#test"], { base: 1, pr: 2 }]);
 });
 
 /** A stubbed GitHub: ancestors of `base`, and artifacts by name. */
@@ -134,7 +177,7 @@ test("gate baseline: save, then check passes on the subset, fails on a new failu
   assert.equal(await run(["save"], { root, env, log }), 0);
   writeFileSync(
     join(mainDir, "baseline.json"),
-    readFileSync(join(root, ".figentra-flow-gate/baseline.json")),
+    readFileSync(join(root, ".fflow-gate/baseline.json")),
   );
   const deps = {
     root,
@@ -157,7 +200,10 @@ test("gate baseline: save, then check passes on the subset, fails on a new failu
   writeFileSync(join(root, "pr.json"), JSON.stringify(summary({ "a#lint": 2, "b#test": 1 })));
   assert.equal(await run(["save", "--summary", join(root, "pr.json")], { root, env, log }), 0);
   assert.equal(await run(["check", "--base", A], deps), 1);
-  assert.match(readFileSync(step, "utf8"), /1 new failure\(s\)[\s\S]*`b#test`/);
+  assert.match(
+    readFileSync(step, "utf8"),
+    /blocked \(1 blocking task\(s\); failures 1 → 2\)[\s\S]*`b#test`/,
+  );
   // no baseline anywhere: closed
   const closed = { ...deps, api: github({ ancestors: [A], artifacts: {}, events: {} }) };
   assert.equal(await run(["check", "--base", A], closed), 1);
@@ -168,10 +214,7 @@ test("sync renders the baseline workflow only with `baseline`, with the setup st
   const root = mkdtempSync(join(tmpdir(), "flow-baseline-sync-"));
   t.after(() => rmSync(root, { recursive: true }));
   const file = join(root, ".github/workflows", BASELINE_WORKFLOW);
-  writeFileSync(
-    join(root, "figentra-flow.config.json"),
-    JSON.stringify({ version: 1, preset: "neutral" }),
-  );
+  writeFileSync(join(root, "flow.config.json"), JSON.stringify({ version: 1, preset: "neutral" }));
   assert.ok(
     !sync(root, { log: () => {} }).files.includes(`.github/workflows/${BASELINE_WORKFLOW}`),
   );
@@ -181,7 +224,7 @@ test("sync renders the baseline workflow only with `baseline`, with the setup st
     with: { token: "${{ secrets.T }}" },
   };
   writeFileSync(
-    join(root, "figentra-flow.config.json"),
+    join(root, "flow.config.json"),
     JSON.stringify({
       version: 1,
       preset: "neutral",
@@ -193,7 +236,39 @@ test("sync renders the baseline workflow only with `baseline`, with the setup st
   assert.match(yml, /^ {4}name: Baseline$/m);
   assert.ok(yml.includes(`      - ${JSON.stringify(setup)}\n`));
   assert.match(yml, /turbo run lint test --continue --summarize \|\| true/);
-  assert.match(yml, /name: figentra-flow-baseline-\$\{\{ github\.sha \}\}/);
+  assert.match(yml, /name: fflow-baseline-\$\{\{ github\.sha \}\}/);
   assert.match(yml, /gate baseline check --base "\$BASE_SHA"/);
   assert.doesNotMatch(yml, /pull_request_target|persist-credentials: true/);
+});
+
+test("the fflow rename: sync renames the old config once, removes the old workflows, refuses both configs", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "flow-rename-"));
+  t.after(() => rmSync(root, { recursive: true }));
+  const old = {
+    $schema: "./node_modules/@figentra-oss/flow/schema/figentra-flow.config.schema.json",
+    version: 1,
+    preset: "neutral",
+  };
+  writeFileSync(join(root, "figentra-flow.config.json"), JSON.stringify(old));
+  mkdirSync(join(root, ".github/workflows"), { recursive: true });
+  writeFileSync(join(root, ".github/workflows/figentra-flow-approve.yml"), "name: old\n");
+  assert.match(loadConfig(root).warnings.join(), /old name/);
+  sync(root, { log: () => {} });
+  assert.ok(!existsSync(join(root, "figentra-flow.config.json")));
+  assert.ok(!existsSync(join(root, ".github/workflows/figentra-flow-approve.yml")));
+  assert.match(
+    readFileSync(join(root, "flow.config.json"), "utf8"),
+    /schema\/flow\.config\.schema\.json/,
+  );
+  writeFileSync(join(root, "figentra-flow.config.json"), JSON.stringify(old));
+  assert.throws(() => sync(root, { log: () => {} }), /both exist/);
+  assert.match(loadConfig(root).errors.join(), /both exist/);
+});
+
+test("the old binary prints one notice, then runs fflow", () => {
+  const bin = join(dirname(fileURLToPath(import.meta.url)), "../../bin/figentra-flow.mjs");
+  const r = spawnSync(process.execPath, [bin, "--help"], { encoding: "utf8" });
+  assert.equal(r.status, 0);
+  assert.equal(r.stderr.match(/is now `fflow`/g)?.length, 1);
+  assert.match(r.stderr, /usage: fflow </);
 });

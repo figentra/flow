@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold `figentra-flow train` to STA-1746: open makes the milestone and label; add boards only an open PR on
+ * Purpose: hold `fflow train` to STA-1746: open makes the milestone and label; add boards only an open PR on
  *   the default branch that is green on its exact head, and after the cut-off holds it for the next train; close cuts
  *   off; build merges in board order with merge commits, ejects a conflicting member and goes on, and on red bisects
  *   the prefixes to eject the first breaking member (or stops when eject is manual); depart refuses unless the gate is
@@ -39,12 +39,10 @@ import { commit, repo, sh } from "./__fixtures__/repo.mjs";
 
 const GATE_APP = "figentra-gate[bot]";
 const REPO = "figentra/flow";
-const green = () => [
-  { context: "figentra-flow/gate", state: "success", creator: { login: GATE_APP } },
-];
+const green = () => [{ context: "fflow/gate", state: "success", creator: { login: GATE_APP } }];
 const red = () => [
   {
-    context: "figentra-flow/gate",
+    context: "fflow/gate",
     state: "failure",
     creator: { login: GATE_APP },
     description: "checks failed (exit 1)",
@@ -212,8 +210,8 @@ test("add: refuses a PR that is not green on its exact head, or not on the defau
   const head = "a".repeat(40);
   const older = "b".repeat(40);
   const cases = [
-    [{ statuses: { [older]: green() } }, /no figentra-flow\/gate on the head a{12}/],
-    [{ statuses: { [head]: red() } }, /figentra-flow\/gate is failure on the head/],
+    [{ statuses: { [older]: green() } }, /no fflow\/gate on the head a{12}/],
+    [{ statuses: { [head]: red() } }, /fflow\/gate is failure on the head/],
     [
       { statuses: { [head]: [{ ...green()[0], creator: { login: "someone" } }] } },
       /posted by someone/,
@@ -344,7 +342,7 @@ test("build: merges in board order with merge commits, ejects a conflicting memb
     "README.md",
     "a.txt",
     "c.txt",
-    "figentra-flow.config.json",
+    "flow.config.json",
   ]);
   const parents = sh(s.r.origin, "rev-list", "--parents", "-n", "1", "train/1.0.0").split(" ");
   assert.equal(parents.length, 3);
@@ -370,7 +368,7 @@ test("build: on red, bisect gates prefixes, ejects the first breaking member wit
   );
   assert.match(
     trainOf(s.h).ejected[0].reason,
-    /turns red with it: figentra-flow\/gate failed on [0-9a-f]{12}/,
+    /turns red with it: fflow\/gate failed on [0-9a-f]{12}/,
   );
   // The tip (red), prefix 2 (red), prefix 1 (green), then the rebuilt tip (green): four gate runs.
   assert.equal(s.gated.length, 4);
@@ -411,14 +409,14 @@ const built = (/** @type {object} */ over = {}) =>
     ...over,
   });
 
-test("depart: refuses unless figentra-flow/gate is green on the tip's exact sha", async () => {
+test("depart: refuses unless fflow/gate is green on the tip's exact sha", async () => {
   for (const statuses of [{}, { ["e".repeat(40)]: green() }, { [TIP]: red() }]) {
     const h = built({ statuses });
     const r = await trainDepart(ctx(h));
     assert.equal(r.code, 1);
     assert.match(
       r.problems?.join() ?? "",
-      /train\/1\.0\.0: (no figentra-flow\/gate on the head f{12}|figentra-flow\/gate is failure)/,
+      /train\/1\.0\.0: (no fflow\/gate on the head f{12}|fflow\/gate is failure)/,
     );
     assert.deepEqual(h.writes(), []);
   }
@@ -526,7 +524,7 @@ test("status: the members with their gates, the ejections, the waiting PRs, the 
   assert.equal((await trainStatus(c)).code, 0);
   const out = c.logs.join("\n");
   assert.match(out, /train 1\.0\.0 \(boarding\), milestone #1/);
-  assert.match(out, /#1 feat: change 1: figentra-flow\/gate success on 1{12}/);
+  assert.match(out, /#1 feat: change 1: fflow\/gate success on 1{12}/);
   assert.match(out, /ejected #2: red/);
   assert.match(out, /waiting for the next train: #9/);
   assert.match(out, /train\/1\.0\.0: not built/);

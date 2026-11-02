@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow status [--repo <path>] [--json] [--offline] [--metrics [--since <n>d]] [--by role [--role <id>]]`
+ * Purpose: `fflow status [--repo <path>] [--json] [--offline] [--metrics [--since <n>d]] [--by role [--role <id>]]`
  *   (FR-7, FR-12, AC-012, AC-024, AC-026, AC-032, AC-050): one block per
  *   repository of the workspace (or the one named, or the current one) with its specs by status, worktrees, open PRs
  *   and sessions; `--json` prints the snapshot itself. Exit 0, or 1 when a warning (more building sessions than the
@@ -133,7 +133,7 @@ export function renderMetrics(m) {
   ].join("\n");
 }
 
-/** `figentra-flow status [--repo <path>] [--json] [--offline] [--metrics [--since <n>d]] [--web [--port <n>]]`. */
+/** `fflow status [--repo <path>] [--json] [--offline] [--metrics [--since <n>d]] [--web [--port <n>]]`. */
 export function run(/** @type {string[]} */ args) {
   const opt = (/** @type {string} */ name) =>
     args.includes(`--${name}`) ? args[args.indexOf(`--${name}`) + 1] : undefined;

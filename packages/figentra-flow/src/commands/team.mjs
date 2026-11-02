@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow team check [--tracker]` (AC-047, AC-049): validates the roster the configuration's `team`
+ * Purpose: `fflow team check [--tracker]` (AC-047, AC-049): validates the roster the configuration's `team`
  *   names and each role file beside it, printing one line per problem; `--tracker` also lists the roles' labels the
  *   tracker does not have. Exit 0 when the roster holds, 1 with problems, 2 when the configuration names no roster.
  * Boundary: read-only: a missing label is reported for the lead to create, never created.
@@ -14,7 +14,7 @@ import { git } from "../lib/git.mjs";
 import { CONFIG_FILE, NAME } from "../lib/product.mjs";
 import { loadTeam } from "../lib/team.mjs";
 
-/** `figentra-flow team check [--tracker]`. */
+/** `fflow team check [--tracker]`. */
 export async function run(/** @type {string[]} */ [mode, ...args]) {
   if (mode !== "check") {
     console.error(`usage: ${NAME} team check [--tracker]`);

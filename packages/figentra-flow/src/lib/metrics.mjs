@@ -1,8 +1,8 @@
 /**
  * Figentra Flow file contract:
- * Purpose: delivery metrics for `figentra-flow status --metrics` (AC-032), computed on demand from GitHub and the specs
+ * Purpose: delivery metrics for `fflow status --metrics` (AC-032), computed on demand from GitHub and the specs
  *   with nothing stored: for the PRs merged in the window, per repository and in total, lead time (opened → merged)
- *   and cycle time (first commit → merged) as median and p90 hours, `figentra-flow/gate` runs per PR and their red
+ *   and cycle time (first commit → merged) as median and p90 hours, `fflow/gate` runs per PR and their red
  *   share, rework (heads pushed after the first gate), review rounds (`AI-REVIEW: FAIL` verdicts before the merge) and
  *   approval latency (days from a merged spec's Draft line to its last approval in its Status history); and the age of
  *   the open PRs.
@@ -67,7 +67,7 @@ export function prRecord(api, slug, pr, { specText } = {}) {
   const merged = Date.parse(pr.merged_at);
   const commits = api("GET", `/repos/${slug}/pulls/${pr.number}/commits?per_page=100`).json ?? [];
   const first = Date.parse(commits[0]?.commit?.author?.date ?? pr.created_at);
-  // Each commit's own gate statuses: a run is a finished status (success, failure or error) of figentra-flow/gate.
+  // Each commit's own gate statuses: a run is a finished status (success, failure or error) of fflow/gate.
   let runs = 0;
   let red = 0;
   let firstGated = -1;

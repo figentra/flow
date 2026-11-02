@@ -3,7 +3,7 @@
  * Purpose: the runner port (AC-038): where `gate run`'s job runs. `ssh`: the job folder is rsynced to `host` and the
  *   command runs there (`--box <host>` picks it for one run); `local`: the caller's machine; `command`: an argument
  *   list with `{label}`, `{dir}` and `{command}` placeholders, and `{flags}` for the arguments after `gate run --`
- *   (Figentra's is `stackra testbed run`). `runnerFor(root, config)` builds it from `figentra-flow.config.json`'s
+ *   (Figentra's is `stackra testbed run`). `runnerFor(root, config)` builds it from `flow.config.json`'s
  *   `runner`. Without one, config file or not, it is refused, naming the key (AC-036, AC-045).
  *   `github-actions` dispatches the repository's gate workflow and follows it (`./github-actions.mjs`).
  * Boundary: spawns the runner's processes and returns their exit code; 127 when the program is not installed.

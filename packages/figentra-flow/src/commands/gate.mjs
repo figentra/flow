@@ -1,13 +1,13 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow gate` (core's `spec-gate`, moved unchanged) — the stage gates for the specs in `.agents/specs/<key>-<slug>/` (ADR 0120 D1, owner
+ * Purpose: `fflow gate` (core's `spec-gate`, moved unchanged) — the stage gates for the specs in `.agents/specs/<key>-<slug>/` (ADR 0120 D1, owner
  *          decision OR12).
  * Boundary: reads the spec folders, git and, through the tracker port, comments on the issue (best-effort); writes no spec
  *           file.
  * Runtime: node
  * Governing contract: ADR 0120 (SDLC spec location, lanes and change risk); ADR 0121; ADR 0065 (rule 7).
  *
- *   run [--ref b] [--box host] [-- flags]  the checks through the runner (or on `--box`); the box posts `figentra-flow/gate`
+ *   run [--ref b] [--box host] [-- flags]  the checks through the runner (or on `--box`); the box posts `fflow/gate`
  *   baseline save|check         the baseline gate (STA-1942, gate-baseline.mjs): a PR passes when it adds no failure
  *                               to main's
  *   plan <spec.md>              exit 1 unless the spec may be planned (run by setup-plan.sh)
@@ -38,7 +38,7 @@
  *   Implementing  at least one task ticked
  *   Done          every live task ticked (spec-trace adds test coverage)
  * Tracker: `plan` and `stage` comment the stage on the spec's issue through the tracker port; a failure warns, never part of
- * the exit code (ADR 0065 rule 7). `ci` never calls it. FIGENTRA_FLOW_TRACKER=off (or STACKRA_LINEAR=off) disables it.
+ * the exit code (ADR 0065 rule 7). `ci` never calls it. FFLOW_TRACKER=off (or STACKRA_LINEAR=off) disables it.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -57,7 +57,7 @@ import { installProblems } from "../lib/render.mjs";
 import { BUNDLED } from "./sync.mjs";
 import { loadConfig } from "../lib/config.mjs";
 import { specsDirs, writeCurrent } from "../lib/flow-dir.mjs";
-import { ENV_PREFIX, NAME } from "../lib/product.mjs";
+import { ENV_PREFIX, LEGACY_ENV_PREFIX, NAME } from "../lib/product.mjs";
 
 /** The presets this package ships (`stackra`, `neutral`), installed when a repository keeps none of its own. */
 import {
@@ -770,7 +770,8 @@ export function specDir({ root = ROOT, branch = "", key, slug, keys = repoScheme
  */
 export async function trackerStage(file, stage, options = {}) {
   const { root = ROOT, warn = console.error } = options;
-  if (process.env[`${ENV_PREFIX}TRACKER`] === "off" || process.env.STACKRA_LINEAR === "off") return;
+  const off = [ENV_PREFIX, LEGACY_ENV_PREFIX].some((p) => process.env[`${p}TRACKER`] === "off");
+  if (off || process.env.STACKRA_LINEAR === "off") return;
   let { scheme, tracker } = options;
   let problem;
   if (!scheme) {
@@ -967,7 +968,7 @@ function report(problems) {
 export function run([mode, ...args]) {
   // STA-1942: the baseline gate, for a repository whose main is red
   if (mode === "baseline") return import("./gate-baseline.mjs").then((m) => m.run(args));
-  // phase 2: the checks on a box, posted as `figentra-flow/gate` (STA-1729)
+  // phase 2: the checks on a box, posted as `fflow/gate` (STA-1729)
   if (mode === "run") return import("./gate-run.mjs").then((m) => m.run(args));
   // the check command alone, for a runner that runs it itself (the github-actions workflow's `check` job)
   if (mode === "command")
@@ -994,7 +995,7 @@ export function run([mode, ...args]) {
       console.error(`spec-gate: ${error}`);
       return 1;
     }
-    // Every later `figentra-flow spec` call resolves the spec folder from here (ADR 0510).
+    // Every later `fflow spec` call resolves the spec folder from here (ADR 0510).
     writeCurrent(ROOT, dir ?? "");
     console.log(dir);
     return 0;

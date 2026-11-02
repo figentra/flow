@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow spec paths|setup-plan|setup-tasks|template` (ADR 0510): the work spec-kit's bash scripts
+ * Purpose: `fflow spec paths|setup-plan|setup-tasks|template` (ADR 0510): the work spec-kit's bash scripts
  *   did, as subcommands that print the same JSON keys, so the `flow-*` commands read one source.
  *   - `paths [--json] [--require-spec] [--require-tasks] [--include-tasks] [--paths-only] [--template <name>]`
  *     (was `check-prerequisites.sh`): `FEATURE_DIR` and `AVAILABLE_DOCS`, or with `--paths-only` `REPO_ROOT`,
@@ -154,7 +154,7 @@ export function setupTasks(at) {
   };
 }
 
-/** `figentra-flow spec …`. */
+/** `fflow spec …`. */
 export function run(/** @type {string[]} */ [mode, ...args]) {
   const print = (/** @type {Record<string, unknown>} */ out) =>
     console.log(

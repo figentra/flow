@@ -9,7 +9,7 @@ Specs live in `.agents/specs/<key>-<slug>/`, keyed by the spec's issue. Never us
 Once step 1 below has chosen the short name, and before step 3 creates the directory, run:
 
 ```bash
-figentra-flow gate dir --slug <short-name>
+fflow gate dir --slug <short-name>
 ```
 
 It reads the issue key from the branch name (pass `--key <key>` when the branch has none), prints the folder and
@@ -42,18 +42,18 @@ Given that feature description, do this:
      - "Create a dashboard for analytics" → "analytics-dashboard"
      - "Fix payment processing timeout bug" → "fix-payment-timeout"
 
-2. **Branch**: work on the issue's branch (`figentra-flow start <key>` makes it, with its worktree). The branch
+2. **Branch**: work on the issue's branch (`fflow start <key>` makes it, with its worktree). The branch
    name carries the issue key, which `gate dir` reads.
 
 3. **Create the spec feature directory**:
 
-   The directory is the path `figentra-flow gate dir --slug <short-name>` printed (call it `FEATURE_DIR`). It is
+   The directory is the path `fflow gate dir --slug <short-name>` printed (call it `FEATURE_DIR`). It is
    keyed by the issue, never numbered, and `gate dir` has already written `.flow/current.json`, which every later
    command reads.
 
    **Create the directory and spec file**:
    - `mkdir -p FEATURE_DIR`
-   - Print the active spec template with `figentra-flow spec template spec-template` (the repository's
+   - Print the active spec template with `fflow spec template spec-template` (the repository's
      `.flow/overrides/` first, then the preset) and write it to `FEATURE_DIR/spec.md` as the starting point
    - Set `SPEC_FILE` to `FEATURE_DIR/spec.md`
 
@@ -263,5 +263,5 @@ Success criteria must be:
 Set `**Issue**` to the folder's key. Never guess an answer: leave it as `[NEEDS CLARIFICATION: ...]`. Write
 requirements and acceptance criteria in EARS form ("WHEN … THE <subject> SHALL …"), give every SC a verification
 method, and keep `## Amendments` and `## Status history` (one line: `<date> · — → Draft · <you> · created`). Leave
-`**Status**: Draft` and `**Clarifications status**: pending`, then run `figentra-flow gate check <folder>`. The next
+`**Status**: Draft` and `**Clarifications status**: pending`, then run `fflow gate check <folder>`. The next
 step is always `/flow-clarify`.

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "figentra-flow.config.schema.json",
-  "title": "figentra-flow.config.json",
+  "$id": "flow.config.schema.json",
+  "title": "flow.config.json",
   "type": "object",
   "additionalProperties": false,
   "required": ["version"],
@@ -390,6 +390,13 @@
         "tasks": {
           "type": "array",
           "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "mustPass": {
+          "type": "array",
           "items": {
             "type": "string",
             "minLength": 1

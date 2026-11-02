@@ -1,7 +1,7 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow gate baseline` (STA-1942), run by the baseline workflow `sync` renders:
- *   save [--summary f] [--reader turbo]   the newest run summary's per-task results → .figentra-flow-gate/baseline.json
+ * Purpose: `fflow gate baseline` (STA-1942), run by the baseline workflow `sync` renders:
+ *   save [--summary f] [--reader turbo]   the newest run summary's per-task results → .fflow-gate/baseline.json
  *   check --base <sha>                    those results against main's baseline for the base SHA or its nearest
  *                                         ancestor; fails on a new failure and, closed, when no baseline exists
  * Boundary: reads the run summary and, for `check`, GitHub (artifacts and runs) with the job's GITHUB_TOKEN and
@@ -26,6 +26,7 @@ import { join } from "node:path";
 
 import { rest } from "../lib/approve-check.mjs";
 import { compare, findBaseline, READERS, summaryTable } from "../lib/baseline.mjs";
+import { loadConfig } from "../lib/config.mjs";
 import { GATE_DIR, NAME } from "../lib/product.mjs";
 
 const FILE = "baseline.json";
@@ -98,6 +99,7 @@ export async function run([mode, ...args], deps = {}) {
     const result = compare(
       JSON.parse(readFileSync(file, "utf8")).tasks ?? {},
       JSON.parse(readFileSync(own, "utf8")).tasks,
+      { mustPass: loadConfig(root).config.baseline?.mustPass },
     );
     summary(summaryTable(result, found.sha));
     return result.ok ? 0 : 1;

@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow mcp`, a read-only MCP server over stdio (AC-033): JSON-RPC 2.0, one message per line,
+ * Purpose: `fflow mcp`, a read-only MCP server over stdio (AC-033): JSON-RPC 2.0, one message per line,
  *   written by hand so the package keeps no dependency (the leader's plan stop of 2026-10-31, decision 2). It answers
  *   `initialize`, `ping`, `tools/list` and `tools/call` for exactly five read tools: status, spec, trace, worktrees and
  *   metrics, each returning one text content item holding JSON.
@@ -228,7 +228,7 @@ export async function handle(message, readers = defaultReaders()) {
   }
 }
 
-/** `figentra-flow mcp`: serves stdin to stdout until stdin closes. */
+/** `fflow mcp`: serves stdin to stdout until stdin closes. */
 export async function run() {
   const readers = defaultReaders();
   const lines = createInterface({ input: process.stdin });

@@ -2,7 +2,7 @@
 name: flow-checklist
 description: "Generate a checklist for the spec in its .agents/specs folder."
 metadata:
-  generated-by: figentra-flow
+  generated-by: fflow
   derived-from: github/spec-kit 1.0.10 (MIT)
 ---
 
@@ -10,7 +10,7 @@ metadata:
 
 Specs live in `.agents/specs/sta-<n>-<slug>/` (ADR 0120 D1), never in `specs/`. Before anything else run
 `pnpm spec:gate dir` (add `--key STA-n` when the branch name carries no key). It prints the
-spec folder for the branch's Linear key and writes `.flow/current.json`, which every `figentra-flow spec` call reads. If it fails,
+spec folder for the branch's Linear key and writes `.flow/current.json`, which every `fflow spec` call reads. If it fails,
 STOP and report it; never fall back to a numbered folder.
 
 ## Checklist Purpose: "Unit Tests for English"
@@ -53,7 +53,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Execution Steps
 
-1. **Setup**: Run `figentra-flow spec paths --json --template checklist-template` from repo root and parse JSON for FEATURE_DIR, AVAILABLE_DOCS list, and TEMPLATE_CONTENT.
+1. **Setup**: Run `fflow spec paths --json --template checklist-template` from repo root and parse JSON for FEATURE_DIR, AVAILABLE_DOCS list, and TEMPLATE_CONTENT.
    - All file paths must be absolute.
    - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 

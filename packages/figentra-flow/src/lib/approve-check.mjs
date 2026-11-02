@@ -150,7 +150,7 @@ export async function decide({
   )
     refuse.push(`${p.base.ref}'s ruleset does not require the code owner's review`);
   if ((await textAt(api, repo, ".github/CODEOWNERS", p.base.sha)) === undefined)
-    refuse.push(`${p.base.ref} has no .github/CODEOWNERS (\`figentra-flow sync\` writes it)`);
+    refuse.push(`${p.base.ref} has no .github/CODEOWNERS (\`fflow sync\` writes it)`);
   const required = requiredContexts(ruleList);
   if (!required.length) refuse.push(`${p.base.ref} requires no status check`);
   else {

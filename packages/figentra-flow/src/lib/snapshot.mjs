@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: the snapshot behind `figentra-flow status` and the MCP server (FR-7, AC-012, AC-024, AC-026): for each
+ * Purpose: the snapshot behind `fflow status` and the MCP server (FR-7, AC-012, AC-024, AC-026): for each
  *   repository of the workspace, its specs (status, tier, session, gate problems), its worktrees (branch, key, head,
  *   dirty, idle, in use, ahead and behind), its open PRs (gate on the head, the counted AI review, stacked) and its
  *   sessions (a spec's `**Session**`, with the worktree carrying the spec's key and that head's gate), plus a warning
@@ -34,7 +34,7 @@ import { ownerStopsOf, roleOf } from "./roles.mjs";
 import { loadTeam } from "./team.mjs";
 
 /** The snapshot's schema; a breaking change raises it. */
-export const SNAPSHOT_VERSION = "figentra-flow.status/1";
+export const SNAPSHOT_VERSION = "fflow.status/1";
 
 /** Sessions that may build at once unless the owner raises `sessionCap` (AC-026). */
 export const SESSION_CAP = 2;

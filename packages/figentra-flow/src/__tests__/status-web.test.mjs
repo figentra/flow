@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold `figentra-flow status --web` to its boundary: the page is self-contained (no external script, style or
+ * Purpose: hold `fflow status --web` to its boundary: the page is self-contained (no external script, style or
  *   font) and draws values as text only; `/status.json` rebuilds the snapshot on each request; only GET and HEAD are
  *   answered (405 otherwise); unknown paths are 404; a failing snapshot is a 500 naming the error.
  * Boundary: a real server on 127.0.0.1 with the snapshot injected; no network beyond loopback.
@@ -43,7 +43,7 @@ test("status --web: the page and a fresh snapshot per request; read-only; 404 an
   const { server, url } = await serve(() => {
     reads++;
     if (reads === 3) throw new Error("git is gone");
-    return { version: "figentra-flow.status/1", reads };
+    return { version: "fflow.status/1", reads };
   });
   t.after(() => server.close());
   const page = await fetch(`${url}/`);
@@ -51,11 +51,11 @@ test("status --web: the page and a fresh snapshot per request; read-only; 404 an
   assert.match(page.headers.get("content-security-policy") ?? "", /default-src 'none'/);
   assert.match(await page.text(), /Figentra Flow status/);
   assert.deepEqual(await (await fetch(`${url}/status.json`)).json(), {
-    version: "figentra-flow.status/1",
+    version: "fflow.status/1",
     reads: 1,
   });
   assert.deepEqual(await (await fetch(`${url}/status.json`)).json(), {
-    version: "figentra-flow.status/1",
+    version: "fflow.status/1",
     reads: 2,
   });
   const failed = await fetch(`${url}/status.json`);

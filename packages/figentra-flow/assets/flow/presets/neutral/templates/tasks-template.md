@@ -4,7 +4,7 @@ description: "Task list template: every task covers acceptance criteria and name
 
 # Tasks: [FEATURE NAME]
 
-## Rules (checked by `figentra-flow gate tasks <tasks.md>`)
+## Rules (checked by `fflow gate tasks <tasks.md>`)
 
 - Line format: `- [ ] T012 [P] <description> in `path` — covers: AC-003 — deps: T010`
   - `T###` ids are unique and permanent; an amendment strikes a task (`~~T012~~`), never renumbers.

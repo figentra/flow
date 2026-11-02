@@ -2,8 +2,8 @@
  * Figentra Flow file contract:
  * Purpose: hold the artifact guard to AC-043: a change adding files under `.cache/`, `node_modules/`, `dist/`,
  *   `.turbo/` or `coverage/` (at any depth), or a file over the size limit, is named; the configuration's `artifacts`
- *   replaces both; ordinary source and deletions pass; `figentra-flow gate run` refuses such a change before any box, and
- *   `figentra-flow land`'s rules carry the problems.
+ *   replaces both; ordinary source and deletions pass; `fflow gate run` refuses such a change before any box, and
+ *   `fflow land`'s rules carry the problems.
  * Boundary: temporary repositories with a local bare origin; the runner injected; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1729 phase A (AC-043).
@@ -108,7 +108,7 @@ test("land rules: the artifact problems refuse the PR", () => {
     head: { sha: "c".repeat(40) },
   };
   const statuses = [
-    { context: "figentra-flow/gate", state: "success", creator: { login: "stackra-gate[bot]" } },
+    { context: "fflow/gate", state: "success", creator: { login: "stackra-gate[bot]" } },
   ];
   const problems = landRules({
     gateApp: "stackra-gate[bot]",

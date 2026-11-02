@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold `figentra-flow gate run` to its contract: refusals before any box (dirty, detached, unpushed, no GitHub
+ * Purpose: hold `fflow gate run` to its contract: refusals before any box (dirty, detached, unpushed, no GitHub
  *   origin, no runner configured), and a runner program that is not installed; the job folder is a clean clone at the head with the default branch's ref and the poster
  *   beside it; the check command (default, `gate.check` in the configuration, the spec gate where Figentra Flow is installed); the box command
  *   keeps the log and the exit for the poster; the runner's exit code passes through.
@@ -65,8 +65,8 @@ test("gate run: the job is a clean clone at the head, with the poster and the jo
         base: sh(dir, "rev-parse", "refs/remotes/origin/main"),
         origin: sh(dir, "remote", "get-url", "origin"),
         file: existsSync(join(dir, "a.txt")),
-        poster: existsSync(join(dir, ".figentra-flow-gate", "post.mjs")),
-        job: JSON.parse(readFileSync(join(dir, ".figentra-flow-gate", "job.json"), "utf8")),
+        poster: existsSync(join(dir, ".fflow-gate", "post.mjs")),
+        job: JSON.parse(readFileSync(join(dir, ".fflow-gate", "job.json"), "utf8")),
       };
       return 1;
     }),
@@ -87,7 +87,7 @@ test("gate run: the job is a clean clone at the head, with the poster and the jo
     marker: GATE_MARKER,
     envPrefix: ENV_PREFIX,
   });
-  assert.match(seen.label, /^figentra-flow gate figentra\/flow@[0-9a-f]{12}$/);
+  assert.match(seen.label, /^fflow gate figentra\/flow@[0-9a-f]{12}$/);
   assert.equal(existsSync(seen.dir), false);
 });
 
@@ -161,7 +161,7 @@ test("gate run: a config without a runner is refused before any box; the runner'
   assert.equal(result.code, 0);
   assert.deepEqual(seen.flags, ["--no-wait"]);
   // no `secrets` block: the env port leaves the poster as it is, but the wrap point is taken
-  assert.match(seen.command, /node \.figentra-flow-gate\/post\.mjs$/);
+  assert.match(seen.command, /node \.fflow-gate\/post\.mjs$/);
 });
 
 test("check command: pnpm verify by default, the repository's own, and the spec gate where Figentra Flow is installed", (t) => {
@@ -174,7 +174,7 @@ test("check command: pnpm verify by default, the repository's own, and the spec 
   t.after(r.dispose);
   assert.equal(
     checkCommand(r.root),
-    "pnpm install --frozen-lockfile && pnpm test && pnpm exec figentra-flow gate ci",
+    "pnpm install --frozen-lockfile && pnpm test && pnpm exec fflow gate ci",
   );
   assert.equal(
     checkCommand(join(r.root, "nowhere")),
@@ -196,8 +196,8 @@ test("gate run with a caller-posting runner (C1): the box gets only the check; t
     ...fake((job) => {
       box = {
         command: job.command,
-        poster: existsSync(join(job.dir, ".figentra-flow-gate", "post.mjs")),
-        job: existsSync(join(job.dir, ".figentra-flow-gate", "job.json")),
+        poster: existsSync(join(job.dir, ".fflow-gate", "post.mjs")),
+        job: existsSync(join(job.dir, ".fflow-gate", "job.json")),
       };
       return 1;
     }),
@@ -209,9 +209,9 @@ test("gate run with a caller-posting runner (C1): the box gets only the check; t
     runner: caller,
     post: (dir) => {
       posted = {
-        exit: readFileSync(join(dir, ".figentra-flow-gate", "exit"), "utf8"),
-        poster: existsSync(join(dir, ".figentra-flow-gate", "post.mjs")),
-        job: JSON.parse(readFileSync(join(dir, ".figentra-flow-gate", "job.json"), "utf8")),
+        exit: readFileSync(join(dir, ".fflow-gate", "exit"), "utf8"),
+        poster: existsSync(join(dir, ".fflow-gate", "post.mjs")),
+        job: JSON.parse(readFileSync(join(dir, ".fflow-gate", "job.json"), "utf8")),
       };
       return 1;
     },
@@ -239,13 +239,13 @@ test("gate run with a caller-posting runner (C1): the box gets only the check; t
 test("box command: the check's log and exit are kept for the poster; the secrets port wraps the poster", () => {
   assert.equal(
     boxCommand("pnpm verify"),
-    "{ pnpm verify; echo $? > .figentra-flow-gate/exit; } 2>&1 | tee .figentra-flow-gate/log.txt; FIGENTRA_FLOW_GATE_RUN=1 node .figentra-flow-gate/post.mjs",
+    "{ pnpm verify; echo $? > .fflow-gate/exit; } 2>&1 | tee .fflow-gate/log.txt; FFLOW_GATE_RUN=1 node .fflow-gate/post.mjs",
   );
   assert.match(
     boxCommand("x", {
       wrap: (c) => secretsPort({ kind: "infisical", paths: { gate: "/ci/gate" } }).wrap(c, "gate"),
     }),
-    /; infisical run --silent --path=\/ci\/gate -- FIGENTRA_FLOW_GATE_RUN=1 node \.figentra-flow-gate\/post\.mjs$/,
+    /; infisical run --silent --path=\/ci\/gate -- FFLOW_GATE_RUN=1 node \.fflow-gate\/post\.mjs$/,
   );
 });
 

@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow status --web [--port <n>]`: the status snapshot as a local page that refreshes itself. `/`
+ * Purpose: `fflow status --web [--port <n>]`: the status snapshot as a local page that refreshes itself. `/`
  *   serves one self-contained HTML page (no external script, style or font); `/status.json` rebuilds and returns the
  *   snapshot on each request.
  * Boundary: read-only and local: it listens on 127.0.0.1 only, answers GET and HEAD only (405 otherwise), and writes

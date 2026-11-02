@@ -11,7 +11,7 @@
  * Governing contract: STA-1856 FR-1 (the security review of 2026-11-01).
  * Secrets: none.
  */
-import { CONFIG_FILE, NAME } from "./product.mjs";
+import { CONFIG_FILE, LEGACY_CONFIG_FILE, NAME } from "./product.mjs";
 import { globRe } from "./roles.mjs";
 
 /** The owner-only globs, in `globRe`'s syntax; a leading double star matches at any depth. */
@@ -37,6 +37,7 @@ export const OWNER_ONLY = [
   "pnpm-workspace.yaml",
   "**/.npmrc",
   CONFIG_FILE,
+  LEGACY_CONFIG_FILE,
   // Secrets and the guards that keep them.
   "**/.infisical.*",
   ".gitleaks.toml",

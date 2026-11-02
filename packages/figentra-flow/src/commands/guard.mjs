@@ -1,8 +1,8 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow guard [--print-settings]` — the agent hook that keeps worktrees inside their repository: it reads
+ * Purpose: `fflow guard [--print-settings]` — the agent hook that keeps worktrees inside their repository: it reads
  *   a PreToolUse event on stdin and denies a Bash command that runs `git … worktree add <path>` with the path outside
- *   that repository's `.claude/worktrees/`, naming `figentra-flow start`. `--print-settings` prints the `.claude/settings.json`
+ *   that repository's `.claude/worktrees/`, naming `fflow start`. `--print-settings` prints the `.claude/settings.json`
  *   entry that wires it.
  * Boundary: reads stdin, writes the hook's JSON answer on a denial and nothing otherwise. It follows `cd <dir> &&`,
  *   `git -C <dir>` and quoted words; input it cannot parse passes (a hook fails open), a `worktree add` it can read
@@ -136,7 +136,7 @@ async function stdin() {
   return text;
 }
 
-/** `figentra-flow guard [--print-settings]`. */
+/** `fflow guard [--print-settings]`. */
 export async function run(args) {
   if (args.includes("--print-settings")) {
     console.log(JSON.stringify(SETTINGS, null, 2));

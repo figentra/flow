@@ -24,7 +24,7 @@
     "directory": "packages/figentra-flow"
   },
   "bin": {
-    "fflow": "./bin/figentra-flow.mjs",
+    "fflow": "./bin/fflow.mjs",
     "figentra-flow": "./bin/figentra-flow.mjs"
   },
   "files": [
@@ -85,6 +85,6 @@
     "runtimes": [
       "node"
     ],
-    "summary": "Use it for spec-driven work: `figentra-flow init` and `sync` install spec-kit with a preset and skills; `gate`, `trace`, `start`, `clean` and `land` run the stage gates, traceability, worktrees, the gate and landing."
+    "summary": "Use it for spec-driven work: `fflow init` and `sync` install spec-kit with a preset and skills; `gate`, `trace`, `start`, `clean` and `land` run the stage gates, traceability, worktrees, the gate and landing."
   }
 }

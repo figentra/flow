@@ -53,7 +53,7 @@ function actions(script = {}) {
   const run = (/** @type {string} */ status) => ({
     id: 77,
     html_url: "https://github.com/acme/app/actions/runs/77",
-    display_title: `figentra-flow gate ${SHA}`,
+    display_title: `fflow gate ${SHA}`,
     created_at: new Date(1_000_000).toISOString(),
     status,
     conclusion: status === "completed" ? conclusion : null,
@@ -135,10 +135,10 @@ test("workflow: the change's job holds no secret and no credential; the post job
   );
   assert.equal(/actions\/checkout/.test(post), false, "the post job runs no repository code");
   assert.match(head, /persist-credentials: false/);
-  assert.match(yaml, /run-name: figentra-flow gate \$\{\{ inputs\.sha \}\}/);
+  assert.match(yaml, /run-name: fflow gate \$\{\{ inputs\.sha \}\}/);
   assert.ok(post.includes(`${PACKAGE}@1.2.3`), "the post job pins the poster's package");
-  // npx names the binary: the package carries two (figentra-flow and fflow)
-  assert.ok(head.includes(`--package=${PACKAGE}@1.2.3 figentra-flow gate command`));
+  // npx names the binary: the package carries two (fflow and fflow)
+  assert.ok(head.includes(`--package=${PACKAGE}@1.2.3 fflow gate command`));
   for (const [, ref] of yaml.matchAll(/uses: [\w/-]+@(\S+)/g)) assert.match(ref, /^[0-9a-f]{40}$/);
   assert.match(yaml, /^permissions: \{\}$/m);
 });
