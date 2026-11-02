@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-02
 
-**Status**: Planned — Approved by owner 2026-11-03 (A-1 to A-3, with D6)
+**Status**: Tasked
 
 **Tier**: big
 
@@ -536,3 +536,6 @@ test-level baseline inventory (STA-1942 v2).
   AC-13 to AC-34 and adding AC-1 to AC-12 (from FR-1 to FR-12) and AC-35 to AC-42 (from FR-31, FR-13, FR-15 and
   FR-21); FR-31 recorded from plan PR 9; success criteria from `path-to-100.md`; non-functional lines from the Impact
   and the plan; plan.md given the design sections, deploy modes and correctness properties
+- 2026-11-03: Planned → Tasked: tasks.md written by the spec-writer (T001 to T127, by the waves of `path-to-100.md`,
+  then the proof and the rollout); the plan's approval is the owner's of 2026-11-03 (the Planned line above). Awaits
+  /flow-analyze and the lead's review of the plan's "Design choices where the spec is silent"
