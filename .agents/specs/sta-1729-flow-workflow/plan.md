@@ -146,12 +146,13 @@ the Mac. Each test carries `@covers sta-1729:AC-###`.
 - **P-004**: `figentra-flow clean` removes a tree only when it is clean, saved (on a remote or landed by patch), finished (issue closed, or idle 2 hours without a key) and free of precious ignored files, and never a tester tree — Validates: FR-4
 - **P-005**: the gate posts `figentra-flow/gate` only on the commit it checked, only while that commit is still the branch tip, only from the box with the gate App, and never `success` unless the check command exited 0 (phase 2) — Validates: FR-5
 - **P-006**: phase 3's land merges only on a green gate and recorded approvals (designed in phase 3) — Validates: FR-6
-- **P-007**: phase 4's status lists every workspace repository (designed in phase 4) — Validates: FR-7
-- **P-008**: phase 5's release publishes only to the Stackra registry and ship never reaches production (designed in phase 5) — Validates: FR-8
+- **P-007**: `status` lists every repository in the workspace list, and reports and skips one that is missing — Validates: FR-7
+- **P-008**: `ship` dispatches only dev or staging and refuses production by name, before it reads any configuration (amended A-001: `release` publishes nothing itself, AC-013) — Validates: FR-8
 - **P-009**: no phase adds a check that runs on the Mac beyond oxfmt and oxlint — Validates: FR-9
-- **P-010**: the sessions phase shows each spec's assigned session and never treats a peer message as an approval (designed in its phase) — Validates: FR-10
+- **P-010**: `status` shows each spec's `**Session**` with the worktree that carries the spec's key and that head's gate (amended A-001: a peer message never being an approval is a working rule, not a property code can prove) — Validates: FR-10
 - **P-011**: the core names no vendor, team or organisation outside the adapters and presets named after them, and no command falls back to a Figentra choice when the configuration is silent (phase A) — Validates: FR-11
 - **P-012**: with no `team` in the configuration every role-aware check is off, and with one no review from the builder's role or session and no non-owner approval of an owner-kept category passes (phase 7, agent-team roles) — Validates: FR-12
+- **P-013**: `doctor` fails each broken part in its own check with a fix, and exits 1 when any check failed (phase 5, STA-1846) — Validates: FR-13
 
 ## Phase 2: the gate (design, for the leader's plan stop)
 
