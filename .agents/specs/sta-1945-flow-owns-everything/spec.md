@@ -222,6 +222,17 @@ the owner approves A-1.
   - `review`: parallel reviewers (correctness, simplicity, security and tenancy, contracts), then one verifier per
     finding; a confirmed blocking finding stops `land`;
   - `gate`: fans the check set out across testbed boxes by package shard and posts one `fflow/gate` status from them.
+    Its contract with the testbed (owner-approved 2026-11-03, STA-2042, core #315 FR-010 to FR-012):
+    - **One call per shard.** `stackra testbed run "<session> <what>" <dir> "<cmd>" --json`. The testbed picks the
+      region, box and slot (heavy for encore test, Playwright, e2e, act and builds; light otherwise). The gate never
+      names them.
+    - **Fan-out.** The gate runs at most the free slots that `stackra testbed status --json` reports per region (up to
+      12: 4 heavy and 8 light across four regions). A call over the cap waits inside `run`.
+    - **Exit codes.** The job's own code; 2 usage; 73 no free slot under `--no-wait` (retry); 75 no healthy box (retry,
+      else an infrastructure failure, never a test failure); 124 the 3-hour limit.
+    - **Output.** The job's output streams to stderr unchanged, then stdout carries one JSON line:
+      `{region, box, slot, waitSeconds, runSeconds, exitCode}`.
+    - **Ordering.** The testbed keeps no queue across calls, so the gate owns ordering.
 - **FR-16**: _Stacks._ `fflow stack` records a chain of PRs, each based on the one below. After the base squash-merges,
   Flow merges the default branch into the next PR (never a force-push), resolves each conflict in a file whose
   default-branch version equals the squashed parent's by keeping the child's version, retargets the PR to the default
@@ -539,3 +550,6 @@ test-level baseline inventory (STA-1942 v2).
 - 2026-11-03: Planned → Tasked: tasks.md written by the spec-writer (T001 to T127, by the waves of `path-to-100.md`,
   then the proof and the rollout); the plan's approval is the owner's of 2026-11-03 (the Planned line above). Awaits
   /flow-analyze and the lead's review of the plan's "Design choices where the spec is silent"
+- 2026-11-03: owner decision "Yes, bot first", relayed by the leader session. FR-22 (baseline-aware approval) and FR-16
+  (`land --stack`) are built before the rest of 0.3.0, as small PRs. FR-15's gate stage gains the testbed contract
+  (owner-approved, STA-2042). No scope change
