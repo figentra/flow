@@ -6,7 +6,7 @@
 
 ## Summary
 
-Build 0.3.0 in eight Flow PRs, governance first: the lock, `check`, `diff`, `validate`, `update` and `--workspace`
+Build 0.3.0 in nine Flow PRs, governance first: the lock, `check`, `diff`, `validate`, `update` and `--workspace`
 come before any new surface, so every surface that follows is born locked and checkable. Then the surfaces, then
 core's content, then third-party skills and the divergence report. The minor release waits for the last PR. Then
 comes the migration (FR-10 steps 2 to 4), one PR per repository, with core first.
@@ -122,8 +122,35 @@ comes the migration (FR-10 steps 2 to 4), one PR per repository, with core first
 7. **Third-party skills and `doctor`.** The FR-8 list from brand's census, with D1's `machine-only` marks.
 8. **Divergence report** (`status --divergence`) and the docs: README, AGENTS.md, the preset docs, a Flow ADR for the
    governance model, and the 0.3.0 changeset made final.
+9. **CLI output and error handling** (the owner's requirement after trying 0.2.3; the full list is in the notes'
+   `plans/after-freeze-backlog.md`, "Owner requirement: Flow CLI output and error handling" and the two CLI test rounds
+   above it). Every command moves onto it:
+   - `doctor` is a table (Check, Status, Detail, Fix) with coloured ✓ / ⚠ / ✗, rows grouped as Machine, Repo, Flow and
+     GitHub, and a summary line ("7 passed · 1 warning · 1 error") that sets the exit code. A missing `credentials`
+     on a fresh local repo is information, not an error.
+   - `status` shows tables for Specs (stage, problem count with the first problem), Worktrees (state, idle time,
+     ahead/behind, coloured when stale or dirty), PRs and Sessions; `--verbose` lists every problem. A session working
+     in a listed worktree shows up.
+   - An error is one boxed block: what failed, why, the exact fix command and a docs link. Raw git and pnpm output
+     (`fatal: not a git repository`) appears only with `--verbose`. A command checks for the repository before
+     anything else.
+   - `fflow` alone prints a banner, the version and the commands grouped, each with a one-line summary. `--help` on
+     any command prints its usage and never runs it. An unknown command names the closest match and exits non-zero.
+   - The brand theme comes from `@stackra/console`. Flow keeps no runtime dependency: it loads `@stackra/console` as an
+     optional peer with a dynamic import, and otherwise (and under `NO_COLOR` or a pipe) prints the same tables as
+     plain text from its own small renderer.
+   - `--json` on `doctor`, `status` and `spec`, with the same data in a stable shape.
+   - Fresh repositories: `init` writes a starter `flow.config.json`, then syncs, so `lefthook.yml`, AGENTS.md,
+     CLAUDE.md and the CI workflows (from PR 5) come with it. The first `sync` works without `--direct`. `init` lists
+     what it rendered and why the counts differ from a later `sync`, and says `/flow-specify` is a Claude Code command.
+   - `spec paths` and `gate dir` fall back to the spec folder that matches the branch's slug when the branch has no
+     issue key, or say exactly which branch name they expect; neither suggests the other in a loop.
 
-Each PR carries its changeset entry. The owner holds the version PR until PR 8 merges, so no partial 0.3.0 ships.
+   Tests cover each table's plain and JSON forms, the error block with and without `--verbose`, `--help` on every
+   command (nothing runs), the unknown-command suggestion and exit code, `NO_COLOR` and a pipe, and a fresh-repo
+   `init` followed by `doctor` with no error.
+
+Each PR carries its changeset entry. The owner holds the version PR until PR 9 merges, so no partial 0.3.0 ships.
 
 ## Rollout (FR-10)
 
