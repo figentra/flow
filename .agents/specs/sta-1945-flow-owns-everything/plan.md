@@ -155,6 +155,24 @@ comes the migration (FR-10 steps 2 to 4), one PR per repository, with core first
 
 Each PR carries its changeset entry. The owner holds the version PR until PR 9 merges, so no partial 0.3.0 ships.
 
+### Added by amendment A-1 (Flow first; after the owner approves it)
+
+10. **The record and the lifecycle** (FR-13, FR-14, FR-19): `.flow/record/<key>.json`, `fflow next` and `resume`, the
+    stop hook that commits and pushes a session's work, and the guard rules for the side doors.
+11. **Stacks** (FR-16): `fflow stack`, the merge-up after a squash with the "parent-identical file keeps the child"
+    resolution, retargeting, and `land --stack`.
+12. **Queues** (FR-17): the queue lock and `fflow adr reserve`.
+13. **Hooks on the testbed** (FR-18): the lefthook fallback to a box run, the `Hooks-Run:` trailer and `gate`'s
+    refusal.
+14. **Stage workflows** (FR-15): the `plan`, `review` and gate fan-out workflows in the agent bundle, and the stage
+    commands that hand them the spec and record their output.
+15. **Sessions, to-do and ledger** (FR-20, FR-21): live session detection, the session-names ADR
+    (`docs/adr/0001-session-names.md`), `fflow todo` and `fflow ledger`.
+16. **The baseline-aware merge bot** (FR-22): the newly-reached category in the baseline (os#114) and `land` on a
+    baseline-green gate.
+
+PR 9 (CLI output) moves onto `@stackra/console` once STA-1966's engine (core #290) is published as a prerelease.
+
 ## Rollout (FR-10)
 
 1. Release 0.3.0.

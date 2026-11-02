@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-02
 
-**Status**: Planned
+**Status**: Draft (A-1 awaiting the owner's approval)
 
 **Tier**: big
 
@@ -131,6 +131,96 @@ detectable hand edits, reviewed overrides and policies no repository can switch 
   - skill installs refused on an unlisted licence;
   - the divergence report.
 
+## Amendment A-1 (2026-11-03): Flow first
+
+**Source:** owner, 2026-11-03, relayed by the leader session ("all done and approved proceed"): "Flow is a first class,
+anything can run in Flow … regardless if it's ultracode or not, we need to work in flows, end-to-end", and "Claude,
+when it executes and understands all the requirements, starts to create workflows." Linear STA-2038. A-1 widens 0.3.0
+from "Flow owns every repo's setup" to "Flow owns every task's life"; FR-1 to FR-12 stand. tasks.md is written after
+the owner approves A-1.
+
+### Requirements added by A-1
+
+- **FR-13 Flow owns the lifecycle.** Every task in every repository runs through one chain of stage commands, each
+  resumable from Flow's record by any session:
+  `fflow start <issue>` → `spec` → approval → `plan` → worktree → build → `gate` → `review` → `land` → `release` →
+  `ship`. `fflow next [<key>]` prints the task's current stage and the command that moves it on; `fflow resume <key>`
+  re-enters a stage a dead session left half done. No side doors: the guard (FR-7) refuses `git worktree add` outside
+  `.claude/worktrees/`, a push to the default branch, `gh pr merge` and `LEFTHOOK=0`; on GitHub the one required check
+  is `fflow/gate`.
+- **FR-14 Flow's record.** Each stage writes `.flow/record/<key>.json` on the task's branch: stage, state, approvals
+  (who, when, the stage approved), sessions (name, kind, start and end), commits, PRs, gate and review results, and
+  open owner asks. A stage that ends, and any session that stops, commits and pushes the record and the work with it
+  (FR-19). After `land`, the record lands on the default branch with the change.
+- **FR-15 Claude workflows inside stages.** Flow's agent bundle (rendered by `sync`, FR-7) ships named Claude Code
+  workflows, each driven by the spec's requirements and acceptance criteria, which the stage command hands it and whose
+  output it validates and records:
+  - `plan`: splits a spec into PR-sized tasks (each with the FRs and ACs it covers, its files and a size budget) and a
+    stack order, and writes tasks.md; it replaces separate `spec new / plan / tasks` commands;
+  - `review`: parallel reviewers (correctness, simplicity, security and tenancy, contracts), then one verifier per
+    finding; a confirmed blocking finding stops `land`;
+  - `gate`: fans the check set out across testbed boxes by package shard and posts one `fflow/gate` status from them.
+- **FR-16 Stacks.** `fflow stack` records a chain of PRs, each based on the one below. After the base squash-merges,
+  Flow merges the default branch into the next PR (never a force-push), resolves each conflict in a file whose
+  default-branch version equals the squashed parent's by keeping the child's version, retargets the PR to the default
+  branch, and continues up the chain; it stops on any other conflict and names the file. `fflow land --stack` can
+  instead land the top PR alone with the chain's combined change and close the rest as landed in it.
+- **FR-17 Queued reservations.** `fflow adr reserve <slug> --issue <key>` takes Flow's queue lock, lands the
+  reservation on the default branch (the repository's numbers file) and only then returns the number, so two sessions
+  never take one number. The same queue serves any other numbered or ordered resource a preset declares.
+- **FR-18 Hooks proven on the testbed.** When a checkout cannot run its hooks (no workspace install), the hook
+  runner runs the same jobs on a testbed box for the staged tree and records the box run in the commit's
+  `Hooks-Run:` trailer; `gate` refuses a commit with neither local hooks nor that trailer. `LEFTHOOK=0` is never an
+  exception.
+- **FR-19 Every session's work is recorded and pushed.** A session's stop hook (rendered by `sync`) commits the
+  worktree as a WIP commit with the session's name, pushes it as the bot and appends to the record; nothing is left
+  only on one machine.
+- **FR-20 Session names** follow the Flow ADR "session names" (`docs/adr/0001-session-names.md`):
+  `TRACK · job (key)` while active or the focus, `hold · Track · job` on hold, `done · Track · job` when finished.
+  `fflow status` shows each live session by name, state, worktree and stage, detected from running agent processes and
+  their session files (not only a spec's `**Session**` line), and warns when a name breaks the pattern or disagrees
+  with the record's state.
+- **FR-21 The owner's to-do and ledger.** `fflow todo` lists everything waiting on the owner across the workspace
+  (approvals, merges, releases, promotions, decisions, secrets to set), each with the command or link that clears it;
+  `fflow ledger [--since <date>]` lists what landed, released and shipped, by day and track. Both read only Flow's
+  records.
+- **FR-22 The baseline-aware merge bot.** `land` merges on a gate that is green against the default branch's
+  baseline (STA-1942): a task that newly passes is a gain, and a downstream task of the same package that newly runs
+  and fails is reported as newly reached, not as a regression.
+
+### Acceptance criteria added by A-1
+
+- **AC-13**: WHEN a session stops mid-stage THE next session running `fflow resume <key>` SHALL continue from the
+  record with no work lost.
+- **AC-14**: WHEN the base of a three-PR stack squash-merges THE `fflow stack` command SHALL bring the next PR onto the
+  default branch with no force-push and no hand-resolved conflict.
+- **AC-15**: WHEN two sessions run `fflow adr reserve` at once THE queue SHALL give them different numbers, each on
+  the default branch before it is returned.
+- **AC-16**: WHEN a checkout has no workspace install THE commit SHALL carry a `Hooks-Run:` trailer from a testbed run
+  and `gate` SHALL refuse a commit without hooks or trailer.
+- **AC-17**: WHILE the default branch has known failures THE merge bot SHALL land a PR whose gate is green against the
+  baseline, and SHALL refuse one that adds a failure.
+- **AC-18**: WHEN any session stops THE record and the work SHALL be on the remote.
+- **AC-19**: WHEN `fflow status` runs while a named agent session works in a worktree THE output SHALL show that
+  session by name and stage, and SHALL flag a name that breaks the pattern.
+- **AC-20**: WHEN the owner runs `fflow todo` THE output SHALL list every pending owner action from the records, each
+  with its command or link.
+- **AC-21**: WHEN `fflow plan` runs on an approved spec THE result SHALL be a tasks.md whose tasks together cover every
+  FR and AC, each task within its size budget.
+
+### Questions for the owner (A-1)
+
+- **Q4 The release model.** (a) Today: `fflow release` only reports, and the Release workflow publishes when the
+  owner merges the version PR. (b) `fflow release` drives it: opens the version PR, and on the owner's GitHub
+  Environment approval dispatches the publish. Recommended: (b), so release is a Flow stage like the others; production
+  stays the owner's approval either way.
+- **Q5 Where a stage's Claude workflow runs.** (a) Inside a Claude Code session: the stage's skill launches the
+  workflow, and the CLI command prepares its input and validates and records its output. (b) The CLI starts a headless
+  Claude run itself. Recommended: (a); (b) later, for the testbed's unattended runs.
+- **Q6 Where the record lives.** (a) On the task's branch, landing with the change (FR-14). (b) In one central
+  "flow-records" repository. Recommended: (a); `--workspace` reads every repository's records for `status`, `todo` and
+  `ledger`.
+
 ## Decisions (owner, 2026-11-02, relayed by the leader session)
 
 - **D1 (Q1)** HeroUI Pro's and Remotion's skills are kept for internal use only: installed from source on each
@@ -172,3 +262,5 @@ test-level baseline inventory (STA-1942 v2).
   Q1 to Q3 open)
 - 2026-11-02: Q1 to Q3 decided (D1 to D3), relayed by the leader session
 - 2026-11-02: Clarified → Planned (plan.md; the leader session reviews the plan before building)
+- 2026-11-03: Planned → Draft: A-1 "Flow first" added (FR-13 to FR-22, AC-13 to AC-21, Q4 to Q6), owner-approved
+  design relayed by the leader session (STA-2038); awaiting the owner's approval of the text, then tasks.md
