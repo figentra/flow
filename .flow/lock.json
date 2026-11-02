@@ -1,5 +1,5 @@
 {
-  "version": "0.2.1",
+  "version": "0.2.2",
   "preset": "stackra",
   "files": {
     ".agents/skills/flow-specify/SKILL.md": "8afa3c422fbd5d72c22db6f1e475be7b70466031ae54ab63054921c06e429f49",
@@ -15,7 +15,7 @@
     ".agents/agents/linear-steward.md": "23e7fd872fc7659c1ed1edc01ca5b547609df92f03568cf84693b58c09c95a18",
     ".agents/rules/worktrees.md": "f99bce80073cc1790be0c322652ac9782292ae7074563e4cc730460be7d4b918",
     "README.md": "c9cb6c212e2e03d6ca32902eef622417784b5afd254da37754bae467830cbe6e",
-    ".github/workflows/fflow-approve.yml": "8cb0d81aa47cdeaca515f87a79ae5f82ac7aa6d8ff79d9ddcb99c53f6bd0d5d5",
+    ".github/workflows/fflow-approve.yml": "ee431b3318fd89aafb02253dbf553bd769c680dda10860929f695bcec9a05135",
     ".github/CODEOWNERS": "463c3a6887b2b0ee7a42ce65d42897d51bd467c24c54d77f7d73c1f9e26a4674"
   }
 }

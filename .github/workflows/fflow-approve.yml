@@ -54,14 +54,14 @@ jobs:
           EXPECTED_HEAD: ${{ inputs.head }}
           ENVIRONMENT: fflow-approve
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          INTEGRITY: 'sha512-bRJbOunXjs27Z522DoqBhP2IjMKoAL6V66aUjvZD8QMV+SFWZ6HA0nJucebu4H5n57t0mgDXvUFqi0vRvbjztw=='
+          INTEGRITY: 'sha512-TXB5INVO+xgM0r2DPxUR2oLEab6KWttO1hfePgiaqVfPhYEWUFx1zXOMLHVn8LU0pyMUwy4hmSkKA0ch/F1AyQ=='
           TRUSTED: '{"fflow/gate":"figentra-gate[bot]"}'
           OWNER_ONLY_EXTRA: '[]'
         run: |
           cd "$RUNNER_TEMP"
-          [ -n "$INTEGRITY" ] || { echo "::error::no pinned integrity for @figentra-oss/flow@0.2.1; run fflow sync where the lockfile resolves it"; exit 1; }
-          file=$(npm pack --silent --@figentra-oss:registry=https://npm.stackra.figentra.com/ @figentra-oss/flow@0.2.1 | tail -n 1)
+          [ -n "$INTEGRITY" ] || { echo "::error::no pinned integrity for @figentra-oss/flow@0.2.2; run fflow sync where the lockfile resolves it"; exit 1; }
+          file=$(npm pack --silent --@figentra-oss:registry=https://npm.stackra.figentra.com/ @figentra-oss/flow@0.2.2 | tail -n 1)
           got="sha512-$(openssl dgst -sha512 -binary "$file" | base64 -w0)"
-          [ "$got" = "$INTEGRITY" ] || { echo "::error::@figentra-oss/flow@0.2.1 is $got, not the pinned $INTEGRITY"; exit 1; }
+          [ "$got" = "$INTEGRITY" ] || { echo "::error::@figentra-oss/flow@0.2.2 is $got, not the pinned $INTEGRITY"; exit 1; }
           mkdir flow && tar -xzf "$file" -C flow
           node flow/package/src/lib/approve-check.mjs
