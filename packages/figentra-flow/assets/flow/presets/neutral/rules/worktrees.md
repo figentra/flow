@@ -11,8 +11,8 @@ ones hides real work.
 
 ## Rules
 
-1. **One worktree per active task, only under `.claude/worktrees/`.** Never put one next to the repository. Make it
-   with `fflow start <key>`.
+1. **One worktree per active task, only under `.claude/worktrees/<name>/`.** Never put one next to the
+   repository. Make it with `fflow start <key>`.
 2. **`fflow land` removes the worktree after the merge.** Run `fflow land <n>` again on a PR that auto-merged to
    finish it.
 3. **A session removes its own worktree when it ends.** First commit or push the work. Then run

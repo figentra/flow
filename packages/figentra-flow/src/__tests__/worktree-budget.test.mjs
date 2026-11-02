@@ -190,7 +190,7 @@ test("sync renders the worktree rule; both git-stewards run the budget", (t) => 
   sync(root, { direct: true, log: () => {} });
   assert.match(
     readFileSync(join(root, ".claude/rules/worktrees.md"), "utf8"),
-    /One worktree per active task, only under `\.claude\/worktrees\/`/,
+    /One worktree per active task, only under `\.claude\/worktrees\/<name>\/`/,
   );
   sync(root, { log: () => {} });
   assert.ok(existsSync(join(root, ".agents/rules/worktrees.md")));

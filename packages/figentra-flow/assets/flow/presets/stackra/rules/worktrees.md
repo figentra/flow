@@ -11,8 +11,8 @@ Every worktree holds its own dependencies and builds, and stale ones hide the wo
 
 ## Rules
 
-1. **One worktree per active task, only under `.claude/worktrees/`.** Never next to the repository. Make it with
-   `pnpm exec figentra-flow start STA-n`.
+1. **One worktree per active task, only under `.claude/worktrees/<name>/`.** Never next to the repository.
+   Make it with `pnpm exec figentra-flow start STA-n`.
 2. **`figentra-flow land` removes it after the merge.** After an auto-merge, `land <n>` again finishes the PR.
 3. **A session removes its own worktree when it ends.**
    - First commit and push the work.
