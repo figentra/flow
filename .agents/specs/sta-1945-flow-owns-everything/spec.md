@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-02
 
-**Status**: Draft (A-1 to A-3 awaiting the owner's approval)
+**Status**: Planned — Approved by owner 2026-11-03 (A-1 to A-3, with D6)
 
 **Tier**: big
 
@@ -324,6 +324,11 @@ templates (not copied beside them), scaled by tier, and Flow enforces it.
 - **D5 (2026-11-03, the owner)** Add A-3: Vellum's requirements and design depth merged into Flow's spec and plan
   templates, scaled by tier, and enforced (sources, folder trees, interfaces, diagrams, no placeholders, vague words,
   scope and contract drift).
+- **D6 (2026-11-03, the owner)** A-1 to A-3 approved with the recommended answers. **Q4:** `fflow release` drives the
+  release: it opens the version PR and, on the owner's GitHub Environment approval, dispatches the publish; production
+  stays the owner's. **Q5:** a stage's Claude workflow runs inside a Claude Code session (the stage's skill launches it;
+  the CLI prepares its input and validates and records its output); headless runs come later, for the testbed.
+  **Q6:** Flow's record lives on the task's branch and lands with the change; `--workspace` reads every repository's.
 - **D3 (Q3)** Profiles: `framework`, `platform`, `product`, `brand`, `starter`, and `pro` only if needed (FR-6).
 
 ## The questions as asked
@@ -364,3 +369,5 @@ test-level baseline inventory (STA-1942 v2).
   the owner's approval of the text, then tasks.md
 - 2026-11-03: A-3 added (FR-26 to FR-30, AC-28 to AC-34), owner decision D5 (spec and plan depth, enforced); A-1 to
   A-3 await the owner's approval of the text, then tasks.md
+- 2026-11-03: Draft → Planned — Approved by owner 2026-11-03: A-1 to A-3 and D6 (Q4 to Q6 as recommended); tasks.md
+  and the build follow `path-to-100.md`
