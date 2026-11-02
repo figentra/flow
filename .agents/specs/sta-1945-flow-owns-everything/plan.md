@@ -110,6 +110,13 @@ comes the migration (FR-10 steps 2 to 4), one PR per repository, with core first
    `pnpm exec` only without mise, and exit 2 ("all ignored") counted as a pass. `sync` adds or corrects the
    `npm:oxfmt` and `npm:oxlint` pins in `mise.toml` to the catalog's versions, and changes no other line of that
    file. Tests cover: mise present, mise missing, all files ignored, and a pin that disagrees with the catalog.
+   Two more lefthook rules (os#112):
+   - commit-msg runs commitlint only when `node_modules/.bin/commitlint` exists; otherwise it skips with a note
+     (the Quality Gate commitlints every PR commit anyway).
+   - pre-push skips only when the install or pnpm's lockfile trust-policy check fails with the registry's 401
+     (`ERR_PNPM_META_FETCH_FAIL`, or "Lockfile failed supply-chain policy check" with a 401), and prints "pre-push
+     skipped: no registry read on this machine; the PR must cite a ci-box run for this commit". Any other failure
+     still blocks. Tests cover each skip, and a non-401 failure that blocks.
 6. **Core's content.** The 28 agents, 48 skills (FR-12), 15 rules, 29 reference docs, routing and models go into the
    stackra preset, split by profile. Before this lands, the package tarball size is measured and stated in the PR.
 7. **Third-party skills and `doctor`.** The FR-8 list from brand's census, with D1's `machine-only` marks.
