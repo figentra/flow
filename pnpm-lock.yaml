@@ -191,6 +191,9 @@ catalogs:
     '@changesets/cli':
       specifier: 3.0.3
       version: 3.0.3
+    flow-released:
+      specifier: npm:@figentra-oss/flow@0.2.0
+      version: 0.2.0
     lefthook:
       specifier: 2.2.1
       version: 2.2.1
@@ -205,6 +208,9 @@ importers:
       '@changesets/cli':
         specifier: catalog:release
         version: 3.0.3
+      flow-released:
+        specifier: catalog:release
+        version: '@figentra-oss/flow@0.2.0'
       lefthook:
         specifier: catalog:release
         version: 2.2.1
@@ -304,6 +310,11 @@ packages:
   '@clack/prompts@1.8.1':
     resolution: {integrity: sha512-dlT1m5e/0yUL0kRNcQn7yGLVThkgbB0Ga/1AmfDDC/8ik6AIiSf2QLQO2zPYvefsHP0aFgxO93cVLCCfDp7kzQ==}
     engines: {node: '>= 20.12.0'}
+
+  '@figentra-oss/flow@0.2.0':
+    resolution: {integrity: sha512-FBazUmgu8r1qT0m+FnHwrt8CkmC8H5Fbq+1ZPbcoN8d/QdULytr7N4+ADAa8eOEozN4T3KvYHHQvLtzZ3hOxLg==, tarball: https://npm.stackra.figentra.com/@figentra-oss/flow/-/flow-0.2.0.tgz}
+    engines: {node: '>=24.0.0'}
+    hasBin: true
 
   '@manypkg/find-root@3.1.0':
     resolution: {integrity: sha512-BcSqCyKhBVZ5YkSzOiheMCV41kqAFptW6xGqYSTjkVTl9XQpr+pqHhwgGCOHQtjDCv7Is6EFyA14Sm5GVbVABA==}
@@ -888,6 +899,10 @@ snapshots:
       fast-string-width: 3.0.2
       fast-wrap-ansi: 0.2.2
       sisteransi: 1.0.5
+
+  '@figentra-oss/flow@0.2.0':
+    dependencies:
+      undici: 8.12.2
 
   '@manypkg/find-root@3.1.0':
     dependencies:
