@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-02
 
-**Status**: Draft (A-1 and A-2 awaiting the owner's approval)
+**Status**: Draft (A-1 to A-3 awaiting the owner's approval)
 
 **Tier**: big
 
@@ -262,6 +262,55 @@ ledger and 13-state lifecycle stay out (the decisions behind ADR 0510 stand).
 - **AC-27**: WHEN a spec reaches Done with an optional task still `[ ]` THE `check` command SHALL pass and `status` SHALL
   list the skipped optional task.
 
+## Amendment A-3 (2026-11-03): specs specific enough to check (from Vellum)
+
+**Source:** the owner, 2026-11-03 (D5), after comparing Flow's spec and plan templates (about 140 and 105 lines) with
+Vellum's requirements and design templates (223 and 342 lines): "so AI does not shift at all". A bigger template alone
+does not stop drift; documents specific enough to check, and checks, do. Vellum's depth is merged into Flow's two
+templates (not copied beside them), scaled by tier, and Flow enforces it.
+
+### Requirements added by A-3
+
+- **FR-26 Discovery in the spec.** Before its requirements, a spec states: current behaviour (what happens today
+  without the change), the repository topology it lands in (members, folders, files), its dependencies, ownership,
+  the constraints already decided (ADRs, rules), and **Sources**: every file, ADR, command or issue those statements
+  rest on. A spec also states its measurable success, and non-functional requirements as their own EARS lines.
+- **FR-27 A concrete plan.** For feature and big tiers, the plan states:
+  - the key trade-off and a research summary;
+  - an applicable-standards table: rule → how it is enforced (a check, or "review" as a finding);
+  - an architecture diagram (Mermaid) with the dependency direction, and a sequence diagram where order or failure
+    timing matters;
+  - per component: responsibility, location, the folder tree of every file it adds, the real interface declarations
+    in the repository's language (names, parameters, returns, thrown errors), behaviour (pseudocode for anything
+    non-trivial) and failure modes per dependency;
+  - partial-failure ordering, and open questions.
+    A small tier keeps a one-page design inside the spec (ADR 0502), with the folder tree and interfaces still required.
+- **FR-28 No placeholders, no open questions.** `gate` refuses approval of a document that still holds template
+  placeholder text, an empty mandatory section, or an open question.
+- **FR-29 Quality words.** `gate` flags vague terms in requirements and acceptance criteria (a word list in the preset,
+  with worked examples in the template): a warning on small and feature tiers, a failure on big.
+- **FR-30 Drift checks.**
+  - **Scope:** each task names only files from the plan's folder trees (or the spec's one-page design); `gate`
+    reports any file a PR changes outside its tasks' files as scope drift (tests beside their subjects, changesets and
+    lockfiles allowed). Scope drift fails the gate on big tiers and warns otherwise; the fix is an amendment.
+  - **Contracts:** after build, every interface the plan declares exists in the code with the same name and signature;
+    `trace` reports a missing or changed one.
+  - **Approval binding:** an approval is bound to the document's content; editing an approved section re-opens its
+    stage (FR-23's reset applies to the documents too).
+
+### Acceptance criteria added by A-3
+
+- **AC-28**: WHEN a spec has no Sources or a requirement cites none THE spec gate SHALL refuse the Clarified stage.
+- **AC-29**: WHEN a feature or big plan lacks a component's folder tree or interface declarations THE plan gate SHALL
+  refuse it and name the component.
+- **AC-30**: WHEN an approved document still holds template placeholder text or an open question THE gate SHALL refuse
+  the approval.
+- **AC-31**: WHEN a big spec's acceptance criteria use a listed vague term THE gate SHALL fail and name the term.
+- **AC-32**: WHEN a PR changes a file no task names THE gate SHALL report it as scope drift (failing on big tiers).
+- **AC-33**: WHEN the code lacks an interface the plan declared, or its signature differs THE `trace` command SHALL
+  report it.
+- **AC-34**: WHEN an approved spec section is edited THE stage SHALL return to awaiting approval.
+
 ## Decisions (owner, 2026-11-02, relayed by the leader session)
 
 - **D1 (Q1)** HeroUI Pro's and Remotion's skills are kept for internal use only: installed from source on each
@@ -272,6 +321,9 @@ ledger and 13-state lifecycle stay out (the decisions behind ADR 0510 stand).
 - **D4 (2026-11-03, the owner in the console-engine session)** Add Vellum's task core as A-2: markers that commands
   move with per-task evidence, waves with parallel subagents and resume, optional and checkpoint tasks. Signed
   approvals, the hash-chained ledger and the 13-state lifecycle stay out.
+- **D5 (2026-11-03, the owner)** Add A-3: Vellum's requirements and design depth merged into Flow's spec and plan
+  templates, scaled by tier, and enforced (sources, folder trees, interfaces, diagrams, no placeholders, vague words,
+  scope and contract drift).
 - **D3 (Q3)** Profiles: `framework`, `platform`, `product`, `brand`, `starter`, and `pro` only if needed (FR-6).
 
 ## The questions as asked
@@ -310,3 +362,5 @@ test-level baseline inventory (STA-1942 v2).
   design relayed by the leader session (STA-2038); awaiting the owner's approval of the text, then tasks.md
 - 2026-11-03: A-2 added (FR-23 to FR-25, AC-22 to AC-27), owner decision D4 (Vellum's task core); A-1 and A-2 await
   the owner's approval of the text, then tasks.md
+- 2026-11-03: A-3 added (FR-26 to FR-30, AC-28 to AC-34), owner decision D5 (spec and plan depth, enforced); A-1 to
+  A-3 await the owner's approval of the text, then tasks.md

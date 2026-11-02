@@ -179,6 +179,14 @@ Each PR carries its changeset entry. The owner holds the version PR until PR 9 m
 18. **Waves and the parallel build** (FR-24): the wave graph from `plan`, the build workflow's wave dispatch (at most
     5 subagents), and `next`/`resume` from markers. Lands with PR 14 (stage workflows).
 
+### Added by amendment A-3 (specs specific enough to check)
+
+19. **Templates** (FR-26, FR-27): Discovery and Sources, measurable success and non-functional EARS lines in the spec
+    template; the plan template's standards table, diagrams and per-component tree, interfaces, behaviour and failure
+    modes; the small tier's one-page design; worked examples. Both presets.
+20. **Gates** (FR-28 to FR-30): placeholder and open-question refusal, the vague-word list, scope drift in `gate`,
+    the interface check in `trace`, and content-bound approvals.
+
 PR 9 (CLI output) moves onto `@stackra/console` once STA-1966's engine (core #290) is published as a prerelease.
 
 ## Rollout (FR-10)
