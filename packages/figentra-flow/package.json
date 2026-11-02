@@ -1,6 +1,6 @@
 {
   "name": "@figentra-oss/flow",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
   "description": "Figentra Flow: spec-driven development from spec to landed change. Spec gates and traceability on spec-kit, worktrees, the gate on a box, land, and adapters for your tracker, runner, credentials and secrets",
   "keywords": [

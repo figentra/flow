@@ -1,5 +1,53 @@
 # @figentra-oss/flow
 
+## 0.2.0
+
+### Minor Changes
+
+- af02ff3: `figentra-flow land` now refuses owner-only changes, matched case-insensitively:
+  
+  - workflows and actions;
+  - what a deploy, promote or release runs, including the root package.json's scripts;
+  - secrets and their guards;
+  - the catalog, including a dependency moved off `catalog:`;
+  - the Flow configuration;
+  - repo settings;
+  - billing and legal files;
+  - a repository's own `approve.ownerOnly`.
+  
+  When the ruleset requires an approving review, `land` waits until every required check is green from its trusted source. It then dispatches the new `figentra-flow-approve.yml` and turns on auto-merge at the head instead of merging. It never uses an admin path.
+  
+  `land` on a PR that merged into the default branch finishes it. It deletes the branch only while it still points at the landed head.
+  
+  `sync` renders four things:
+  
+  - The approval workflow. It runs the tested `approve-check.mjs` at the pinned version in the `figentra-flow-approve` environment, which must allow only the default branch. It reads files and checks at the exact head, approves there, and dismisses its own approval if the head moved. The approving App's secrets have their own names.
+  - A CODEOWNERS for the owner-only paths, when `apps.owner` is set.
+  - Each preset's steward agents. Both presets ship `git-steward` and `ci-steward`; neutral adds `tracker-steward` and stackra adds `linear-steward`.
+  - A new `approve` config block that holds `ownerOnly` and the trusted `checks`.
+  
+  STA-1856.
+- 2f1d972: `figentra-flow clean` now keeps each repository within a worktree budget: `clean.budget`, default 10.
+  
+  - **Warning:** `clean` warns when the repository has more worktrees than the budget.
+  - **Candidates:** `clean` lists worktrees that have been idle for 24 hours or more and whose work is merged or pushed.
+  - **`clean --budget`:** removes those candidates after preserving what they hold:
+    - uncommitted work and a detached HEAD go to a new local `keep/<repo>-<name>` branch (hooks run; a refused commit keeps the tree as it was);
+    - ignored files outside the caches go into an archive under `~/Backups/figentra-flow/`.
+  
+    It never forces a removal and never deletes a branch.
+  
+  `doctor` warns, without failing, when the repository is over the budget and when the disk is low (under 10 GB or 10 % free).
+  
+  `sync` installs a worktree rule from the presets into the agent rules. `init` and `clean` write `.claude/worktrees/README.md`. Both presets' `git-steward` runs the budget.
+  
+  STA-1871.
+- 62e000a: `figentra-flow readme [--check]` renders a repository's `README.md` from `.flow/readme.yml` through the preset's `readme-template` (STA-1879). The `stackra` preset ships Figentra's standard layout: banner, badges, tagline, What it is, Status, Quick start, Architecture at a glance, Development, Docs and playground, Release and changelog, Security, Licence and the footer. `sync` renders the README too, when the data file exists, and records it in `.flow/lock.json`, so `gate ci` catches a hand edit.
+
+### Patch Changes
+
+- 83c225f: The README data-file example points the banner at the brand kit's images at a pinned figentra/brand ref, as figentra/brand ADR 0001 asks (the brand is pulled, never copied), instead of copies committed in the repository.
+
 ## 0.1.0
 
 ### Minor Changes
