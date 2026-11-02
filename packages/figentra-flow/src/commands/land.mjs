@@ -6,14 +6,17 @@
  *   Done, record the merge commit, remove the worktree through `clean`'s rules, delete the branch and comment. When the
  *   base's ruleset requires an approving review the head lacks, it dispatches the approval workflow and turns on
  *   auto-merge at the head instead, never an admin path; `land` on a merged PR runs the steps after the merge
- *   (STA-1856). `--stack` lands a stack bottom-up.
+ *   (STA-1856). `--stack` lands a stack bottom-up: after each squash it merges the default branch into the next PR,
+ *   resolves each conflict that is only the landed parent's own change (`lib/stack.mjs`), retargets the PR, gates it
+ *   and lands it; a re-run after a stop picks the stack up where it stopped (STA-1945 FR-16).
  * Boundary: every rule is read from GitHub's live state and the spec at the PR's head; nothing changes until all
  *   pass. The merge carries `sha`, so GitHub refuses it if the head moved. Waiting on required checks exits 4. Steps
  *   after the merge only warn (exit 3)
- *   and never undo it. A stack is brought up to date by a merge commit and a normal push, never a rewrite.
+ *   and never undo it. A stack is brought up to date by a merge commit and a normal push, never a rewrite; any other
+ *   conflict stops the stack with the merge aborted and the files named.
  * Runtime: node
  * Governing contract: Stackra ADR 0503 (decision 5), ADR 0502; STA-1729 phase 3 (the leader's plan stop of
- *   2026-10-31); STA-1856 (FR-1 to FR-3).
+ *   2026-10-31); STA-1856 (FR-1 to FR-3); STA-1945 (FR-16, AC-14).
  * Secrets: none here. GitHub calls go through `gh` (or the repository's `bot:gh`), Linear through the environment's
  *   token, which is never read into output.
  */
@@ -33,7 +36,14 @@ import { say } from "../lib/cli.mjs";
 import { loadConfig } from "../lib/config.mjs";
 import { ownerOnlyPaths, packageFindings } from "../lib/owner-only.mjs";
 import { requiredCheckState, requiredContexts } from "../lib/required-checks.mjs";
-import { APPROVE_WORKFLOW, LANDED_KEY, NAME, STATUS_CONTEXT } from "../lib/product.mjs";
+import {
+  APPROVE_WORKFLOW,
+  LANDED_KEY,
+  NAME,
+  STACK_PARENT_KEY,
+  STATUS_CONTEXT,
+} from "../lib/product.mjs";
+import { mergeUp } from "../lib/stack.mjs";
 import { defaultBranch, fetch, git, mainCheckout, remote, worktrees } from "../lib/git.mjs";
 
 /** The tiers whose changes need the AI review when the configuration's `review.required` names none. */
@@ -242,8 +252,8 @@ function specAt(
  * Lands one PR.
  * @param {{ root: string, repo: string, base: string, number: number, dry?: boolean, manualOk?: boolean,
  *           gateApp?: string, reviewer?: string, owner?: string, deps: LandDeps }} options
- * @returns {Promise<{ code: number, problems?: string[], merged?: string, queued?: boolean,
- *   waiting?: string[] }>}
+ * @returns {Promise<{ code: number, problems?: string[], merged?: string, head?: string,
+ *   queued?: boolean, waiting?: string[] }>}
  */
 export async function landOne({
   root,
@@ -268,6 +278,12 @@ export async function landOne({
   if (pr.json.merged && pr.json.merge_commit_sha) {
     if (pr.json.base?.ref !== base)
       return { code: 1, problems: [`#${number} merged into ${pr.json.base?.ref}, not ${base}`] };
+    if (dry) {
+      log(
+        `${NAME} land: would finish #${number}, merged as ${pr.json.merge_commit_sha.slice(0, 12)}`,
+      );
+      return { code: 0, head };
+    }
     log(`${NAME} land: #${number} merged as ${pr.json.merge_commit_sha.slice(0, 12)}; finishing`);
     return finish({
       root,
@@ -440,7 +456,7 @@ export async function landOne({
  * @param {{ root: string, repo: string, number: number, branch: string, head: string, key: string | undefined,
  *           sha: string, scheme: import("../adapters/tracker/index.mjs").KeyScheme, manualOk?: boolean,
  *           deps: LandDeps }} options
- * @returns {Promise<{ code: number, merged: string }>}
+ * @returns {Promise<{ code: number, merged: string, head: string }>}
  */
 async function finish({
   root,
@@ -501,88 +517,155 @@ async function finish({
         body: `Landed by \`${NAME} land\` as ${sha}.${manualOk ? ` (\`--manual-ok\`: the ruleset does not require \`${STATUS_CONTEXT}\` yet.)` : ""}`,
       }).ok,
   );
-  return { code: warned ? 3 : 0, merged: sha };
+  return { code: warned ? 3 : 0, merged: sha, head };
 }
 
 /**
- * Lands the stack under `number` bottom-up: each next PR is updated by merging the default branch, pushed, gated
- * and landed in turn. Stops at the first that cannot go, naming it.
- * @param {{ root: string, repo: string, base: string, number: number, manualOk?: boolean, gateApp?: string,
- *           reviewer?: string, owner?: string, deps: LandDeps & { gate: (cwd: string) => Promise<number> } }} options
+ * The PRs from the bottom of the stack under `number` up to it, and the head of the PR below the bottom when that one
+ * already squash-merged into `base` (a re-run after a stop). A merged parent whose branch is still at its head was not
+ * finished (auto-merge landed it), so it heads the chain and `landOne` finishes it.
+ * @param {import("../lib/github.mjs").Api} api
+ * @param {string} repo
+ * @param {string} base
+ * @param {number} number
+ * @returns {{ chain: any[], parent?: string, problem?: string }}
+ */
+function stackOf(api, repo, base, number) {
+  const org = repo.split("/")[0];
+  /** @type {any[]} */
+  const chain = [];
+  let cur = api("GET", `/repos/${repo}/pulls/${number}`).json;
+  if (!cur?.base) return { chain, problem: `PR #${number} was not found` };
+  while (cur.base.ref !== base) {
+    chain.unshift(cur);
+    const below = list(
+      api("GET", `/repos/${repo}/pulls?state=all&head=${org}:${encodeURIComponent(cur.base.ref)}`),
+    );
+    const open = below.find((p) => p.state === "open");
+    const landed = below.find((p) => p.merged_at && p.base?.ref === base);
+    if (open) cur = open;
+    else if (!landed)
+      return {
+        chain,
+        problem: `#${cur.number} is stacked on \`${cur.base.ref}\`, which has no open PR and none merged into ${base}`,
+      };
+    else if (
+      api("GET", `/repos/${repo}/git/ref/heads/${refPath(landed.head.ref)}`).json?.object?.sha !==
+      landed.head.sha
+    )
+      return { chain, parent: landed.head.sha };
+    else cur = landed;
+  }
+  chain.unshift(cur);
+  return { chain };
+}
+
+/**
+ * Brings a stacked PR onto `base` in its worktree: the merge-up, a normal push when the head moved, the retarget when
+ * GitHub has not made it, and the gate when the head has no green one (an earlier run's counts).
+ * @param {{ root: string, repo: string, base: string, pr: any, parent?: string, gateApp?: string, dry: boolean,
+ *           deps: LandDeps & { gate: (cwd: string) => Promise<number> } }} options
+ * @returns {Promise<string[]>} why the stack stops here; empty when the PR is ready to land
+ */
+async function bringUp({ root, repo, base, pr, parent, gateApp, dry, deps }) {
+  const { api, log } = deps;
+  const at = `#${pr.number}`;
+  const branch = pr.head.ref;
+  const tree = worktrees(root).find((t) => t.branch === branch);
+  if (!tree)
+    return [
+      `${at} (${branch}) has no local worktree to update; \`${NAME} start\` one, then land again`,
+    ];
+  if (dry) {
+    log(
+      `${NAME} land --stack: would merge ${base} into ${branch} in ${tree.path} (resolving only conflicts where ${base} holds the landed parent's version), push, retarget ${at} to ${base}, gate and land it`,
+    );
+    return [];
+  }
+  fetch(root);
+  const up = mergeUp({ root: tree.path, child: branch, base, squashedParent: parent });
+  if (up.conflicts.length)
+    return [
+      `${at}: merging ${base} into ${branch} conflicts in ${up.conflicts.join(", ")}, which ${base} changed beyond the landed parent; the merge is aborted: resolve it in ${tree.path}, commit, then land the stack again`,
+    ];
+  if (!up.merged) return [`${at}: merging ${base} into ${branch} failed: ${up.error}`];
+  if (up.resolved.length)
+    log(
+      `${NAME} land --stack: ${at}: resolved ${up.resolved.join(", ")}, where ${base} holds the landed parent's version`,
+    );
+  const head = git(tree.path, ["rev-parse", "HEAD"]).out;
+  if (head !== git(tree.path, ["rev-parse", "-q", "--verify", `origin/${branch}`]).out) {
+    const pushed = remote(tree.path, ["push", "-q", "origin", "HEAD"]);
+    if (!pushed.ok) return [`${at}: push failed: ${pushed.err}`];
+  }
+  // GitHub retargets a PR whose base branch was deleted; set it ourselves if that has not happened yet.
+  const on = api("GET", `/repos/${repo}/pulls/${pr.number}`).json?.base?.ref;
+  if (on !== base) {
+    const moved = api("PATCH", `/repos/${repo}/pulls/${pr.number}`, { base });
+    if (!moved.ok)
+      return [`${at}: retargeting to ${base} failed: ${moved.err}; it stays on \`${on}\``];
+  }
+  const statuses = list(api("GET", `/repos/${repo}/commits/${head}/statuses?per_page=100`));
+  if (gateProblems(statuses, head, gateApp).length) {
+    const gate = await deps.gate(tree.path);
+    if (gate !== 0) return [`${at}: ${NAME} gate run exited ${gate}; the stack stops here`];
+  }
+  return [];
+}
+
+/**
+ * Lands the stack under `number` bottom-up: after each squash the next PR is brought onto the default branch
+ * (`bringUp`), then landed in turn. Stops at the first that cannot go, naming it; run again, it resumes there. With
+ * `dry`, prints the plan and checks only the bottom PR's rules, since the others change on the way.
+ * @param {{ root: string, repo: string, base: string, number: number, dry?: boolean, manualOk?: boolean,
+ *           gateApp?: string, reviewer?: string, owner?: string,
+ *           deps: LandDeps & { gate: (cwd: string) => Promise<number> } }} options
+ * @returns {Promise<{ code: number, problems?: string[], waiting?: string[] }>}
  */
 export async function landStack({
   root,
   repo,
   base,
   number,
+  dry = false,
   manualOk = false,
   gateApp,
   reviewer,
   owner,
   deps,
 }) {
-  const { api, log } = deps;
-  const org = repo.split("/")[0];
-  /** @type {any[]} */
-  const chain = [];
-  let cur = api("GET", `/repos/${repo}/pulls/${number}`).json;
-  while (cur) {
-    chain.unshift(cur);
-    if (cur.base.ref === base) break;
-    cur = (api(
-      "GET",
-      `/repos/${repo}/pulls?state=open&head=${org}:${encodeURIComponent(cur.base.ref)}`,
-    ).json ?? [])[0];
-    if (!cur)
-      return {
-        code: 1,
-        problems: [
-          `#${chain[0].number} is stacked on \`${chain[0].base.ref}\`, which has no open PR`,
-        ],
-      };
-  }
+  const { log } = deps;
+  const { chain, parent: landed, problem } = stackOf(deps.api, repo, base, number);
+  if (problem) return { code: 1, problems: [problem] };
+  if (dry)
+    log(
+      `${NAME} land --stack: ${chain.map((p) => `#${p.number}`).join(" → ")} into ${base}, bottom first`,
+    );
+  // Once GitHub retargets the bottom to `base`, only the record an earlier run left still names its parent.
+  /** @type {string | undefined} */
+  let parent =
+    landed ??
+    (git(root, ["config", "--get", `branch.${chain[0].head.ref}.${STACK_PARENT_KEY}`]).out ||
+      undefined);
   for (const [i, pr] of chain.entries()) {
-    if (i > 0) {
-      const tree = worktrees(root).find((t) => t.branch === pr.head.ref);
-      if (!tree)
-        return {
-          code: 1,
-          problems: [
-            `#${pr.number} (${pr.head.ref}) has no local worktree to update; \`${NAME} start\` one, then land again`,
-          ],
-        };
-      fetch(root);
-      const merged = git(tree.path, ["merge", "--no-edit", "-q", `origin/${base}`]);
-      if (!merged.ok) {
-        // A conflict leaves unmerged paths; anything else (no git identity, a hook) is reported as git said it.
-        const conflicted = git(tree.path, ["diff", "--name-only", "--diff-filter=U"]).out !== "";
-        git(tree.path, ["merge", "--abort"]);
-        return {
-          code: 1,
-          problems: [
-            conflicted
-              ? `#${pr.number}: merging ${base} into ${pr.head.ref} conflicts; resolve it there, then land again`
-              : `#${pr.number}: merging ${base} into ${pr.head.ref} failed: ${merged.err || "git merge exited non-zero"}`,
-          ],
-        };
-      }
-      const pushed = remote(tree.path, ["push", "-q", "origin", "HEAD"]);
-      if (!pushed.ok) return { code: 1, problems: [`#${pr.number}: push failed: ${pushed.err}`] };
-      // GitHub retargets a PR whose base branch was deleted; set it ourselves if that has not happened yet.
-      if (api("GET", `/repos/${repo}/pulls/${pr.number}`).json?.base?.ref !== base)
-        api("PATCH", `/repos/${repo}/pulls/${pr.number}`, { base });
-      const gate = await deps.gate(tree.path);
-      if (gate !== 0)
-        return {
-          code: 1,
-          problems: [`#${pr.number}: ${NAME} gate run exited ${gate}; the stack stops here`],
-        };
+    if ((i > 0 || parent) && pr.state === "open") {
+      const problems = await bringUp({ root, repo, base, pr, parent, gateApp, dry, deps });
+      if (problems.length) return { code: 1, problems };
+      if (dry) continue;
     }
+    const next = chain[i + 1];
+    const record = (/** @type {string | undefined} */ sha) => {
+      if (next && sha) git(root, ["config", `branch.${next.head.ref}.${STACK_PARENT_KEY}`, sha]);
+    };
+    // Written before the merge too: a run that dies after it, once GitHub retargets the next PR, still resumes.
+    if (!dry && pr.state === "open")
+      record(deps.api("GET", `/repos/${repo}/pulls/${pr.number}`).json?.head?.sha);
     const result = await landOne({
       root,
       repo,
       base,
       number: pr.number,
+      dry,
       manualOk,
       gateApp,
       reviewer,
@@ -600,6 +683,9 @@ export async function landStack({
         ? { code: result.code, problems: [], waiting: result.waiting }
         : { code: result.code, problems: [] };
     }
+    if (dry) continue;
+    parent = result.head;
+    record(parent);
     log(`${NAME} land --stack: ${i + 1}/${chain.length} landed`);
   }
   return { code: 0 };
@@ -652,11 +738,11 @@ export async function run(/** @type {string[]} */ args) {
     owner: apps.owner,
     deps,
   };
+  const dry = args.includes("--dry-run");
   const result = args.includes("--stack")
-    ? await landStack(options)
-    : await landOne({ ...options, dry: args.includes("--dry-run") });
+    ? await landStack({ ...options, dry })
+    : await landOne({ ...options, dry });
   for (const p of result.problems ?? []) console.error(`${NAME} land: ${p}`);
-  const dry = args.includes("--dry-run") && !args.includes("--stack");
   if ("waiting" in result && result.waiting)
     say("blocked", `${NAME} land: required checks still running; land again once green`);
   else if ("queued" in result && result.queued)
