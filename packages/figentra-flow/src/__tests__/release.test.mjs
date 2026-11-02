@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold `figentra-flow release` to its rules: changesets are read from their frontmatter, each package's
+ * Purpose: hold `fflow release` to its rules: changesets are read from their frontmatter, each package's
  *   next version follows its highest bump, the AC-054 findings are reported, a version PR that lacks a next version is
  *   stale, a skipped publish's notice is surfaced, and a registry 404 means never published.
  * Boundary: a scratch git repository, a fake GitHub `api` and a fake `fetch`; no network.

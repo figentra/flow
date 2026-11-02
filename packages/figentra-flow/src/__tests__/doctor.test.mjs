@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold `figentra-flow doctor` to its rules: a freshly initialised repository passes every offline check; a
+ * Purpose: hold `fflow doctor` to its rules: a freshly initialised repository passes every offline check; a
  *   hand-edited rendered file fails `install`, an unignored worktree folder fails `worktrees`, invalid configuration
  *   fails `config`; outside git only `node` and `git` are reported; the binary exits 1 with the JSON report.
  * Boundary: scratch git repositories and `--offline`; no network.
@@ -20,7 +20,7 @@ import { checks, meets } from "../commands/doctor.mjs";
 import { init } from "../commands/init.mjs";
 import { LOCK } from "../lib/flow-dir.mjs";
 
-const BIN = join(dirname(fileURLToPath(import.meta.url)), "../../bin/figentra-flow.mjs");
+const BIN = join(dirname(fileURLToPath(import.meta.url)), "../../bin/fflow.mjs");
 
 function repo() {
   const root = mkdtempSync(join(tmpdir(), "flow-doctor-"));
@@ -62,14 +62,14 @@ test("doctor: each broken part fails its own check with a fix", (t) => {
   const [rendered] = Object.keys(lock.files);
   appendFileSync(join(r.root, rendered), "\nhand edit\n");
   writeFileSync(join(r.root, ".gitignore"), "node_modules\n");
-  writeFileSync(join(r.root, "figentra-flow.config.json"), '{ "version": 9 }');
+  writeFileSync(join(r.root, "flow.config.json"), '{ "version": 9 }');
   const c = byId(checks(r.root, { offline: true }));
   assert.equal(c.install.ok, false);
   assert.match(c.install.fix ?? "", /sync/);
   assert.equal(c.worktrees.ok, false);
   assert.match(c.worktrees.fix ?? "", /clean --fix-ignore/);
   assert.equal(c.config.ok, false);
-  assert.match(c.config.detail, /figentra-flow\.config\.json/);
+  assert.match(c.config.detail, /flow\.config\.json/);
   assert.equal(c.node.ok, true);
   const old = byId(checks(r.root, { offline: true, node: "20.0.0" }));
   assert.equal(old.node.ok, false);
@@ -98,6 +98,6 @@ test("doctor: the binary exits 1 with a JSON report when a check fails", (t) => 
   });
   assert.equal(out.status, 1);
   const report = JSON.parse(out.stdout);
-  assert.equal(report.schema, "figentra-flow.doctor/1");
+  assert.equal(report.schema, "fflow.doctor/1");
   assert.equal(byId(report.checks).worktrees.ok, false);
 });

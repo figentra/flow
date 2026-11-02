@@ -26,7 +26,7 @@ and ADRs 0119, 0166 and 0484.
 2. Reproduce it on the testbed (`stackra testbed run`), never on the Mac. The Mac runs only oxfmt and oxlint.
 3. Find the root cause: a code bug, a stale lockfile, a version drift, a test that depends on timing or order, or a
    broken workflow step. Call something a flake only with proof: the same SHA giving different results.
-4. Fix it on a branch from `figentra-flow start STA-n`, using the issue for the failure or a new one from
+4. Fix it on a branch from `fflow start STA-n`, using the issue for the failure or a new one from
    `pnpm linear create`. Open the PR and run `pnpm linear review STA-n <url>`. A fix that belongs inside another
    builder's member goes to that builder, with the failing log line.
 

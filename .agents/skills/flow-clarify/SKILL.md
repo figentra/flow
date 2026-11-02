@@ -2,7 +2,7 @@
 name: flow-clarify
 description: "Resolve open questions; mark the spec complete only when none remain."
 metadata:
-  generated-by: figentra-flow
+  generated-by: fflow
   derived-from: github/spec-kit 1.0.10 (MIT)
 ---
 
@@ -10,7 +10,7 @@ metadata:
 
 Specs live in `.agents/specs/sta-<n>-<slug>/` (ADR 0120 D1), never in `specs/`. Before anything else run
 `pnpm spec:gate dir` (add `--key STA-n` when the branch name carries no key). It prints the
-spec folder for the branch's Linear key and writes `.flow/current.json`, which every `figentra-flow spec` call reads. If it fails,
+spec folder for the branch's Linear key and writes `.flow/current.json`, which every `fflow spec` call reads. If it fails,
 STOP and report it; never fall back to a numbered folder.
 
 ## User Input
@@ -29,7 +29,7 @@ Note: This clarification workflow is expected to run (and be completed) BEFORE i
 
 Execution steps:
 
-1. Run `figentra-flow spec paths --json --paths-only` from repo root **once** (combined `--json --paths-only` mode / `-Json -PathsOnly`). Parse minimal JSON payload fields:
+1. Run `fflow spec paths --json --paths-only` from repo root **once** (combined `--json --paths-only` mode / `-Json -PathsOnly`). Parse minimal JSON payload fields:
    - `FEATURE_DIR`
    - `FEATURE_SPEC`
    - (Optionally capture `IMPL_PLAN`, `TASKS` for future chained flows.)

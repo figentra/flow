@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold `figentra-flow start` to its contract: one branch and one worktree under `.claude/worktrees/`, named from the
+ * Purpose: hold `fflow start` to its contract: one branch and one worktree under `.claude/worktrees/`, named from the
  *   issue title, Linear moved to In Progress; a refusal for an existing folder or branch, a bad key or a missing title;
  *   the main checkout found from inside a worktree; a Linear failure only warns.
  * Boundary: temporary repositories with a local bare origin; Linear injected; no network.

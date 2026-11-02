@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow readme [--check]` (STA-1879): renders `README.md` from `.flow/readme.yml` through the
+ * Purpose: `fflow readme [--check]` (STA-1879): renders `README.md` from `.flow/readme.yml` through the
  *   preset's `readme-template`; `--check` writes nothing and exits 1 when `README.md` differs from the render.
  *   `sync` renders it too, and records it in `.flow/lock.json`.
  * Boundary: writes only `README.md`.
@@ -15,7 +15,7 @@ import { git } from "../lib/git.mjs";
 import { NAME } from "../lib/product.mjs";
 import { README_DATA, renderReadme } from "../lib/readme.mjs";
 
-/** `figentra-flow readme [--check]`. */
+/** `fflow readme [--check]`. */
 export function run(/** @type {string[]} */ args = []) {
   const top = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
   const root = top.ok ? top.out : process.cwd();

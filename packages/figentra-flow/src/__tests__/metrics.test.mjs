@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold `figentra-flow status --metrics` to AC-032 with fixed fixtures and known answers: nearest-rank median
+ * Purpose: hold `fflow status --metrics` to AC-032 with fixed fixtures and known answers: nearest-rank median
  *   and p90; lead and cycle time; gate runs and their red share; rework after the first gate; review rounds; approval
  *   latency from a merged spec's Status history; only PRs merged inside the window; open-PR age; a repository with no
  *   GitHub slug reported in place.

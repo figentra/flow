@@ -1,13 +1,13 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow linear` (core's `spec-linear`, moved unchanged) — link a spec and its tasks to Linear (team STA).
+ * Purpose: `fflow linear` (core's `spec-linear`, moved unchanged) — link a spec and its tasks to Linear (team STA).
  * Boundary: creates Linear issues and writes only the `**Linear**` key and task ` [STA-n]` suffixes into the spec
  *           files.
  * Runtime: node
  * Governing contract: ADR 0121 (SDLC tooling roles and Linear); ADR 0065.
  *
- *   figentra-flow linear issue <spec.md>  [--dry-run]   create the spec's issue (labelled `agent` when an agent runs it), write `**Linear**: STA-n`
- *   figentra-flow linear tasks <tasks.md> [--dry-run]   one sub-issue per `T###` task, appends ` [STA-n]`
+ *   fflow linear issue <spec.md>  [--dry-run]   create the spec's issue (labelled `agent` when an agent runs it), write `**Linear**: STA-n`
+ *   fflow linear tasks <tasks.md> [--dry-run]   one sub-issue per `T###` task, appends ` [STA-n]`
  *
  * The token comes from the environment only, through the vendored client in ../lib/linear.mjs
  * (LINEAR_AGENT_TOKEN, else LINEAR_API_KEY; the repo's `spec:linear` script wraps it in `infisical run`).
@@ -92,7 +92,7 @@ async function main([mode, file, ...flags]) {
   return 0;
 }
 
-/** `figentra-flow linear …`: an error becomes one `spec-linear:` line and exit 1. */
+/** `fflow linear …`: an error becomes one `spec-linear:` line and exit 1. */
 export const run = (argv) =>
   main(argv).catch((error) => {
     console.error(`spec-linear: ${error.message}`);

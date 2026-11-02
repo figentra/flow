@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow doctor [--json] [--offline]`: whether this machine and repository can run Flow: Node, git,
+ * Purpose: `fflow doctor [--json] [--offline]`: whether this machine and repository can run Flow: Node, git,
  *   the configuration, the `.flow/` install, the ignored worktree folder, the roster and the GitHub credentials, each
  *   reported as passed or failed with its fix. Two warnings never fail the run (STA-1871): more linked worktrees than
  *   `clean.budget`, and under 10 GB or 10 % free on the disk that holds the repository.

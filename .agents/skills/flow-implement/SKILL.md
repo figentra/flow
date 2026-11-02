@@ -2,7 +2,7 @@
 name: flow-implement
 description: "Execute tasks.md from the spec's .agents/specs folder."
 metadata:
-  generated-by: figentra-flow
+  generated-by: fflow
   derived-from: github/spec-kit 1.0.10 (MIT)
 ---
 
@@ -10,7 +10,7 @@ metadata:
 
 Specs live in `.agents/specs/sta-<n>-<slug>/` (ADR 0120 D1), never in `specs/`. Before anything else run
 `pnpm spec:gate dir` (add `--key STA-n` when the branch name carries no key). It prints the
-spec folder for the branch's Linear key and writes `.flow/current.json`, which every `figentra-flow spec` call reads. If it fails,
+spec folder for the branch's Linear key and writes `.flow/current.json`, which every `fflow spec` call reads. If it fails,
 STOP and report it; never fall back to a numbered folder.
 
 ## User Input
@@ -23,7 +23,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
-1. Run `figentra-flow spec paths --json --require-tasks --include-tasks` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+1. Run `fflow spec paths --json --require-tasks --include-tasks` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 2. **Check checklists status** (if FEATURE_DIR/checklists/ exists):
    - Treat checklist markers as a read-only gate: scan checkbox state, report status, and ask before proceeding when needed; do NOT modify checklist files or markers

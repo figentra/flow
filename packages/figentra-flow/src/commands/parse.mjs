@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow parse <file>` — print what the spec parsers (core's `spec-parse`, moved unchanged into
+ * Purpose: `fflow parse <file>` — print what the spec parsers (core's `spec-parse`, moved unchanged into
  *   ../lib/spec-parse.mjs) read from one spec artifact, as JSON: tasks.md → its tasks, plan.md → its properties
  *   (P → validated FRs), routing.yaml → its task types, any other file → its live and struck FR/SC/EC/P ids.
  * Boundary: reads one file; writes only stdout.

@@ -6,8 +6,8 @@ derived-from: github/spec-kit 1.0.10 (MIT)
 ## Workflow: feature directory (runs first)
 
 Specs live in `.agents/specs/<key>-<slug>/`, keyed by the spec's issue, never in `specs/`. Before anything else run
-`figentra-flow gate dir` (add `--key <key>` when the branch name carries no key). It prints the spec folder for the
-branch's issue key and writes `.flow/current.json`, which every `figentra-flow spec` call reads. If it fails, STOP and report it; never fall back to a numbered
+`fflow gate dir` (add `--key <key>` when the branch name carries no key). It prints the spec folder for the
+branch's issue key and writes `.flow/current.json`, which every `fflow spec` call reads. If it fails, STOP and report it; never fall back to a numbered
 folder.
 
 ## User Input
@@ -20,7 +20,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
-1. Run `figentra-flow spec paths --json --require-tasks --include-tasks` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+1. Run `fflow spec paths --json --require-tasks --include-tasks` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 2. **Check checklists status** (if FEATURE_DIR/checklists/ exists):
    - Treat checklist markers as a read-only gate: scan checkbox state, report status, and ask before proceeding when needed; do NOT modify checklist files or markers
@@ -159,4 +159,4 @@ Report final status with summary of completed work.
 
 Refuse to start unless the spec's `**Status**` is Tasked or Implementing. On the first ticked task set
 `**Status**: Implementing` (Status history line). Every test you write carries a `// @covers <key>:AC-###` line.
-When every task is `[x]` (or struck by an amendment) and `figentra-flow trace ci` passes, set `**Status**: Done`.
+When every task is `[x]` (or struck by an amendment) and `fflow trace ci` passes, set `**Status**: Done`.

@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow ship <dev|staging> [--workflow <file>] [--dry-run]`: ships the tip of the default branch to
+ * Purpose: `fflow ship <dev|staging> [--workflow <file>] [--dry-run]`: ships the tip of the default branch to
  *   dev or staging by dispatching the product's Runway deploy workflow (`.github/workflows/deploy.yml`, input
  *   `environment`), so the deploy runs in CI from a commit of main, in that GitHub environment, as every Runway deploy
  *   does. Production is refused outright: it moves only by `runway promote <sha>`, behind the production

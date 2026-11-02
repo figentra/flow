@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold `figentra-flow ship` to its rules: only dev and staging ship; production is refused by name and
+ * Purpose: hold `fflow ship` to its rules: only dev and staging ship; production is refused by name and
  *   points at `runway promote`; a refused dispatch says whether the workflow lacks the `environment` input. The binary
  *   refuses production with exit 2 before it reads any configuration.
  * Boundary: pure functions, plus one `ship production` run of the binary in an empty folder; no network.
@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 
 import { dispatchProblem, environmentProblems, SHIP_ENVIRONMENTS } from "../commands/ship.mjs";
 
-const BIN = join(dirname(fileURLToPath(import.meta.url)), "../../bin/figentra-flow.mjs");
+const BIN = join(dirname(fileURLToPath(import.meta.url)), "../../bin/fflow.mjs");
 
 test("ship: dev and staging ship, nothing else", () => {
   assert.deepEqual(SHIP_ENVIRONMENTS, ["dev", "staging"]);

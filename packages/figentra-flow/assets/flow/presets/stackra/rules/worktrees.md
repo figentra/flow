@@ -12,8 +12,8 @@ Every worktree holds its own dependencies and builds, and stale ones hide the wo
 ## Rules
 
 1. **One worktree per active task, only under `.claude/worktrees/<name>/`.** Never next to the repository.
-   Make it with `pnpm exec figentra-flow start STA-n`.
-2. **`figentra-flow land` removes it after the merge.** After an auto-merge, `land <n>` again finishes the PR.
+   Make it with `pnpm exec fflow start STA-n`.
+2. **`fflow land` removes it after the merge.** After an auto-merge, `land <n>` again finishes the PR.
 3. **A session removes its own worktree when it ends.**
    - First commit and push the work.
    - Then run `git worktree remove <path>`, never `--force`.
@@ -24,13 +24,13 @@ Every worktree holds its own dependencies and builds, and stale ones hide the wo
 
 ## The budget
 
-`clean.budget` in `figentra-flow.config.json` sets the most linked worktrees a repository should hold (default 10).
-Above it, `figentra-flow clean` and `figentra-flow doctor` warn.
+`clean.budget` in `flow.config.json` sets the most linked worktrees a repository should hold (default 10).
+Above it, `fflow clean` and `fflow doctor` warn.
 
-`figentra-flow clean --budget` removes worktrees that have been idle for 24 hours or more and whose head is merged or
+`fflow clean --budget` removes worktrees that have been idle for 24 hours or more and whose head is merged or
 pushed. Before removing one:
 
 - uncommitted work and a detached HEAD go to a new local `keep/<repo>-<name>` branch, committed with the hooks running;
-- ignored files outside the caches go into an archive under `~/Backups/figentra-flow/`.
+- ignored files outside the caches go into an archive under `~/Backups/fflow/`.
 
 It removes without `--force` and never deletes a branch. Run it with `--dry-run` first. `git-steward` owns it.

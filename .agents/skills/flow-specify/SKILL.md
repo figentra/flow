@@ -2,7 +2,7 @@
 name: flow-specify
 description: "Create the spec in .agents/specs/sta-<n>-<slug>, interview the Impact questionnaire, then hand off to clarify."
 metadata:
-  generated-by: figentra-flow
+  generated-by: fflow
   derived-from: github/spec-kit 1.0.10 (MIT)
 ---
 
@@ -47,18 +47,18 @@ Given that feature description, do this:
      - "Create a dashboard for analytics" → "analytics-dashboard"
      - "Fix payment processing timeout bug" → "fix-payment-timeout"
 
-2. **Branch**: work on the issue's branch (`figentra-flow start <key>` makes it, with its worktree). The branch
+2. **Branch**: work on the issue's branch (`fflow start <key>` makes it, with its worktree). The branch
    name carries the issue key, which `gate dir` reads.
 
 3. **Create the spec feature directory**:
 
-   The directory is the path `figentra-flow gate dir --slug <short-name>` printed (call it `FEATURE_DIR`). It is
+   The directory is the path `fflow gate dir --slug <short-name>` printed (call it `FEATURE_DIR`). It is
    keyed by the issue, never numbered, and `gate dir` has already written `.flow/current.json`, which every later
    command reads.
 
    **Create the directory and spec file**:
    - `mkdir -p FEATURE_DIR`
-   - Print the active spec template with `figentra-flow spec template spec-template` (the repository's
+   - Print the active spec template with `fflow spec template spec-template` (the repository's
      `.flow/overrides/` first, then the preset) and write it to `FEATURE_DIR/spec.md` as the starting point
    - Set `SPEC_FILE` to `FEATURE_DIR/spec.md`
 

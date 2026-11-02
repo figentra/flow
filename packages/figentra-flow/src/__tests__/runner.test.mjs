@@ -56,7 +56,7 @@ test("command: placeholders in one pass, {flags} spread, the exit code passed th
   ]);
   assert.equal(runnerPort({ kind: "command", run: ["x"] }).posts, "caller");
   assert.equal(runnerPort({ kind: "command", run: ["x"], secrets: true }).wraps, true);
-  const missing = runnerPort({ kind: "command", run: ["figentra-flow-no-such-program-42"] });
+  const missing = runnerPort({ kind: "command", run: ["fflow-no-such-program-42"] });
   assert.equal(missing.run(JOB), 127);
 });
 
@@ -78,10 +78,10 @@ test("ssh: rsync to the host, then the command there with the folder removed; a 
     calls.map((c) => c.program),
     ["rsync", "ssh"],
   );
-  assert.equal(calls[0].args.at(-1), "ci@box-1.example:/tmp/figentra-flow-gate/job-1/");
+  assert.equal(calls[0].args.at(-1), "ci@box-1.example:/tmp/fflow-gate/job-1/");
   assert.match(
     calls[1].args[1],
-    /^cd \/tmp\/figentra-flow-gate\/job-1 && pnpm verify \{dir\}; code=\$\?; .*rm -rf/,
+    /^cd \/tmp\/fflow-gate\/job-1 && pnpm verify \{dir\}; code=\$\?; .*rm -rf/,
   );
   const failing = recorder(1);
   assert.equal(runnerPort({ kind: "ssh", host: "h" }, { spawn: failing.spawn }).run(JOB), 2);

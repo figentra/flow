@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow migrate [--dry-run]` (ADR 0510 decision 8): moves a repository that used spec-kit onto
+ * Purpose: `fflow migrate [--dry-run]` (ADR 0510 decision 8): moves a repository that used spec-kit onto
  *   Flow's own files, mechanically and re-runnably: the constitution from `.specify/memory/` to `.flow/`; `.specify/`
  *   and `.agents/speckit/` deleted; a config `preset` that pointed into `.agents/speckit/presets/` set to the bundled
  *   preset of that name; the `speckit:sync` script renamed `spec:sync`; the `pipx:specify-cli` pin and its comment
@@ -65,7 +65,7 @@ export function plan(root) {
   const manifest = read("package.json");
   if (manifest && JSON.parse(manifest).scripts?.["speckit:sync"] !== undefined)
     steps.push({
-      what: "rename the speckit:sync script to spec:sync (`figentra-flow sync`)",
+      what: "rename the speckit:sync script to spec:sync (`fflow sync`)",
       run: () => {
         const pkg = JSON.parse(readFileSync(at("package.json"), "utf8"));
         pkg.scripts = Object.fromEntries(
@@ -124,7 +124,7 @@ export function migrate(root, { dry = false, log = console.log } = {}) {
   return steps.map((s) => s.what);
 }
 
-/** `figentra-flow migrate [--dry-run]`. */
+/** `fflow migrate [--dry-run]`. */
 export function run(/** @type {string[]} */ args) {
   const top = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
   if (!top.ok) {

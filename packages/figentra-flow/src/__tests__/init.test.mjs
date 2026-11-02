@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold `figentra-flow init` and `sync` to ADR 0510: `init` writes `.flow/` (README, a starter constitution from
+ * Purpose: hold `fflow init` and `sync` to ADR 0510: `init` writes `.flow/` (README, a starter constitution from
  *   Flow's template, `.gitignore`) and renders the `flow-*` skills directly when the repository has no projector, or
  *   neutral `.agents/skills/flow-<verb>` documents, the preset's agents and the approval workflow when it has `agents:sync`; an existing `.flow/` is refused unless
  *   forced, and the constitution is never overwritten; `sync` removes spec-kit's rendered skills and commands and

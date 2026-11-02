@@ -1,7 +1,7 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow land [<pr>] [--stack] [--dry-run] [--manual-ok]`, the lander's checklist as code: squash-merge a PR
- *   only when it is open, clean, based on the default branch, green on `figentra-flow/gate` from the gate App on its exact
+ * Purpose: `fflow land [<pr>] [--stack] [--dry-run] [--manual-ok]`, the lander's checklist as code: squash-merge a PR
+ *   only when it is open, clean, based on the default branch, green on `fflow/gate` from the gate App on its exact
  *   head, conventionally titled, its spec's approvals are recorded and it changes no owner-only path; then set Linear
  *   Done, record the merge commit, remove the worktree through `clean`'s rules, delete the branch and comment. When the
  *   base's ruleset requires an approving review the head lacks, it dispatches the approval workflow and turns on
@@ -44,7 +44,7 @@ export const CONVENTIONAL =
   /^(?:build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(?:\([\w./-]+\))?!?: \S/;
 
 /**
- * Why `statuses` (a commit's, newest first) do not make that commit green: `figentra-flow/gate` must be `success`,
+ * Why `statuses` (a commit's, newest first) do not make that commit green: `fflow/gate` must be `success`,
  * posted by the configured gate App. Shared by `land` and `train`.
  * @param {any[]} statuses
  * @param {string | undefined} sha  the commit, for the message
@@ -605,7 +605,7 @@ export async function landStack({
   return { code: 0 };
 }
 
-/** `figentra-flow land [<pr>] [--stack] [--dry-run] [--manual-ok]`. */
+/** `fflow land [<pr>] [--stack] [--dry-run] [--manual-ok]`. */
 export async function run(/** @type {string[]} */ args) {
   const cwd = process.cwd();
   const root = mainCheckout(cwd);

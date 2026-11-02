@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold `figentra-flow status` and its snapshot to FR-7, AC-012, AC-024 and AC-026: specs by status (a
+ * Purpose: hold `fflow status` and its snapshot to FR-7, AC-012, AC-024 and AC-026: specs by status (a
  *   worktree's copy wins for its own key), worktrees (dirty, idle, no key), open PRs with the head's gate, the counted
  *   review and stacking, sessions with their spec, worktree and gate, the cap's warning naming the excess, a missing
  *   repository reported and skipped, and `--offline` making no GitHub call.
@@ -151,7 +151,7 @@ test("status: specs, worktrees, PRs with gate and review, sessions with their ga
   });
   assert.match(snap.warnings.join(), /3 sessions are building .*the cap is 2: 1 over/);
   const text = render(snap);
-  assert.match(text, /#7 alpha — figentra-flow\/gate success, review PASS/);
+  assert.match(text, /#7 alpha — fflow\/gate success, review PASS/);
   assert.match(text, /#8 on top .*stacked on figentra\/sta-1-alpha/);
   assert.match(text, /os-services-b \(building\): sta-1; worktree .*sta-1-alpha; gate success/);
   assert.match(text, /skipped: missing/);
@@ -171,5 +171,5 @@ test("status --offline: no GitHub call; the cap is the owner's", (t) => {
   assert.deepEqual(calls, []);
   assert.equal(snap.repos[0].prsProblem, "offline");
   assert.deepEqual(snap.warnings, []);
-  assert.equal(snap.version, "figentra-flow.status/1");
+  assert.equal(snap.version, "fflow.status/1");
 });

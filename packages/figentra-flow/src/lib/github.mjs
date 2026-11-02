@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: GitHub REST calls for the commands that act on pull requests (`figentra-flow land`), through `gh` with the
+ * Purpose: GitHub REST calls for the commands that act on pull requests (`fflow land`), through `gh` with the
  *   credentials the repository's configuration names (the credentials port: `env`, `gh-user` or `wrapper`).
  * Boundary: one `gh api` process per call; no retries. Never falls back to a personal `gh` login: with no credentials
  *   configured it refuses (AC-034, AC-036). Figentra Flow never reads, prints or passes a token: `gh` or the wrapper holds it.

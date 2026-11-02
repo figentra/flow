@@ -68,7 +68,7 @@ test("e2e: the packed package installs .flow/ and carries one spec from gate dir
   );
   symlinkSync(join(PKG, "node_modules"), join(pkg, "node_modules"));
   const flow = (/** @type {string} */ cwd, /** @type {string[]} */ args) =>
-    run(cwd, process.execPath, [join(pkg, "bin/figentra-flow.mjs"), ...args]);
+    run(cwd, process.execPath, [join(pkg, "bin/fflow.mjs"), ...args]);
 
   const repo = join(top, "repo");
   mkdirSync(repo);
@@ -81,7 +81,7 @@ test("e2e: the packed package installs .flow/ and carries one spec from gate dir
   assert.equal(init.status, 0, init.err);
   const skill = readFileSync(join(repo, ".claude/skills/flow-plan/SKILL.md"), "utf8");
   assert.match(skill, /derived-from: github\/spec-kit 1\.0\.10 \(MIT\)/);
-  assert.match(skill, /figentra-flow spec setup-plan --json/);
+  assert.match(skill, /fflow spec setup-plan --json/);
 
   run(repo, "git", ["switch", "-q", "-c", "work/sta-1-widget"]);
   const dir = flow(repo, ["gate", "dir", "--slug", "widget"]);

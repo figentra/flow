@@ -27,9 +27,9 @@ const REPO = "figentra/x";
 const SHA = "a".repeat(40);
 const BASE = "b".repeat(40);
 const FORK = "c".repeat(40);
-const ENV = "figentra-flow-approve";
+const ENV = "fflow-approve";
 const APPROVER = "flow-approver[bot]";
-const TRUSTED = { "figentra-flow/gate": "figentra-gate[bot]" };
+const TRUSTED = { "fflow/gate": "figentra-gate[bot]" };
 const PR = {
   state: "open",
   draft: false,
@@ -62,9 +62,9 @@ function github(over = {}) {
     dismissFails: false,
     requestFails: false,
     graphqlError: "",
-    required: [{ context: "figentra-flow/gate" }, { context: "verify", integration_id: 15368 }],
+    required: [{ context: "fflow/gate" }, { context: "verify", integration_id: 15368 }],
     statuses: [
-      { context: "figentra-flow/gate", state: "success", creator: { login: "figentra-gate[bot]" } },
+      { context: "fflow/gate", state: "success", creator: { login: "figentra-gate[bot]" } },
     ],
     runs: [VERIFY],
     headAfter: SHA,
@@ -158,12 +158,10 @@ test("approve: each unsafe case refuses with its reason", async () => {
     ],
     [
       {
-        statuses: [
-          { context: "figentra-flow/gate", state: "success", creator: { login: "someone" } },
-        ],
+        statuses: [{ context: "fflow/gate", state: "success", creator: { login: "someone" } }],
       },
       {},
-      /figentra-flow\/gate was posted by someone, not figentra-gate\[bot\]/,
+      /fflow\/gate was posted by someone, not figentra-gate\[bot\]/,
     ],
     [
       { runs: run({ app: { id: 999, slug: "lookalike" } }) },

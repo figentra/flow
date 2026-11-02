@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold `figentra-flow guard` to its contract: a `git worktree add` whose path is outside the repository's
+ * Purpose: hold `fflow guard` to its contract: a `git worktree add` whose path is outside the repository's
  *   `.claude/worktrees/` is denied, through `cd … &&`, `git -C`, relative paths and quotes; one inside, other git
  *   commands and commands outside a repository pass; the settings entry runs the guard before Bash.
  * Boundary: a temporary repository; no network.
@@ -38,7 +38,7 @@ test("guard: allows a worktree inside .claude/worktrees and denies one outside, 
     decide(`git -C ${r.root} worktree add ${r.root}/.claude/worktrees/x`, outside),
     undefined,
   );
-  assert.match(decide("git worktree add ../sibling", r.root) ?? "", /figentra-flow start/);
+  assert.match(decide("git worktree add ../sibling", r.root) ?? "", /fflow start/);
   assert.match(decide(`git -C ${r.root} worktree add -b b ${outside}/x`, outside) ?? "", /outside/);
   assert.match(decide(`cd ${r.root} && git worktree add "${outside}/y"`, outside) ?? "", /outside/);
   assert.match(decide("git worktree add --detach /tmp/z HEAD", r.root) ?? "", /outside/);
@@ -57,6 +57,6 @@ test("guard: other git commands and commands outside a repository pass", (t) => 
 test("guard: the settings entry runs before every Bash call", () => {
   assert.deepEqual(SETTINGS.hooks.PreToolUse[0], {
     matcher: "Bash",
-    hooks: [{ type: "command", command: "pnpm exec figentra-flow guard" }],
+    hooks: [{ type: "command", command: "pnpm exec fflow guard" }],
   });
 });

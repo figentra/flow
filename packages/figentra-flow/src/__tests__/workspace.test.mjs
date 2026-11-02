@@ -16,13 +16,13 @@ import { dirname, join } from "node:path";
 import { findRepos, readWorkspace, workspaceFile, writeWorkspace } from "../lib/workspace.mjs";
 import { repo, sh } from "./__fixtures__/repo.mjs";
 
-test("workspace: round trip through FIGENTRA_FLOW_WORKSPACE, and empty when the file is missing", () => {
+test("workspace: round trip through FFLOW_WORKSPACE, and empty when the file is missing", () => {
   const file = join(
     realpathSync(mkdtempSync(join(tmpdir(), "flow-ws-"))),
     "nested",
     "workspace.yaml",
   );
-  assert.equal(workspaceFile({ FIGENTRA_FLOW_WORKSPACE: file }), file);
+  assert.equal(workspaceFile({ FFLOW_WORKSPACE: file }), file);
   assert.deepEqual(readWorkspace(file), []);
   const repos = [
     { path: "/a/core", github: "figentra/stackra" },

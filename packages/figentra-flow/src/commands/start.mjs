@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow start <key> [--slug s] [--role id] [--session name] [--install] [--dry-run]` — the only way a
+ * Purpose: `fflow start <key> [--slug s] [--role id] [--session name] [--install] [--dry-run]` — the only way a
  *   worktree is made: fetch, then
  *   branch `<branchPrefix>/<key>-<slug>` from `origin/<default>` into `<repo>/.claude/worktrees/<key>-<slug>`, and
  *   move the issue to In Progress through the tracker port, naming the branch. With a roster (AC-049), the role is
@@ -174,7 +174,7 @@ export async function start(options) {
   return { ok: true, path, branch };
 }
 
-/** `figentra-flow start <issue-key> [--slug s] [--install] [--dry-run]`. */
+/** `fflow start <issue-key> [--slug s] [--install] [--dry-run]`. */
 export async function run(args) {
   const valued = ["--slug", "--role", "--session"];
   const key = args.find((a, i) => !a.startsWith("--") && !valued.includes(args[i - 1]));

@@ -1,21 +1,21 @@
 {
-  "version": "0.2.0",
+  "version": "0.2.1",
   "preset": "stackra",
   "files": {
-    ".agents/skills/flow-specify/SKILL.md": "20e49febcf17bc47a31abb12e53894c0ff65b6fa755605b12a2f6b2ade66bca1",
-    ".agents/skills/flow-clarify/SKILL.md": "71474c862d878f41bff40abd522250403c0634f94084240aa0f19f584897efd1",
-    ".agents/skills/flow-plan/SKILL.md": "3c7fc7dc310f875490a67d8809a1dd56969aa554a31af698eb320f9a38655bca",
-    ".agents/skills/flow-tasks/SKILL.md": "a22686f40af0751f7359abbbf667abbedbcb595bddb89932abe3dfa8d94e527a",
-    ".agents/skills/flow-analyze/SKILL.md": "890dda5a422d97893de451daf049e1461b5b1648f693eedd013208bb7ce1340e",
-    ".agents/skills/flow-checklist/SKILL.md": "c9364f669bff46807955c99a1b7714f20cd3cbe16fe6f00e48086f700530295c",
-    ".agents/skills/flow-implement/SKILL.md": "9a46a65bf68f92704ac696547d886fb6ba6492478f764ab073f4feb30b218547",
-    ".agents/skills/flow-converge/SKILL.md": "8e0e0f2c2dfe1f519ca599b25f8c9bb498226d023c2952e2ac61a77c48552841",
-    ".agents/agents/ci-steward.md": "7e47988feaee6627d1d490fc3c54839806dc8c6320fa9a7b4b53a2f26226204b",
-    ".agents/agents/git-steward.md": "19e04a1a42948d6bc3842a2ceac941fd092762b82eb160662ed1afe42c6e935b",
-    ".agents/agents/linear-steward.md": "94be95baa6f0f7d963b5c7a3c4ce1859b7dd67802e01f7d85644bfee105f7fd5",
-    ".agents/rules/worktrees.md": "986711ed590be25b83e3f65412e9a49f8025a63e40446377c6951b4d11cdb467",
-    "README.md": "e44d6acecdeeb5e087942421fcd21c814fee682b544e56f5073e7a73a5a630b7",
-    ".github/workflows/figentra-flow-approve.yml": "e104dbdefbcf67eb2d81c3fe0dd4c3da3aa5162b931e64fd424d104f2c133faf",
-    ".github/CODEOWNERS": "456a073e737135857ce8e79b8f31032e4a43d4bd703f4bf347dd8194520e323c"
+    ".agents/skills/flow-specify/SKILL.md": "8afa3c422fbd5d72c22db6f1e475be7b70466031ae54ab63054921c06e429f49",
+    ".agents/skills/flow-clarify/SKILL.md": "9f48ac67ce419694bee9169747d2863a7357891ff62d45ce771dc270add3e21f",
+    ".agents/skills/flow-plan/SKILL.md": "b3374947d53c651546c3bce784ff64f434b97333e0be9d4139524ade5911fa0c",
+    ".agents/skills/flow-tasks/SKILL.md": "e7ba887c06a175ea0871b93a8bc2a501fda690e546ccd767062e39aaefb70f2a",
+    ".agents/skills/flow-analyze/SKILL.md": "4aefcb5b74edb1df8ae8527f25127a5eafab8f144a5b90b898828462cf9a4398",
+    ".agents/skills/flow-checklist/SKILL.md": "30378a6368d7fc611e597c38315ecd12af12b2a34c6af343908e46d569b7e5af",
+    ".agents/skills/flow-implement/SKILL.md": "c0d648a8a4f54cc655c7dbc21085d6452ada8d90544a370c75e739bb45502f1a",
+    ".agents/skills/flow-converge/SKILL.md": "807326f9435e2478ba4a9c306dc85b06cd66645b05f52ab42138615b016d8903",
+    ".agents/agents/ci-steward.md": "44d136f722a1a98e059ac2694f9069f89aaee790d0b9f911b5b0a2a6e078d573",
+    ".agents/agents/git-steward.md": "69b3c3f6e6ab7fad92c94ffa930caea7543bf8e68121c754d9f86a1cf8c33a34",
+    ".agents/agents/linear-steward.md": "23e7fd872fc7659c1ed1edc01ca5b547609df92f03568cf84693b58c09c95a18",
+    ".agents/rules/worktrees.md": "f99bce80073cc1790be0c322652ac9782292ae7074563e4cc730460be7d4b918",
+    "README.md": "c9cb6c212e2e03d6ca32902eef622417784b5afd254da37754bae467830cbe6e",
+    ".github/workflows/fflow-approve.yml": "8cb0d81aa47cdeaca515f87a79ae5f82ac7aa6d8ff79d9ddcb99c53f6bd0d5d5",
+    ".github/CODEOWNERS": "463c3a6887b2b0ee7a42ce65d42897d51bd467c24c54d77f7d73c1f9e26a4674"
   }
 }

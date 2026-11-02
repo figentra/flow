@@ -3,7 +3,7 @@
  * Purpose: whether a commit's required checks are green, counting only what their trusted source posted (STA-1856,
  *   the security review of 2026-11-01): a context the ruleset pins to an App (`integration_id`) counts only that App's
  *   check run; any other context counts only a check run or commit status from the login `trusted` names for it (for
- *   example `figentra-flow/gate` from the gate App). A context pinned by neither is untrusted, so a spoofed status never
+ *   example `fflow/gate` from the gate App). A context pinned by neither is untrusted, so a spoofed status never
  *   makes a commit green. `land` and the approval check share it.
  * Boundary: pure: the ruleset's required contexts, the commit's statuses (newest first) and check runs in; states out.
  * Runtime: node

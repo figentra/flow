@@ -1,7 +1,7 @@
 /**
  * Figentra Flow file contract:
- * Purpose: the repository's configuration (AC-035, AC-036): `figentra-flow.config.json` at the repository root, validated
- *   against `SCHEMA` (shipped as `schema/figentra-flow.config.schema.json` for editors), with every unknown key or wrong type
+ * Purpose: the repository's configuration (AC-035, AC-036): `flow.config.json` at the repository root, validated
+ *   against `SCHEMA` (shipped as `schema/flow.config.schema.json` for editors), with every unknown key or wrong type
  *   refused by its path. Each port reads its block; a port with no block refuses the commands that need it, naming the
  *   key (`need`). There are no defaults that name an organisation, and no other file is read in its place.
  * Boundary: reads two files; never writes; never runs code from the repository (the config is JSON, ADR decision 1 of
@@ -13,7 +13,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { CONFIG_FILE } from "./product.mjs";
+import { CONFIG_FILE, LEGACY_CONFIG_FILE, NAME } from "./product.mjs";
 
 const str = { type: "string", minLength: 1 };
 const strs = { type: "array", items: str, minItems: 1 };
@@ -30,7 +30,7 @@ const port = (
   })),
 });
 
-/** The configuration's JSON Schema (draft 2020-12), the single source of `schema/figentra-flow.config.schema.json`. */
+/** The configuration's JSON Schema (draft 2020-12), the single source of `schema/flow.config.schema.json`. */
 export const SCHEMA = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $id: CONFIG_FILE.replace(".json", ".schema.json"),
@@ -130,6 +130,17 @@ export const SCHEMA = {
         budget: { type: "integer", minimum: 1 },
       },
     },
+    baseline: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        tasks: { type: "array", items: str, minItems: 1 },
+        mustPass: { type: "array", items: str },
+        install: str,
+        setup: { type: "array", items: { type: "object" } },
+        branch: str,
+      },
+    },
     review: {
       type: "object",
       additionalProperties: false,
@@ -221,6 +232,7 @@ export function validate(schema, value, path = "") {
  *             apps?: { gate?: { slug?: string, login: string }, review?: { slug: string }, owner?: string },
  *             gate?: { check?: string }, approve?: { ownerOnly?: string[], checks?: Record<string, string> },
  *             clean?: { keep?: string[], budget?: number }, review?: { required?: string[] },
+ *             baseline?: { tasks?: string[], mustPass?: string[], install?: string, setup?: Record<string, unknown>[], branch?: string },
  *             artifacts?: { paths?: string[], maxBytes?: number },
  *             train?: { cutoff?: number, eject?: "bisect" | "manual", after?: string[], label?: string } }} Config
  * @typedef {{ config: Config, source: string | undefined, warnings: string[], errors: string[] }} Loaded
@@ -232,7 +244,23 @@ export function validate(schema, value, path = "") {
  * @returns {Loaded}
  */
 export function loadConfig(root) {
-  const file = join(root, CONFIG_FILE);
+  const current = join(root, CONFIG_FILE);
+  const legacy = join(root, LEGACY_CONFIG_FILE);
+  // Before 0.2.2 the file was LEGACY_CONFIG_FILE; it is read until `sync` renames it, and both at once is an error.
+  if (existsSync(current) && existsSync(legacy))
+    return {
+      config: {},
+      source: current,
+      warnings: [],
+      errors: [
+        `${CONFIG_FILE} and ${LEGACY_CONFIG_FILE} both exist: keep ${CONFIG_FILE} and delete the other`,
+      ],
+    };
+  const file = existsSync(current) ? current : legacy;
+  const warnings =
+    file === legacy
+      ? [`${LEGACY_CONFIG_FILE} is the old name: \`${NAME} sync\` renames it to ${CONFIG_FILE}`]
+      : [];
   if (existsSync(file)) {
     let parsed;
     try {
@@ -248,7 +276,7 @@ export function loadConfig(root) {
     return {
       config: parsed,
       source: file,
-      warnings: [],
+      warnings,
       errors: validate(SCHEMA, parsed).map((p) => `${CONFIG_FILE}: ${p}`),
     };
   }

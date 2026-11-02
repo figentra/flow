@@ -2,7 +2,7 @@
 name: flow-analyze
 description: "Cross-check spec, plan and tasks in the spec's .agents/specs folder."
 metadata:
-  generated-by: figentra-flow
+  generated-by: fflow
   derived-from: github/spec-kit 1.0.10 (MIT)
 ---
 
@@ -10,7 +10,7 @@ metadata:
 
 Specs live in `.agents/specs/sta-<n>-<slug>/` (ADR 0120 D1), never in `specs/`. Before anything else run
 `pnpm spec:gate dir` (add `--key STA-n` when the branch name carries no key). It prints the
-spec folder for the branch's Linear key and writes `.flow/current.json`, which every `figentra-flow spec` call reads. If it fails,
+spec folder for the branch's Linear key and writes `.flow/current.json`, which every `fflow spec` call reads. If it fails,
 STOP and report it; never fall back to a numbered folder.
 
 ## User Input
@@ -35,7 +35,7 @@ Identify inconsistencies, duplications, ambiguities, and underspecified items ac
 
 ### 1. Initialize Analysis Context
 
-Run `figentra-flow spec paths --json --require-spec --require-tasks --include-tasks` once from repo root and parse JSON for FEATURE_DIR and AVAILABLE_DOCS. Derive absolute paths:
+Run `fflow spec paths --json --require-spec --require-tasks --include-tasks` once from repo root and parse JSON for FEATURE_DIR and AVAILABLE_DOCS. Derive absolute paths:
 
 - SPEC = FEATURE_DIR/spec.md
 - PLAN = FEATURE_DIR/plan.md

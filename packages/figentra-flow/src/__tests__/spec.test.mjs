@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold `figentra-flow spec` to the scripts it replaces (ADR 0510): `paths` prints the same keys as
+ * Purpose: hold `fflow spec` to the scripts it replaces (ADR 0510): `paths` prints the same keys as
  *   `check-prerequisites.sh` (`--paths-only`, the validation refusals, `AVAILABLE_DOCS` in order, `--template`);
  *   `setup-plan` runs the plan gate first and copies the plan template only when plan.md is missing; `setup-tasks`
  *   returns the tasks template; templates resolve `.flow/overrides/`, then the preset, then Flow's base; the spec

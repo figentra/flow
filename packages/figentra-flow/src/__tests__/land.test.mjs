@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold `figentra-flow land` to its contract: every rule refuses with its reason (state, draft, conflict, stacked
+ * Purpose: hold `fflow land` to its contract: every rule refuses with its reason (state, draft, conflict, stacked
  *   base, no, red or foreign gate, title, approvals, the ruleset before phase 6); a green PR squash-merges on its exact
  *   head with `Refs:` and co-author trailers, then Linear Done, the merge commit recorded, the worktree removed though
  *   its squash has a new patch id, the branch deleted and a comment; a refused merge changes nothing after it; a
@@ -26,7 +26,7 @@ const GATE_APP = "figentra-gate[bot]";
 import { commit, repo, sh } from "./__fixtures__/repo.mjs";
 
 const SHA = "c".repeat(40);
-const GREEN = [{ context: "figentra-flow/gate", state: "success", creator: { login: GATE_APP } }];
+const GREEN = [{ context: "fflow/gate", state: "success", creator: { login: GATE_APP } }];
 /** @param {Record<string, unknown>} [over] */
 const pr = (over = {}) => ({
   number: 7,
@@ -49,11 +49,11 @@ test("rules: a green, approved, conventional PR on main may land; each rule name
     [{ pr: pr({ draft: true }) }, /draft/],
     [{ pr: pr({ mergeable_state: "dirty" }) }, /conflicts with main/],
     [{ pr: pr({ base: { ref: "figentra/sta-4-x" } }) }, /stacked on `figentra\/sta-4-x`.*--stack/],
-    [{ statuses: [] }, /no figentra-flow\/gate on the head c{12}/],
+    [{ statuses: [] }, /no fflow\/gate on the head c{12}/],
     [
       {
         statuses: [
-          { context: "figentra-flow/gate", state: "failure", creator: { login: GATE_APP } },
+          { context: "fflow/gate", state: "failure", creator: { login: GATE_APP } },
           ...GREEN,
         ],
       },
@@ -61,14 +61,12 @@ test("rules: a green, approved, conventional PR on main may land; each rule name
     ],
     [
       {
-        statuses: [
-          { context: "figentra-flow/gate", state: "success", creator: { login: "someone" } },
-        ],
+        statuses: [{ context: "fflow/gate", state: "success", creator: { login: "someone" } }],
       },
       /posted by someone, not figentra-gate\[bot\]/,
     ],
     [{ pr: pr({ title: "Land it" }) }, /conventional commit header/],
-    [{ required: false }, /does not require figentra-flow\/gate yet.*--manual-ok/],
+    [{ required: false }, /does not require fflow\/gate yet.*--manual-ok/],
   ];
   for (const [over, reason] of cases)
     assert.match(
@@ -184,7 +182,7 @@ function world({
         {
           type: "required_status_checks",
           parameters: {
-            required_status_checks: [{ context: "figentra-flow/gate" }, ...required],
+            required_status_checks: [{ context: "fflow/gate" }, ...required],
           },
         },
         ...(review
@@ -322,7 +320,7 @@ test("land --stack: lands the bottom, updates the next by a merge commit and a p
   assert.equal(result.code, 1);
   assert.match(
     "problems" in result ? result.problems.join() : "",
-    /#8: figentra-flow gate run exited 1; the stack stops here/,
+    /#8: fflow gate run exited 1; the stack stops here/,
   );
   assert.deepEqual(gated, [topPath]);
   // The bottom landed; the top got main by a merge commit (two parents), pushed without a rewrite.
@@ -373,20 +371,17 @@ test("land: a required review dispatches the approval workflow and turns on auto
   assert.equal(missing.code, 1);
   assert.match(
     missing.problems?.join() ?? "",
-    /requires an approving review.*figentra-flow-approve\.yml is not installed/,
+    /requires an approving review.*fflow-approve\.yml is not installed/,
   );
 
   mkdirSync(join(w.r.root, ".github/workflows"), { recursive: true });
-  writeFileSync(join(w.r.root, ".github/workflows/figentra-flow-approve.yml"), "name: x\n");
+  writeFileSync(join(w.r.root, ".github/workflows/fflow-approve.yml"), "name: x\n");
   const queued = await land();
   assert.deepEqual(queued, { code: 0, queued: true });
   const writes = w.calls.filter((c) => c.method !== "GET");
   assert.deepEqual(
     writes.map((c) => `${c.method} ${c.path}`),
-    [
-      "POST /repos/figentra/flow/actions/workflows/figentra-flow-approve.yml/dispatches",
-      "POST /graphql",
-    ],
+    ["POST /repos/figentra/flow/actions/workflows/fflow-approve.yml/dispatches", "POST /graphql"],
   );
   assert.deepEqual(writes[0].body, { ref: "main", inputs: { pr: "7", head: w.head } });
   assert.match(
@@ -431,7 +426,7 @@ test("land: required checks still running wait, without asking for the approval;
   const w = world({ review: true, required: [{ context: "verify", integration_id: 15368 }] });
   t.after(w.r.dispose);
   mkdirSync(join(w.r.root, ".github/workflows"), { recursive: true });
-  writeFileSync(join(w.r.root, ".github/workflows/figentra-flow-approve.yml"), "name: x\n");
+  writeFileSync(join(w.r.root, ".github/workflows/fflow-approve.yml"), "name: x\n");
   const deps = { api: w.api, done: async () => {}, ...quiet };
   const base = {
     root: w.r.root,
@@ -452,7 +447,7 @@ test("land: required checks still running wait, without asking for the approval;
   const loose = world({ review: true, required: [{ context: "ci" }] });
   t.after(loose.r.dispose);
   mkdirSync(join(loose.r.root, ".github/workflows"), { recursive: true });
-  writeFileSync(join(loose.r.root, ".github/workflows/figentra-flow-approve.yml"), "name: x\n");
+  writeFileSync(join(loose.r.root, ".github/workflows/fflow-approve.yml"), "name: x\n");
   const refused = await landOne({ ...base, root: loose.r.root, deps: { ...deps, api: loose.api } });
   assert.equal(refused.code, 1);
   assert.match(refused.problems?.join() ?? "", /required check: ci is pinned to no App/);

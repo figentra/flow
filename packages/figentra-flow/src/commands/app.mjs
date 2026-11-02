@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow app create gate|review [--org <login>] [--name <app name>] [--key-file <path>]` (AC-039):
+ * Purpose: `fflow app create gate|review [--org <login>] [--name <app name>] [--key-file <path>]` (AC-039):
  *   create the repository's gate or review GitHub App by GitHub's App-manifest flow, for a human only. It serves a
  *   one-page form on 127.0.0.1 that posts the manifest to GitHub, receives the code on the local callback (checked
  *   against a one-time state), converts it at `POST /app-manifests/{code}/conversions`, hands the App id and private
@@ -229,7 +229,7 @@ function openBrowser(/** @type {string} */ url) {
     .unref();
 }
 
-/** `figentra-flow app create gate|review [--org <login>] [--name <name>] [--key-file <path>]`. */
+/** `fflow app create gate|review [--org <login>] [--name <name>] [--key-file <path>]`. */
 export async function run(/** @type {string[]} */ args) {
   const [verb, role] = args;
   const opt = (/** @type {string} */ name) =>

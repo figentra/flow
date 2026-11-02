@@ -2,7 +2,7 @@
  * Figentra Flow file contract:
  * Purpose: the tracker port (AC-037): the key scheme a repository's issues use (the key in a branch, a worktree, a spec
  *   folder; the branch and folder names `start` makes) and the adapter that reads and moves issues: `linear` or
- *   `github-issues` (Jira later, same shape). `trackerFor(root)` builds both from `figentra-flow.config.json`'s `tracker`.
+ *   `github-issues` (Jira later, same shape). `trackerFor(root)` builds both from `flow.config.json`'s `tracker`.
  *   A repository with no tracker block (or no config file) gets a scheme that reads any `<letters>-<n>` key and no
  *   adapter, so offline commands work and the ones that move issues refuse naming the key (AC-036, AC-045).
  * Boundary: builds objects; the adapters make the network calls.

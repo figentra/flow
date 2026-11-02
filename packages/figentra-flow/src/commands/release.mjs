@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow release [--json] [--offline]`: what the next release would publish and what stands in its
+ * Purpose: `fflow release [--json] [--offline]`: what the next release would publish and what stands in its
  *   way: the pending changesets with each package's next version, the open version pull request, the Release
  *   workflow's last run on the default branch with its notices (a skipped publish says why there), and each package's
  *   published versions on its registry.

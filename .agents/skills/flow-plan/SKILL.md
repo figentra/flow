@@ -2,7 +2,7 @@
 name: flow-plan
 description: "Plan the feature; refuses until the spec gate passes."
 metadata:
-  generated-by: figentra-flow
+  generated-by: fflow
   derived-from: github/spec-kit 1.0.10 (MIT)
 ---
 
@@ -10,12 +10,12 @@ metadata:
 
 Specs live in `.agents/specs/sta-<n>-<slug>/` (ADR 0120 D1), never in `specs/`. Before anything else run
 `pnpm spec:gate dir` (add `--key STA-n` when the branch name carries no key). It prints the
-spec folder for the branch's Linear key and writes `.flow/current.json`, which every `figentra-flow spec` call reads. If it fails,
+spec folder for the branch's Linear key and writes `.flow/current.json`, which every `fflow spec` call reads. If it fails,
 STOP and report it; never fall back to a numbered folder.
 
 ## Stackra: gate (runs first)
 
-`figentra-flow spec setup-plan` runs the plan gate and exits non-zero until the spec has
+`fflow spec setup-plan` runs the plan gate and exits non-zero until the spec has
 `**Clarifications status**: complete`, a `**Linear**: STA-n` key and a fully answered `## Impact`
 section. If it fails, STOP: print its output, tell the user to run `/flow-clarify`, and write
 nothing. Never edit the marker yourself to get past the gate.
@@ -30,7 +30,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
-1. **Setup**: Run `figentra-flow spec setup-plan --json` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, FEATURE_DIR, BRANCH. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+1. **Setup**: Run `fflow spec setup-plan --json` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, FEATURE_DIR, BRANCH. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 2. **Load context**: Read FEATURE_SPEC and `.flow/constitution.md`. Load IMPL_PLAN template (already copied).
 

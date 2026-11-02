@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: the `github-actions` runner (AC-038): dispatch the repository's gate workflow (`figentra-flow init --runner
+ * Purpose: the `github-actions` runner (AC-038): dispatch the repository's gate workflow (`fflow init --runner
  *   github-actions` writes it) on the default branch with the head's `sha` and `branch`, find that run by its title,
  *   follow it to the end, and map its two jobs to `gate run`'s exit code: the `post` job not succeeding is 4 (not
  *   posted), else the `check` job decides 0 or 1. A run that cannot be found, is cancelled or times out is 4, never

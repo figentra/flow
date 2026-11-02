@@ -44,7 +44,7 @@ import { installProblems } from "../lib/render.mjs";
 import { CONFIG_FILE } from "../lib/product.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const BIN = join(HERE, "../../bin/figentra-flow.mjs");
+const BIN = join(HERE, "../../bin/fflow.mjs");
 const impact = (v = "none") =>
   [
     "Apps touched",
@@ -353,7 +353,7 @@ test("install check: a synced repository passes; a hand edit, a stale lock, a mi
     assert.deepEqual(installProblems(root), []);
     const skill = join(root, ".claude/skills/flow-plan/SKILL.md");
     assert.match(readFileSync(skill, "utf8"), /^---\nname: flow-plan\n/);
-    assert.match(readFileSync(skill, "utf8"), /generated-by: figentra-flow/);
+    assert.match(readFileSync(skill, "utf8"), /generated-by: fflow/);
     assert.match(readFileSync(skill, "utf8"), /derived-from: github\/spec-kit 1\.0\.10 \(MIT\)/);
     writeFileSync(skill, "hand edit\n");
     assert.match(installProblems(root).join(), /flow-plan\/SKILL\.md differs from what/);

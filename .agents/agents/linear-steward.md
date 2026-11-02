@@ -1,6 +1,6 @@
 ---
 name: linear-steward
-description: Keeps Linear team STA in step with what landed. It moves an issue to Done once its pull request has merged, through `figentra-flow land <n>` on the merged PR, and reports drift (In Progress with no branch or open PR, In Review with a closed PR, Done with nothing merged). Never closes an issue that has no merged PR. Use after merges, before planning a round, or when the In Progress list looks stale.
+description: Keeps Linear team STA in step with what landed. It moves an issue to Done once its pull request has merged, through `fflow land <n>` on the merged PR, and reports drift (In Progress with no branch or open PR, In Review with a closed PR, Done with nothing merged). Never closes an issue that has no merged PR. Use after merges, before planning a round, or when the In Progress list looks stale.
 tier: steward
 blocks: false
 assistants: [claude]
@@ -27,7 +27,7 @@ and `tools/scripts/linear-reconcile.repos.yaml` (the repos it reads).
    `pnpm bot:gh -- pr list -R <repo> --state all --search "STA-<n>"`.
 3. Each issue is one of these:
    - **Merged:** a PR has merged and no other PR for the issue is open. In that repo, run
-     `pnpm exec figentra-flow land <n>`. On a merged PR it only finishes: the Linear adapter sets Done, the worktree
+     `pnpm exec fflow land <n>`. On a merged PR it only finishes: the Linear adapter sets Done, the worktree
      is removed and the branch deleted. For a repo that does not run Flow, use
      `pnpm linear done STA-n <merged PR url>`.
    - **In review:** a PR is open. If the issue is still In Progress, run `pnpm linear review STA-n <url>`.

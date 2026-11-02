@@ -1,9 +1,9 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow gate run [--ref <branch>] [--box <ssh host>] [-- <runner flags>]`, the caller's side of the
+ * Purpose: `fflow gate run [--ref <branch>] [--box <ssh host>] [-- <runner flags>]`, the caller's side of the
  *   gate: check that the head is committed and pushed, clone exactly that commit into a temporary folder with the
  *   box poster beside it, and run the repository's check command through the runner port (`runner` in the
- *   configuration, or `--box <host>` for one run). An `ssh` or `local` box posts `figentra-flow/gate` after the
+ *   configuration, or `--box <host>` for one run). An `ssh` or `local` box posts `fflow/gate` after the
  *   check; for a `command` runner (the testbed) the box returns only the check's exit code and this side posts, inside
  *   `gate run` only (the owner's option C1 of 2026-11-01; the hook guard refuses a direct poster call).
  * Boundary: runs no check on the caller's machine (FR-9). Refuses a dirty tree, a detached head without `--ref`, a
@@ -195,7 +195,7 @@ export async function gateRun(options) {
   }
 }
 
-/** `figentra-flow gate run [--ref <branch>] [--box <ssh host>] [-- <runner flags>]`. */
+/** `fflow gate run [--ref <branch>] [--box <ssh host>] [-- <runner flags>]`. */
 export async function run(/** @type {string[]} */ all) {
   // Everything after `--` is the runner's own (a command runner's `{flags}`, e.g. the testbed's `--no-wait`).
   const cut = all.indexOf("--");

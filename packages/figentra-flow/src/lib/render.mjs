@@ -18,12 +18,17 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { dirname, join } from "node:path";
 
 import { approveWorkflow } from "./approve-workflow.mjs";
+import { baselineWorkflow } from "./baseline-workflow.mjs";
 import { loadConfig } from "./config.mjs";
 import { LOCK, OVERRIDES, presetDir } from "./flow-dir.mjs";
 import { codeowners } from "./owner-only.mjs";
 import {
   APPROVE_WORKFLOW,
+  BASELINE_WORKFLOW,
+  CONFIG_FILE,
   ENV_PREFIX,
+  LEGACY_CONFIG_FILE,
+  LEGACY_NAME,
   NAME,
   PACKAGE,
   STATUS_CONTEXT,
@@ -120,7 +125,9 @@ export function render(root, { direct = false } = {}) {
     out.set(direct ? `.claude/rules/${id}.md` : `.agents/rules/${id}.md`, text);
   const readme = renderReadme(root);
   if (readme !== undefined) out.set("README.md", readme);
-  const { apps, approve } = loadConfig(root).config;
+  const { apps, approve, baseline } = loadConfig(root).config;
+  // STA-1942: only a repository whose main is red asks for the baseline gate.
+  if (baseline) out.set(`.github/workflows/${BASELINE_WORKFLOW}`, baselineWorkflow(baseline));
   const ownerOnly = approve?.ownerOnly ?? [];
   // No owner, no approval path: GitHub must be able to ask someone for the owner-only paths (CODEOWNERS).
   if (!apps?.owner) return out;
@@ -238,6 +245,40 @@ export function leftovers(root) {
  * @param {Map<string, string>} files
  * @returns {string[]} the spec-kit files it removed
  */
+/**
+ * The 0.2.2 rename (`figentra-flow` → `fflow`, owner 2026-11-02), once: the config file takes its new name (its
+ * `$schema` with it) and the workflows rendered under the old name go. Both config files at once is an error.
+ * @param {string} root
+ * @returns {{ error?: string, done: string[] }}
+ */
+export function migrateLegacy(root) {
+  const current = join(root, CONFIG_FILE);
+  const legacy = join(root, LEGACY_CONFIG_FILE);
+  /** @type {string[]} */
+  const done = [];
+  if (existsSync(legacy)) {
+    if (existsSync(current))
+      return {
+        error: `${CONFIG_FILE} and ${LEGACY_CONFIG_FILE} both exist: keep ${CONFIG_FILE} and delete the other`,
+        done,
+      };
+    const schema = (/** @type {string} */ f) => f.replace(".json", ".schema.json");
+    writeFileSync(
+      current,
+      readFileSync(legacy, "utf8").replaceAll(schema(LEGACY_CONFIG_FILE), schema(CONFIG_FILE)),
+    );
+    rmSync(legacy);
+    done.push(`renamed ${LEGACY_CONFIG_FILE} to ${CONFIG_FILE}`);
+  }
+  for (const kind of ["approve", "baseline"]) {
+    const old = `.github/workflows/${LEGACY_NAME}-${kind}.yml`;
+    if (!existsSync(join(root, old))) continue;
+    rmSync(join(root, old));
+    done.push(`removed ${old}`);
+  }
+  return { done };
+}
+
 export function writeRendered(root, files) {
   const removed = leftovers(root).filter((p) => !LEFTOVER_DIRS.includes(p));
   for (const p of removed) rmSync(join(root, p), { recursive: true, force: true });

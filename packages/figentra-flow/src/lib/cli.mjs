@@ -64,7 +64,7 @@ export function say(state, text, stream = process.stderr, env = process.env) {
 }
 
 /**
- * The glyph state of a `figentra-flow/gate` commit status, or of none.
+ * The glyph state of a `fflow/gate` commit status, or of none.
  * @param {string | undefined} state
  * @returns {keyof typeof GLYPHS}
  */

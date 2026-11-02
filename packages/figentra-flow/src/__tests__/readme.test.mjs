@@ -31,7 +31,7 @@ architecture: |
 /** A temp repository with the given config preset and README data. */
 function repo(preset, data = DATA) {
   const root = mkdtempSync(join(tmpdir(), "flow-readme-"));
-  writeFileSync(join(root, "figentra-flow.config.json"), JSON.stringify({ version: 1, preset }));
+  writeFileSync(join(root, "flow.config.json"), JSON.stringify({ version: 1, preset }));
   mkdirSync(join(root, ".flow"));
   writeFileSync(join(root, ".flow/readme.yml"), data);
   return root;

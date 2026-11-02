@@ -1,10 +1,10 @@
 /**
  * Figentra Flow file contract:
- * Purpose: the gate workflow `figentra-flow init --runner github-actions` writes into a repository, for the
+ * Purpose: the gate workflow `fflow init --runner github-actions` writes into a repository, for the
  *   `github-actions` runner: a `workflow_dispatch` with `sha` and `branch`, whose run title carries the sha. Two jobs,
  *   so the change's code and the gate App's key never share one: `check` checks out the commit, runs the check
- *   command (`figentra-flow gate command`) with no secret and uploads its exit code and log; `post` never checks out
- *   the repository, takes the poster from the pinned `figentra-flow` package and posts `figentra-flow/gate` with the
+ *   command (`fflow gate command`) with no secret and uploads its exit code and log; `post` never checks out
+ *   the repository, takes the poster from the pinned `fflow` package and posts `fflow/gate` with the
  *   App's id and key from repository secrets.
  * Boundary: returns text; writes nothing. The product's names come from `product.mjs` (AC-042); every action is pinned
  *   to a commit.
@@ -29,7 +29,7 @@ const DOWNLOAD = "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef
 
 /**
  * The workflow's YAML.
- * @param {{ version: string }} options the `figentra-flow` version whose poster the `post` job runs
+ * @param {{ version: string }} options the `fflow` version whose poster the `post` job runs
  */
 export function gateWorkflow({ version }) {
   const pkg = `${PACKAGE}@${version}`;

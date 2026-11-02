@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: the workspace list, `~/.config/figentra-flow/workspace.yaml` (`FIGENTRA_FLOW_WORKSPACE` overrides the path): every
+ * Purpose: the workspace list, `~/.config/fflow/workspace.yaml` (`FFLOW_WORKSPACE` overrides the path): every
  *   repository Figentra Flow acts on with `--all`, each with its folder and GitHub slug; and finding the repositories under
  *   some folders to write it.
  * Boundary: reads and writes that one file; the YAML is the small fixed shape below, so no YAML library is needed.
@@ -13,12 +13,26 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { git } from "./git.mjs";
-import { DISPLAY_NAME, ENV_PREFIX, NAME, USER_DIR } from "./product.mjs";
+import {
+  DISPLAY_NAME,
+  ENV_PREFIX,
+  LEGACY_ENV_PREFIX,
+  LEGACY_NAME,
+  NAME,
+  USER_DIR,
+} from "./product.mjs";
 
 /** The workspace file's path. */
 export const workspaceFile = (
   /** @type {Record<string, string | undefined>} */ env = process.env,
-) => env[`${ENV_PREFIX}WORKSPACE`] ?? join(homedir(), ...USER_DIR, "workspace.yaml");
+) => {
+  const set = env[`${ENV_PREFIX}WORKSPACE`] ?? env[`${LEGACY_ENV_PREFIX}WORKSPACE`];
+  if (set) return set;
+  const file = join(homedir(), ...USER_DIR, "workspace.yaml");
+  // Before 0.2.2 the folder was ~/.config/<LEGACY_NAME>; it is read until the file exists here.
+  const legacy = join(homedir(), ".config", LEGACY_NAME, "workspace.yaml");
+  return !existsSync(file) && existsSync(legacy) ? legacy : file;
+};
 
 /**
  * @typedef {{ path: string, github: string }} Repo

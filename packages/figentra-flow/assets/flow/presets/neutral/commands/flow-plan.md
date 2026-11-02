@@ -6,13 +6,13 @@ derived-from: github/spec-kit 1.0.10 (MIT)
 ## Workflow: feature directory (runs first)
 
 Specs live in `.agents/specs/<key>-<slug>/`, keyed by the spec's issue, never in `specs/`. Before anything else run
-`figentra-flow gate dir` (add `--key <key>` when the branch name carries no key). It prints the spec folder for the
-branch's issue key and writes `.flow/current.json`, which every `figentra-flow spec` call reads. If it fails, STOP and report it; never fall back to a numbered
+`fflow gate dir` (add `--key <key>` when the branch name carries no key). It prints the spec folder for the
+branch's issue key and writes `.flow/current.json`, which every `fflow spec` call reads. If it fails, STOP and report it; never fall back to a numbered
 folder.
 
 ## Workflow: gate (runs first)
 
-`figentra-flow spec setup-plan` runs the plan gate and exits non-zero until the spec has
+`fflow spec setup-plan` runs the plan gate and exits non-zero until the spec has
 `**Clarifications status**: complete` and an `**Issue**` key. If it fails, STOP: print its output, tell the user to
 run `/flow-clarify`, and write nothing. Never edit the marker yourself to get past the gate.
 
@@ -26,7 +26,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
-1. **Setup**: Run `figentra-flow spec setup-plan --json` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, FEATURE_DIR, BRANCH. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+1. **Setup**: Run `fflow spec setup-plan --json` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, FEATURE_DIR, BRANCH. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 2. **Load context**: Read FEATURE_SPEC and `.flow/constitution.md`. Load IMPL_PLAN template (already copied).
 
@@ -105,7 +105,7 @@ Command ends after Phase 1 design. Report branch, IMPL_PLAN path, and generated 
 
 For a `feature` or `big` spec, `plan.md` is the design: the gate requires its sections (write "none" under one that
 does not apply). Then set `**Status**: Planned`, append the Status history line, and run
-`figentra-flow gate check <folder>`. The next step is `/flow-tasks`.
+`fflow gate check <folder>`. The next step is `/flow-tasks`.
 
 ## Workflow: approval stop
 

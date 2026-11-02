@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `figentra-flow trace` (core's `spec-trace`, moved unchanged) — FR/SC/P → task → `@covers` test traceability and spec-vs-diff drift for specs in
+ * Purpose: `fflow trace` (core's `spec-trace`, moved unchanged) — FR/SC/P → task → `@covers` test traceability and spec-vs-diff drift for specs in
  *   `.agents/specs/sta-<n>-<slug>/` (owner decision OR12; the plan's §3.6).
  *   trace <dir> [--json]    the matrix: each live FR and P with its tasks and covering tests, each SC with its method
  *   drift <dir> [--base=r]  members changed in the diff that Impact does not name (in `ci`, that no changed spec's
