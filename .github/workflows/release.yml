@@ -62,9 +62,9 @@ jobs:
       contents: write
       pull-requests: write
       id-token: write
-    # Stackra core's Runway npm provider at a pinned commit (fd71e95d's CHANGESETS_OUTPUT fix included, so tags and
+    # Stackra core's Runway npm provider at a pinned commit (fd71e95d's CHANGESETS_OUTPUT fix, so tags and
     # GitHub releases are created). Bump the SHA deliberately, never to a branch.
-    uses: figentra/stackra/.github/workflows/runway-npm.yml@31faaac481d2bed76bfe5f20976da1d40aa6a345
+    uses: figentra/stackra/.github/workflows/runway-npm.yml@c8e9053f43b32c7206d93fca20fe46fc84c56df5
     with:
       environment: release
       build-args: --filter=@figentra-oss/flow
