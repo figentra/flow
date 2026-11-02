@@ -63,8 +63,9 @@ jobs:
       pull-requests: write
       id-token: write
     # Stackra core's Runway npm provider at a pinned commit (fd71e95d's CHANGESETS_OUTPUT fix, so tags and
-    # GitHub releases are created). Bump the SHA deliberately, never to a branch.
-    uses: figentra/stackra/.github/workflows/runway-npm.yml@c8e9053f43b32c7206d93fca20fe46fc84c56df5
+    # GitHub releases are created; 587e1772's published-list artifact, so the SBOM job sees @figentra-oss/flow,
+    # whose name a masked value hid from the job output). Bump the SHA deliberately, never to a branch.
+    uses: figentra/stackra/.github/workflows/runway-npm.yml@587e177233fea8eb67f4a071cb5f63a02d9f6700
     with:
       environment: release
       build-args: --filter=@figentra-oss/flow
