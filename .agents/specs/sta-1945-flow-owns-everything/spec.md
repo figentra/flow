@@ -13,7 +13,7 @@ baseline gate); the governance model is the external review of 2026-11-02
 
 **Linear**: STA-1945
 
-**Clarifications status**: complete, except Q1 to Q3 below, which go to the owner before Planned
+**Clarifications status**: complete (Q1 to Q3 decided: D1 to D3 below)
 
 **Input**: Every repository carries its own copy of the agent layer. Core holds 28 role agents, 48 skills (481
 files), 15 rules, 29 reference docs, a 16-file guard engine (`_rules.mjs` is 2,651 lines), 88 `.claude` files and 15
@@ -73,8 +73,10 @@ detectable hand edits, reviewed overrides and policies no repository can switch 
 
 - **FR-5 Mandatory policies.** Secrets, tenancy, owner-only paths and the guard itself are mandatory. `validate`
   refuses any override that disables or replaces them; `extend` may only tighten them.
-- **FR-6 Profiles.** A preset may declare profiles, for example `framework` for core, `product`, `platform` and
-  `brand`. A profile selects which agents, skills and hooks a repository gets. The config names it; the lock records it.
+- **FR-6 Profiles.** A preset declares profiles; a profile selects which agents, skills and hooks a repository gets.
+  The config names it; the lock records it. The stackra preset's profiles (D3): `framework` (core), `platform` (os,
+  figentra), `product` (the products), `brand` (brand), `starter` (the template), and `pro` (stackra-pro) only if its
+  needs differ from `framework`'s; otherwise stackra-pro uses `framework`.
 - **FR-7 What `sync` renders** (stackra preset; the neutral preset gets the generic parts):
   - role agents, skills, rules, agent reference, routing and models;
   - the guard: `fflow guard` is a neutral engine covering bash, paths, the plan gate, session context, post-write
@@ -92,7 +94,14 @@ detectable hand edits, reviewed overrides and policies no repository can switch 
 
 - **FR-8 Third-party skills** are not vendored. The preset lists each by source, version and licence, and `sync`
   installs it into a git-ignored folder, pinned by digest in the lock. A licence the preset hasn't allowed (anything
-  but MIT, Apache-2.0, BSD or ISC) needs the owner's entry in the preset before it installs (Q1).
+  but MIT, Apache-2.0, BSD or ISC) needs the owner's entry in the preset before it installs. Per D1, the preset marks
+  some skills `machine-only`: `sync` neither installs nor records them, `check` refuses them in a repository or in
+  the registry, and `fflow doctor` says how to install them from source on that machine:
+  - HeroUI Pro's (`heroui-react-pro`, `heroui-pro-design-taste`) and Remotion's (the six `remotion-*`), for internal use
+    only;
+  - the owner's own 13 Claude skills.
+- **FR-12 Core's 48 skills** ship inside the stackra preset in 0.3.0 (D2). Publishing them as registry `skill` items is
+  a later step, recorded in the after-freeze backlog; 0.3.0 builds no skill-publish pipeline.
 - **FR-9 Divergence report.** `fflow status --divergence`, per repository or for the workspace, lists:
   - preset lag (locked against latest);
   - overrides by kind;
@@ -116,7 +125,16 @@ detectable hand edits, reviewed overrides and policies no repository can switch 
   - skill installs refused on an unlisted licence;
   - the divergence report.
 
-## Questions for the owner (before Planned)
+## Decisions (owner, 2026-11-02, relayed by the leader session)
+
+- **D1 (Q1)** HeroUI Pro's and Remotion's skills are kept for internal use only: installed from source on each
+  machine, never redistributed (not in our repositories, not in the registry). The 13 "local library" skills are the
+  owner's own Claude skills: that is their recorded source, and they are installed per machine like the others. The
+  MIT and Apache-2.0 skills install through the preset as FR-8 says.
+- **D2 (Q2)** Core's 48 skills ship inside the stackra preset; registry `skill` items come later (FR-12).
+- **D3 (Q3)** Profiles: `framework`, `platform`, `product`, `brand`, `starter`, and `pro` only if needed (FR-6).
+
+## The questions as asked
 
 - **Q1 Third-party skill licences** (brand today; source: brand's `.claude/skills/README.md` and the upstream repos):
   - MIT: nextlevelbuilder/ui-ux-pro-max-skill (`brand`, `design`, `banner-design`, `ui-ux-pro-max`),
@@ -146,3 +164,4 @@ test-level baseline inventory (STA-1942 v2).
 
 - 2026-11-02: Draft → Clarified (owner decisions relayed by the leader session; the external review of 2026-11-02;
   Q1 to Q3 open)
+- 2026-11-02: Q1 to Q3 decided (D1 to D3), relayed by the leader session
