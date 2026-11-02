@@ -61,9 +61,9 @@ const glob = (/** @type {string} */ p) =>
  * - a must-pass task (`mustPass` patterns: tenancy, authz, secrets, licence tests) that is not green, even if main's
  *   is red;
  * - more failures than main has (the debt may not grow).
- * A task that failed on main and passes now is a gain. A failure that main never reached (it was `skip` there) is
- * newly reached, not new, when an upstream task of the same package (per `needs`, the PR's) failed or never ran on
- * main and passes now: it is reported with that task, and is no debt. Anything else stays a new failure.
+ * A task that failed or never ran on main and passes now is a gain. A failure that main never reached (it was `skip`
+ * there) is newly reached, not new, when an upstream task of the same package (per `needs`, the PR's) is a gain: it
+ * is reported with that task, and is no debt. Anything else, a task that passed on main included, is a new failure.
  * @param {Results} base
  * @param {Results} pr
  * @param {{ mustPass?: string[], needs?: Record<string, string[]> }} [options]
@@ -73,16 +73,18 @@ export function compare(base, pr, { mustPass = [], needs = {} } = {}) {
     Object.keys(r)
       .filter((t) => r[t] === state)
       .toSorted();
+  const gains = Object.keys(base)
+    .filter((t) => base[t] !== "pass" && pr[t] === "pass")
+    .toSorted();
   const pkg = (/** @type {string} */ t) => t.split("#")[0];
   const unblocker = (/** @type {string} */ t) =>
     base[t] === "skip"
-      ? (needs[t] ?? []).find((u) => pkg(u) === pkg(t) && base[u] !== "pass" && pr[u] === "pass")
+      ? (needs[t] ?? []).find((u) => pkg(u) === pkg(t) && gains.includes(u))
       : undefined;
   const reached = sorted(pr, "fail").filter((t) => unblocker(t));
   const newlyReached = reached.map((task) => ({ task, unblockedBy: String(unblocker(task)) }));
   const newFailures = sorted(pr, "fail").filter((t) => base[t] !== "fail" && !reached.includes(t));
   const stillFailing = sorted(pr, "fail").filter((t) => base[t] === "fail");
-  const gains = sorted(base, "fail").filter((t) => pr[t] === "pass");
   const missing = Object.keys(base)
     .filter((t) => base[t] !== "skip" && (pr[t] === undefined || pr[t] === "skip"))
     .toSorted();

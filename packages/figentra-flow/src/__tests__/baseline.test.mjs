@@ -6,9 +6,9 @@
  *   - a PR passes when its failed set is a subset of main's; a new failure, a new task that fails, a task main ran
  *     but the PR dropped or skipped, a red must-pass task, or more failures than main has, blocks it; a fixed task
  *     is a gain;
- *   - STA-1945 FR-22: a gain is counted; a failure newly reached behind a repaired upstream task of its own
- *     package is reported with that task and does not block; a plain regression and a failure in an unrelated
- *     package still block; the `--json` shape;
+ *   - STA-1945 FR-22: a gain (failed or never ran on main, passes now) is counted; a failure newly reached behind a
+ *     repaired upstream task of its own package is reported with that task and does not block; a plain regression
+ *     and a failure in an unrelated package still block; the `--json` shape;
  *   - the 0.2.2 rename: `sync` renames the old config file once (failing when both exist) and removes the old-named
  *     workflows; the old binary prints one notice;
  *   - the baseline search walks the ancestors, ignores an artifact a pull request run or another branch made, and
@@ -148,6 +148,20 @@ test("compare: a gain is counted; a failure newly reached behind a repaired upst
     needs: { "a#test": ["b#build"] },
   });
   assert.deepEqual([other.ok, other.newFailures], [false, ["a#test"]]);
+  // a task newly reached that passes is a gain too
+  const fixedPr = { ...pr, "a#test": "pass" };
+  const green = compare(/** @type {any} */ (base), /** @type {any} */ (fixedPr), { needs });
+  assert.deepEqual([green.ok, green.gains, green.newlyReached], [true, ["a#build", "a#test"], []]);
+  // two deep: the upstream itself never ran on main, and its newly passing makes it a gain that unblocks
+  const chain = compare(
+    /** @type {any} */ ({ "a#gen": "fail", "a#build": "skip", "a#test": "skip" }),
+    /** @type {any} */ ({ "a#gen": "pass", "a#build": "pass", "a#test": "fail" }),
+    { needs: { "a#build": ["a#gen"], "a#test": ["a#build"] } },
+  );
+  assert.deepEqual(
+    [chain.ok, chain.gains, chain.newlyReached],
+    [true, ["a#build", "a#gen"], [{ task: "a#test", unblockedBy: "a#build" }]],
+  );
 });
 
 test("compare: a task that passed on main and fails now blocks, and so does a failure in an unrelated package", () => {
