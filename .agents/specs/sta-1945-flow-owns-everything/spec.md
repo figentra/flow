@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-02
 
-**Status**: Clarified
+**Status**: Planned
 
 **Tier**: big
 
@@ -165,3 +165,4 @@ test-level baseline inventory (STA-1942 v2).
 - 2026-11-02: Draft → Clarified (owner decisions relayed by the leader session; the external review of 2026-11-02;
   Q1 to Q3 open)
 - 2026-11-02: Q1 to Q3 decided (D1 to D3), relayed by the leader session
+- 2026-11-02: Clarified → Planned (plan.md; the leader session reviews the plan before building)
