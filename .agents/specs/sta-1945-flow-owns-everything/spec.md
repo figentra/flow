@@ -86,6 +86,12 @@ detectable hand edits, reviewed overrides and policies no repository can switch 
     guard plugin);
   - `.mcp.yaml`: the preset's servers plus the config's additions, secrets by name;
   - `lefthook.yml`: the preset's hook steps plus the config's, including `fflow gate branch`;
+    the oxfmt and oxlint jobs follow core's STA-1865 pattern in every repository: they run the mise-pinned binary
+    first (`mise exec -- oxfmt …`), fall back to `pnpm exec` only where mise is missing, and keep the exit-2 "all
+    ignored" handling. `pnpm exec` runs pnpm 12's lockfile trust-policy check first, which fetches registry metadata,
+    so a Mac with no @figentra read token fails pre-commit with a 401 in any repository whose lockfile holds an
+    @figentra package (os, STA-1936). `sync` makes sure `mise.toml` pins `npm:oxfmt` and `npm:oxlint` at the
+    versions the catalog pins, which `repo-checks/tool-pins` requires;
   - AGENTS.md and CLAUDE.md: the preset's shared blocks plus the repository's facts from the config and
     `.flow/readme.yml`.
 

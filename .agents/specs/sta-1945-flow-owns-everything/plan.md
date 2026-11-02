@@ -106,7 +106,10 @@ comes the migration (FR-10 steps 2 to 4), one PR per repository, with core first
    becomes one rule among the rest.
 5. **Surfaces.** `.claude/settings.json`, OpenCode, `.mcp.yaml`, `lefthook.yml`, AGENTS.md and CLAUDE.md, each from
    preset blocks plus the config's additions. `sync` deletes an owned file the preset no longer renders and never
-   touches `.agents/specs/`.
+   touches `.agents/specs/`. The lefthook oxfmt and oxlint jobs use core's STA-1865 pattern: `mise exec --` first,
+   `pnpm exec` only without mise, and exit 2 ("all ignored") counted as a pass. `sync` adds or corrects the
+   `npm:oxfmt` and `npm:oxlint` pins in `mise.toml` to the catalog's versions, and changes no other line of that
+   file. Tests cover: mise present, mise missing, all files ignored, and a pin that disagrees with the catalog.
 6. **Core's content.** The 28 agents, 48 skills (FR-12), 15 rules, 29 reference docs, routing and models go into the
    stackra preset, split by profile. Before this lands, the package tarball size is measured and stated in the PR.
 7. **Third-party skills and `doctor`.** The FR-8 list from brand's census, with D1's `machine-only` marks.
