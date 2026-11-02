@@ -9,7 +9,7 @@
  * Runtime: node
  * Governing contract: ADR 0022; STA-1729 phase A (A2).
  */
-// @covers sta-1729:FR-11 sta-1729:AC-036 sta-1729:AC-037
+// @covers sta-1729:FR-11 sta-1729:AC-036 sta-1729:AC-037 sta-1729:AC-045
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";

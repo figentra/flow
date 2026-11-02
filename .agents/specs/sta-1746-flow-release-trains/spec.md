@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-01
 
-**Status**: Implementing
+**Status**: Done
 
 **Tier**: feature
 
@@ -65,7 +65,7 @@ repositories are private. Today's trains (core batch 1, batch 2, 0.2.1) are run 
 - **AC-005**: WHEN `train close` runs, or `train.cutoff` hours have passed since the train opened, THE CLI SHALL treat the train as cut off
 - **AC-006**: WHEN `train build` runs on a cut-off train THE CLI SHALL create `train/<version>` from the default branch, merge each member in board order with a merge commit and gate the tip with `gate run --ref train/<version>`
 - **AC-007**: IF a member conflicts with the train, is no longer open or is no longer green on its head THEN THE CLI SHALL eject it with a comment and continue the build
-- **AC-008**: WHILE `train.eject` is `bisect` THE CLI SHALL, on a red train, gate prefixes of the member list to find the first breaking member, eject it with the red gate's status and report link, rebuild and re-gate
+- **AC-008**: WHILE `train.eject` is `bisect` THE CLI SHALL gate prefixes of a red train's member list to find the first breaking member, eject it with the red gate's status and report link, rebuild and re-gate
 - **AC-009**: WHILE `train.eject` is `manual` THE CLI SHALL stop on a red train and report it, ejecting nothing until `train eject <pr>` is run
 - **AC-010**: IF `figentra-flow/gate` is not green from the gate App on the train tip's exact sha THEN THE CLI SHALL refuse to depart
 - **AC-011**: WHEN `train depart` runs THE CLI SHALL move the default branch only by a fast-forward to the tip, then close the milestone and open the next train, and SHALL only warn about a step that fails after the fast-forward
@@ -96,9 +96,19 @@ repositories are private. Today's trains (core batch 1, batch 2, 0.2.1) are run 
 - **Q7. The failing log lines.** The box keeps the check's log; an ejection names the red status's description and
   report link. **Answer: yes.**
 
+## Amendments
+
+- A-001 · 2026-11-03 · recorded after shipping (STA-2039): AC-008 reworded into the EARS form, same meaning; the
+  verification task T010 (a dry-run on core with the 0.2.2 items) is struck as not done, since no record of it exists
+  and it is not code; the commands shipped in 0.1.0 and `train.test.mjs` covers every criterion · added: none ·
+  struck: T010
+
 ## Status history
 
 - 2026-11-01: Draft → Clarified (the issue STA-1746 is the owner's specification)
 - 2026-11-01: Clarified → Planned — Approved by owner 2026-11-01 (chat: "let's embed it and do it day one")
 - 2026-11-01: Planned → Tasked
 - 2026-11-01: Tasked → Implementing
+- 2026-11-03 · Implementing → Done · Claude (FLOW session) · brought to the ADR 0502 standard after shipping in 0.1.0
+  (STA-2039): AC-008 in EARS form, the plan's state marker no longer hides its design sections, T009 ticked and T010
+  struck (A-001)

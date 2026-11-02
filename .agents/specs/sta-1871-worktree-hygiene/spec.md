@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-01
 
-**Status**: Planned
+**Status**: Done
 
 **Tier**: feature
 
@@ -62,7 +62,7 @@ runs `clean`.
 - **FR-5** `doctor` warns, without failing, when the repository holds more linked worktrees than its budget, and when
   the disk under it has less than 10 GB or less than 10% free.
 - **FR-6** The stewards say it. `git-steward` runs `clean`, and `clean --budget` when over budget.
-- **FR-7** Tests cover:
+- **FR-7** (example-only: this FR is the list of tests itself) Tests cover:
   - the rendered rule;
   - the README;
   - the count and the candidates (idle, merged or pushed, in use, recent);
@@ -72,7 +72,21 @@ runs `clean`.
   - the dry run;
   - doctor's warnings.
 
+## Acceptance criteria
+
+- **AC-001**: WHEN `sync` runs THE CLI SHALL render the preset's worktree rule to `.agents/rules/worktrees.md`, or to `.claude/rules/worktrees.md` with `--direct`
+- **AC-002**: WHEN `init` or `clean` runs THE CLI SHALL write `.claude/worktrees/README.md` with the worktree rule in short
+- **AC-003**: WHEN `clean` runs THE CLI SHALL count the repository's linked worktrees against `clean.budget` (default 10) and list as budget candidates only the trees under `.claude/worktrees/` idle for 24 hours or more whose head is merged or pushed and that no running process is using, removing none of them without `--budget`
+- **AC-004**: WHEN `clean --budget --dry-run` runs THE CLI SHALL list the candidates and change nothing
+- **AC-005**: WHEN `clean --budget` removes a candidate THE CLI SHALL first commit its uncommitted work to a new local `keep/<repo>-<name>` branch, put a detached HEAD on that branch, archive its ignored files outside the caches into a `tar.gz` under `~/Backups/fflow/`, then run `git worktree remove` without `--force`, deleting no branch
+- **AC-006**: IF a preservation step fails, such as a commit its hooks refuse THEN THE CLI SHALL keep that worktree as it was, leave no empty `keep/` branch, and give the reason
+- **AC-007**: WHILE the repository holds more linked worktrees than its budget, or the disk under it has less than 10 GB or less than 10% free, THE `doctor` command SHALL report a warning that does not fail the run
+- **AC-008**: THE `git-steward` of both presets SHALL run `clean`, and `clean --budget` when the repository is over its budget
+
 ## Status history
 
 - 2026-11-01: Draft → Clarified (owner request relayed by the leader session)
 - 2026-11-01: Clarified → Planned — Approved by owner 2026-11-01 (relayed by the leader session)
+- 2026-11-03 · Planned → Done · Claude (FLOW session) · brought to the ADR 0502 standard after shipping in 0.2.0
+  (STA-2039): the acceptance criteria, the design sections, the correctness properties and tasks.md record what
+  shipped; nothing was struck

@@ -8,7 +8,7 @@
  * Runtime: node
  * Governing contract: ADR 0022; STA-1729 phase 7.
  */
-// @covers sta-1729:FR-12 sta-1729:AC-048 sta-1729:AC-053
+// @covers sta-1729:FR-12 sta-1729:AC-048 sta-1729:AC-053 sta-1729:P-012
 import { test } from "node:test";
 import assert from "node:assert/strict";
 

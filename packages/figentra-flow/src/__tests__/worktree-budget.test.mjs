@@ -15,6 +15,9 @@
  * Governing contract: ADR 0022; STA-1871.
  */
 // @covers sta-1871:FR-1 sta-1871:FR-2 sta-1871:FR-3 sta-1871:FR-4 sta-1871:FR-5 sta-1871:FR-6 sta-1871:FR-7
+// @covers sta-1871:AC-001 sta-1871:AC-002 sta-1871:AC-003 sta-1871:AC-004 sta-1871:AC-005 sta-1871:AC-006
+// @covers sta-1871:AC-007 sta-1871:AC-008
+// @covers sta-1871:P-001 sta-1871:P-002 sta-1871:P-003 sta-1871:P-004 sta-1871:P-005
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 import assert from "node:assert/strict";
