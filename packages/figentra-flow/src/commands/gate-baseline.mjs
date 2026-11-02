@@ -2,12 +2,12 @@
  * Figentra Flow file contract:
  * Purpose: `fflow gate baseline` (STA-1942), run by the baseline workflow `sync` renders:
  *   save [--summary f] [--reader turbo]   the newest run summary's per-task results → .fflow-gate/baseline.json
- *   check --base <sha>                    those results against main's baseline for the base SHA or its nearest
+ *   check --base <sha> [--json]           those results against main's baseline for the base SHA or its nearest
  *                                         ancestor; fails on a new failure and, closed, when no baseline exists
  * Boundary: reads the run summary and, for `check`, GitHub (artifacts and runs) with the job's GITHUB_TOKEN and
  *   `gh run download`; writes baseline.json and the job summary.
  * Runtime: node (GitHub Actions)
- * Governing contract: STA-1942 FR-2 to FR-4.
+ * Governing contract: STA-1942 FR-2 to FR-4; STA-1945 FR-22 (`needs`, `--json`).
  * Secrets: GITHUB_TOKEN from the environment; never printed.
  */
 import { spawnSync } from "node:child_process";
@@ -25,7 +25,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { rest } from "../lib/approve-check.mjs";
-import { compare, findBaseline, READERS, summaryTable } from "../lib/baseline.mjs";
+import { compare, findBaseline, NEEDS, READERS, summaryTable } from "../lib/baseline.mjs";
 import { loadConfig } from "../lib/config.mjs";
 import { GATE_DIR, NAME } from "../lib/product.mjs";
 
@@ -45,6 +45,7 @@ function newestSummary(/** @type {string} */ root) {
  * @param {string[]} argv
  * @param {{ root?: string, env?: Record<string, string | undefined>, log?: (s: string) => void,
  *           api?: (method: string, path: string) => Promise<{ ok: boolean, json: any }>,
+ *           out?: (s: string) => void,
  *           download?: (repo: string, runId: number, name: string) => string | undefined }} [deps]
  * @returns {Promise<number>}
  */
@@ -66,9 +67,10 @@ export async function run([mode, ...args], deps = {}) {
     if (!Object.keys(tasks).length)
       return (log(`${NAME} gate baseline: the run summary holds no task`), 1);
     mkdirSync(join(root, GATE_DIR), { recursive: true });
+    const needs = NEEDS[reader]?.(JSON.parse(readFileSync(file, "utf8"))) ?? {};
     writeFileSync(
       own,
-      `${JSON.stringify({ version: 1, sha: env.GITHUB_SHA ?? "", reader, tasks }, null, 2)}\n`,
+      `${JSON.stringify({ version: 1, sha: env.GITHUB_SHA ?? "", reader, tasks, needs }, null, 2)}\n`,
     );
     log(`${NAME} gate baseline: ${Object.keys(tasks).length} task(s) saved to ${GATE_DIR}/${FILE}`);
     return 0;
@@ -96,11 +98,13 @@ export async function run([mode, ...args], deps = {}) {
     const file = dir && join(dir, FILE);
     if (!file || !existsSync(file))
       return (log(`${NAME} gate baseline: ${found.name} could not be downloaded`), 1);
-    const result = compare(
-      JSON.parse(readFileSync(file, "utf8")).tasks ?? {},
-      JSON.parse(readFileSync(own, "utf8")).tasks,
-      { mustPass: loadConfig(root).config.baseline?.mustPass },
-    );
+    const mine = JSON.parse(readFileSync(own, "utf8"));
+    const result = compare(JSON.parse(readFileSync(file, "utf8")).tasks ?? {}, mine.tasks, {
+      mustPass: loadConfig(root).config.baseline?.mustPass,
+      needs: mine.needs,
+    });
+    if (args.includes("--json"))
+      (deps.out ?? console.log)(JSON.stringify({ ...result, baselineSha: found.sha }, null, 2));
     summary(summaryTable(result, found.sha));
     return result.ok ? 0 : 1;
   }

@@ -1,11 +1,12 @@
 /**
  * Figentra Flow file contract:
  * Purpose: the baseline gate's logic (STA-1942): read one tool's per-task results, compare a PR run with main's
- *   baseline (the PR passes when its failed set is a subset of main's), find that baseline among the base SHA's
+ *   baseline (the PR passes when its failed set is a subset of main's, a failure newly reached behind a repaired
+ *   upstream task of its own package excepted, STA-1945 FR-22), find that baseline among the base SHA's
  *   ancestors, and render the job-summary table.
  * Boundary: pure but for `findBaseline`, which reads GitHub through the `api` it is given.
  * Runtime: node
- * Governing contract: STA-1942 FR-1 to FR-4.
+ * Governing contract: STA-1942 FR-1 to FR-4; STA-1945 FR-22.
  * Secrets: none.
  */
 import { NAME } from "./product.mjs";
@@ -36,6 +37,19 @@ export const READERS = {
     ),
 };
 
+/**
+ * Each task's direct upstream task ids (turbo's `dependencies`), which is how `compare` knows why a task never ran.
+ * @type {Record<string, (summary: any) => Record<string, string[]>>}
+ */
+export const NEEDS = {
+  turbo: (summary) =>
+    Object.fromEntries(
+      (summary?.tasks ?? [])
+        .filter((/** @type {any} */ t) => t.command !== "<NONEXISTENT>" && t.dependencies?.length)
+        .map((/** @type {any} */ t) => [t.taskId, t.dependencies]),
+    ),
+};
+
 /** A `mustPass` pattern (`*` is any run of characters) as a test on task ids. */
 const glob = (/** @type {string} */ p) =>
   new RegExp(`^${p.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replaceAll("*", ".*")}$`);
@@ -47,18 +61,28 @@ const glob = (/** @type {string} */ p) =>
  * - a must-pass task (`mustPass` patterns: tenancy, authz, secrets, licence tests) that is not green, even if main's
  *   is red;
  * - more failures than main has (the debt may not grow).
+ * A task that failed on main and passes now is a gain. A failure that main never reached (it was `skip` there) is
+ * newly reached, not new, when an upstream task of the same package (per `needs`, the PR's) failed or never ran on
+ * main and passes now: it is reported with that task, and is no debt. Anything else stays a new failure.
  * @param {Results} base
  * @param {Results} pr
- * @param {{ mustPass?: string[] }} [options]
+ * @param {{ mustPass?: string[], needs?: Record<string, string[]> }} [options]
  */
-export function compare(base, pr, { mustPass = [] } = {}) {
+export function compare(base, pr, { mustPass = [], needs = {} } = {}) {
   const sorted = (/** @type {Results} */ r, /** @type {string} */ state) =>
     Object.keys(r)
       .filter((t) => r[t] === state)
       .toSorted();
-  const newFailures = sorted(pr, "fail").filter((t) => base[t] !== "fail");
+  const pkg = (/** @type {string} */ t) => t.split("#")[0];
+  const unblocker = (/** @type {string} */ t) =>
+    base[t] === "skip"
+      ? (needs[t] ?? []).find((u) => pkg(u) === pkg(t) && base[u] !== "pass" && pr[u] === "pass")
+      : undefined;
+  const reached = sorted(pr, "fail").filter((t) => unblocker(t));
+  const newlyReached = reached.map((task) => ({ task, unblockedBy: String(unblocker(task)) }));
+  const newFailures = sorted(pr, "fail").filter((t) => base[t] !== "fail" && !reached.includes(t));
   const stillFailing = sorted(pr, "fail").filter((t) => base[t] === "fail");
-  const fixed = sorted(base, "fail").filter((t) => pr[t] === "pass");
+  const gains = sorted(base, "fail").filter((t) => pr[t] === "pass");
   const missing = Object.keys(base)
     .filter((t) => base[t] !== "skip" && (pr[t] === undefined || pr[t] === "skip"))
     .toSorted();
@@ -66,10 +90,13 @@ export function compare(base, pr, { mustPass = [] } = {}) {
   const mustPassFailures = [...new Set([...Object.keys(pr), ...Object.keys(base)])]
     .filter((t) => must.some((m) => m.test(t)) && pr[t] !== "pass")
     .toSorted();
-  const debt = { base: sorted(base, "fail").length, pr: sorted(pr, "fail").length };
+  const debt = {
+    base: sorted(base, "fail").length,
+    pr: sorted(pr, "fail").length - reached.length,
+  };
   const ok =
     !newFailures.length && !missing.length && !mustPassFailures.length && debt.pr <= debt.base;
-  return { ok, newFailures, missing, mustPassFailures, fixed, stillFailing, debt };
+  return { ok, newFailures, missing, mustPassFailures, gains, newlyReached, stillFailing, debt };
 }
 
 /**
@@ -78,7 +105,8 @@ export function compare(base, pr, { mustPass = [] } = {}) {
  * @param {string} from the baseline's SHA
  */
 export function summaryTable(result, from) {
-  const { ok, newFailures, missing, mustPassFailures, fixed, stillFailing, debt } = result;
+  const { ok, newFailures, missing, mustPassFailures, gains, newlyReached, stillFailing, debt } =
+    result;
   const cell = (/** @type {string[]} */ ts) =>
     ts.length ? ts.map((t) => `\`${t}\``).join("<br>") : "none";
   const blocking = newFailures.length + missing.length + mustPassFailures.length;
@@ -88,9 +116,9 @@ export function summaryTable(result, from) {
     `Compared with main's baseline at \`${from}\`. A merge gate, not a release certificate: a release still needs a`,
     "fully green product matrix.",
     "",
-    "| New failures | Missing or skipped | Must pass, not green | Fixed | Still failing |",
-    "| --- | --- | --- | --- | --- |",
-    `| ${cell(newFailures)} | ${cell(missing)} | ${cell(mustPassFailures)} | ${cell(fixed)} | ${cell(stillFailing)} |`,
+    "| New failures | Missing or skipped | Must pass, not green | Gains | Newly reached | Still failing |",
+    "| --- | --- | --- | --- | --- | --- |",
+    `| ${cell(newFailures)} | ${cell(missing)} | ${cell(mustPassFailures)} | ${cell(gains)} | ${cell(newlyReached.map((r) => `${r.task} (unblocked by ${r.unblockedBy})`))} | ${cell(stillFailing)} |`,
     "",
   ].join("\n");
 }
