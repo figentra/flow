@@ -4,8 +4,8 @@
  *   the repository's own setup steps, its install, one `turbo run <tasks> --continue --summarize`, then `gate baseline
  *   save`; a push to the default branch uploads the results as that commit's baseline, a pull request checks against
  *   the nearest one.
- * Boundary: returns text; writes nothing. The setup steps come verbatim from the owner-only config; every action Flow
- *   adds is pinned to a commit.
+ * Boundary: returns text; writes nothing. The setup steps come from the owner-only config, as block YAML with their
+ *   values unchanged; every action Flow adds is pinned to a commit.
  * Runtime: node
  * Governing contract: STA-1942 FR-5 and FR-6.
  * Secrets: holds none; a repository's setup steps may name its own, as its CI does.
@@ -24,13 +24,39 @@ export const BASELINE_DEFAULTS = {
 };
 
 /**
+ * A config value as block YAML at `indent`. Every scalar is written as JSON, which YAML reads back unchanged as a
+ * double-quoted string, number, boolean or null: nothing is reinterpreted.
+ * @param {unknown} value an object or an array
+ * @param {number} indent
+ * @returns {string}
+ */
+function blockYaml(value, indent) {
+  const pad = " ".repeat(indent);
+  const entries = Array.isArray(value)
+    ? value.map((v) => ["-", v])
+    : Object.entries(/** @type {object} */ (value)).map(([k, v]) => [
+        `${/^[\w-]+$/.test(k) ? k : JSON.stringify(k)}:`,
+        v,
+      ]);
+  return entries
+    .map(([head, v]) =>
+      v === null || typeof v !== "object"
+        ? `${pad}${head} ${JSON.stringify(v)}\n`
+        : Object.keys(v).length === 0
+          ? `${pad}${head} ${Array.isArray(v) ? "[]" : "{}"}\n`
+          : `${pad}${head}\n${blockYaml(v, indent + 2)}`,
+    )
+    .join("");
+}
+
+/**
  * The workflow's YAML.
  * @param {{ tasks?: string[], install?: string, setup?: Record<string, unknown>[], branch?: string }} baseline
  */
 export function baselineWorkflow(baseline) {
   const { tasks, install, branch } = { ...BASELINE_DEFAULTS, ...baseline };
-  // A step is a JSON object, which is a YAML flow mapping: no re-indenting, nothing reinterpreted.
-  const setup = (baseline.setup ?? []).map((s) => `      - ${JSON.stringify(s)}\n`).join("");
+  // A step is written as block YAML (the YAML standard, STA-299, refuses flow mappings), its first key on the `- ` line.
+  const setup = (baseline.setup ?? []).map((s) => `      - ${blockYaml(s, 8).slice(8)}`).join("");
   return `# Written by \`${NAME} sync\` from the config's \`baseline\` (STA-1942); \`${NAME} gate ci\` fails on a hand edit.
 # One check, "${BASELINE_CHECK}": a pull request passes when it fails no task that passed on main.
 name: ${NAME} baseline

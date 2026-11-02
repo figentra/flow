@@ -29,6 +29,7 @@ import { sync } from "../commands/sync.mjs";
 import { artifactName, compare, findBaseline, READERS, summaryTable } from "../lib/baseline.mjs";
 import { loadConfig } from "../lib/config.mjs";
 import { BASELINE_WORKFLOW } from "../lib/product.mjs";
+import { parseYaml } from "../lib/yaml.mjs";
 
 /** A turbo run summary: `exit` per task id, `undefined` for a task that never ran. */
 const summary = (/** @type {Record<string, number | undefined>} */ exit) => ({
@@ -221,7 +222,7 @@ test("sync renders the baseline workflow only with `baseline`, with the setup st
   const setup = {
     name: "Registry auth",
     uses: "./.github/actions/registry-auth",
-    with: { token: "${{ secrets.T }}" },
+    with: { token: "${{ secrets.T }}", install_args: "node pnpm", depth: 2, lfs: false, empty: {} },
   };
   writeFileSync(
     join(root, "flow.config.json"),
@@ -234,7 +235,9 @@ test("sync renders the baseline workflow only with `baseline`, with the setup st
   sync(root, { log: () => {} });
   const yml = readFileSync(file, "utf8");
   assert.match(yml, /^ {4}name: Baseline$/m);
-  assert.ok(yml.includes(`      - ${JSON.stringify(setup)}\n`));
+  // the setup step is block YAML (STA-299 refuses flow mappings) and reads back as the config wrote it
+  assert.doesNotMatch(yml, /^\s*- \{/m);
+  assert.deepEqual(parseYaml(yml).jobs.baseline.steps[1], setup);
   assert.match(yml, /turbo run lint test --continue --summarize \|\| true/);
   assert.match(yml, /name: fflow-baseline-\$\{\{ github\.sha \}\}/);
   assert.match(yml, /gate baseline check --base "\$BASE_SHA"/);
