@@ -90,7 +90,10 @@ test("compare: the subset passes, a new failure and a new failing task fail, a f
   const better = compare(main, READERS.turbo(summary({ "a#lint": 0, "a#test": 1, "b#build": 0 })));
   assert.equal(better.ok, true);
   assert.deepEqual(better.gains, ["a#lint"]);
-  assert.match(summaryTable(better, "abc"), /\| none \| none \| none \| `a#lint` \| `a#test` \|/);
+  assert.match(
+    summaryTable(better, "abc"),
+    /\| none \| none \| none \| `a#lint` \| none \| `a#test` \|/,
+  );
   assert.match(summaryTable(better, "abc"), /not a release certificate/);
 });
 
