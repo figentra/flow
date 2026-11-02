@@ -35,7 +35,7 @@ const JOB = {
 const ENV = {
   [`${ENV_PREFIX}GATE_APP_ID`]: "4242",
   [`${ENV_PREFIX}GATE_PRIVATE_KEY`]: privateKey,
-  HEROUI_AUTH_TOKEN: "heroui-secret-value",
+  UNIWIND_AUTH_TOKEN: "uniwind-secret-value",
 };
 const NOW = Date.parse("2026-10-31T10:03:07Z");
 
@@ -79,7 +79,7 @@ function github({ tip = SHA, prs = [7], comments = [], failToken = false } = {})
 /** Every secret this run touched must be absent from what it sent and printed. */
 function assertNoSecret(/** @type {{ body?: any }[]} */ calls, /** @type {string[]} */ lines) {
   const sent = JSON.stringify(calls.map((c) => c.body)) + lines.join("\n");
-  for (const secret of [TOKEN, ENV.HEROUI_AUTH_TOKEN, "BEGIN PRIVATE KEY"])
+  for (const secret of [TOKEN, ENV.UNIWIND_AUTH_TOKEN, "BEGIN PRIVATE KEY"])
     assert.equal(sent.includes(secret), false, secret);
 }
 
@@ -112,7 +112,7 @@ test("post: a failure posts failure with a redacted log tail, updating the gate'
   const { calls, fetch } = github({
     comments: [{ id: 5, user: { type: "Bot" }, body: `${MARKER}\nold` }],
   });
-  const log = `step 1\nusing ${ENV.HEROUI_AUTH_TOKEN} to install\nError: 3 tests failed`;
+  const log = `step 1\nusing ${ENV.UNIWIND_AUTH_TOKEN} to install\nError: 3 tests failed`;
   const result = await post({ job: JOB, exit: 1, log, env: ENV, fetch, now: NOW });
   assert.equal(result.code, 1);
   assert.equal(calls.find((c) => c.url.endsWith(`/statuses/${SHA}`))?.body.state, "failure");
@@ -169,9 +169,9 @@ test("appJwt: RS256 over the App id, verifiable with the public key", () => {
 });
 
 test("redact: secret-looking values (and each line of a key) become ***, others stay", () => {
-  const text = `a heroui-secret-value b ${privateKey.split("\n")[1]} c plain-value`;
+  const text = `a uniwind-secret-value b ${privateKey.split("\n")[1]} c plain-value`;
   const out = redact(text, { ...ENV, PLAIN: "plain-value" });
-  assert.equal(out.includes("heroui-secret-value"), false);
+  assert.equal(out.includes("uniwind-secret-value"), false);
   assert.equal(out.includes(privateKey.split("\n")[1]), false);
   assert.match(out, /plain-value/);
 });
