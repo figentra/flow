@@ -19,6 +19,7 @@
   "devDependencies": {
     "@changesets/changelog-git": "catalog:release",
     "@changesets/cli": "catalog:release",
+    "flow-released": "catalog:release",
     "lefthook": "catalog:release",
     "oxfmt": "catalog:quality",
     "oxlint": "catalog:quality",
