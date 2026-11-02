@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-02
 
-**Status**: Draft (A-1 awaiting the owner's approval)
+**Status**: Draft (A-1 and A-2 awaiting the owner's approval)
 
 **Tier**: big
 
@@ -221,6 +221,47 @@ the owner approves A-1.
   "flow-records" repository. Recommended: (a); `--workspace` reads every repository's records for `status`, `todo` and
   `ledger`.
 
+## Amendment A-2 (2026-11-03): tasks that commands move (from Vellum)
+
+**Source:** the owner, 2026-11-03, after comparing Flow with Vellum (Flow's predecessor, tag `legacy-2026-10-30`):
+"add all three" (D4). Vellum's task core, adapted to Flow: commands, not agents, move a task, with evidence; the plan
+splits tasks into waves that run in parallel; optional and checkpoint tasks. Vellum's signed approvals, hash-chained
+ledger and 13-state lifecycle stay out (the decisions behind ADR 0510 stand).
+
+### Requirements added by A-2
+
+- **FR-23 Markers that commands move.** A task line carries `[ ]` not started, `[~]` queued, `[-]` in progress or
+  `[x]` done; no agent edits a marker by hand.
+  - `fflow task start <key> <task>` refuses unless the spec, plan and tasks are approved at their current content,
+    then sets `[-]` and records the task's start (session, HEAD) in Flow's record (FR-14).
+  - `fflow task done <key> <task> --command <cmd>` runs the task's check command itself, records the command, exit
+    code, duration, HEAD and an output digest, and sets `[x]` only on exit 0 at a clean HEAD; on failure the marker
+    stays `[-]` and the record keeps the attempt. A secret-looking command is refused.
+  - When the spec, plan or tasks change after a task started, `check` resets that task to `[ ]` and says why.
+  - `trace` and `status` count a task done only with passing evidence in the record; `check` refuses Done while any
+    required task lacks it.
+- **FR-24 Waves and the parallel build.** `fflow plan` (FR-15) writes the tasks' wave graph from their `deps` and
+  paths (no two tasks of a wave share a path). The build stage's Claude workflow marks a wave's tasks `[~]`, runs them
+  as parallel subagents (at most 5 at once), each through `task start` and `task done`, and stops at the wave boundary
+  when one fails. `fflow next` and `resume` (FR-13) continue from the markers and the record, so a dead session's
+  wave restarts at its first unfinished task.
+- **FR-25 Optional and checkpoint tasks.** `T012*` marks a task optional: it may stay `[ ]` at Done but is reported.
+  A phase may end in a checkpoint task (`Checkpoint: <command>`), which `task done` runs like any other and which no
+  later wave starts before. The tasks template, `parseTasks`, `gate tasks` and `trace` read both.
+
+### Acceptance criteria added by A-2
+
+- **AC-22**: WHEN an agent ticks `[x]` by hand without passing evidence THE `check` command SHALL refuse the spec and
+  name the task.
+- **AC-23**: WHEN `fflow task done` runs a command that exits non-zero THE marker SHALL stay `[-]` and the record SHALL
+  keep the failed attempt with its exit code and digest.
+- **AC-24**: WHEN a task's spec changes after it started THE task SHALL return to `[ ]` with the reason shown.
+- **AC-25**: WHEN the build stage runs a wave of four independent tasks THE workflow SHALL run them in parallel and SHALL
+  not start the next wave while one of them failed.
+- **AC-26**: WHEN a session dies mid-wave THE next `fflow resume` SHALL restart at the wave's first unfinished task.
+- **AC-27**: WHEN a spec reaches Done with an optional task still `[ ]` THE `check` command SHALL pass and `status` SHALL
+  list the skipped optional task.
+
 ## Decisions (owner, 2026-11-02, relayed by the leader session)
 
 - **D1 (Q1)** HeroUI Pro's and Remotion's skills are kept for internal use only: installed from source on each
@@ -228,6 +269,9 @@ the owner approves A-1.
   owner's own Claude skills: that is their recorded source, and they are installed per machine like the others. The
   MIT and Apache-2.0 skills install through the preset as FR-8 says.
 - **D2 (Q2)** Core's 48 skills ship inside the stackra preset; registry `skill` items come later (FR-12).
+- **D4 (2026-11-03, the owner in the console-engine session)** Add Vellum's task core as A-2: markers that commands
+  move with per-task evidence, waves with parallel subagents and resume, optional and checkpoint tasks. Signed
+  approvals, the hash-chained ledger and the 13-state lifecycle stay out.
 - **D3 (Q3)** Profiles: `framework`, `platform`, `product`, `brand`, `starter`, and `pro` only if needed (FR-6).
 
 ## The questions as asked
@@ -264,3 +308,5 @@ test-level baseline inventory (STA-1942 v2).
 - 2026-11-02: Clarified → Planned (plan.md; the leader session reviews the plan before building)
 - 2026-11-03: Planned → Draft: A-1 "Flow first" added (FR-13 to FR-22, AC-13 to AC-21, Q4 to Q6), owner-approved
   design relayed by the leader session (STA-2038); awaiting the owner's approval of the text, then tasks.md
+- 2026-11-03: A-2 added (FR-23 to FR-25, AC-22 to AC-27), owner decision D4 (Vellum's task core); A-1 and A-2 await
+  the owner's approval of the text, then tasks.md

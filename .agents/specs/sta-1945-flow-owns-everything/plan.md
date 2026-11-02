@@ -171,6 +171,14 @@ Each PR carries its changeset entry. The owner holds the version PR until PR 9 m
 16. **The baseline-aware merge bot** (FR-22): the newly-reached category in the baseline (os#114) and `land` on a
     baseline-green gate.
 
+### Added by amendment A-2 (tasks that commands move)
+
+17. **Markers and evidence** (FR-23, FR-25): four markers, optional and checkpoint tasks in the template and
+    `parseTasks`; `fflow task start` / `task done` with evidence in the record; `check`, `trace` and `status` count
+    evidence, not ticks; the reset on a changed spec.
+18. **Waves and the parallel build** (FR-24): the wave graph from `plan`, the build workflow's wave dispatch (at most
+    5 subagents), and `next`/`resume` from markers. Lands with PR 14 (stage workflows).
+
 PR 9 (CLI output) moves onto `@stackra/console` once STA-1966's engine (core #290) is published as a prerelease.
 
 ## Rollout (FR-10)
