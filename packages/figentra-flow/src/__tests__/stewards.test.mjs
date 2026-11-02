@@ -14,6 +14,7 @@
  * Governing contract: ADR 0022; STA-1856.
  */
 // @covers sta-1856:FR-1 sta-1856:FR-4 sta-1856:FR-5 sta-1856:FR-6
+// @covers sta-1942:AC-009 sta-1942:P-004
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
