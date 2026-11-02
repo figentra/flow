@@ -117,6 +117,9 @@ comes the migration (FR-10 steps 2 to 4), one PR per repository, with core first
      (`ERR_PNPM_META_FETCH_FAIL`, or "Lockfile failed supply-chain policy check" with a 401), and prints "pre-push
      skipped: no registry read on this machine; the PR must cite a ci-box run for this commit". Any other failure
      still blocks. Tests cover each skip, and a non-401 failure that blocks.
+   - The oxlint job runs only when `node_modules/@stackra/oxlint-config` exists, since `.oxlintrc.jsonc` extends a
+     config there; otherwise it prints "oxlint skipped: no workspace install on this machine; CI lints this commit"
+     (os; the same guard as commitlint's). Tests cover both cases.
 6. **Core's content.** The 28 agents, 48 skills (FR-12), 15 rules, 29 reference docs, routing and models go into the
    stackra preset, split by profile. Before this lands, the package tarball size is measured and stated in the PR.
 7. **Third-party skills and `doctor`.** The FR-8 list from brand's census, with D1's `machine-only` marks.
