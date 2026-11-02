@@ -4,6 +4,7 @@
  *   save [--summary f] [--reader turbo]   the newest run summary's per-task results → .fflow-gate/baseline.json
  *   check --base <sha> [--json]           those results against main's baseline for the base SHA or its nearest
  *                                         ancestor; fails on a new failure and, closed, when no baseline exists
+ *                                         (`--json` then prints `{ ok: false, reason }`)
  * Boundary: reads the run summary and, for `check`, GitHub (artifacts and runs) with the job's GITHUB_TOKEN and
  *   `gh run download`; writes baseline.json and the job summary.
  * Runtime: node (GitHub Actions)
@@ -81,7 +82,13 @@ export async function run([mode, ...args], deps = {}) {
     const repo = String(env.GITHUB_REPOSITORY ?? "");
     if (!/^[0-9a-f]{40}$/.test(base))
       return (log(`${NAME} gate baseline: --base must be a 40-hex SHA`), 2);
-    if (!existsSync(own)) return (log(`${NAME} gate baseline: run \`save\` first`), 1);
+    const json = (/** @type {object} */ o) =>
+      args.includes("--json") && (deps.out ?? console.log)(JSON.stringify(o, null, 2));
+    // a fail-closed path still answers `--json`, so a consumer parsing stdout never reads an empty string
+    const closed = (/** @type {string} */ reason) =>
+      (json({ ok: false, reason }), 1);
+    if (!existsSync(own))
+      return (log(`${NAME} gate baseline: run \`save\` first`), closed("not_saved"));
     const api = deps.api ?? rest(String(env.GITHUB_TOKEN), env.GITHUB_API_URL);
     const found = await findBaseline({ api, repo, base });
     /** @param {string} text */
@@ -92,19 +99,21 @@ export async function run([mode, ...args], deps = {}) {
         `### Baseline: no baseline\n\nNo push to the default branch left a baseline at \`${base}\` or its ` +
           `${found.searched.length - 1} nearest ancestors, so this fails closed. Re-run the baseline workflow on main.\n`,
       );
-      return 1;
+      return closed("no_baseline");
     }
     const dir = (deps.download ?? download)(repo, found.runId, found.name);
     const file = dir && join(dir, FILE);
     if (!file || !existsSync(file))
-      return (log(`${NAME} gate baseline: ${found.name} could not be downloaded`), 1);
+      return (
+        log(`${NAME} gate baseline: ${found.name} could not be downloaded`),
+        closed("download_failed")
+      );
     const mine = JSON.parse(readFileSync(own, "utf8"));
     const result = compare(JSON.parse(readFileSync(file, "utf8")).tasks ?? {}, mine.tasks, {
       mustPass: loadConfig(root).config.baseline?.mustPass,
       needs: mine.needs,
     });
-    if (args.includes("--json"))
-      (deps.out ?? console.log)(JSON.stringify({ ...result, baselineSha: found.sha }, null, 2));
+    json({ ...result, baselineSha: found.sha });
     summary(summaryTable(result, found.sha));
     return result.ok ? 0 : 1;
   }

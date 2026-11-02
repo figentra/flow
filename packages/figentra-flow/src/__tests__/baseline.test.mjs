@@ -8,7 +8,8 @@
  *     is a gain;
  *   - STA-1945 FR-22: a gain (failed or never ran on main, passes now) is counted; a failure newly reached behind a
  *     repaired upstream task of its own package is reported with that task and does not block; a plain regression
- *     and a failure in an unrelated package still block; the `--json` shape;
+ *     and a failure in an unrelated package still block, even beside a newly reached one; the `--json` shape, a
+ *     fail-closed one included;
  *   - the 0.2.2 rename: `sync` renames the old config file once (failing when both exist) and removes the old-named
  *     workflows; the old binary prints one notice;
  *   - the baseline search walks the ancestors, ignores an artifact a pull request run or another branch made, and
@@ -170,6 +171,16 @@ test("compare: a task that passed on main and fails now blocks, and so does a fa
   const pr = { "a#build": "pass", "a#test": "fail", "c#test": "fail" };
   const r = compare(/** @type {any} */ (base), /** @type {any} */ (pr), { needs });
   assert.deepEqual([r.ok, r.newFailures, r.newlyReached], [false, ["a#test", "c#test"], []]);
+  // a newly reached failure does not excuse a regression beside it in the same package
+  const mixed = compare(
+    /** @type {any} */ ({ "a#build": "fail", "a#test": "skip", "a#lint": "pass" }),
+    /** @type {any} */ ({ "a#build": "pass", "a#test": "fail", "a#lint": "fail" }),
+    { needs: { "a#test": ["a#build"] } },
+  );
+  assert.deepEqual(
+    [mixed.ok, mixed.newFailures, mixed.newlyReached, mixed.debt],
+    [false, ["a#lint"], [{ task: "a#test", unblockedBy: "a#build" }], { base: 1, pr: 1 }],
+  );
 });
 
 test("the turbo reader keeps each task's upstream tasks, and `check --json` prints the result", async (t) => {
@@ -312,6 +323,20 @@ test("gate baseline: save, then check passes on the subset, fails on a new failu
   const closed = { ...deps, api: github({ ancestors: [A], artifacts: {}, events: {} }) };
   assert.equal(await run(["check", "--base", A], closed), 1);
   assert.match(readFileSync(step, "utf8"), /no baseline[\s\S]*fails closed/);
+  // a fail-closed path still prints JSON for a consumer parsing stdout
+  /** @type {string[]} */
+  const out = [];
+  const asJson = { ...closed, out: (/** @type {string} */ x) => out.push(x) };
+  assert.equal(await run(["check", "--base", A, "--json"], asJson), 1);
+  const lost = { ...deps, out: asJson.out, download: () => undefined };
+  assert.equal(await run(["check", "--base", A, "--json"], lost), 1);
+  assert.deepEqual(
+    out.map((x) => JSON.parse(x)),
+    [
+      { ok: false, reason: "no_baseline" },
+      { ok: false, reason: "download_failed" },
+    ],
+  );
 });
 
 test("sync renders the baseline workflow only with `baseline`, with the setup steps verbatim", (t) => {
