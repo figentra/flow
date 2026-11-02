@@ -9,10 +9,14 @@ pre-commit:
     - name: oxfmt
       glob: "*.{js,mjs,ts,json,jsonc,yaml,yml,md}"
       # oxfmt exits 2 when every staged file is ignored: that is not a finding.
-      run: sh -c 'pnpm exec oxfmt --check "$@"; s=$?; [ $s -eq 2 ] && exit 0; exit $s' -- {staged_files}
+      # The mise-pinned oxfmt runs without a workspace install, so a commit never installs; pnpm's is the fallback where
+      # mise is missing (STA-2039).
+      run: >-
+        sh -c 'if command -v mise >/dev/null 2>&1; then mise exec -- oxfmt --check "$@"; else pnpm exec oxfmt --check "$@"; fi;
+        s=$?; [ $s -eq 2 ] && exit 0; exit $s' -- {staged_files}
     - name: oxlint
       glob: "*.{js,mjs,ts}"
-      run: pnpm exec oxlint {staged_files}
+      run: sh -c 'if command -v mise >/dev/null 2>&1; then exec mise exec -- oxlint "$@"; fi; exec pnpm exec oxlint "$@"' -- {staged_files}
 
 pre-push:
   jobs:
