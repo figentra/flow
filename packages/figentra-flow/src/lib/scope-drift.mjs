@@ -75,12 +75,8 @@ const isPath = (/** @type {string} */ p) =>
  * @returns {string[]}
  */
 export function outsideTrees(tasks, entries) {
-  const held = entries.map((e) => ({ e, re: pattern(e) }));
+  const held = entries.map(pattern);
   const named = new Set(tasks.filter((t) => !t.struck).flatMap((t) => t.paths));
-  return [...named].filter(
-    (p) =>
-      isPath(p) &&
-      !ALLOWED.test(p) &&
-      !held.some(({ e, re }) => re.test(p) || (p.endsWith("/") && e.startsWith(p))),
-  );
+  // a task's folder needs a leaf folder entry that holds it: a folder with listed children holds only those
+  return [...named].filter((p) => isPath(p) && !ALLOWED.test(p) && !held.some((re) => re.test(p)));
 }

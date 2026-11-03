@@ -935,14 +935,18 @@ test("task trees: each task names only files of the plan's folder trees, failing
   ].join("\n");
   const tasks = [
     "- [ ] T001 Pass in `packages/wallet/src/pass.ts` and `packages/wallet/src/show.ts` — covers: AC-001",
-    "- [ ] T002 Guide in `packages/wallet/docs/guide.md`, `packages/wallet/src/`, `README.md` and `packages/wallet/src/__tests__/pass.test.ts` — covers: AC-001",
+    "- [ ] T002 Guide in `packages/wallet/docs/guide.md`, `packages/wallet/docs/`, `README.md` and `packages/wallet/src/__tests__/pass.test.ts` — covers: AC-001",
     "- [ ] T003 Record in `.agents/specs/sta-12-x/tasks.md` through `gate ci`, `checkScope` and `/flow-tasks` — covers: AC-001",
-    "- [ ] T004 Stray `src/elsewhere.ts` and `packages/wallet/src/pass.js` — covers: AC-001",
+    "- [ ] T004 Stray `src/elsewhere.ts`, `packages/wallet/src/pass.js` and `packages/wallet/src/` — covers: AC-001",
     "- [ ] ~~T005~~ Was `src/gone.ts` — covers: AC-001",
   ].join("\n");
   const outside = (/** @type {string} */ path) =>
     `tasks.md:4: T004 names \`${path}\`, which no folder tree of plan.md holds (add it to the tree, or amend the task) (FR-30)`;
-  const found = [outside("src/elsewhere.ts"), outside("packages/wallet/src/pass.js")];
+  const found = [
+    outside("src/elsewhere.ts"),
+    outside("packages/wallet/src/pass.js"),
+    outside("packages/wallet/src/"),
+  ];
   assert.deepEqual(checkTaskTrees("**Tier**: big\n", plan, tasks, "sta-12-x"), {
     problems: found,
     warnings: [],

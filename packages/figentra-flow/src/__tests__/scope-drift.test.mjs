@@ -113,6 +113,7 @@ test("outside trees: a live task's path no entry holds, by path, folder or glob;
     task(["src/gone.mjs"], true),
   ];
   assert.deepEqual(outsideTrees(tasks, entries), [
+    "pkg/",
     "src/b.mjs",
     "lib/d.mjs",
     "assets/a/b/x.yml",
@@ -133,6 +134,6 @@ test("outside trees: a live task's path no entry holds, by path, folder or glob;
       ],
       rooted,
     ),
-    ["packages/x/src/b.mjs"],
+    ["packages/x/src/", "packages/x/src/b.mjs"],
   );
 });
