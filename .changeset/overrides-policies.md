@@ -16,5 +16,4 @@ render; `check` warns from 14 days before an override's review date and fails af
 `.flow/overrides/` changed without a `sync`. Today's whole-file overrides
 (`.flow/overrides/<name>.md`, `commands/`, `agents/`, `rules/`) keep working as `replace`, and `validate` warns until
 each gets its `.yml`. `.flow/overrides/**` is now an owner-only path, so the rendered CODEOWNERS changes on the next
-`sync`. `fflow check --help` and `fflow validate --help` describe
-the override and policy checks.
+`sync`. `fflow check --help` and `fflow validate --help` describe the override and policy checks.

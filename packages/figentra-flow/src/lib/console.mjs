@@ -287,7 +287,7 @@ export const COMMANDS = [
   governance({
     name: "check",
     description:
-      "The CI check: owned files, the preset, the config and the overrides against the lock, and review dates; writes nothing",
+      "The CI check: owned files, preset, config and overrides against the lock, and review dates; writes nothing",
     examples: [`${NAME} check`, `${NAME} check --workspace ~/code`],
   }),
   governance({
