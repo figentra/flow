@@ -19,7 +19,7 @@
  *                               allow-listed: a `chore-lane` PR may use any branch, and only `linear check-pr`
  *                               sees the PR labels, so check-pr is the enforcing check
  *   ci [--base=ref]             the install check (ADR 0510); `check` for every spec folder changed since the base; bug-lane rules;
- *                               `lane`. SPEC_GATE_REQUIRE_READY=1 (a ready-for-review PR) also requires the PR's
+ *                               `lane`; scope drift against the branch's own spec's tasks (FR-30). SPEC_GATE_REQUIRE_READY=1 (a ready-for-review PR) also requires the PR's
  *                               own spec (the branch key's folder), when changed, to be at Tasked or later; an
  *                               edit to another spec gets only `check`, and changing another spec's `**Status**`
  *                               line needs a commit whose `Refs:` names that spec's key. No branch check: check-pr
@@ -31,9 +31,13 @@
  * its artifacts, never lead them (I5):
  *   Draft         folder `<key>-<slug>` (the tracker's key scheme); a `**Linear**` key, when set, equals the folder's
  *   Clarified     clarifications complete, real key, every Impact line answered, no NEEDS CLARIFICATION; a Status
- *                 history line for the current status
+ *                 history line for the current status. A tiered spec also has `### Sources` citing every FR (FR-26)
+ *                 and, in its FR and AC lines, no word of the preset's `quality-words.yml` (a failure on big, else a
+ *                 warning; FR-29); at its approval stop a document holds no template placeholder, empty mandatory
+ *                 section or open question (FR-28)
  *   Planned       plan.md: Constitution Check rows PASS or N/A with a reason, three deploy-mode rows, every live FR
- *                 validated by a P-### (or marked example-only)
+ *                 validated by a P-### (or marked example-only); a feature or big plan's components each have a
+ *                 folder tree and interface declarations (FR-27)
  *   Tasked        tasks.md passes `tasks`
  *   Implementing  at least one task ticked
  *   Done          every live task ticked (spec-trace adds test coverage)
@@ -56,8 +60,10 @@ import { loadTeam } from "../lib/team.mjs";
 import { installProblems } from "../lib/render.mjs";
 import { BUNDLED } from "./sync.mjs";
 import { loadConfig } from "../lib/config.mjs";
-import { specsDirs, writeCurrent } from "../lib/flow-dir.mjs";
+import { presetDir, resolveTemplate, specsDirs, writeCurrent } from "../lib/flow-dir.mjs";
 import { ENV_PREFIX, LEGACY_ENV_PREFIX, NAME } from "../lib/product.mjs";
+import { scopeDrift } from "../lib/scope-drift.mjs";
+import { parseYaml } from "../lib/yaml.mjs";
 
 /** The presets this package ships (`stackra`, `neutral`), installed when a repository keeps none of its own. */
 import {
@@ -313,7 +319,9 @@ export function checkTasks(
  * @param {string} folder
  * @param {string} text
  * @param {{ files?: string[], tasks?: string, plan?: string, known?: Set<string>, keys?: KeyScheme,
- *           rules?: Rules, team?: import("../lib/team.mjs").Team }} [options]
+ *           rules?: Rules, team?: import("../lib/team.mjs").Team, words?: string[],
+ *           warn?: (warning: string) => void }} [options] `words` is the vague-word list (the preset's by default);
+ *           `warn` takes what only warns (dropped by default)
  */
 export function checkStage(
   folder,
@@ -326,6 +334,8 @@ export function checkStage(
     keys = repoScheme(),
     rules = repoRules(),
     team = loadTeam(ROOT),
+    words,
+    warn = () => {},
   } = {},
 ) {
   const body = strip(text);
@@ -352,7 +362,22 @@ export function checkStage(
       }),
       ...ownerApprovalProblems(text, loadConfig(ROOT).config.apps?.owner),
     );
-  if (tier !== undefined && tier !== "trivial") problems.push(...checkCriteria(text));
+  if (tier !== undefined && tier !== "trivial") {
+    problems.push(...checkCriteria(text), ...checkSources(text));
+    const vague = checkVague(text, words ?? qualityWords(), tier);
+    problems.push(...vague.problems);
+    for (const w of vague.warnings) warn(w);
+  }
+  // FR-28: what an approval stop approves holds no placeholder, empty mandatory section or open question.
+  if (tier === "feature" || tier === "big") {
+    if (atLeast(status, tier === "big" ? "clarified" : "planned"))
+      problems.push(...checkPlaceholders(text).map((p) => `spec.md: ${p}`));
+    if (atLeast(status, "planned") && files.includes("plan.md"))
+      problems.push(
+        ...checkPlaceholders(plan).map((p) => `plan.md: ${p}`),
+        ...checkComponents(plan),
+      );
+  }
   const history =
     body.match(/^## Status history\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
   if (!new RegExp(`→\\s*${status}\\b`, "i").test(history))
@@ -665,6 +690,194 @@ export function checkTraceTasks(tasks, spec, where) {
   return problems;
 }
 
+/** Markdown without fenced blocks and inline code, which quote text rather than state it. */
+const prose = (/** @type {string} */ text) =>
+  text.replaceAll(/^```[\s\S]*?^```/gm, "").replaceAll(/`[^`\n]*`/g, "");
+
+/**
+ * The `[…]` placeholders and `$ARGUMENTS` of the spec and plan templates `root` resolves (FR-28); a checkbox, `[P]` and
+ * `[NEEDS CLARIFICATION` are not placeholders.
+ * @param {string} [root]
+ * @returns {Set<string>}
+ */
+export function templatePlaceholders(root = ROOT) {
+  const text = ["spec-template", "plan-template"]
+    .map((name) => readIf(resolveTemplate(root, name) ?? ""))
+    .join("\n");
+  return new Set(
+    [...prose(strip(text)).matchAll(/\[[^\]\n]+\](?![([:])|\$ARGUMENTS/g)]
+      .map((m) => m[0])
+      .filter((m) => !/^\[(?:[ xX~P-]\]|NEEDS CLARIFICATION)/.test(m)),
+  );
+}
+/** @type {Set<string> | undefined} */
+let marks;
+
+/**
+ * FR-28: a document's template placeholders, empty `(mandatory)` sections and open questions (a `## Open questions`
+ * section that is not "None").
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function checkPlaceholders(text) {
+  const body = prose(strip(text));
+  const problems = [];
+  for (const mark of (marks ??= templatePlaceholders()))
+    if (body.includes(mark)) problems.push(`the template placeholder \`${mark}\` remains`);
+  const lines = body.split("\n");
+  for (const [i, line] of lines.entries()) {
+    const heading = line.match(/^(#{2,4}) (.*\(mandatory.*)$/);
+    if (!heading) continue;
+    let filled = false;
+    for (const next of lines.slice(i + 1)) {
+      const level = next.match(/^(#{1,6}) /)?.[1].length;
+      if (level !== undefined && level <= heading[1].length) break;
+      if (level === undefined && next.trim()) {
+        filled = true;
+        break;
+      }
+    }
+    if (!filled) problems.push(`the mandatory section \`${heading[2].trim()}\` is empty`);
+  }
+  for (const [, part] of body.matchAll(
+    /^#{2,4} Open questions\b[^\n]*\n([\s\S]*?)(?=^#{1,4} |(?![\s\S]))/gim,
+  )) {
+    const open = part.trim();
+    if (!open || /^none\.?$/i.test(open)) continue;
+    const items = open.split("\n").filter((l) => /^\s*(?:[-*]|\d+\.) /.test(l));
+    for (const q of items.length ? items : [open.split("\n")[0] ?? ""])
+      problems.push(
+        `an open question remains: "${q.replace(/^\s*(?:[-*]|\d+\.) /, "").trim()}" (decide it before the approval)`,
+      );
+  }
+  return problems;
+}
+
+/**
+ * FR-26, AC-28: a `### Sources` section, and every live FR cited in it by id or in a range ("FR-1 to FR-12").
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function checkSources(text) {
+  const sources =
+    strip(text)
+      .match(/^#{2,4} Sources\b[^\n]*\n([\s\S]*?)(?=^#{1,4} |(?![\s\S]))/m)?.[1]
+      ?.trim() ?? "";
+  if (!sources || /^none\.?$/i.test(sources))
+    return [
+      "spec.md: no `### Sources` section naming the files, ADRs, commands and issues the spec rests on (FR-26)",
+    ];
+  /** @type {Set<number>} */
+  const cited = new Set();
+  for (const m of sources.matchAll(/\bFR-(\d+)(?:\s*(?:to|through|–|—)\s*(?:FR-)?(\d+))?/g)) {
+    const from = Number(m[1]);
+    const to = m[2] === undefined ? from : Number(m[2]);
+    for (let n = from; n <= Math.min(to, from + 999); n++) cited.add(n);
+  }
+  return [...definedIds(text, "FR").live]
+    .filter((fr) => !cited.has(Number(fr.slice(3))))
+    .map(
+      (fr) =>
+        `spec.md: ${fr} cites no source (name it in \`### Sources\`, alone or in a range such as "FR-1 to FR-12")`,
+    );
+}
+
+/**
+ * FR-27, AC-29: each component (a `###` under `## Components`) has a folder tree (a ```text block) and its interface
+ * declarations (a fenced block in another language).
+ * @param {string} plan
+ * @returns {string[]}
+ */
+export function checkComponents(plan) {
+  const section =
+    strip(plan).match(/^## Components\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
+  const problems = [];
+  for (const [, name, part] of section.matchAll(/^### (.+)\n([\s\S]*?)(?=^### |(?![\s\S]))/gm)) {
+    // the fence lines alternate: opening, closing
+    const langs = [...part.matchAll(/^```(\S*)/gm)]
+      .filter((_, i) => i % 2 === 0)
+      .map((m) => m[1].toLowerCase());
+    if (!langs.some((l) => l === "text" || l === "tree"))
+      problems.push(
+        `plan.md: component \`${name.trim()}\` has no folder tree (a \`\`\`text block of every file it adds) (FR-27)`,
+      );
+    if (!langs.some((l) => l !== "" && l !== "text" && l !== "tree"))
+      problems.push(
+        `plan.md: component \`${name.trim()}\` has no interface declarations (a fenced block in the repository's language) (FR-27)`,
+      );
+  }
+  return problems;
+}
+
+/**
+ * The vague words of the preset `root` uses (`quality-words.yml`'s `words:`, each `{ word, example }`); none when the
+ * preset has no list.
+ * @param {string} [root]
+ * @returns {string[]}
+ */
+export function qualityWords(root = ROOT) {
+  const text = readIf(join(presetDir(root), "quality-words.yml"));
+  if (!text) return [];
+  /** @type {{ words?: { word?: unknown }[] }} */
+  const yml = parseYaml(text) ?? {};
+  return (yml.words ?? []).map((w) => String(w?.word ?? "")).filter(Boolean);
+}
+
+/**
+ * FR-29, AC-31: listed vague words in the FR and AC lines (their continuation lines too, inline code aside): failures
+ * on a big spec, warnings on the others.
+ * @param {string} text
+ * @param {string[]} words
+ * @param {string} tier
+ * @returns {{ problems: string[], warnings: string[] }}
+ */
+export function checkVague(text, words, tier) {
+  const res = words.map((w) => {
+    const escaped = w.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&").replaceAll(" ", "\\s+");
+    return { w, re: new RegExp(`(?<![\\w-])${escaped}(?![\\w-])`, "i") };
+  });
+  /** @type {Set<string>} */
+  const found = new Set();
+  /** @type {string | undefined} */
+  let id;
+  for (const line of strip(text).split("\n")) {
+    const start = line.match(/^\s*[-*] (~~)?\*\*((?:FR|AC)-\d+)\*\*(~~)?/);
+    if (start) id = start[1] || start[3] ? undefined : start[2];
+    else if (!/^\s+\S/.test(line)) id = undefined;
+    if (id === undefined) continue;
+    const said = line.replaceAll(/`[^`\n]*`/g, "");
+    for (const { w, re } of res)
+      if (re.test(said))
+        found.add(
+          `spec.md: ${id} uses the vague term "${w}" (state a measurable value; the preset's quality-words.yml has an example) (FR-29)`,
+        );
+  }
+  return tier === "big"
+    ? { problems: [...found], warnings: [] }
+    : { problems: [], warnings: [...found] };
+}
+
+/**
+ * FR-30, AC-32: the files a PR changes that no task of its spec names (the spec folder itself aside); failures on a
+ * big spec, warnings on the others. A spec without a tier, or not yet tasked, has nothing to drift from.
+ * @param {string} spec
+ * @param {string} tasks tasks.md (a small spec keeps its tasks in spec.md)
+ * @param {string[]} changed
+ * @param {string} [specs] the specs folder
+ * @returns {{ problems: string[], warnings: string[] }}
+ */
+export function checkScope(spec, tasks, changed, specs = SPECS_DIR) {
+  const tier = tierOf(spec);
+  const parsed = parseTasks(tier === "small" ? spec : tasks);
+  if (tier === undefined || tier === "trivial" || parsed.length === 0)
+    return { problems: [], warnings: [] };
+  const drift = scopeDrift(
+    changed.filter((f) => !f.startsWith(`${specs}/`)),
+    parsed,
+  ).map((f) => `scope drift: \`${f}\` is named by no task (amend the spec to add it) (FR-30)`);
+  return tier === "big" ? { problems: drift, warnings: [] } : { problems: [], warnings: drift };
+}
+
 /** feat commits need a lite or full spec reached through the branch key or their `Refs:` keys (ADR 0120 D4). */
 export function checkLane({
   commits = [],
@@ -816,6 +1029,7 @@ function stageGate(dir, { requireReady = false } = {}) {
         tasks: readIf(join(dir, "tasks.md")),
         plan: readIf(join(dir, "plan.md")),
         known: knownRoutes(),
+        warn: (w) => console.warn(`spec-gate: warning: ${relative(ROOT, dir)}: ${w}`),
       })
     : [existsSync(dir) ? "spec.md is missing" : "no such spec folder"];
   const status = statusOf(readIf(spec));
@@ -935,6 +1149,21 @@ function laneGate(base) {
   return [...lane, ...checkTier({ declared, computed: computed.tier, reasons: computed.reasons })];
 }
 
+/** FR-30: checkScope for the branch's own spec against the PR's diff; its warnings go to stderr here. */
+function scopeGate(base) {
+  const dir = join(ROOT, SPECS_DIR);
+  const own = (existsSync(dir) ? readdirSync(dir) : []).find((f) => isOwnSpec(f, currentBranch()));
+  if (own === undefined) return [];
+  const changed = git("diff", "--name-only", `${base}...HEAD`).split("\n").filter(Boolean);
+  const { problems, warnings } = checkScope(
+    readIf(join(dir, own, "spec.md")),
+    readIf(join(dir, own, "tasks.md")),
+    changed,
+  );
+  for (const w of warnings) console.warn(`spec-gate: warning: ${w}`);
+  return problems;
+}
+
 /** checkForeignStatus for every changed spec folder, against its spec.md at the merge base. */
 function foreignStatusGate(base, dirs) {
   const mergeBase = git("merge-base", base, "HEAD").trim();
@@ -1051,6 +1280,7 @@ export function run([mode, ...args]) {
       for (const b of bugs) failures += report(checkBug(basename(b), tests));
     }
     failures += report(laneGate(base));
+    failures += report(scopeGate(base));
     failures += report(loadTeam(ROOT)?.problems.map((p) => `team: ${p}`) ?? []);
     failures += report(roleGate(base));
     say(

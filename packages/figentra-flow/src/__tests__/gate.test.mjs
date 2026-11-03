@@ -8,6 +8,9 @@
  */
 // @covers sta-1729:AC-028 sta-163:FR-001 sta-163:FR-002 sta-163:FR-003 sta-163:FR-004 sta-163:FR-005 sta-163:FR-008
 // @covers sta-163:P-001 sta-163:P-002 sta-163:P-003 sta-163:P-005 sta-163:P-006 sta-163:P-007
+// @covers sta-1945:FR-26 sta-1945:FR-27 sta-1945:FR-28 sta-1945:FR-29 sta-1945:FR-30
+// @covers sta-1945:AC-28 sta-1945:AC-29 sta-1945:AC-30 sta-1945:AC-31 sta-1945:AC-32
+// @covers sta-1945:P-032 sta-1945:P-033 sta-1945:P-034
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -24,14 +27,20 @@ import {
   DESIGN_SECTIONS,
   checkBranch,
   checkBug,
+  checkComponents,
   checkForeignStatus,
   checkLane,
+  checkPlaceholders,
+  checkScope,
+  checkSources,
   checkSpec,
   checkStage,
   checkTasks,
   checkTier,
+  checkVague,
   computedTier,
   isOwnSpec,
+  qualityWords,
   refsKeys,
   specDir,
   tierOf,
@@ -559,4 +568,158 @@ test("trace: each task covers an AC and names a file; each AC is covered", () =>
       "tasks.md: AC-001 is covered by no task",
     ],
   );
+});
+
+// STA-1945 FR-26 to FR-30: documents specific enough to check.
+const REQUIREMENTS =
+  "- **FR-001**: WHEN a pass is issued THE wallet SHALL show it fast.\n- **FR-002**: WHEN a pass expires THE wallet SHALL hide it.\n";
+/** A spec of `tier` at `stage` with two FRs, the criteria and `extra` under its requirements. */
+const documented = (tier, stage, extra = "") =>
+  spec({ stage })
+    .replace("**Linear**", `**Tier**: ${tier}\n\n**Linear**`)
+    .replace("## Requirements\n", `## Requirements\n\n${REQUIREMENTS}\n${extra}\n${CRITERIA}\n`);
+const SOURCES = "### Sources\n\n- `src/wallet.ts` and STA-12: FR-1 to FR-2\n";
+
+test("placeholders: template text, an empty mandatory section and an open question are refused (FR-28)", () => {
+  assert.deepEqual(checkPlaceholders("## Summary\n\nThe wallet shows a pass.\n"), []);
+  assert.deepEqual(checkPlaceholders("## Summary\n\nCreated on [DATE].\n"), [
+    "the template placeholder `[DATE]` remains",
+  ]);
+  assert.deepEqual(checkPlaceholders("## Summary\n\nThe template's `[DATE]` field.\n"), []);
+  assert.deepEqual(checkPlaceholders("- [ ] T001 [P] Do it\n- [x] T002 Done\n"), []);
+  assert.deepEqual(
+    checkPlaceholders(
+      "## Requirements _(mandatory)_\n\n<!-- guidance -->\n\n## Out of scope\n\nx\n",
+    ),
+    ["the mandatory section `Requirements _(mandatory)_` is empty"],
+  );
+  assert.deepEqual(
+    checkPlaceholders("## Requirements _(mandatory)_\n\n### Functional\n\n- **FR-001**: x\n"),
+    [],
+  );
+  assert.deepEqual(checkPlaceholders("## Open questions\n\nNone.\n"), []);
+  assert.deepEqual(checkPlaceholders("## Open questions\n\n- Which port?\n- Who owns it?\n"), [
+    'an open question remains: "Which port?" (decide it before the approval)',
+    'an open question remains: "Who owns it?" (decide it before the approval)',
+  ]);
+});
+
+test("sources: a `### Sources` section that cites every live FR, alone or in a range (FR-26)", () => {
+  assert.deepEqual(checkSources(REQUIREMENTS), [
+    "spec.md: no `### Sources` section naming the files, ADRs, commands and issues the spec rests on (FR-26)",
+  ]);
+  assert.match(checkSources(`${REQUIREMENTS}\n### Sources\n\nNone.\n`).join(), /no `### Sources`/);
+  assert.deepEqual(checkSources(`${REQUIREMENTS}\n${SOURCES}`), []);
+  assert.deepEqual(checkSources(`${REQUIREMENTS}\n### Sources\n\n- ADR 0502: FR-001\n`), [
+    'spec.md: FR-002 cites no source (name it in `### Sources`, alone or in a range such as "FR-1 to FR-12")',
+  ]);
+  assert.deepEqual(
+    checkSources(
+      `${REQUIREMENTS}- ~~**FR-003**~~: (A-1) struck.\n\n### Sources\n\n- x: FR-1, FR-2\n`,
+    ),
+    [],
+  );
+});
+
+test("components: each component of a plan has a folder tree and its interfaces (FR-27)", () => {
+  const tree = "```text\nsrc/wallet.ts (new)\n```\n";
+  const code = "```ts\nexport function show(pass: Pass): void;\n```\n";
+  const plan = (/** @type {string} */ body) =>
+    `## Summary\n\nx\n\n## Components and responsibilities\n\n### C1 Wallet\n\n${body}\n## Files and folders\n\nx\n`;
+  assert.deepEqual(checkComponents(plan(`${tree}\n${code}`)), []);
+  assert.deepEqual(checkComponents(plan(code)), [
+    "plan.md: component `C1 Wallet` has no folder tree (a ```text block of every file it adds) (FR-27)",
+  ]);
+  assert.deepEqual(checkComponents(plan(tree)), [
+    "plan.md: component `C1 Wallet` has no interface declarations (a fenced block in the repository's language) (FR-27)",
+  ]);
+  assert.deepEqual(checkComponents("## Summary\n\nx\n"), []);
+});
+
+test("vague words: listed terms in FR and AC lines fail a big spec and warn on the others (FR-29)", () => {
+  const text = [
+    "- **AC-001**: WHEN a pass is issued THE wallet SHALL show it fast",
+    "  and refresh it as needed",
+    "- ~~**FR-002**~~: (A-1) fast, struck",
+    "- **FR-003**: THE `fast` flag SHALL exist for breakfast",
+    "- **SC-001**: fast",
+    "",
+    "Fast prose is not a requirement.",
+  ].join("\n");
+  const found = [
+    'spec.md: AC-001 uses the vague term "fast" (state a measurable value; the preset\'s quality-words.yml has an example) (FR-29)',
+    'spec.md: AC-001 uses the vague term "as needed" (state a measurable value; the preset\'s quality-words.yml has an example) (FR-29)',
+  ];
+  const words = ["fast", "as needed"];
+  assert.deepEqual(checkVague(text, words, "big"), { problems: found, warnings: [] });
+  assert.deepEqual(checkVague(text, words, "feature"), { problems: [], warnings: found });
+  assert.deepEqual(checkVague(text, [], "big"), { problems: [], warnings: [] });
+  const listed = qualityWords();
+  for (const w of ["fast", "as needed", "user-friendly"]) assert.ok(listed.includes(w), w);
+});
+
+test("checkStage: Sources at Clarified, placeholders at the approval stop, vague words by tier", () => {
+  const over = { team: null, words: ["fast"] };
+  assert.deepEqual(
+    checkStage("sta-12-x", documented("big", "Clarified", SOURCES), { ...over, words: [] }),
+    [],
+  );
+  assert.match(
+    checkStage("sta-12-x", documented("small", "Clarified"), over).join(),
+    /no `### Sources` section/,
+  );
+  assert.match(
+    checkStage("sta-12-x", documented("big", "Clarified", SOURCES), over).join(),
+    /FR-001 uses the vague term "fast"/,
+  );
+  /** @type {string[]} */
+  const warned = [];
+  const feature = checkStage("sta-12-x", documented("feature", "Clarified", SOURCES), {
+    ...over,
+    warn: (w) => warned.push(w),
+  });
+  assert.doesNotMatch(feature.join(), /vague/);
+  assert.match(warned.join(), /FR-001 uses the vague term "fast"/);
+  // big stops at Clarified; feature first stops at Planned.
+  const dated = `${SOURCES}\nCreated on [DATE].\n`;
+  assert.match(
+    checkStage("sta-12-x", documented("big", "Clarified", dated), over).join(),
+    /spec\.md: the template placeholder `\[DATE\]` remains/,
+  );
+  assert.doesNotMatch(
+    checkStage("sta-12-x", documented("feature", "Clarified", dated), over).join(),
+    /placeholder/,
+  );
+});
+
+test("scope: a changed file no task names is drift, failing on big and warning otherwise (FR-30)", () => {
+  const tasks =
+    "- [ ] T001 Build `src/a.mjs` and `docs/` — covers: AC-001 — route: spec-task\n- [ ] ~~T002~~ Was `src/c.mjs` — covers: AC-001\n";
+  const changed = [
+    "src/a.mjs",
+    "src/b.mjs",
+    "src/c.mjs",
+    "docs/guide.md",
+    "src/__tests__/a.test.mjs",
+    ".changeset/a.md",
+    "pnpm-lock.yaml",
+    ".agents/specs/sta-12-x/plan.md",
+  ];
+  const drift = [
+    "scope drift: `src/b.mjs` is named by no task (amend the spec to add it) (FR-30)",
+    "scope drift: `src/c.mjs` is named by no task (amend the spec to add it) (FR-30)",
+  ];
+  const big = "**Status**: Tasked\n\n**Tier**: big\n";
+  assert.deepEqual(checkScope(big, tasks, changed), { problems: drift, warnings: [] });
+  assert.deepEqual(checkScope(big.replace("big", "feature"), tasks, changed), {
+    problems: [],
+    warnings: drift,
+  });
+  assert.deepEqual(checkScope(`**Tier**: small\n\n## Tasks\n\n${tasks}`, "", changed), {
+    problems: [],
+    warnings: drift,
+  });
+  const none = { problems: [], warnings: [] };
+  assert.deepEqual(checkScope("**Status**: Tasked\n", tasks, changed), none);
+  assert.deepEqual(checkScope(big, "", changed), none);
 });
