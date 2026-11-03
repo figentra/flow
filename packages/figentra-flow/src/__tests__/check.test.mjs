@@ -4,7 +4,7 @@
  *   naming each cause, on any byte changed in an owned file (in the header, in the body, the header removed, or a
  *   strict JSON file with no header), a missing owned file, a preset that differs from the locked digest, an
  *   unreadable lock and an invalid config; it warns from 14 days before an override's review date, fails after it,
- *   and fails on a mandatory policy that is off (FR-4, FR-5).
+ *   fails on a mandatory policy that is off, and on an override changed without a sync (FR-2, FR-4, FR-5).
  * Boundary: temporary folders; no process, no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
@@ -46,6 +46,21 @@ test("check: a synced repository passes and exits 0", (t) => {
     line: "ok",
   });
   assert.deepEqual(lines, ["fflow check: ok"]);
+});
+
+// @covers sta-1945:FR-2 sta-1945:FR-4
+test("check: an override added or changed without a sync fails until the next sync", (t) => {
+  const root = governed(t);
+  sync(root, { ...quiet, direct: true });
+  const owner = join(root, ".flow/overrides/policies/owner.yml");
+  mkdirSync(dirname(owner), { recursive: true });
+  writeFileSync(owner, 'kind: extend\ntarget: owner-only\nitems:\n  - "deploy/**"\n');
+  assert.equal(
+    problems(root),
+    ".flow/overrides/ differs from what .flow/lock.json records (run `fflow sync`)",
+  );
+  sync(root, { ...quiet, direct: true });
+  assert.equal(problems(root), "");
 });
 
 test("check: any byte changed in an owned file fails, header or no header", (t) => {
@@ -134,6 +149,6 @@ test("check: warns from 14 days before an override's review date, fails after it
   );
   assert.match(
     problems(root),
-    /agents\/less\.yml: extend owner-only is refused: the mandatory policy owner-only would lose \.gitleaks\.toml/,
+    /agents\/less\.yml: extend owner-only is refused: the mandatory policy owner-only cannot drop a rule \(!\.gitleaks\.toml\)/,
   );
 });

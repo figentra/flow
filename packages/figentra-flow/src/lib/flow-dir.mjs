@@ -8,8 +8,8 @@
  * Governing contract: ADR 0510; STA-1729.
  * Secrets: none.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { loadConfig } from "./config.mjs";
@@ -77,15 +77,32 @@ export function presetDir(root) {
 }
 
 /**
- * The file a template name resolves to: `.flow/overrides/<name>.md`, then the preset's `templates/<name>.md`, then
- * Flow's base `templates/<name>.md`; undefined when none has it.
+ * Whether `rel` (relative to `.flow/overrides/`) is a file inside that folder once its links are followed: a link out
+ * of it (say to `~/.npmrc`) would put that file's text into a committed output.
+ * @param {string} root
+ * @param {string} rel
+ */
+export function inOverrides(root, rel) {
+  const dir = join(root, OVERRIDES);
+  try {
+    const at = relative(realpathSync(dir), realpathSync(join(dir, rel)));
+    return !/^\.\.(\/|$)/.test(at) && !isAbsolute(at);
+  } catch {
+    // Missing, a dangling or looping link, or unreadable: never read as an override.
+    return false;
+  }
+}
+
+/**
+ * The file a template name resolves to: `.flow/overrides/<name>.md` (when it is inside that folder), then the
+ * preset's `templates/<name>.md`, then Flow's base `templates/<name>.md`; undefined when none has it.
  * @param {string} root
  * @param {string} name e.g. `plan-template`
  */
 export function resolveTemplate(root, name) {
   const file = `${name}.md`;
   return [
-    join(root, OVERRIDES, file),
+    ...(inOverrides(root, file) ? [join(root, OVERRIDES, file)] : []),
     join(presetDir(root), "templates", file),
     join(FLOW_ASSETS, "templates", file),
   ].find((p) => existsSync(p));

@@ -84,13 +84,38 @@ function parse(text) {
 }
 
 /**
- * The overrides `sync` applies: each valid one that keeps every mandatory policy (`validate` and `check` name the
- * rest).
+ * The overrides `sync` applies: each valid one that keeps every mandatory policy; `skipped` says why each other one is
+ * left out (`validate` and `check` refuse them).
  * @param {string} root
- * @returns {Override[]}
+ * @returns {{ overrides: Override[], skipped: string[] }}
  */
 export function appliedOverrides(root) {
-  return loadOverrides(root).overrides.filter((o) => !policyProblems([o]).length);
+  const loaded = loadOverrides(root);
+  /** @type {Override[]} */
+  const overrides = [];
+  const skipped = [...loaded.problems];
+  for (const o of loaded.overrides) {
+    const broken = policyProblems([o]);
+    if (broken.length) skipped.push(...broken);
+    else overrides.push(o);
+  }
+  return { overrides, skipped };
+}
+
+/**
+ * The owner-only globs a repository adds to `OWNER_ONLY`: its `approve.ownerOnly` and each `extend` of `owner-only`
+ * (FR-5). `land`, the approval workflow and CODEOWNERS all read these.
+ * @param {string} root
+ * @param {Override[]} [overrides] defaults to `appliedOverrides`
+ * @returns {string[]}
+ */
+export function ownerOnlyExtra(root, overrides = appliedOverrides(root).overrides) {
+  return [
+    ...(loadConfig(root).config.approve?.ownerOnly ?? []),
+    ...overrides.flatMap((o) =>
+      o.kind === "extend" && o.target === "owner-only" ? (o.items ?? []) : [],
+    ),
+  ];
 }
 
 /**
@@ -99,7 +124,10 @@ export function appliedOverrides(root) {
  * @param {{ direct?: boolean, overrides?: Override[] }} [options] `overrides` defaults to `appliedOverrides`
  * @returns {Map<string, string>}
  */
-export function render(root, { direct = false, overrides = appliedOverrides(root) } = {}) {
+export function render(
+  root,
+  { direct = false, overrides = appliedOverrides(root).overrides } = {},
+) {
   return applyOverrides(renderPreset(root, direct, overrides), overrides, root);
 }
 
@@ -169,12 +197,7 @@ function renderPreset(root, direct, overrides) {
   const { apps, approve, baseline } = loadConfig(root).config;
   // STA-1942: only a repository whose main is red asks for the baseline gate.
   if (baseline) out.set(`.github/workflows/${BASELINE_WORKFLOW}`, baselineWorkflow(baseline));
-  const ownerOnly = [
-    ...(approve?.ownerOnly ?? []),
-    ...overrides.flatMap((o) =>
-      o.kind === "extend" && o.target === "owner-only" ? (o.items ?? []) : [],
-    ),
-  ];
+  const ownerOnly = ownerOnlyExtra(root, overrides);
   // No owner, no approval path: GitHub must be able to ask someone for the owner-only paths (CODEOWNERS).
   if (!apps?.owner) return out;
   out.set(
@@ -355,12 +378,13 @@ export function migrateLegacy(root) {
  * Writes the rendered files with their provenance headers, then `.flow/lock.json` v2, and removes the rendered `speckit-*` skills and commands.
  * @param {string} root
  * @param {Map<string, string>} files
+ * @param {Override[]} [overrides] the overrides `files` were rendered with (the headers name them)
  * @returns {string[]} the spec-kit files it removed
  */
-export function writeRendered(root, files) {
+export function writeRendered(root, files, overrides) {
   const removed = removable(root);
   for (const p of removed) rmSync(join(root, p), { recursive: true, force: true });
-  const written = withHeaders(root, files);
+  const written = withHeaders(root, files, overrides);
   for (const [path, text] of written) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), text);
@@ -392,11 +416,11 @@ export function provenanceOf(root) {
  * The rendered files as `sync` writes them: each comment-capable one with its provenance header (FR-3).
  * @param {string} root
  * @param {Map<string, string>} files
+ * @param {Override[]} [overrides] the overrides `files` were rendered with; defaults to `appliedOverrides`
  * @returns {Map<string, string>}
  */
-export function withHeaders(root, files) {
+export function withHeaders(root, files, overrides = appliedOverrides(root).overrides) {
   const meta = provenanceOf(root);
-  const overrides = appliedOverrides(root);
   return new Map(
     [...files].map(([path, text]) => {
       const override = shapedBy(overrides, path).join(", ") || undefined;
@@ -484,5 +508,8 @@ export function installProblems(root, version = VERSION) {
         ? `${path} is missing (run \`${NAME} sync\`)`
         : `${path} differs from what \`${NAME} sync\` rendered (change the preset or .flow/overrides/, then sync)`,
     );
+  // A v1 lock recorded neither digest; the next `sync` records both.
+  if (lock.preset.digest && lock.overrides !== overridesDigest(root))
+    problems.push(`${OVERRIDES}/ differs from what ${LOCK} records (run \`${NAME} sync\`)`);
   return problems;
 }

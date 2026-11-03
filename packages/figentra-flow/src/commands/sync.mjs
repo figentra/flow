@@ -6,7 +6,8 @@
  *   then runs the repository's own projector (`pnpm run agents:sync`) when its package.json has one; `--direct`
  *   renders Claude Code skills and OpenCode commands itself, for a repository without a projector. Nothing runs
  *   spec-kit's `specify`. It renders only the locked preset: when the installed preset's name or digest differs from
- *   the lock's, it refuses and names `fflow update` (STA-1945 FR-1, FR-2).
+ *   the lock's, it refuses and names `fflow update` (STA-1945 FR-1, FR-2). It applies the repository's overrides and
+ *   names each one it skips: an invalid one, or one that breaks a mandatory policy (FR-4, FR-5).
  * Boundary: writes only the rendered files, `.flow/lock.json`, and what the repository's own `agents:sync` writes.
  * Runtime: node
  * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-1, FR-2, P-002).
@@ -20,7 +21,13 @@ import { fileURLToPath } from "node:url";
 import { NAME } from "../lib/product.mjs";
 import { ConfigError } from "../lib/config.mjs";
 import { LockError, NewerLockError, readLock } from "../lib/lock.mjs";
-import { migrateLegacy, presetDrift, render, writeRendered } from "../lib/render.mjs";
+import {
+  appliedOverrides,
+  migrateLegacy,
+  presetDrift,
+  render,
+  writeRendered,
+} from "../lib/render.mjs";
 import { runIn } from "../lib/workspace-run.mjs";
 
 /** The package's assets folder. */
@@ -72,8 +79,11 @@ export function sync(root, { direct = false, log = console.log, adopt = false } 
   const migrated = migrateLegacy(root);
   if (migrated.error) throw new ConfigError(migrated.error);
   for (const line of migrated.done) log(`${NAME} sync: ${line} (the ${NAME} rename)`);
-  const files = render(root, { direct });
-  const removed = writeRendered(root, files);
+  const { overrides, skipped } = appliedOverrides(root);
+  for (const p of skipped)
+    log(`${NAME} sync: skipped ${p} (\`${NAME} validate\` names every problem)`);
+  const files = render(root, { direct, overrides });
+  const removed = writeRendered(root, files, overrides);
   for (const p of removed) log(`${NAME} sync: removed ${p} (spec-kit)`);
   log(`${NAME} sync: rendered ${files.size} file(s); .flow/lock.json written`);
   return { files: [...files.keys()], removed };

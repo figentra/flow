@@ -3,8 +3,9 @@
  * Purpose: hold the overrides (STA-1945 FR-4) to their contract: the shipped schema is `OVERRIDE_SCHEMA`; the loader
  *   reads each of the four kinds, refuses a `replace` or `disable` without `reason`, `owner` or `review`, a date that
  *   is not one, a misplaced file, invalid YAML and a missing replacement (a problem, never a throw), and reads a
- *   whole-file override as a legacy `replace`; each kind changes only its target; review dates are due 14 days ahead
- *   and expired after; an unknown target is named.
+ *   whole-file override as a legacy `replace` (an invalid `.yml` does not claim it); a replacement that links outside
+ *   the folder is refused; each kind changes only its target, an `extend` section skipping front matter and fenced
+ *   code; review dates are due 14 days ahead and expired after; an unknown target is named.
  * Boundary: temporary folders; no process, no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
@@ -12,13 +13,13 @@
 // @covers sta-1945:FR-4 sta-1945:AC-4 sta-1945:P-007
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import {
   applyOverrides,
-  configured,
+  hasSection,
   legacyWarnings,
   loadOverrides,
   OVERRIDE_SCHEMA,
@@ -147,6 +148,39 @@ test("loadOverrides: a whole-file override no .yml names is a legacy replace of 
   );
 });
 
+test("loadOverrides: an invalid .yml leaves the whole-file override it names as it was", (t) => {
+  const root = repo(t, {
+    ".flow/overrides/commands/flow-plan.md": "Ours.\n",
+    ".flow/overrides/commands/plan.yml":
+      "kind: replace\ntarget: commands/flow-plan.md\nfile: commands/flow-plan.md\nreason: r\nowner: o\n",
+  });
+  const { overrides, problems } = loadOverrides(root);
+  assert.deepEqual(problems, [".flow/overrides/commands/plan.yml: review: is required"]);
+  assert.deepEqual(
+    overrides.map((o) => [o.target, o.legacy]),
+    [["commands/flow-plan.md", true]],
+  );
+});
+
+test("loadOverrides: a replacement that links outside .flow/overrides/ is refused, never read", (t) => {
+  const root = repo(t, {
+    "secret.txt": "not for an output\n",
+    ".flow/overrides/rules/r.yml": `kind: replace\ntarget: rules/worktrees.md\nfile: rules/link.md\n${GOVERNED}`,
+  });
+  symlinkSync(join(root, "secret.txt"), join(root, ".flow/overrides/rules/link.md"));
+  symlinkSync(join(root, "secret.txt"), join(root, ".flow/overrides/agents.md"));
+  mkdirSync(join(root, ".flow/overrides/commands"));
+  symlinkSync(join(root, "secret.txt"), join(root, ".flow/overrides/commands/flow-plan.md"));
+  const { overrides, problems } = loadOverrides(root);
+  assert.deepEqual(overrides, []);
+  assert.deepEqual(problems, [
+    ".flow/overrides/rules/r.yml: file: .flow/overrides/rules/link.md links outside .flow/overrides/",
+    ".flow/overrides/agents.md: links outside .flow/overrides/",
+    ".flow/overrides/commands/flow-plan.md: links outside .flow/overrides/",
+    ".flow/overrides/rules/link.md: links outside .flow/overrides/",
+  ]);
+});
+
 test("applyOverrides: each kind changes only its target", (t) => {
   const root = repo(t, { ".flow/overrides/r/ours.md": "Ours.\n" });
   const files = new Map([
@@ -178,13 +212,20 @@ test("applyOverrides: each kind changes only its target", (t) => {
   assert.equal(files.size, 4, "the input is not changed");
 });
 
-test("configured: a configure override sets values in its own parameter block only", () => {
-  const params = { gate: { retries: 1, box: "a" }, land: { retries: 1 } };
-  assert.deepEqual(
-    configured(params, [override({ kind: "configure", target: "gate", values: { retries: 3 } })]),
-    { gate: { retries: 3, box: "a" }, land: { retries: 1 } },
+test("applyOverrides: an extend's section skips front matter and headings inside fenced code", () => {
+  assert.equal(hasSection("---\n# Front\n---\n\nBody.\n", "Front"), false);
+  assert.equal(hasSection("# A\n\n```\n# B\n```\n", "B"), false);
+  const text =
+    "---\n# One\nname: x\n---\n\n# Doc\n\n## One\n\n```sh\n# Two\n```\n\n## Two\n\nTwo.\n";
+  const out = applyOverrides(
+    new Map([["a.md", text]]),
+    [override({ kind: "extend", target: "a.md", section: "One", items: ["more"] })],
+    "",
   );
-  assert.equal(params.gate.retries, 1, "the preset's blocks are not changed");
+  assert.equal(
+    out.get("a.md"),
+    "---\n# One\nname: x\n---\n\n# Doc\n\n## One\n\n```sh\n# Two\n```\n- more\n\n## Two\n\nTwo.\n",
+  );
 });
 
 test("targetProblems: an unknown output, source, parameter block or parameter, and a missing section, are named", () => {
@@ -230,7 +271,7 @@ test("reviewState: ok without a date and until 14 days before it, due from then 
   assert.equal(on("2026-12-31"), "expired");
 });
 
-test("shapedBy: the overrides on an output, on its preset source, or extending the policy it holds", () => {
+test("shapedBy: the overrides on an output, on its preset source (the README's template among them), or extending the policy it holds", () => {
   const o = (/** @type {string} */ path, /** @type {Record<string, unknown>} */ f) =>
     override({ path, ...f });
   const overrides = [
@@ -238,10 +279,12 @@ test("shapedBy: the overrides on an output, on its preset source, or extending t
     o("b", { kind: "extend", target: ".claude/skills/flow-plan/SKILL.md", text: "x" }),
     o("c", { kind: "replace", target: "agents/git-steward.md", file: "f.md" }),
     o("d", { kind: "extend", target: "owner-only", items: ["x"] }),
+    o("e", { kind: "replace", target: "templates/readme-template.md", file: "f.md" }),
   ];
   assert.deepEqual(shapedBy(overrides, ".claude/skills/flow-plan/SKILL.md"), ["a", "b"]);
   assert.deepEqual(shapedBy(overrides, ".opencode/commands/flow-plan.md"), ["a"]);
   assert.deepEqual(shapedBy(overrides, ".agents/agents/git-steward.md"), ["c"]);
   assert.deepEqual(shapedBy(overrides, ".github/CODEOWNERS"), ["d"]);
+  assert.deepEqual(shapedBy(overrides, "README.md"), ["e"]);
   assert.deepEqual(shapedBy(overrides, ".agents/skills/flow-tasks/SKILL.md"), []);
 });

@@ -4,14 +4,16 @@
  *   checked against `OVERRIDE_SCHEMA` (shipped as `schema/override.schema.json` for editors):
  *   - `extend` appends `items` (as list lines) or `text` to the end of a rendered output, or of its Markdown `section`;
  *     on a mandatory policy's id it adds `items` to the policy's rule list (`policies.mjs`);
- *   - `configure` sets `values` in a parameter block the preset declares (`parameters:` in `preset.yml`);
+ *   - `configure` sets `values` in a parameter block the preset declares (`parameters:` in `preset.yml`); no bundled
+ *     preset declares one yet, so `validate` refuses every `configure` until one does and its reader applies it;
  *   - `replace` swaps a whole rendered output, or a preset source (`commands/`, `agents/`, `rules/` or `templates/`
  *     `<name>.md`) before it is rendered, for the text of `file` (relative to `.flow/overrides/`);
  *   - `disable` drops a rendered output.
  *   `replace` and `disable` need `reason`, `owner` and `review` (a date); `reviewState` is `due` from 14 days before
  *   the review date and `expired` after it. Today's whole-file overrides (`.flow/overrides/{commands,agents,rules}/
  *   <name>.md`, and a template as `.flow/overrides/<name>.md`) that no `.yml` names as its `file` are read as `replace`
- *   overrides of that preset source, marked `legacy`. Each kind changes only its target.
+ *   overrides of that preset source, marked `legacy`. Each kind changes only its target. A replacement that links
+ *   outside `.flow/overrides/` is refused, so no file from elsewhere reaches a committed output.
  * Boundary: `loadOverrides` reads `.flow/overrides/`; the rest is pure, except that `applyOverrides` reads a
  *   replacement's file. Nothing here writes.
  * Runtime: node
@@ -22,7 +24,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
 import { validate } from "./config.mjs";
-import { OVERRIDES } from "./flow-dir.mjs";
+import { inOverrides, OVERRIDES } from "./flow-dir.mjs";
 import { policyOf, RULE_LISTS } from "./policies.mjs";
 import { NAME } from "./product.mjs";
 import { parseYaml, YamlError } from "./yaml.mjs";
@@ -100,8 +102,6 @@ export function loadOverrides(root) {
   const problems = [];
   if (!existsSync(dir)) return { overrides, problems };
   const files = readdirSync(dir, { recursive: true, encoding: "utf8" }).toSorted();
-  /** @type {Set<string>} */
-  const named = new Set();
   for (const rel of files.filter((f) => /\.ya?ml$/.test(f))) {
     const path = `${OVERRIDES}/${rel}`;
     const parts = rel.split("/");
@@ -127,10 +127,11 @@ export function loadOverrides(root) {
     if (data?.kind === "replace" && typeof data.file === "string") {
       const at = relative(dir, resolve(dir, data.file));
       const template = String(data.target ?? "").match(/^templates\/(.+)$/)?.[1];
-      named.add(at);
       if (at.startsWith("..") || isAbsolute(at))
         errors.push(`file: ${data.file} is outside ${OVERRIDES}/`);
       else if (!existsSync(join(dir, at))) errors.push(`file: ${OVERRIDES}/${at} does not exist`);
+      else if (!inOverrides(root, at))
+        errors.push(`file: ${OVERRIDES}/${at} links outside ${OVERRIDES}/`);
       // shortcut: templates resolve from `.flow/overrides/<name>.md` only (`resolveTemplate`); a template replacement
       // elsewhere would be silently ignored, so it is refused until templates read the overrides.
       else if (template && at !== template)
@@ -142,10 +143,18 @@ export function loadOverrides(root) {
     }
     overrides.push({ id: parts[1].replace(/\.ya?ml$/, ""), surface: parts[0], path, ...data });
   }
+  // Only a valid `.yml` claims its file; an invalid one leaves a whole-file override as it was.
+  const named = new Set(
+    overrides.filter((o) => o.kind === "replace").map((o) => relative(dir, resolve(dir, o.file))),
+  );
   for (const rel of files.filter((f) => f.endsWith(".md") && !named.has(f))) {
     const parts = rel.split("/");
     const folder = parts.length === 1 ? "templates" : parts[0];
     if (parts.length > 2 || (parts.length === 2 && !LEGACY_FOLDERS.includes(folder))) continue;
+    if (!inOverrides(root, rel)) {
+      problems.push(`${OVERRIDES}/${rel}: links outside ${OVERRIDES}/`);
+      continue;
+    }
     overrides.push({
       id: parts.at(-1).slice(0, -3),
       surface: folder,
@@ -248,20 +257,6 @@ export function applyOverrides(files, overrides, root) {
 }
 
 /**
- * The preset's parameter blocks with each `configure` override's `values` set in its target block only.
- * @param {Record<string, any>} params the blocks `preset.yml` declares under `parameters:`
- * @param {Override[]} overrides
- * @returns {Record<string, any>}
- */
-export function configured(params, overrides) {
-  const out = structuredClone(params);
-  for (const o of overrides)
-    if (o.kind === "configure" && out[o.target] && typeof out[o.target] === "object")
-      Object.assign(out[o.target], o.values);
-  return out;
-}
-
-/**
  * Each override whose target the repository does not have: a rendered output for every kind, a preset source for
  * `replace`, a policy's rule list for `extend`, a declared parameter for `configure`; and an `extend` section the
  * output lacks.
@@ -302,10 +297,12 @@ export function targetProblems(overrides, outputs, { params = {}, sources = new 
 }
 
 /**
- * The preset source a rendered output comes from (`commands/`, `agents/` or `rules/` `<name>.md`), or undefined.
+ * The preset source a rendered output comes from (`commands/`, `agents/` or `rules/` `<name>.md`, or the README's
+ * template), or undefined.
  * @param {string} path
  */
 function sourceOf(path) {
+  if (path === "README.md") return "templates/readme-template.md";
   const command =
     path.match(/^\.(?:claude|agents)\/skills\/([^/]+)\/SKILL\.md$/) ??
     path.match(/^\.opencode\/commands\/([^/]+)\.md$/);

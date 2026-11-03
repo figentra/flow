@@ -21,7 +21,7 @@ pnpm exec fflow sync         # re-render the flow-* skills after a preset or Flo
 | `fflow spec paths\|setup-plan\|setup-tasks\|template`                 | the spec folder, its documents and the resolved templates as JSON, for the `flow-*` commands                                                                                                     |
 | `fflow sync [--direct]`                                               | renders the `flow-*` skills (for the repository's projector, or Claude Code and OpenCode directly), each with its provenance header, and writes `.flow/lock.json`; refuses a preset that differs from the lock |
 | `fflow update [--preset <version>]`                                   | prints the diff, adopts the installed preset into the lock, then syncs; `--preset` refuses any version but the installed one |
-| `fflow check`                                                         | the CI check: fails, naming each cause, on an owned file that differs from the lock, a preset that differs from its locked digest, an invalid config or override, a mandatory policy off, or an override past its review date (and warns 14 days before); writes nothing |
+| `fflow check`                                                         | the CI check: fails, naming each cause, on an owned file that differs from the lock, a preset that differs from its locked digest, an invalid config or override, a mandatory policy off, an override changed without a `sync`, or an override past its review date (and warns 14 days before); writes nothing |
 | `fflow diff`                                                          | prints every file `sync` or `update` would add, change or delete, with the lines; writes nothing |
 | `fflow validate`                                                      | checks `flow.config.json` and `.flow/overrides/` against their schemas and the mandatory policies, naming each field, target or policy that breaks them; writes nothing |
 | `… --workspace <dir>`                                                 | runs `sync`, `update`, `check`, `diff` or `validate` in every repository under `<dir>` that has `flow.config.json`, one line each |
@@ -197,7 +197,9 @@ setting you have not made refuses and names it.
   ```
 
   The header of a file an override shaped names it. The mandatory policies (`guard.secrets`, `guard.tenancy`,
-  `owner-only`, `guard.wiring`) cannot be disabled, replaced or configured; an `extend` of one may only add `items`.
+  `owner-only`, `guard.wiring`) cannot be disabled, replaced or configured; an `extend` of one may only add `items`
+  (none starting with `!`), and an `extend` of `owner-only` reaches `land`, the approval workflow and CODEOWNERS.
+  `sync` names each override it skips. A replacement that links outside `.flow/overrides/` is refused.
   A whole-file template (`<name>.md`) or command (`commands/flow-<verb>.md`) in `.flow/overrides/` still replaces
   the preset's, and `validate` warns until it gets its `.yml`.
 

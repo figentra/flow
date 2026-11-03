@@ -5,8 +5,8 @@
  *   spec-kit attribution line; no asset still names spec-kit's machinery (`.specify`, `SPECIFY_*`, `extensions.yml`,
  *   `speckit`, the bash scripts, `{SCRIPT}`); and the package ships `THIRD_PARTY_NOTICES.md`.
  *   What `sync` writes from them starts with its provenance header, and `.flow/lock.json` v2 records each digest; a v1
- *   lock still reads (STA-1945). `sync` applies the overrides, each to its target only, skips one that breaks a
- *   mandatory policy, and the header names the override that shaped a file (STA-1945 FR-4).
+ *   lock still reads (STA-1945). `sync` applies the overrides, each to its target only, skips (and names) one that
+ *   breaks a mandatory policy, and the header names the override that shaped a file (STA-1945 FR-4).
  * Boundary: reads the package's files and writes temporary folders; no process, no network.
  * Runtime: node
  * Governing contract: ADR 0022; ADR 0510; STA-1729; STA-1945.
@@ -179,7 +179,14 @@ test("sync applies the overrides, each to its target only, and the header names 
     mkdirSync(dirname(join(root, ".flow/overrides", path)), { recursive: true });
     writeFileSync(join(root, ".flow/overrides", path), text);
   }
-  const { files } = sync(root, { log: () => {} });
+  /** @type {string[]} */
+  const logged = [];
+  const { files } = sync(root, { log: (l) => logged.push(l) });
+  assert.match(
+    logged.join("\n"),
+    /^fflow sync: skipped \.flow\/overrides\/policies\/off\.yml: disable \.github\/CODEOWNERS is refused: the mandatory policy owner-only cannot be disabled/m,
+    "sync names the override it skips",
+  );
   const read = (/** @type {string} */ path) => readFileSync(join(root, path), "utf8");
   const shaped = (/** @type {string} */ override) =>
     `---\n# ${headerText({ preset: "neutral", version: VERSION, override })}\n`;

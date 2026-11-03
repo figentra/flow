@@ -99,7 +99,7 @@ test("validate: refuses an override that disables, replaces or loosens a mandato
   const found = problems(root).join("\n");
   assert.match(
     found,
-    /policies\/less\.yml: extend owner-only is refused: the mandatory policy owner-only would lose \*\*\/\.env\*/,
+    /policies\/less\.yml: extend owner-only is refused: the mandatory policy owner-only cannot drop a rule \(!\*\*\/\.env\*\)/,
   );
   assert.match(
     found,
