@@ -34,7 +34,8 @@ export function render({ asks, problems }) {
   const out = asks.length
     ? asks.map((a) => `${a.key.toUpperCase()} (${a.repo}): ${a.what}\n  ${a.command}`)
     : ["nothing waits on the owner"];
-  for (const p of problems) out.push(`problem: ${p.repo} ${p.from}: ${p.problem}`);
+  for (const p of problems)
+    out.push(`problem: ${[p.repo, p.from].filter(Boolean).join(" ")}: ${p.problem}`);
   return out.join("\n");
 }
 

@@ -2,7 +2,8 @@
  * Figentra Flow file contract:
  * Purpose: hold `allRecords` to FR-21: it finds each key's record on the default branch, on a branch with no checkout,
  *   on origin only, and in a worktree's uncommitted file (newer than its branch's commit, so it wins), across every
- *   repository it is given; an unreadable record is returned as its problem, never dropped.
+ *   repository it is given; a ref listed later wins only when it is newer (origin ahead of the local branch); an
+ *   unreadable record and a missing repository are returned as their problem, never dropped.
  * Boundary: temporary repositories with a local bare origin; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
@@ -10,6 +11,7 @@
 // @covers sta-1945:FR-21 sta-1945:AC-20 sta-1945:AC-42 sta-1945:P-026
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -63,6 +65,34 @@ test("records: each key's newest record from the default branch, branches, origi
   assert.equal(of("sta-9")?.record?.stage, "land");
   assert.equal(found.filter((e) => e.key === "sta-4").length, 1);
   assert.ok(found.every((e) => !e.problem));
+});
+
+test("records: a later ref that is newer wins, and a missing repository is a problem", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  sh(r.root, "switch", "-q", "-c", "figentra/sta-10-moved");
+  updateRecord(r.root, "sta-10", (rec) => ({ ...rec, stage: "plan" }));
+  commitRecord(r.root, "sta-10", { message: "chore(flow): plan", push: false });
+  updateRecord(r.root, "sta-10", (rec) => ({ ...rec, stage: "review" }));
+  // A newer commit (by its committer date) on origin only: the local branch, listed first, stays at `plan`.
+  const later = spawnSync("git", ["commit", "-qam", "chore(flow): review"], {
+    cwd: r.root,
+    encoding: "utf8",
+    env: { ...process.env, GIT_COMMITTER_DATE: "2030-01-01T00:00:00Z" },
+  });
+  assert.equal(later.status, 0, later.stderr);
+  sh(r.root, "push", "-q", "origin", "figentra/sta-10-moved");
+  sh(r.root, "reset", "-q", "--hard", "HEAD~1");
+  sh(r.root, "switch", "-q", "main");
+  const found = allRecords([r.root]);
+  assert.deepEqual(
+    found.map((e) => [e.key, e.from, e.record?.stage]),
+    [["sta-10", "origin/figentra/sta-10-moved", "review"]],
+  );
+  const missing = join(r.root, "missing");
+  assert.deepEqual(allRecords([missing]), [
+    { repo: missing, key: "", from: "", problem: "missing" },
+  ]);
 });
 
 test("records: an unreadable record is a problem, never dropped", (t) => {

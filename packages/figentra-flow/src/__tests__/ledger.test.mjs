@@ -2,8 +2,8 @@
  * Figentra Flow file contract:
  * Purpose: hold `fflow ledger` to FR-21 and AC-42: what landed, released and shipped (a record's history entries that
  *   finished those stages, nothing else), since a day, by day and track (the track its sessions' titles name), read
- *   from the records only; an unreadable record is listed as a problem; a `--since` that is not a day is a usage
- *   error.
+ *   from the records only, with the history `updateRecord` dates; an unreadable record or a missing repository is
+ *   listed as a problem and exits 1; a `--since` that is not a day that exists is a usage error.
  * Boundary: temporary repositories with a local bare origin; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
@@ -11,6 +11,8 @@
 // @covers sta-1945:FR-21 sta-1945:AC-42 sta-1945:P-026
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { ledger, render, run } from "../commands/ledger.mjs";
 import { emptyRecord, updateRecord } from "../lib/record.mjs";
@@ -96,31 +98,56 @@ test("ledger: what landed, released and shipped since a day, by day and track", 
   assert.equal(render(ledger(records, "2026-11-04")), "nothing landed, released or shipped");
 });
 
-test("ledger: read from the records of a repository; a broken one is a problem", (t) => {
+test("ledger: read from the history `updateRecord` dates; a broken record is a problem", (t) => {
   const r = repo();
   t.after(r.dispose);
   updateRecord(r.root, "sta-4", (rec) => ({
     ...rec,
-    stage: "land",
-    state: "done",
     sessions: [{ name: "FLOW · land it (STA-4)", kind: "claude-code", start: null }],
-    history: [{ stage: "land", state: "done", at: "2026-11-03T10:00:00.000Z" }],
   }));
+  updateRecord(r.root, "sta-4", (rec) => ({ ...rec, stage: "land", state: "waiting" }));
+  const landed = updateRecord(r.root, "sta-4", (rec) => ({ ...rec, state: "done" }));
   sh(r.root, "add", "-A");
   sh(r.root, "commit", "-q", "-m", "landed");
+  const day = landed.history?.at(-1)?.at.slice(0, 10);
   const list = ledger([
     ...allRecords([r.root]),
     { repo: "/r", key: "sta-5", from: "main", problem: "not valid JSON" },
   ]);
   assert.deepEqual(
     list.rows.map((row) => [row.day, row.track, row.what, row.key]),
-    [["2026-11-03", "FLOW", "landed", "sta-4"]],
+    [[day, "FLOW", "landed", "sta-4"]],
   );
   assert.match(render(list), /\nproblem: \/r main: not valid JSON$/);
 });
 
-test("ledger: --since takes a day", (t) => {
+test("ledger: run exits 1 on a broken record or a missing repository, and prints --json", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  mkdirSync(join(r.root, ".flow", "record"), { recursive: true });
+  writeFileSync(join(r.root, ".flow", "record", "sta-6.json"), "{");
+  /** @type {string[]} */
+  const printed = [];
+  t.mock.method(console, "log", (/** @type {string} */ text) => printed.push(text));
+  assert.equal(run(["--repo", r.root]), 1);
+  assert.match(printed[0], /\nproblem: .*sta-6\.json: not valid JSON/);
+  assert.equal(run(["--repo", r.root, "--json"]), 1);
+  const json = JSON.parse(printed[1]);
+  assert.deepEqual(json.rows, []);
+  assert.deepEqual(
+    json.problems.map((/** @type {any} */ p) => p.key),
+    ["sta-6"],
+  );
+  assert.equal(run(["--repo", join(r.root, "missing")]), 1);
+  assert.equal(
+    printed[2],
+    `nothing landed, released or shipped\nproblem: ${join(r.root, "missing")}: missing`,
+  );
+});
+
+test("ledger: --since takes a day that exists", (t) => {
   t.mock.method(console, "error", () => {});
   assert.equal(run(["--since", "yesterday"]), 2);
+  assert.equal(run(["--since", "2026-02-30"]), 2);
   assert.equal(run(["--since"]), 2);
 });

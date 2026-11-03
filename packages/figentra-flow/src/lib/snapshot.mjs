@@ -5,8 +5,9 @@
  *   dirty, idle, in use, ahead and behind), its open PRs (gate on the head, the counted AI review, stacked) and its
  *   sessions (a spec's `**Session**`, with the worktree carrying the spec's key and that head's gate), plus a warning
  *   when more sessions build than the cap allows. With `live`, the running agent sessions by title, state, worktree and
- *   stage (STA-1945 FR-20), and a warning for each title off ADR 0001's pattern or at odds with its record. With a roster, each spec's role and owner stops, and `byRole`: the
- *   specs grouped by role with their sessions and counts (AC-050).
+ *   stage (STA-1945 FR-20), and a warning for each title off ADR 0001's pattern or at odds with its record. With a
+ *   roster, each spec's role and owner stops, and `byRole`: the specs grouped by role with their sessions and counts
+ *   (AC-050).
  * Boundary: reads git, the spec files and GitHub (through the credentials port; never with `offline`); stores nothing,
  *   writes nothing. A repository that is missing or unreadable, and a GitHub failure, are reported in place.
  * Runtime: node

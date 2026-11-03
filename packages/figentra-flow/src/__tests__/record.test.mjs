@@ -1,12 +1,13 @@
 /**
  * Figentra Flow file contract:
  * Purpose: hold Flow's record to its contract: the shipped schema is `RECORD_SCHEMA`; `updateRecord` starts a new
- *   record, applies a change and refuses one that fails the schema (naming the field, writing nothing); a key never
- *   leaves the record folder; `commitRecord` commits and pushes the task's branch, merges once on a rejected push (and
- *   aborts a merge that does not apply clean, and never merges into a worktree holding work left out), never commits
- *   on the default branch or a detached HEAD, commits only the record unless it is a stop, never stages an untracked
- *   or secret-named file, runs the hooks whatever `LEFTHOOK` says, reports hooks that refuse apart from git's own
- *   failures, and undoes its staging when nothing is committed.
+ *   record, applies a change, dates each change of stage or state in `history` and refuses a change that fails the
+ *   schema (naming the field, writing nothing); a key never leaves the record folder; `commitRecord` commits and
+ *   pushes the task's branch, merges once on a rejected push (and aborts a merge that does not apply clean, and never
+ *   merges into a worktree holding work left out), never commits on the default branch or a detached HEAD, commits
+ *   only the record unless it is a stop, never stages an untracked or secret-named file, runs the hooks whatever
+ *   `LEFTHOOK` says, reports hooks that refuse apart from git's own failures, and undoes its staging when nothing is
+ *   committed.
  * Boundary: temporary repositories with a local bare origin; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
@@ -56,6 +57,29 @@ test("record: update starts a new record, applies the change and reads back", (t
   assert.equal(written.key, "sta-1");
   assert.deepEqual(readRecord(r.root, "sta-1"), written);
   assert.ok(existsSync(join(r.root, ".flow", "record", "sta-1.json")));
+});
+
+// @covers sta-1945:FR-21 sta-1945:AC-42
+test("record: each change of stage or state is dated in its history, and no other change is", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  updateRecord(r.root, "sta-1", (rec) => rec);
+  updateRecord(r.root, "sta-1", (rec) => ({ ...rec, prs: [74] }));
+  updateRecord(r.root, "sta-1", (rec) => ({ ...rec, stage: "land", state: "waiting" }));
+  updateRecord(r.root, "sta-1", (rec) => ({ ...rec, state: "done" }));
+  const history = readRecord(r.root, "sta-1")?.history ?? [];
+  assert.deepEqual(
+    history.map((h) => [h.stage, h.state]),
+    [
+      ["start", "active"],
+      ["land", "waiting"],
+      ["land", "done"],
+    ],
+  );
+  assert.ok(
+    history.every((h) => new Date(h.at).toISOString() === h.at),
+    "each entry is dated",
+  );
 });
 
 test("record: a change that fails the schema is refused by its field, and nothing is written", (t) => {

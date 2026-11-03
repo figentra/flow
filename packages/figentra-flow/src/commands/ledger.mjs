@@ -66,7 +66,8 @@ export function render({ rows, problems }) {
     const prs = r.prs.length ? ` (#${r.prs.join(", #")})` : "";
     out.push(`    ${r.what} ${r.key.toUpperCase()}${prs} ${r.repo}`);
   }
-  for (const p of problems) out.push(`problem: ${p.repo} ${p.from}: ${p.problem}`);
+  for (const p of problems)
+    out.push(`problem: ${[p.repo, p.from].filter(Boolean).join(" ")}: ${p.problem}`);
   return out.join("\n");
 }
 
@@ -76,11 +77,13 @@ export function run(args = []) {
     args.includes(`--${name}`) ? (args[args.indexOf(`--${name}`) + 1] ?? "") : undefined;
   const since = opt("since");
   const repo = opt("repo");
-  if (
-    (since !== undefined &&
-      !(/^\d{4}-\d{2}-\d{2}$/.test(since) && !Number.isNaN(Date.parse(since)))) ||
-    repo === ""
-  ) {
+  // A day that exists: `Date.parse` rolls `2026-02-30` over to March, so it must read back the same.
+  const day = Date.parse(since ?? "");
+  const isDay =
+    /^\d{4}-\d{2}-\d{2}$/.test(since ?? "") &&
+    !Number.isNaN(day) &&
+    new Date(day).toISOString().slice(0, 10) === since;
+  if ((since !== undefined && !isDay) || repo === "") {
     console.error(`usage: ${NAME} ledger [--since <YYYY-MM-DD>] [--repo <path>] [--json]`);
     return 2;
   }

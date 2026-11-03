@@ -13,7 +13,7 @@
  */
 import { slugOf } from "./gate-run.mjs";
 import { colorFor, gateGlyph, glyph } from "../lib/cli.mjs";
-import { busyFolders, git } from "../lib/git.mjs";
+import { git } from "../lib/git.mjs";
 import { github } from "../lib/github.mjs";
 import { NAME, STATUS_CONTEXT } from "../lib/product.mjs";
 import { metrics } from "../lib/metrics.mjs";
@@ -87,10 +87,14 @@ export function render(snap, color = false) {
     if (repo.live) {
       out.push("  live sessions:");
       if (!repo.live.length) out.push("    none");
-      for (const s of repo.live)
+      for (const s of repo.live) {
+        const pid = s.pid ? `, pid ${s.pid}` : "";
+        const note = s.note ? ` (${s.note})` : "";
+        const problem = s.problem ? ` — ${s.problem}` : "";
         out.push(
-          `    ${s.name || "(untitled)"} — ${s.state}, ${s.worktree}, stage ${s.stage ?? "none"}${s.pid ? `, pid ${s.pid}` : ""}${s.note ? ` (${s.note})` : ""}${s.problem ? ` — ${s.problem}` : ""}`,
+          `    ${s.name || "(untitled)"} — ${s.state}, ${s.worktree}, stage ${s.stage ?? "none"}${pid}${note}${problem}`,
         );
+      }
     }
     out.push("");
   }
@@ -148,20 +152,26 @@ export function run(/** @type {string[]} */ args) {
   const opt = (/** @type {string} */ name) =>
     args.includes(`--${name}`) ? args[args.indexOf(`--${name}`) + 1] : undefined;
   const offline = args.includes("--offline");
+  const read = () => {
+    const live = systemSessions();
+    // One process listing and one read of the session files serve every repository's `in use` and live sessions.
+    const running = live.processes();
+    const files = live.sessionFiles();
+    return snapshot({
+      repos: reposFor(opt("repo"), process.cwd()),
+      cap: readSessionCap(),
+      offline,
+      busy: running?.map((p) => p.cwd),
+      live: { processes: () => running, sessionFiles: () => files },
+      api: offline ? undefined : (root) => github(root),
+    });
+  };
   if (args.includes("--web")) {
     const port = Number(opt("port") ?? 4747);
     if (!Number.isInteger(port) || port < 0 || port > 65535) {
       console.error(`${NAME} status: --port takes a port number`);
       return 2;
     }
-    const read = () =>
-      snapshot({
-        repos: reposFor(opt("repo"), process.cwd()),
-        cap: readSessionCap(),
-        offline,
-        busy: busyFolders(),
-        api: offline ? undefined : (root) => github(root),
-      });
     const server = statusServer(read);
     // Never resolves: the page is served until the process is stopped (Ctrl-C).
     return new Promise(() =>
@@ -189,17 +199,7 @@ export function run(/** @type {string[]} */ args) {
     console.log(args.includes("--json") ? JSON.stringify(m, null, 2) : renderMetrics(m));
     return 0;
   }
-  const live = systemSessions();
-  const running = live.processes();
-  const snap = snapshot({
-    repos: reposFor(opt("repo"), process.cwd()),
-    cap: readSessionCap(),
-    offline,
-    busy: running?.map((p) => p.cwd),
-    // One process listing serves both the worktrees' `in use` and the live sessions.
-    live: { ...live, processes: () => running },
-    api: offline ? undefined : (root) => github(root),
-  });
+  const snap = read();
   const byRole = opt("by") === "role";
   if (opt("role") !== undefined && !byRole) {
     console.error(`${NAME} status: --role goes with --by role`);

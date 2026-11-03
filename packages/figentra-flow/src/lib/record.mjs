@@ -2,8 +2,8 @@
  * Figentra Flow file contract:
  * Purpose: Flow's record (FR-14): `.flow/record/<key>.json` on the task's branch, holding the task's stage and state,
  *   approvals, sessions, commits, PRs, gate and review results, open owner asks, task evidence and its dated stage
- *   history. `readRecord` and
- *   `updateRecord` read and write it against `RECORD_SCHEMA` (shipped as `schema/record.schema.json`);
+ *   history. `readRecord` and `updateRecord` read and write it against `RECORD_SCHEMA` (shipped as
+ *   `schema/record.schema.json`), `updateRecord` dating each change of stage or state in `history` (FR-21);
  *   `readRecordAt` reads it from a branch with no checkout; `commitRecord` commits it (with the tracked changes for a
  *   session's stop) and pushes the branch through the credentials port (FR-19).
  * Boundary: writes only the record file, one commit on the task's branch and a push of that branch. Never commits on
@@ -217,8 +217,9 @@ function parseRecord(text, where) {
 }
 
 /**
- * Applies `change` to the record of `key` (a new one when there is none) and writes it; nothing is written when the
- * result fails the schema.
+ * Applies `change` to the record of `key` (a new one when there is none) and writes it, with a dated `history` entry
+ * when the stage or state is new (the ledger's by-day source, FR-21); nothing is written when the result fails the
+ * schema.
  * @param {string} root
  * @param {string} key
  * @param {(r: FlowRecord) => FlowRecord} change
@@ -227,7 +228,16 @@ function parseRecord(text, where) {
  */
 export function updateRecord(root, key, change) {
   const file = recordPath(root, key);
-  const next = change(readRecord(root, key) ?? emptyRecord(key));
+  const was = readRecord(root, key);
+  const changed = change(was ?? emptyRecord(key));
+  const { stage, state } = changed;
+  const next =
+    was?.stage === stage && was?.state === state
+      ? changed
+      : {
+          ...changed,
+          history: [...(changed.history ?? []), { stage, state, at: new Date().toISOString() }],
+        };
   const problems = recordProblems(next);
   if (problems.length) throw new RecordError(`${file}: ${problems.join("; ")}`);
   mkdirSync(dirname(file), { recursive: true });

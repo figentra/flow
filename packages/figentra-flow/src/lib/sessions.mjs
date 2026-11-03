@@ -3,7 +3,8 @@
  * Purpose: the live agent sessions of a repository (FR-20, AC-19, P-025): each running Claude Code or OpenCode process
  *   working in the repository or one of its worktrees, by its title (Claude Code's session file for that process),
  *   state (the title's form), worktree and stage (the worktree's record); `nameProblem` checks a title against Flow ADR
- *   0001's three forms, and a title that disagrees with the record's state is flagged too.
+ *   0001's three forms, and a title that disagrees with the record's state is flagged too. OpenCode's titles are not
+ *   read: its sessions carry a note, never a title problem.
  * Boundary: reads the process list, the agent's session files (`<config>/sessions/<pid>.json`, never the `.key` files
  *   beside them) and the records; writes nothing. With no process listing, the sessions come from the records only,
  *   with a note.
@@ -49,7 +50,8 @@ const stateOf = (/** @type {string} */ name) =>
   name.startsWith(`hold${SEP}`) ? "hold" : name.startsWith(`done${SEP}`) ? "done" : "active";
 
 /**
- * Why `name` breaks ADR 0001's pattern (`TRACK · job (key)`, `hold · Track · job`, `done · Track · job`), or undefined.
+ * Why `name` breaks ADR 0001's pattern (`TRACK · job (key)`, `hold · Track · job`, `done · Track · job`), or
+ * undefined.
  * @param {string} name
  * @returns {string | undefined}
  */
@@ -111,9 +113,10 @@ export function liveSessions(root, deps) {
    * @param {{ path: string, branch?: string }} tree
    * @param {ReturnType<typeof recordOf>} read
    * @param {Partial<LiveSession>} extra
+   * @param {boolean} [titled] false when the agent's title cannot be read: no title is checked
    * @returns {LiveSession}
    */
-  const describe = (name, tree, { record, problem }, extra) => {
+  const describe = (name, tree, { record, problem }, extra, titled = true) => {
     const state = stateOf(name);
     const disagrees =
       record && state === "done" && record.state === "active"
@@ -121,7 +124,7 @@ export function liveSessions(root, deps) {
         : record && state !== "done" && record.stage === "ship" && record.state === "done"
           ? "the record is shipped: the title is `done · Track · job`"
           : undefined;
-    const why = problem ?? nameProblem(name) ?? disagrees;
+    const why = problem ?? (titled ? (nameProblem(name) ?? disagrees) : undefined);
     return {
       name,
       state,
@@ -155,9 +158,19 @@ export function liveSessions(root, deps) {
           .filter((t) => inUse(t.path, [p.cwd]))
           .sort((a, b) => b.path.length - a.path.length)[0]
       : undefined;
-    return tree
-      ? [describe(titles.get(p.pid) ?? "", tree, recordOf(tree), { pid: p.pid, kind })]
-      : [];
+    if (!tree) return [];
+    // shortcut: only Claude Code's titles are read; read OpenCode's when it keeps them where Flow can.
+    const titled = kind === "claude-code";
+    const note = titled ? {} : { note: `title not readable for ${kind}` };
+    return [
+      describe(
+        titles.get(p.pid) ?? "",
+        tree,
+        recordOf(tree),
+        { pid: p.pid, kind, ...note },
+        titled,
+      ),
+    ];
   });
 }
 

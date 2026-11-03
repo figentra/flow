@@ -4,8 +4,8 @@
  *   worktrees, whether a worktree is clean, saved (its head on a remote ref, or every commit landed by patch), how long
  *   it has been idle, which ignored files it holds outside the usual caches, its size, and the running processes with
  *   the folders they work in.
- * Boundary: runs `git` (and `du`, `lsof` and `ps`, or `/proc`) synchronously in the folder it is given; never writes. Network git
- *   goes through `remote`, with the configuration's credentials (phase A).
+ * Boundary: runs `git` (and `du`, `lsof` and `ps`, or `/proc`) synchronously in the folder it is given; never writes.
+ *   Network git goes through `remote`, with the configuration's credentials (phase A).
  * Runtime: node
  * Governing contract: Stackra ADR 0503 (worktrees live inside their repository); STA-1729.
  * Secrets: none.

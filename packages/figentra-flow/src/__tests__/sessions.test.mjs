@@ -3,9 +3,9 @@
  * Purpose: hold the live sessions to FR-20 and Flow ADR 0001: the three title forms pass and anything else is named
  *   (untitled, the wrong form, a track off the list, an active track not in capitals); a running agent in the
  *   repository or a worktree is shown by title, state, worktree (the deepest checkout) and stage, while other
- *   processes, spares and other folders are not; a title at odds with its record and an unreadable record are flagged;
- *   with no process listing the records' last sessions are shown with a note; the session files read are only
- *   `<pid>.json`.
+ *   processes, spares and other folders are not; an OpenCode session (no readable title) carries a note, not a
+ *   problem; a title at odds with its record and an unreadable record are flagged; with no process listing the
+ *   records' last sessions are shown with a note; the session files read are only `<pid>.json`.
  * Boundary: temporary repositories and folders; processes and session files injected.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
@@ -85,7 +85,7 @@ test("sessions: a running agent is shown by title, state, worktree and stage; ot
       worktree: r.root,
       pid: 15,
       kind: "opencode",
-      problem: "untitled: name it `TRACK · job (key)` (ADR 0001)",
+      note: "title not readable for opencode",
     },
   ]);
 });
@@ -136,7 +136,7 @@ test("sessions: the system's session files are `<pid>.json` titles only", (t) =>
   assert.deepEqual(systemSessions(dir).sessionFiles(), []);
   mkdirSync(join(dir, "sessions"));
   writeFileSync(join(dir, "sessions", "11.json"), JSON.stringify({ pid: 11, name: " FLOW · x " }));
-  writeFileSync(join(dir, "sessions", "11.abc.key"), "not read");
+  writeFileSync(join(dir, "sessions", "11.abc.key"), JSON.stringify({ pid: 99, name: "LEAK" }));
   writeFileSync(join(dir, "sessions", "12.json"), "{");
   writeFileSync(join(dir, "sessions", "13.json"), JSON.stringify({ pid: 13 }));
   assert.deepEqual(

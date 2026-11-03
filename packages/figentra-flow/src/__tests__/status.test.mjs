@@ -215,6 +215,8 @@ test("status shows the live sessions by title, state, worktree and stage, and wa
       processes: () => [
         { pid: 31, cwd: path, args: ["claude"] },
         { pid: 32, cwd: path, args: ["claude"] },
+        // OpenCode's title is not readable: a note, never a warning.
+        { pid: 33, cwd: path, args: ["opencode"] },
       ],
       sessionFiles: () => [
         { path: "/s/31.json", name: "FLOW · live sessions (STA-5)", pid: 31 },
@@ -227,6 +229,7 @@ test("status shows the live sessions by title, state, worktree and stage, and wa
     [
       ["FLOW · live sessions (STA-5)", "active", path, "gate", undefined],
       ["projects-2e", "active", path, "gate", "not `TRACK · job (key)` (ADR 0001)"],
+      ["", "active", path, "gate", undefined],
     ],
   );
   assert.deepEqual(snap.warnings, [
@@ -238,6 +241,7 @@ test("status shows the live sessions by title, state, worktree and stage, and wa
     /live sessions:\n {4}FLOW · live sessions \(STA-5\) — active, .*sta-5-live, stage gate, pid 31\n/,
   );
   assert.match(text, /projects-2e — active, .*, pid 32 — not `TRACK · job \(key\)`/);
+  assert.match(text, /\(untitled\) — active, .*, pid 33 \(title not readable for opencode\)\n/);
   assert.match(text, /warning: session "projects-2e"/);
   assert.equal(snapshot({ repos: [{ path: r.root }], offline: true }).repos[0].live, undefined);
 });
