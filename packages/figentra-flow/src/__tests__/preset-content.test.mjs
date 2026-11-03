@@ -7,12 +7,13 @@
  *   it; the neutral preset renders none of it; a preset skill named `flow-*` or a file that is not UTF-8 is refused;
  *   `renderReference` reads only the preset folder it is given; the profiles name only what the preset carries, each
  *   selects the agents routing's trust tasks go to, and `validate` names each agent or skill a profile selects that
- *   its preset lacks.
+ *   its preset lacks; a `replace` of a preset skill's file, a reference file or `routing.yaml` is a preset source
+ *   `sync` renders (FR-4).
  * Boundary: temporary folders; no network.
  * Runtime: node
- * Governing contract: STA-1945 (C6, D2).
+ * Governing contract: STA-1945 (C6, D2, FR-4).
  */
-// @covers sta-1945:FR-6 sta-1945:FR-7 sta-1945:FR-11 sta-1945:FR-12 sta-1945:AC-7 sta-1945:P-009 sta-1945:P-010 sta-1945:P-016
+// @covers sta-1945:FR-4 sta-1945:FR-6 sta-1945:FR-7 sta-1945:FR-11 sta-1945:FR-12 sta-1945:AC-7 sta-1945:P-009 sta-1945:P-010 sta-1945:P-016
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -238,4 +239,30 @@ test("renderReference reads only its preset folder; a missing file or folder ren
       [".agents/models.yaml", "tiers: []\n"],
     ],
   );
+});
+
+test("a replace of a preset skill's file, a reference file or routing.yaml is a preset source: sync renders its text", (t) => {
+  const root = repo(t, "stackra");
+  const governedBy = "reason: ours\nowner: o\nreview: 2099-01-31\n";
+  const overrides = {
+    "skills.yml": `kind: replace\ntarget: skills/pnpm/SKILL.md\nfile: content/skill.md\n${governedBy}`,
+    "reference.yml": `kind: replace\ntarget: reference/README.md\nfile: content/reference.md\n${governedBy}`,
+    "routing.yml": `kind: replace\ntarget: routing.yaml\nfile: content/routing.txt\n${governedBy}`,
+    // A replacement's own name: a `.yml` beside the overrides would be read as one.
+    "skill.md": "OUR SKILL\n",
+    "reference.md": "OUR REFERENCE\n",
+    "routing.txt": "routes: []\n",
+  };
+  for (const [path, text] of Object.entries(overrides)) {
+    const at = join(root, ".flow/overrides/content", path);
+    mkdirSync(dirname(at), { recursive: true });
+    writeFileSync(at, text);
+  }
+  assert.deepEqual(validateRepo(root).problems, []);
+  sync(root, quiet);
+  const read = (/** @type {string} */ path) => readFileSync(join(root, path), "utf8");
+  assert.match(read(".agents/skills/pnpm/SKILL.md"), /OUR SKILL/);
+  assert.match(read(".agents/reference/README.md"), /OUR REFERENCE/);
+  assert.match(read(".agents/routing.yaml"), /routes: \[\]/);
+  assert.match(read(".agents/routing.yaml"), /\.flow\/overrides\/content\/routing\.yml/);
 });

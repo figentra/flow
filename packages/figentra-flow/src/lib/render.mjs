@@ -8,16 +8,18 @@
  *   preset's own skills (`skills/<name>/**`, beside the `flow-*` ones) and, with `renderReference`, its agent
  *   reference, routing and models under `.agents/` (STA-1945, C6); a preset skill folder named `flow-*` or a preset
  *   file that is not UTF-8 is refused. Only the skills and agents the config's profile selects are rendered, the lock
- *   records the profile, and `profileGaps` names what a profile selects that the preset lacks (STA-1945 FR-6). Each
- *   written file carries its provenance header and `.flow/lock.json` v2 records the Flow version, the preset with its
- *   digest, the profile and each written file's digest (STA-1945 FR-2, FR-3); `installProblems`, reading a v1 or v2
+ *   records the profile, and `profileGaps` names what a profile selects that the preset lacks (STA-1945 FR-6). Then
+ *   the repository's overrides apply (FR-4, `overrides.mjs`), except one that breaks a mandatory policy (FR-5), which
+ *   `validate` and `check` name instead. Each written file carries its provenance header, naming the overrides that
+ *   shaped it, and `.flow/lock.json` v2 records the Flow version, the preset with its digest, the profile, the
+ *   overrides' digest and each written file's digest (STA-1945 FR-2, FR-3); `installProblems`, reading a v1 or v2
  *   lock, is the check that replaces spec-kit's tripwire: no hand edit, no forgotten `sync`, and no spec-kit leftover.
  *   With a `.flow/readme.yml`, `README.md` is rendered too (STA-1879).
  * Boundary: `render` and `installProblems` read; `writeRendered` writes the rendered files and the lock and removes
  *   spec-kit's rendered `speckit-*` skills and commands. Nothing here deletes `.specify/` (that is `migrate`), nor,
  *   yet, an owned file a narrower profile no longer renders (STA-1945 T068).
  * Runtime: node
- * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-2, FR-3, FR-6).
+ * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-2, FR-3, FR-4, FR-5, FR-6).
  * Secrets: none.
  */
 import {
@@ -34,7 +36,7 @@ import { dirname, join, sep } from "node:path";
 import { approveWorkflow } from "./approve-workflow.mjs";
 import { baselineWorkflow } from "./baseline-workflow.mjs";
 import { ConfigError, gateLogins, loadConfig } from "./config.mjs";
-import { LOCK, OVERRIDES, presetDir } from "./flow-dir.mjs";
+import { FLOW_ASSETS, LOCK, OVERRIDES, presetDir } from "./flow-dir.mjs";
 import {
   digestOf,
   driftOf,
@@ -45,7 +47,9 @@ import {
   treeDigest,
   writeLock,
 } from "./lock.mjs";
+import { applyOverrides, loadOverrides, shapedBy } from "./overrides.mjs";
 import { codeowners } from "./owner-only.mjs";
+import { policyProblems } from "./policies.mjs";
 import { resolveProfile, selects } from "./profiles.mjs";
 import {
   APPROVE_WORKFLOW,
@@ -62,6 +66,8 @@ import {
 import { withHeader } from "./provenance.mjs";
 import { renderReadme } from "./readme.mjs";
 import { parseYaml, YamlError } from "./yaml.mjs";
+
+/** @typedef {import("./overrides.mjs").Override} Override */
 
 /**
  * What a surface renderer (`render-*.mjs`) reads: the repository, its configuration and its preset's folder. Each one
@@ -99,12 +105,67 @@ function parse(text) {
 }
 
 /**
- * The repository's rendered files, path to text.
+ * The overrides `sync` applies: each valid one that keeps every mandatory policy; `skipped` says why each other one is
+ * left out (`validate` and `check` refuse them).
  * @param {string} root
- * @param {{ direct?: boolean }} [options]
+ * @returns {{ overrides: Override[], skipped: string[] }}
+ */
+export function appliedOverrides(root) {
+  const loaded = loadOverrides(root);
+  /** @type {Override[]} */
+  const overrides = [];
+  const skipped = [...loaded.problems];
+  for (const o of loaded.overrides) {
+    const broken = policyProblems([o]);
+    if (broken.length) skipped.push(...broken);
+    else overrides.push(o);
+  }
+  return { overrides, skipped };
+}
+
+/**
+ * The owner-only globs a repository adds to `OWNER_ONLY`: its `approve.ownerOnly` and each `extend` of `owner-only`
+ * (FR-5). `land`, the approval workflow and CODEOWNERS all read these.
+ * @param {string} root
+ * @param {Override[]} [overrides] defaults to `appliedOverrides`
+ * @returns {string[]}
+ */
+export function ownerOnlyExtra(root, overrides = appliedOverrides(root).overrides) {
+  return [
+    ...(loadConfig(root).config.approve?.ownerOnly ?? []),
+    ...overrides.flatMap((o) =>
+      o.kind === "extend" && o.target === "owner-only" ? (o.items ?? []) : [],
+    ),
+  ];
+}
+
+/**
+ * The repository's rendered files, path to text, with `overrides` applied (FR-4).
+ * @param {string} root
+ * @param {{ direct?: boolean, overrides?: Override[] }} [options] `overrides` defaults to `appliedOverrides`
  * @returns {Map<string, string>}
  */
-export function render(root, { direct = false } = {}) {
+export function render(
+  root,
+  { direct = false, overrides = appliedOverrides(root).overrides } = {},
+) {
+  return applyOverrides(renderPreset(root, direct, overrides), overrides, root);
+}
+
+/**
+ * The preset's outputs before the output overrides: each source a `replace` names read from its file instead, and the
+ * owner-only list with each `extend` of `owner-only`.
+ * @param {string} root
+ * @param {boolean} direct
+ * @param {Override[]} overrides
+ * @returns {Map<string, string>}
+ */
+function renderPreset(root, direct, overrides) {
+  /** The file `target` (a preset source) is read from: its replacement's (a `.yml` one before a legacy one), else `preset`. */
+  const source = (/** @type {string} */ target, /** @type {string} */ preset) => {
+    const swap = overrides.find((o) => o.kind === "replace" && o.target === target);
+    return swap ? join(root, OVERRIDES, swap.file) : preset;
+  };
   const dir = join(presetDir(root), "commands");
   /** @type {Map<string, string>} */
   const out = new Map();
@@ -113,8 +174,7 @@ export function render(root, { direct = false } = {}) {
   for (const verb of VERBS) {
     const name = `flow-${verb}`;
     if (!selects(profile, "skills", name)) continue;
-    const own = join(root, OVERRIDES, "commands", `${name}.md`);
-    const file = existsSync(own) ? own : join(dir, `${name}.md`);
+    const file = source(`commands/${name}.md`, join(dir, `${name}.md`));
     if (!existsSync(file)) continue;
     const { meta, body } = parse(readFileSync(file, "utf8"));
     const description = JSON.stringify(meta.description ?? name);
@@ -151,15 +211,17 @@ export function render(root, { direct = false } = {}) {
       );
     } else out.set(`.agents/skills/${name}/SKILL.md`, skill);
   }
-  for (const [id, text] of presetDocs(root, "agents"))
+  for (const [id, text] of presetDocs(root, "agents", source))
     if (selects(profile, "agents", id))
       out.set(direct ? `.claude/agents/${id}.md` : `.agents/agents/${id}.md`, text);
   // STA-1871: the preset's agent rules (the worktree rule among them).
-  for (const [id, text] of presetDocs(root, "rules"))
+  for (const [id, text] of presetDocs(root, "rules", source))
     out.set(direct ? `.claude/rules/${id}.md` : `.agents/rules/${id}.md`, text);
   // STA-1945 (D2): the preset's own skills ship in the package, file for file, each folder as the profile selects it.
   const skills = join(presetDir(root), "skills");
-  for (const [path, text] of presetTree(skills)) {
+  for (const [path, text] of presetTree(skills, (path) =>
+    source(`skills/${path}`, join(skills, path)),
+  )) {
     const name = path.split("/")[0];
     // A preset folder named like a rendered `flow-*` skill would silently replace it.
     if (name.startsWith("flow-"))
@@ -169,13 +231,14 @@ export function render(root, { direct = false } = {}) {
     if (selects(profile, "skills", name))
       out.set(`${direct ? ".claude" : ".agents"}/skills/${path}`, text);
   }
-  for (const [path, text] of renderReference({ presetDir: presetDir(root) })) out.set(path, text);
+  for (const [path, text] of renderReference({ presetDir: presetDir(root), source }))
+    out.set(path, text);
   const readme = renderReadme(root);
   if (readme !== undefined) out.set("README.md", readme);
   const { apps, approve, baseline } = loadConfig(root).config;
   // STA-1942: only a repository whose main is red asks for the baseline gate.
   if (baseline) out.set(`.github/workflows/${BASELINE_WORKFLOW}`, baselineWorkflow(baseline));
-  const ownerOnly = approve?.ownerOnly ?? [];
+  const ownerOnly = ownerOnlyExtra(root, overrides);
   // No owner, no approval path: GitHub must be able to ask someone for the owner-only paths (CODEOWNERS).
   if (!apps?.owner) return out;
   const gate = gateLogins(apps);
@@ -221,23 +284,56 @@ export function lockedIntegrity(root, pkg, version) {
 }
 
 /**
- * The preset's documents in `folder` (`agents` or `rules`), id to text; `.flow/overrides/<folder>/<id>.md` replaces one.
+ * The preset's documents in `folder` (`agents` or `rules`), id to text; a `replace` of `<folder>/<id>.md` replaces one.
  * @param {string} root
  * @param {string} folder
+ * @param {(target: string, preset: string) => string} source the file a preset source is read from
  * @returns {Map<string, string>}
  */
-function presetDocs(root, folder) {
+function presetDocs(root, folder, source) {
   const dir = join(presetDir(root), folder);
   /** @type {Map<string, string>} */
   const out = new Map();
   if (!existsSync(dir)) return out;
   for (const file of readdirSync(dir)
     .filter((f) => f.endsWith(".md"))
-    .toSorted()) {
-    const own = join(root, OVERRIDES, folder, file);
-    out.set(file.slice(0, -3), readFileSync(existsSync(own) ? own : join(dir, file), "utf8"));
-  }
+    .toSorted())
+    out.set(file.slice(0, -3), readFileSync(source(`${folder}/${file}`, join(dir, file)), "utf8"));
   return out;
+}
+
+/**
+ * What an override may target besides a rendered output: the preset's sources (`commands/`, `agents/`, `rules/`
+ * and `templates/` `<name>.md`, Flow's base templates among them; a command or agent only when the profile selects
+ * it, since `sync` reads no other; each file of `skills/<name>/` the profile selects and of `reference/`, and
+ * `routing.yaml` and `models.yaml`) and the parameter blocks `preset.yml` declares.
+ * @param {string} root
+ * @returns {{ sources: Set<string>, params: Record<string, any> }}
+ * @throws {ConfigError} when the profile is unresolved or `preset.yml` is outside the YAML subset (`selectedProfile`)
+ */
+export function presetTargets(root) {
+  const dir = presetDir(root);
+  const profile = selectedProfile(root);
+  /** @type {Set<string>} */
+  const sources = new Set();
+  /** @type {[string, string, import("./profiles.mjs").ProfileKind?][]} */
+  const folders = [
+    ["commands", dir, "skills"],
+    ["agents", dir, "agents"],
+    ["rules", dir],
+    ["templates", dir],
+    ["templates", FLOW_ASSETS],
+  ];
+  for (const [folder, base, kind] of folders)
+    if (existsSync(join(base, folder)))
+      for (const f of readdirSync(join(base, folder)))
+        if (f.endsWith(".md") && (!kind || selects(profile, kind, f.slice(0, -3))))
+          sources.add(`${folder}/${f}`);
+  for (const [path] of presetTree(join(dir, "skills")))
+    if (selects(profile, "skills", path.split("/")[0])) sources.add(`skills/${path}`);
+  for (const [path] of presetTree(join(dir, "reference"))) sources.add(`reference/${path}`);
+  for (const file of REFERENCE_FILES) if (existsSync(join(dir, file))) sources.add(file);
+  return { sources, params: presetManifest(root)?.parameters ?? {} };
 }
 
 /**
@@ -291,7 +387,7 @@ export function profileGaps(root) {
   const profile = selectedProfile(root);
   const skills = join(presetDir(root), "skills");
   const carried = {
-    agents: [...presetDocs(root, "agents").keys()],
+    agents: [...presetDocs(root, "agents", (_, preset) => preset).keys()],
     skills: [
       ...VERBS.map((verb) => `flow-${verb}`),
       ...(existsSync(skills) ? readdirSync(skills) : []),
@@ -308,43 +404,51 @@ export function profileGaps(root) {
  * Every file under `dir`, its `/`-separated path relative to `dir` and its text, sorted by path; none when `dir` is
  * missing.
  * @param {string} dir
+ * @param {(path: string) => string} [from] the file a path's text is read from (its replacement's, FR-4)
  * @returns {[string, string][]}
  * @throws {ConfigError} on a file that is not UTF-8 text: rendered as text it would be corrupted, and the lock with it
  */
-function presetTree(dir) {
+function presetTree(dir, from = (path) => join(dir, path)) {
   if (!existsSync(dir)) return [];
   return readdirSync(dir, { recursive: true, encoding: "utf8" })
     .filter((path) => statSync(join(dir, path)).isFile())
     .map((path) => path.split(sep).join("/"))
     .toSorted()
     .map((path) => {
-      const bytes = readFileSync(join(dir, path));
+      const file = from(path);
+      const bytes = readFileSync(file);
       const text = bytes.toString("utf8");
       if (!Buffer.from(text, "utf8").equals(bytes))
-        throw new ConfigError(
-          `${join(dir, path)} is not UTF-8 text; a preset ships text files only`,
-        );
+        throw new ConfigError(`${file} is not UTF-8 text; a preset ships text files only`);
       return /** @type {[string, string]} */ ([path, text]);
     });
 }
 
 /**
- * The preset's agent reference, routing and models, as they are in the preset (STA-1945, C6). They always go under
- * `.agents/`: agents read them by that path, whichever assistant runs them.
- * @param {{ presetDir: string }} ctx the render context; only its preset folder is read
+ * The preset's agent reference, routing and models, as they are in the preset (STA-1945, C6), each read through
+ * `ctx.source` so a `replace` of `reference/<path>`, `routing.yaml` or `models.yaml` swaps it (FR-4). They always go
+ * under `.agents/`: agents read them by that path, whichever assistant runs them.
+ * @param {{ presetDir: string, source?: (target: string, preset: string) => string }} ctx the render context; only
+ *   its preset folder (and the replacements `source` names) is read
  * @returns {Map<string, string>} `.agents/reference/*`, `.agents/routing.yaml`, `.agents/models.yaml`
  */
-export function renderReference(ctx) {
+export function renderReference({ presetDir, source = (_, preset) => preset }) {
   /** @type {Map<string, string>} */
   const out = new Map();
-  for (const [path, text] of presetTree(join(ctx.presetDir, "reference")))
+  const reference = join(presetDir, "reference");
+  for (const [path, text] of presetTree(reference, (path) =>
+    source(`reference/${path}`, join(reference, path)),
+  ))
     out.set(`.agents/reference/${path}`, text);
-  for (const file of ["routing.yaml", "models.yaml"]) {
-    const at = join(ctx.presetDir, file);
-    if (existsSync(at)) out.set(`.agents/${file}`, readFileSync(at, "utf8"));
+  for (const file of REFERENCE_FILES) {
+    const at = join(presetDir, file);
+    if (existsSync(at)) out.set(`.agents/${file}`, readFileSync(source(file, at), "utf8"));
   }
   return out;
 }
+
+/** The preset's top-level files `renderReference` renders under `.agents/`. */
+const REFERENCE_FILES = ["routing.yaml", "models.yaml"];
 
 /** A secret name GitHub accepts. */
 const SECRET_NAME = /^[A-Z_][A-Z0-9_]*$/;
@@ -425,12 +529,13 @@ export function migrateLegacy(root) {
  * Writes the rendered files with their provenance headers, then `.flow/lock.json` v2, and removes the rendered `speckit-*` skills and commands.
  * @param {string} root
  * @param {Map<string, string>} files
+ * @param {Override[]} [overrides] the overrides `files` were rendered with (the headers name them)
  * @returns {string[]} the spec-kit files it removed
  */
-export function writeRendered(root, files) {
+export function writeRendered(root, files, overrides) {
   const removed = removable(root);
   for (const p of removed) rmSync(join(root, p), { recursive: true, force: true });
-  const written = withHeaders(root, files);
+  const written = withHeaders(root, files, overrides);
   for (const [path, text] of written) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), text);
@@ -462,11 +567,17 @@ export function provenanceOf(root) {
  * The rendered files as `sync` writes them: each comment-capable one with its provenance header (FR-3).
  * @param {string} root
  * @param {Map<string, string>} files
+ * @param {Override[]} [overrides] the overrides `files` were rendered with; defaults to `appliedOverrides`
  * @returns {Map<string, string>}
  */
-export function withHeaders(root, files) {
+export function withHeaders(root, files, overrides = appliedOverrides(root).overrides) {
   const meta = provenanceOf(root);
-  return new Map([...files].map(([path, text]) => [path, withHeader(path, text, meta)]));
+  return new Map(
+    [...files].map(([path, text]) => {
+      const override = shapedBy(overrides, path).join(", ") || undefined;
+      return [path, withHeader(path, text, { ...meta, override })];
+    }),
+  );
 }
 
 /**
@@ -554,5 +665,8 @@ export function installProblems(root, version = VERSION) {
         ? `${path} is missing (run \`${NAME} sync\`)`
         : `${path} differs from what \`${NAME} sync\` rendered (change the preset or .flow/overrides/, then sync)`,
     );
+  // A v1 lock recorded neither digest; the next `sync` records both.
+  if (lock.preset.digest && lock.overrides !== overridesDigest(root))
+    problems.push(`${OVERRIDES}/ differs from what ${LOCK} records (run \`${NAME} sync\`)`);
   return problems;
 }
