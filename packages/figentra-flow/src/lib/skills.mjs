@@ -250,12 +250,16 @@ function skillName(file) {
  * @param {string} root
  * @param {ThirdPartySkill[]} skills
  * @returns {{ dir: string, id: string }[]} each folder, relative to `root`, and the id it carries
+ * @throws {ConfigError} when git cannot list the tracked files, so `check` fails closed
  */
 export function machineOnlyProblems(root, skills) {
   const ids = new Set(skills.filter((s) => s.machineOnly).map((s) => s.id));
   if (!ids.size) return [];
   const tracked = git(root, ["ls-files", "-z", "--", ":(icase)*skill.md"]);
-  if (!tracked.ok) return [];
+  if (!tracked.ok)
+    throw new ConfigError(
+      `could not list the tracked SKILL.md files: ${tracked.err || "git failed"}`,
+    );
   /** @type {Map<string, string>} */
   const found = new Map();
   for (const file of tracked.out.split("\0")) {

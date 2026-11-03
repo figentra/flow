@@ -40,21 +40,23 @@ export function check(root) {
 }
 
 /**
- * The machine-only skills committed to `root` (STA-1945 FR-8, D1), each with its source; a `third-party.yml` that is
- * not valid is its own problem.
+ * The machine-only skills committed to `root` (STA-1945 FR-8, D1), each with its source, whatever the profile (a
+ * licence rule, not a selection); a `third-party.yml` that is not valid, or a git that cannot list the tracked files,
+ * is its own problem.
  * @param {string} root
  * @returns {string[]}
  */
 function machineOnlyCommitted(root) {
-  let skills;
+  let skills, found;
   try {
     skills = loadThirdParty(presetDir(root));
+    found = machineOnlyProblems(root, skills);
   } catch (error) {
     if (!(error instanceof ConfigError)) throw error;
     return [error.message];
   }
   const sources = new Map(skills.map((s) => [s.id, s.source]));
-  return machineOnlyProblems(root, skills).map(
+  return found.map(
     ({ dir, id }) =>
       `${dir} is the machine-only skill ${id}, which no repository carries (remove it from git; install it on the machine from ${sources.get(id)}, as \`${NAME} doctor\` lists)`,
   );

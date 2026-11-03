@@ -12,7 +12,7 @@
  * Boundary: writes only the rendered files, `.agents/skills/.vendor/`, `.flow/lock.json`, and what the repository's
  *   own `agents:sync` writes; fetches third-party skills from their public sources.
  * Runtime: node
- * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-1, FR-2, P-002).
+ * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-1, FR-2, FR-6, FR-8, P-002).
  * Secrets: none.
  */
 import { spawnSync } from "node:child_process";

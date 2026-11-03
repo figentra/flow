@@ -3,7 +3,8 @@
  * Purpose: hold `fflow check` to STA-1945 FR-1 and FR-3: it writes nothing; a synced repository passes; it fails,
  *   naming each cause, on any byte changed in an owned file (in the header, in the body, the header removed, or a
  *   strict JSON file with no header), a missing owned file, a preset that differs from the locked digest, an
- *   unreadable lock, an invalid config and a committed machine-only skill (FR-8).
+ *   unreadable lock, an invalid config, a committed machine-only skill (FR-8) and a git that cannot list the
+ *   tracked files (it fails closed).
  * Boundary: temporary folders and scratch git repositories; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
@@ -137,4 +138,16 @@ test("check: refuses a committed machine-only skill, naming its source; an untra
   writeFileSync(config, valid);
   writeFileSync(join(root, OWN_PRESET, THIRD_PARTY), "skills: nope\n");
   assert.match(problems(root), /third-party\.yml: `skills` is not a list/);
+});
+
+// @covers sta-1945:FR-8
+test("check: fails closed when git cannot list the tracked files of a preset with machine-only skills", (t) => {
+  const root = governed(t, { own: true });
+  writeFileSync(
+    join(root, OWN_PRESET, THIRD_PARTY),
+    'skills:\n  - id: animate\n    source: "the owner\'s library"\n    licence: own\n    machineOnly: true\n',
+  );
+  sync(root, quiet);
+  // Not a git repository: no listing is not the same as no machine-only skill committed.
+  assert.match(problems(root), /could not list the tracked SKILL\.md files: /);
 });
