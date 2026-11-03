@@ -404,5 +404,5 @@ test("the old binary prints one notice, then runs fflow", () => {
   const r = spawnSync(process.execPath, [bin, "--help"], { encoding: "utf8" });
   assert.equal(r.status, 0);
   assert.equal(r.stderr.match(/is now `fflow`/g)?.length, 1);
-  assert.match(r.stderr, /usage: fflow </);
+  assert.match(r.stdout, /Usage:\n\s+fflow <command>/);
 });

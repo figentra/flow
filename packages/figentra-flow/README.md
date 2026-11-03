@@ -19,13 +19,20 @@ one CLI engine of every Figentra CLI. `fflow` alone prints the banner, the versi
 `fflow <command> --help` (or `fflow help <command>`) prints its usage and runs nothing; a mistyped command names the
 closest one and exits 2. A failure is one error block: what failed, why, the fix and a docs link. Output is plain text
 under `NO_COLOR` or in a pipe, and `doctor`, `status` and `status --metrics` take `--json`, which writes one document,
-`{ "ok", "data" }`.
+`{ "ok", "data" }`. That is a breaking change for scripts: `doctor --json` no longer writes
+`{ "schema": "fflow.doctor/1", "checks" }` (its check rows, each with `id`, `ok`, `status` and `group`, are `data`), and
+`status --json` and `status --metrics --json` put the snapshot and the metrics in `data`.
+
+`doctor` and `status` are ported to the engine. Every other command is passthrough, keeping its own flags and output
+until it is ported: `app`, `clean`, `gate`, `guard`, `init`, `land`, `linear`, `mcp`, `migrate`, `parse`, `readme`,
+`release`, `ship`, `spec`, `start`, `sync`, `team`, `trace` and `train`.
 
 `@stackra/console` and `@stackra/validation` (0.7.1) are runtime dependencies of Flow (ADR 0506 decision 8, owner
 2026-11-03; this replaces STA-1945 NFR-1's "no runtime dependency, an optional peer"). They come from the Stackra
 registry, read without a token, so map the scope first (`@stackra:registry=https://npm.stackra.figentra.com/` in
 `.npmrc`), never npmjs. Only the CLI layer loads them: the governance core (gate, approve, land, record, lock,
 baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, dispatches before the engine loads.
+`pnpm-lock.yaml` is regenerated on the box with this dependency change.
 
 | Command                                                               | What it does                                                                                                                                                                                     |
 | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -38,7 +45,7 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow train <open\|add\|close\|build\|eject\|depart\|status>`        | the release train: board green PRs, cut off, build `train/<version>` by merge commits with bisect ejection, depart by fast-forward (see [Release trains](#release-trains))                       |
 | `fflow ship <dev\|staging> [--workflow f] [--dry-run]`                | dispatches the product's Runway deploy workflow (`deploy.yml`, input `environment`) on main; production is refused: the owner promotes                                                           |
 | `fflow release [--json] [--offline]`                                  | what the next release would publish: pending changesets and next versions, the version PR, the Release workflow's last run and its notices, the registry's versions; it publishes nothing        |
-| `fflow doctor [--json] [--offline]`                                   | checks Node, git, the configuration, the `.flow/` install, the ignored worktree folder, the roster and the credentials, grouped (Machine, Repo, Flow, GitHub), each with its fix               |
+| `fflow doctor [--json] [--offline]`                                   | checks Node, git, the configuration, the `.flow/` install, the ignored worktree folder, the roster and the credentials, grouped (Machine, Repo, Flow, GitHub), each with its fix                 |
 | `fflow gate plan <spec.md>`                                           | exits 1 until the spec may be planned (run by `fflow spec setup-plan`)                                                                                                                           |
 | `fflow gate check <dir>` / `tasks <tasks.md>`                         | the stage rules for the spec's `**Status**`; the tasks lint                                                                                                                                      |
 | `fflow gate lane` / `branch` / `ci` / `dir`                           | the lane check, the branch warning, the CI gate with the install check, the spec folder                                                                                                          |

@@ -30,8 +30,13 @@ function repo() {
   return { root, dispose: () => rmSync(root, { recursive: true, force: true }) };
 }
 
-const byId = (/** @type {import("../commands/doctor.mjs").Check[]} */ all) =>
-  Object.fromEntries(all.map((c) => [c.id, c]));
+/**
+ * Checks or checklist rows by id.
+ * @template {{ id: string }} T
+ * @param {T[]} all
+ * @returns {Record<string, T>}
+ */
+const byId = (all) => Object.fromEntries(all.map((c) => [c.id, c]));
 
 test("doctor: Node against a >= range", () => {
   assert.equal(meets("24.0.0", ">=24.0.0"), true);
@@ -98,7 +103,9 @@ test("doctor: the binary exits 1 with a JSON report when a check fails", (t) => 
     encoding: "utf8",
   });
   assert.equal(out.status, 1);
-  const report = JSON.parse(out.stdout);
+  const report = /** @type {{ ok: boolean, data: ReturnType<typeof rowsOf> }} */ (
+    JSON.parse(out.stdout)
+  );
   assert.equal(report.ok, false);
   assert.equal(byId(report.data).worktrees.ok, false);
   assert.equal(byId(report.data).worktrees.status, "fail");

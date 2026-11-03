@@ -3,14 +3,18 @@
  * Purpose: hold `fflow`'s routing on the console engine to AC-36: `fflow` alone prints the banner (on a terminal), the
  *   version and every command under its group; `<command> --help` prints its usage and runs nothing; an unknown
  *   command names the closest match and exits 2; and the passthrough list (commands not yet ported, STA-1966 FR-031)
- *   is pinned, so porting one is a deliberate change here.
- * Boundary: the engine's in-process test harness; no command runs.
+ *   is pinned, so porting one is a deliberate change here; and only src/lib/console.mjs (with bin/fflow.mjs) imports
+ *   `@stackra/*`, so the governance core stays free of the engine.
+ * Boundary: the engine's in-process test harness and the text of src/; no command runs.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945 FR-31; STA-1966 FR-031.
  */
 // @covers sta-1945:FR-31 sta-1945:AC-36 sta-1945:P-035
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { passthroughCommands, runCommandForTest } from "@stackra/console/testing";
 
@@ -72,4 +76,13 @@ test("help: the commands not yet ported are passthrough, and only these", () => 
     "trace",
     "train",
   ]);
+});
+
+test("help: only the CLI layer imports @stackra/*, so the governance core stays free of the engine", () => {
+  const src = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const importers = readdirSync(src, { recursive: true, encoding: "utf8" })
+    .filter((f) => f.endsWith(".mjs") && !f.startsWith("__tests__"))
+    .filter((f) => /["']@stackra\//.test(readFileSync(join(src, f), "utf8")))
+    .map((f) => f.split("\\").join("/"));
+  assert.deepEqual(importers, ["lib/console.mjs"]);
 });
