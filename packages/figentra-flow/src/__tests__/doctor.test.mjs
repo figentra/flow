@@ -2,7 +2,8 @@
  * Figentra Flow file contract:
  * Purpose: hold `fflow doctor` to its rules: a freshly initialised repository passes every offline check; a
  *   hand-edited rendered file fails `install`, an unignored worktree folder fails `worktrees`, invalid configuration
- *   fails `config`; outside git only `node` and `git` are reported; the binary exits 1 with the JSON report.
+ *   fails `config`; outside git only `node` and `git` are reported; the binary exits 1 with the JSON report; each
+ *   machine-only skill is listed with its source (STA-1945 FR-8).
  * Boundary: scratch git repositories and `--offline`; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1729 (FR-13, AC-055); STA-1846.
@@ -11,7 +12,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,6 +27,7 @@ import { fileURLToPath } from "node:url";
 import { checks, meets } from "../commands/doctor.mjs";
 import { init } from "../commands/init.mjs";
 import { LOCK } from "../lib/flow-dir.mjs";
+import { CONFIG_FILE } from "../lib/product.mjs";
 
 const BIN = join(dirname(fileURLToPath(import.meta.url)), "../../bin/fflow.mjs");
 
@@ -100,4 +109,27 @@ test("doctor: the binary exits 1 with a JSON report when a check fails", (t) => 
   const report = JSON.parse(out.stdout);
   assert.equal(report.schema, "fflow.doctor/1");
   assert.equal(byId(report.checks).worktrees.ok, false);
+});
+
+// @covers sta-1945:FR-8 sta-1945:AC-10 sta-1945:P-013
+test("doctor: names each machine-only skill's source; a third-party.yml it cannot read fails", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  const disk = () => ({ free: 100 * GB, total: 200 * GB });
+  writeFileSync(join(r.root, CONFIG_FILE), JSON.stringify({ version: 1, preset: "stackra" }));
+  const rows = checks(r.root, { offline: true, disk }).filter((c) =>
+    c.id.startsWith("machine-only:"),
+  );
+  assert.equal(rows.length, 2 + 6 + 13);
+  assert.ok(rows.every((c) => c.ok));
+  assert.match(
+    byId(rows)["machine-only:remotion-docs"].detail,
+    /^install it on this machine from github:remotion-dev\/skills \(.*\); fflow sync never installs it/,
+  );
+  mkdirSync(join(r.root, "ours"));
+  writeFileSync(join(r.root, "ours", "third-party.yml"), "skills: nope\n");
+  writeFileSync(join(r.root, CONFIG_FILE), JSON.stringify({ version: 1, preset: "ours" }));
+  const c = byId(checks(r.root, { offline: true, disk }));
+  assert.equal(c["third-party"]?.ok, false);
+  assert.match(c["third-party"]?.detail ?? "", /third-party\.yml: `skills` is not a list/);
 });

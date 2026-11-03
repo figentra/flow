@@ -8,10 +8,13 @@
  *   written file carries its provenance header and `.flow/lock.json` v2 records the Flow version, the preset with its
  *   digest and each written file's digest (STA-1945 FR-2, FR-3); `installProblems`, reading a v1 or v2 lock, is the check that replaces spec-kit's tripwire: no hand edit, no
  *   forgotten `sync`, and no spec-kit leftover. With a `.flow/readme.yml`, `README.md` is rendered too (STA-1879).
- * Boundary: `render` and `installProblems` read; `writeRendered` writes the rendered files and the lock and removes
- *   spec-kit's rendered `speckit-*` skills and commands. Nothing here deletes `.specify/` (that is `migrate`).
+ *   The preset's third-party skills install into the git-ignored `.agents/skills/.vendor/` and the lock pins them
+ *   (STA-1945 FR-8).
+ * Boundary: `render` and `installProblems` read; `writeRendered` installs the third-party skills, writes the rendered
+ *   files and the lock and removes spec-kit's rendered `speckit-*` skills and commands. Nothing here deletes
+ *   `.specify/` (that is `migrate`).
  * Runtime: node
- * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-2, FR-3).
+ * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-2, FR-3, FR-8).
  * Secrets: none.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -46,6 +49,7 @@ import {
 } from "./product.mjs";
 import { withHeader } from "./provenance.mjs";
 import { renderReadme } from "./readme.mjs";
+import { installSkills, loadThirdParty, pinsOf } from "./skills.mjs";
 import { parseYaml, YamlError } from "./yaml.mjs";
 
 /** The eight commands, in workflow order. */
@@ -283,12 +287,17 @@ export function migrateLegacy(root) {
 }
 
 /**
- * Writes the rendered files with their provenance headers, then `.flow/lock.json` v2, and removes the rendered `speckit-*` skills and commands.
+ * Installs the preset's third-party skills into `.agents/skills/.vendor/` (STA-1945 FR-8), then writes the rendered
+ * files with their provenance headers, then `.flow/lock.json` v2, and removes the rendered `speckit-*` skills and
+ * commands. A skill that may not or cannot install refuses before anything is written.
  * @param {string} root
  * @param {Map<string, string>} files
+ * @param {{ fetchTree?: import("./skills.mjs").FetchTree }} [deps]
  * @returns {string[]} the spec-kit files it removed
+ * @throws {import("./skills.mjs").SkillError} on a licence not allowed, a failed fetch or a digest mismatch
  */
-export function writeRendered(root, files) {
+export function writeRendered(root, files, deps) {
+  installSkills(root, loadThirdParty(presetDir(root)), deps);
   const removed = removable(root);
   for (const p of removed) rmSync(join(root, p), { recursive: true, force: true });
   const written = withHeaders(root, files);
@@ -346,8 +355,8 @@ export function lockOf(root, written) {
     profile: "*",
     overrides: overridesDigest(root),
     files: Object.fromEntries([...written].map(([path, text]) => [path, digestOf(text)])),
-    // Third-party skills are pinned here once Flow installs them (STA-1945 PR 7).
-    skills: {},
+    // The pins `writeRendered` installed (machine-only skills are never recorded); `diff` reads them without a fetch.
+    skills: pinsOf(loadThirdParty(presetDir(root))),
   };
 }
 

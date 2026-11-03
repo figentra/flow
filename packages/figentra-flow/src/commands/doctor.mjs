@@ -1,13 +1,14 @@
 /**
  * Figentra Flow file contract:
  * Purpose: `fflow doctor [--json] [--offline]`: whether this machine and repository can run Flow: Node, git,
- *   the configuration, the `.flow/` install, the ignored worktree folder, the roster and the GitHub credentials, each
+ *   the configuration, the `.flow/` install, the machine-only skills to install from source (STA-1945 FR-8), the
+ *   ignored worktree folder, the roster and the GitHub credentials, each
  *   reported as passed or failed with its fix. Two warnings never fail the run (STA-1871): more linked worktrees than
  *   `clean.budget`, and under 10 GB or 10 % free on the disk that holds the repository.
  * Boundary: reads only, reusing the checks the other commands make (`loadConfig`, `installProblems`, `loadTeam`,
  *   `connect`); one GitHub call (`GET /repos/{repo}`) unless `--offline`. Exit 0 when every check passes, 1 otherwise.
  * Runtime: node
- * Governing contract: STA-1729 (FR-13, AC-055); STA-1846.
+ * Governing contract: STA-1729 (FR-13, AC-055); STA-1846; STA-1945 (FR-8, AC-10).
  * Secrets: none here; the token stays inside `gh` or the wrapper.
  */
 import { statfsSync } from "node:fs";
@@ -15,10 +16,12 @@ import { statfsSync } from "node:fs";
 import { BUDGET, ignoresWorktrees } from "./clean.mjs";
 import { connect } from "./land.mjs";
 import { say } from "../lib/cli.mjs";
-import { loadConfig } from "../lib/config.mjs";
+import { ConfigError, loadConfig } from "../lib/config.mjs";
+import { presetDir } from "../lib/flow-dir.mjs";
 import { git, worktrees } from "../lib/git.mjs";
 import { CONFIG_FILE, NAME, NODE_RANGE } from "../lib/product.mjs";
 import { installProblems } from "../lib/render.mjs";
+import { loadThirdParty, THIRD_PARTY } from "../lib/skills.mjs";
 import { loadTeam } from "../lib/team.mjs";
 
 /**
@@ -55,6 +58,36 @@ export function meets(version, range) {
     if ((have[i] ?? 0) !== want) return (have[i] ?? 0) > want;
   }
   return true;
+}
+
+/**
+ * One row per machine-only skill the preset lists (STA-1945 FR-8, D1), naming the source to install it from on this
+ * machine; a `third-party.yml` that is not valid fails.
+ * @param {string} root
+ * @returns {Check[]}
+ */
+export function machineOnlyRows(root) {
+  let skills;
+  try {
+    skills = loadThirdParty(presetDir(root));
+  } catch (error) {
+    if (!(error instanceof ConfigError)) throw error;
+    return [
+      {
+        id: "third-party",
+        ok: false,
+        detail: error.message,
+        fix: `correct the preset's ${THIRD_PARTY}`,
+      },
+    ];
+  }
+  return skills
+    .filter((s) => s.machineOnly)
+    .map((s) => ({
+      id: `machine-only:${s.id}`,
+      ok: true,
+      detail: `install it on this machine from ${s.source} (${s.licence}); ${NAME} sync never installs it and no repository carries it`,
+    }));
 }
 
 /**
@@ -110,6 +143,7 @@ export function checks(cwd, { offline = false, node = process.versions.node, dis
       ? { id: "install", ok: false, detail: install.join("; "), fix: `run \`${NAME} sync\`` }
       : { id: "install", ok: true, detail: ".flow/ matches the installed Flow" },
   );
+  if (!loaded.errors.length) out.push(...machineOnlyRows(root));
 
   out.push(
     ignoresWorktrees(root)

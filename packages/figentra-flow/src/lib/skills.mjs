@@ -51,8 +51,11 @@ const DIGEST = /^sha256:[0-9a-f]{64}$/;
 const MIRROR =
   "; without network, mirror the source and point git at it (`git config --global url.<mirror>.insteadOf https://github.com/`)";
 
-/** Raised when a skill must not or cannot be installed; `sync` refuses with its message and writes nothing. */
-export class SkillError extends Error {}
+/**
+ * Raised when a skill must not or cannot be installed; `sync` refuses with its message and writes nothing. A
+ * `ConfigError`, so `sync`, `update` and `--workspace` refuse with the message rather than a stack trace.
+ */
+export class SkillError extends ConfigError {}
 
 /**
  * Why a `third-party.yml` entry is not one, or undefined.
@@ -123,7 +126,10 @@ export function pinsOf(skills) {
   return Object.fromEntries(
     skills
       .filter((s) => !s.machineOnly)
-      .map((s) => [s.id, { source: s.source, version: s.version, licence: s.licence, digest: s.digest }]),
+      .map((s) => [
+        s.id,
+        { source: s.source, version: s.version, licence: s.licence, digest: s.digest },
+      ]),
   );
 }
 
@@ -142,7 +148,16 @@ export function gitFetchTree(source, version, dest) {
   const work = mkdtempSync(join(tmpdir(), "fflow-skill-"));
   try {
     for (const args of [
-      ["clone", "-q", "--depth", "1", "--filter=blob:none", "--no-checkout", `https://github.com/${repo}.git`, work],
+      [
+        "clone",
+        "-q",
+        "--depth",
+        "1",
+        "--filter=blob:none",
+        "--no-checkout",
+        `https://github.com/${repo}.git`,
+        work,
+      ],
       ["-C", work, "fetch", "-q", "--depth", "1", "origin", version],
       ["-C", work, "checkout", "-q", version, "--", path],
     ]) {
