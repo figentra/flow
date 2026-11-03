@@ -8,7 +8,7 @@
 
 **Created**: 2026-10-31
 
-**Status**: Tasked
+**Status**: Done
 
 **Tier**: big
 
@@ -116,7 +116,7 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - **AC-013**: WHEN `figentra-flow release` runs THE CLI SHALL list the pending changesets with each package's next version, the open version pull request, the Release workflow's last run on the default branch with its notices, and each package's published versions on its registry, and SHALL publish, version, dispatch and merge nothing itself
 - **AC-014**: WHEN `figentra-flow ship <env>` runs for dev or staging THE CLI SHALL call runway deploy for that environment
 - **AC-015**: IF `figentra-flow ship production` is asked for THEN THE CLI SHALL refuse and name `runway promote` by the owner
-- **AC-016**: WHILE a repository is switched over THE repository SHALL require only `figentra-flow/gate` on main and keep only the Release workflow
+- ~~**AC-016**~~: WHILE a repository is switched over THE repository SHALL require only `figentra-flow/gate` on main and keep only the Release workflow — struck (A-001): not built; STA-1856 replaced phase 6, so a repository keeps its CI check required and lands through the approval workflow and auto-merge
 - **AC-018**: WHEN `figentra-flow clean` decides whether a worktree is saved THE CLI SHALL count it saved when its head is on a remote ref or `git cherry origin/<default> HEAD` lists no `+` commit
 - **AC-019**: WHILE a worktree has a detached HEAD THE CLI SHALL treat it like any other: removable when it is clean, idle and saved
 - **AC-020**: IF a worktree's branch carries no issue key THEN THE CLI SHALL require it to be clean, saved and idle for at least 2 hours, measured from the HEAD reflog's modification time, instead of a Linear state
@@ -144,7 +144,7 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - **AC-045**: WHEN phase A's last step (A6) writes `figentra-flow.config.json` into our repositories THE CLI SHALL drop every transition for a repository without one (the `bot:git` lookup, the Linear `STA` tracker, the tester worktree names) in the same change
 - **AC-023**: WHEN a spec carries a `**Session**` line THE CLI SHALL read it as the spec's assigned session and show it in `figentra-flow status`
 - **AC-024**: WHEN `figentra-flow status` runs THE CLI SHALL list each session with its spec, worktree and the `figentra-flow/gate` result of the worktree's head
-- **AC-025**: IF a feature- or big-tier spec past Clarified has no `**Session**` THEN THE CLI SHALL report it in `figentra-flow gate check` as a finding
+- ~~**AC-025**~~: IF a feature- or big-tier spec past Clarified has no `**Session**` THEN THE CLI SHALL report it in `figentra-flow gate check` as a finding — struck (A-001): not built; the gate checks `**Role**` and `**Owner stops**` (AC-048), never `**Session**`
 - **AC-026**: WHILE more than two build sessions hold an In Progress spec and the owner has not raised the cap THE CLI SHALL report the excess in `figentra-flow status`
 - **AC-046**: WHEN the configuration names a roster in `team` THE CLI SHALL read it and its role files with no new dependency, refuse YAML outside the supported subset by line, and publish `schema/team.roster.schema.json` and `schema/team.role.schema.json`
 - **AC-047**: WHEN `figentra-flow team check` or `gate ci` runs on a repository with a roster THE CLI SHALL report duplicate ids, a label other than `role:<id>`, a role file whose id differs, an unknown or self `reviewed_by`, an unknown `rules.tests_run_by`, and an `approves` entry that names a category in `owner.keeps` as a whole word
@@ -154,7 +154,7 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - **AC-051**: IF a review verdict's `role=` is the builder's role or not in the builder role's `reviewed_by`, or its `session=` is the builder's session THEN THE CLI SHALL refuse it in `figentra-flow land` as `REVIEWER_IS_BUILDER`
 - **AC-052**: IF a change in a repository a role's `changes` names touches a path outside that role's `paths` THEN THE CLI SHALL warn at `start` and report a finding at `gate run` and `land`
 - **AC-053**: IF a feature- or big-tier spec's `**Owner stops**` names a category the owner keeps THEN THE CLI SHALL accept its stage approvals only from the owner; and IF its Impact names money, security, legal, brand, pricing, secrets or public content while `**Owner stops**` says none THEN the plan gate SHALL report the mismatch
-- **AC-054**: IF a pending changeset names a package the repository does not have, a package it names has no registry (its `publishConfig.registry`, its scope in `.npmrc`, or the Release workflow's `registry:` input), or a package's next version is already on its registry THEN `figentra-flow release` SHALL report it and exit 1
+- **AC-054**: IF a pending changeset names a package the repository does not have, a package it names has no registry (its `publishConfig.registry`, its scope in `.npmrc`, or the Release workflow's `registry:` input), or a package's next version is already on its registry THEN THE CLI SHALL report it in `figentra-flow release` and exit 1
 - **AC-055**: WHEN `figentra-flow doctor` runs THE CLI SHALL report each check (Node, git, configuration, `.flow/` install, ignored worktree folder, roster, credentials) as passed or failed with its fix, exit 1 when any failed, and with `--offline` SHALL make no network call
 
 ## Clarifications (the leader's answers at the spec stop, 2026-10-31)
@@ -187,6 +187,16 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - **Later phases** fold in stackra-f4's `notes/plans/flow-final-plan.md` (ownership, the move list, old Vellum
   verdicts, the agent-config model) when it lands.
 
+## Amendments
+
+- A-001 · 2026-11-03 · closing the spec after 0.1.0 to 0.2.3 shipped it (STA-2039); a record of what was and was not
+  built, no new scope · struck: AC-016 and task T060 (phase 6, the GitHub switch-over, replaced by STA-1856's approval
+  workflow and auto-merge), AC-025 (the gate never checks `**Session**`), task T035 (no `review` command), task T070
+  (split: its status half shipped and is recorded as T071) · reworded: AC-054 into the EARS form; P-007, P-008 and
+  P-010 to what the tests prove (P-010 drops "never treats a peer message as an approval", a working rule) · added:
+  P-013 (validates FR-13), task T071 · renamed: since 0.2.2 the command is `fflow`, the configuration
+  `flow.config.json` and the status context `fflow/gate` (STA-1942 FR-8); the text above keeps the names of its time
+
 ## Status history
 
 - 2026-10-31: Draft (questions sent to the leader for the spec stop)
@@ -208,3 +218,6 @@ approved once and the plan is written per phase (each phase's design is a plan.m
 - 2026-10-31: phase 4 Planned — Approved by leader 2026-10-31 (metrics on demand, a hand-written MCP server with a conformance test, tracker state only with a tracker adapter, `sessionCap` in workspace.yaml; built after phase A)
 - 2026-10-31: Tasked (revised) — Approved by owner 2026-10-31 (relayed by the leader, confirmed by the owner in the build session): the product is Figentra Flow, published as `figentra-flow`; no compatibility with the old names
 - 2026-10-31: Tasked (revised) — Approved by leader 2026-10-31 (AC-044: the Infisical token by environment only, with project, env and domain from config, after the gate key moved to its own project; AC-045: A6 removes the config-less transitions with the config files)
+- 2026-11-03 · Tasked → Done · Claude (FLOW session) · brought to the ADR 0502 standard after shipping in 0.1.0 to
+  0.2.3 (STA-2039): AC-054 in EARS form, P-013 for FR-13, T010 and T015 ticked, AC-016, AC-025, T035, T060 and
+  T070 struck (A-001)

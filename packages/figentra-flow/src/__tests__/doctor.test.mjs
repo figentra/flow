@@ -7,7 +7,7 @@
  * Runtime: node
  * Governing contract: ADR 0022; STA-1729 (FR-13, AC-055); STA-1846.
  */
-// @covers sta-1729:FR-13 sta-1729:AC-055
+// @covers sta-1729:FR-13 sta-1729:AC-055 sta-1729:P-013
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

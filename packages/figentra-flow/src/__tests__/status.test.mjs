@@ -9,6 +9,7 @@
  * Governing contract: ADR 0022; STA-1729 phase 4.
  */
 // @covers sta-1729:FR-7 sta-1729:AC-012 sta-1729:AC-024 sta-1729:AC-026
+// @covers sta-1729:FR-10 sta-1729:AC-023 sta-1729:P-007 sta-1729:P-010
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";

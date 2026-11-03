@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-02
 
-**Status**: Planned
+**Status**: Done
 
 **Tier**: feature
 
@@ -75,7 +75,7 @@ asks a narrower question, "does this PR make anything worse than main already is
   approval check counts "Baseline" like any required check, from the App the ruleset pins (GitHub Actions, 15368).
   A PR that edits the baseline workflow is owner-only (STA-1856 FR-1), so the bot never approves a PR that could
   rewrite its own Baseline job.
-- **FR-7** Tests cover, on canned summaries:
+- **FR-7** (example-only: this FR is the list of tests itself) Tests cover, on canned summaries:
   - the subset passes;
   - a new failure fails;
   - a new task that fails fails;
@@ -101,6 +101,20 @@ asks a narrower question, "does this PR make anything worse than main already is
     still read for one release;
   - docs, presets, the stewards' text and the README templates say `fflow`.
 
+## Acceptance criteria
+
+- **AC-001**: WHEN the `turbo` reader reads a run summary THE CLI SHALL mark a task `pass` only when its `execution.exitCode` is 0, `fail` for any other exit code and `skip` when it has no execution, and SHALL drop a task whose command is `<NONEXISTENT>`
+- **AC-002**: WHEN `fflow gate baseline save` runs THE CLI SHALL write `{ version, sha, reader, tasks }` from the newest `.turbo/runs/*.json` (or `--summary <file>`) to `.fflow-gate/baseline.json`
+- **AC-003**: WHEN `fflow gate baseline check --base <sha>` runs THE CLI SHALL compare with the baseline of that SHA or of its nearest ancestor, up to 30 commits back, counting only an `fflow-baseline-<sha>` artifact that a `push` run on the default branch made at that exact SHA
+- **AC-004**: IF the PR fails a task that passed on main or that main does not have, drops or skips a task main ran, leaves a `baseline.mustPass` task not green, or has more failed tasks than main THEN THE CLI SHALL exit 1
+- **AC-005**: WHEN the PR fails only tasks that main also fails THE CLI SHALL exit 0 and list each task main failed that now passes as fixed
+- **AC-006**: IF no baseline is found among the ancestors searched THEN THE CLI SHALL fail closed, exit 1 and say how many ancestors it searched
+- **AC-007**: WHEN `check` ends THE CLI SHALL write a job-summary table of the new failures, missing or skipped, must-pass not green, fixed and still failing tasks, with main's and the PR's failure counts, saying that it is a merge gate, not a release certificate
+- **AC-008**: WHERE the configuration has `baseline` THE `sync` command SHALL render `.github/workflows/fflow-baseline.yml` with one job named `Baseline` that runs the configured setup steps as block YAML with their values unchanged, the install, one `turbo run <tasks> --continue --summarize`, `save`, then the upload on a push or `check` on a pull request, and without `baseline` SHALL render no such file
+- **AC-009**: THE owner-only list SHALL match every path under `.github/workflows/`, the baseline workflow's included, so neither `land` nor the approval check approves a PR that edits it
+- **AC-010**: WHEN `sync` runs in a repository that has `figentra-flow.config.json` THE CLI SHALL rename it to `flow.config.json` once with its `$schema`, remove the old `figentra-flow-*.yml` workflows, and refuse when both configuration files exist
+- **AC-011**: WHEN the deprecated `figentra-flow` binary runs THE CLI SHALL print one notice that the command is now `fflow` and then run `fflow`
+
 ## Not now (v2, recorded)
 
 Test-level inventory from vitest's JSON report; a flaky-test quarantine with an owner and an expiry; failure
@@ -112,3 +126,6 @@ fingerprints, so a task that keeps failing for a new reason counts as a new fail
 - 2026-11-02: Clarified → Planned — Approved by owner 2026-11-02 (relayed by the leader session)
 - 2026-11-02: amended before release: the external review's v1 must-haves (inventory, `mustPass`, failure debt, the
   merge-gate statement) and the owner's `fflow` rename (FR-8), both in 0.2.2
+- 2026-11-03 · Planned → Done · Claude (FLOW session) · brought to the ADR 0502 standard after shipping in 0.2.2 and
+  0.2.3 (STA-2039): the acceptance criteria, the design sections, the correctness properties and tasks.md record what
+  shipped; nothing was struck

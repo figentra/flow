@@ -20,6 +20,9 @@
  * Governing contract: ADR 0022; STA-1942; STA-1945 FR-22.
  */
 // @covers sta-1942:FR-1 sta-1942:FR-2 sta-1942:FR-3 sta-1942:FR-4 sta-1942:FR-5 sta-1942:FR-6 sta-1942:FR-7 sta-1942:FR-8 sta-1945:FR-22
+// @covers sta-1942:AC-001 sta-1942:AC-002 sta-1942:AC-003 sta-1942:AC-004 sta-1942:AC-005 sta-1942:AC-006
+// @covers sta-1942:AC-007 sta-1942:AC-008 sta-1942:AC-010 sta-1942:AC-011
+// @covers sta-1942:P-001 sta-1942:P-002 sta-1942:P-003 sta-1942:P-005
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
