@@ -92,6 +92,19 @@ export const SCHEMA = {
           auth: { enum: ["universal-auth"] },
           bin: str,
           envFile: str,
+          // The L2 design: main's approval job logs in with its OIDC token as this identity (lib/app-token.mjs).
+          oidc: {
+            type: "object",
+            additionalProperties: false,
+            required: ["identityId", "audience"],
+            properties: {
+              identityId: {
+                type: "string",
+                pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              },
+              audience: { type: "string", pattern: "^[\\w.-]+$" },
+            },
+          },
         },
       },
       { infisical: ["paths"] },
