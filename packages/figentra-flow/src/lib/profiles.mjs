@@ -47,7 +47,7 @@ export function resolveProfile(presetYml, name) {
     throw new ConfigError(`the preset's profiles must be a map of names to profiles`);
   const names = Object.keys(declared).join(", ") || "(none)";
   const chosen = name ?? presetYml?.default;
-  if (chosen === undefined)
+  if (chosen === undefined || chosen === null)
     throw new ConfigError(
       `the preset declares profiles but no \`default\`: set \`profile\` in the config to one of ${names}`,
     );

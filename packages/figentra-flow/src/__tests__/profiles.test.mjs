@@ -78,12 +78,13 @@ test("resolveProfile: an unknown name is a ConfigError naming the preset's profi
 
 test("resolveProfile: profiles without a `default` need a name; a malformed profile is named as malformed", () => {
   const noDefault = { profiles: { lean: { agents: ALL }, full: { agents: ALL } } };
-  assert.throws(
-    () => resolveProfile(noDefault),
-    (e) =>
-      e instanceof ConfigError &&
-      /declares profiles but no `default`: set `profile` .* one of lean, full/.test(e.message),
-  );
+  for (const yml of [noDefault, { ...noDefault, default: null }])
+    assert.throws(
+      () => resolveProfile(yml),
+      (e) =>
+        e instanceof ConfigError &&
+        /declares profiles but no `default`: set `profile` .* one of lean, full/.test(e.message),
+    );
   assert.equal(resolveProfile(noDefault, "lean").name, "lean");
   for (const entry of [null, 1, "all", ["*"]])
     assert.throws(
