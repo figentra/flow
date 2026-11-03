@@ -6,20 +6,54 @@
  *   other side doors (a push to the default branch, `gh pr merge`, `LEFTHOOK=0` set as a variable, `--no-verify`,
  *   `commit -n` and a `core.hooksPath` override) are denied, directly, by the program's path, behind
  *   `env`/`command`/`exec` or through a wrapper, each naming the Flow command to use instead; `LEFTHOOK=0` as an
- *   argument, `-n` as a message and `push -n` pass.
- * Boundary: a temporary repository; no network.
+ *   argument, `-n` as a message and `push -n` pass. The side doors are engine rules: `fflow guard` and the hook entry
+ *   run the engine on the repository's preset tables (the neutral preset's when the preset has none), deny a secret
+ *   file to every file tool, ask when a rule throws, and deny every tool call when the tables fail to load.
+ * Boundary: temporary repositories; the hook entry runs as a child process; no network.
  * Runtime: node
  * Governing contract: ADR 0022; Stackra ADR 0503; STA-1729; STA-1945.
  */
 // @covers sta-1729:FR-2 sta-1729:AC-003 sta-1729:P-002 sta-1945:FR-13 sta-1945:AC-38 sta-1945:P-018
+// @covers sta-1945:FR-7 sta-1945:FR-5 sta-1945:AC-9 sta-1945:P-012
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, realpathSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { decide, SETTINGS, words } from "../commands/guard.mjs";
+import { SETTINGS } from "../commands/guard.mjs";
+import { decideBash, SIDE_DOORS } from "../guard/bash.mjs";
+import { decide as decideEvent } from "../guard/engine.mjs";
+import { loadTables } from "../guard/tables.mjs";
+import { words } from "../guard/words.mjs";
+import { CONFIG_FILE } from "../lib/product.mjs";
 import { repo, sh } from "./__fixtures__/repo.mjs";
+
+/** The side doors' denial reason for `command`, or undefined when they let it run. */
+const decide = (/** @type {string} */ command, /** @type {string} */ cwd) => {
+  const d = decideBash(command, cwd, SIDE_DOORS);
+  return d.decision === "allow" ? undefined : d.reason;
+};
+
+const ENTRY = fileURLToPath(new URL("../../bin/fflow-guard.mjs", import.meta.url));
+
+/**
+ * Runs the hook entry for `event` on `payload` in `root`; the parsed answer, or undefined when it printed nothing.
+ * @param {string} root
+ * @param {string} event
+ * @param {Record<string, unknown> | string} payload
+ */
+const hook = (root, event, payload) => {
+  const r = spawnSync(process.execPath, [ENTRY, event], {
+    input: typeof payload === "string" ? payload : JSON.stringify({ cwd: root, ...payload }),
+    env: { ...process.env, CLAUDE_PROJECT_DIR: root },
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 0, r.stderr);
+  return r.stdout.trim() ? JSON.parse(r.stdout).hookSpecificOutput : undefined;
+};
 
 test("guard: a push to the default branch is denied, naming fflow land (P-018)", (t) => {
   const r = repo();
@@ -150,9 +184,94 @@ test("guard: other git commands and commands outside a repository pass", (t) => 
   assert.equal(decide("git worktree add ../x", outside), undefined);
 });
 
-test("guard: the settings entry runs before every Bash call", () => {
+test("guard: the settings wire every guard event to the hook entry, not pnpm exec", () => {
   assert.deepEqual(SETTINGS.hooks.PreToolUse[0], {
-    matcher: "Bash",
-    hooks: [{ type: "command", command: "pnpm exec fflow guard" }],
+    matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit|Read|Grep|Glob",
+    hooks: [
+      {
+        type: "command",
+        command: 'node "$CLAUDE_PROJECT_DIR/node_modules/@figentra-oss/flow/bin/fflow-guard.mjs" PreToolUse',
+        timeout: 5,
+      },
+    ],
   });
+  for (const event of ["UserPromptSubmit", "SessionStart", "PostToolUse"])
+    assert.match(SETTINGS.hooks[event][0].hooks[0].command, new RegExp(`fflow-guard\\.mjs" ${event}$`));
+});
+
+test("engine: the hook entry denies a side door with the command, and allows the rest (P-012)", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  const denied = hook(r.root, "PreToolUse", {
+    tool_name: "Bash",
+    tool_input: { command: "gh pr merge 12" },
+  });
+  assert.equal(denied?.permissionDecision, "deny");
+  assert.match(denied?.permissionDecisionReason, /fflow land <pr>[^]*Blocked command: gh pr merge 12/);
+  assert.equal(
+    hook(r.root, "PreToolUse", { tool_name: "Bash", tool_input: { command: "git status" } }),
+    undefined,
+  );
+  assert.equal(hook(r.root, "PreToolUse", "not json{"), undefined, "unparseable input allows");
+});
+
+test("engine: a secret file is denied to every file tool; an example and other files pass (P-012)", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  for (const [tool, input] of /** @type {[string, Record<string, string>][]} */ ([
+    ["Read", { file_path: `${r.root}/.env` }],
+    ["Write", { file_path: `${r.root}/apps/x/.env.local` }],
+    ["Edit", { file_path: `${r.root}/certs/server.pem` }],
+    ["Grep", { pattern: "x", path: `${r.root}/.dev.vars` }],
+    ["Glob", { pattern: "keys/id_ed25519", path: r.root }],
+    ["NotebookEdit", { notebook_path: `${r.root}/prod.secrets.json` }],
+  ])) {
+    const d = hook(r.root, "PreToolUse", { tool_name: tool, tool_input: input });
+    assert.equal(d?.permissionDecision, "deny", `${tool} ${JSON.stringify(input)}`);
+    assert.match(d?.permissionDecisionReason, /Secrets guard[^]*Blocked path: /);
+  }
+  for (const [tool, input] of /** @type {[string, Record<string, string>][]} */ ([
+    ["Read", { file_path: `${r.root}/.env.example` }],
+    ["Write", { file_path: `${r.root}/src/env.mjs` }],
+    ["Grep", { pattern: "API_KEY", path: r.root }],
+  ]))
+    assert.equal(hook(r.root, "PreToolUse", { tool_name: tool, tool_input: input }), undefined, tool);
+});
+
+test("engine: the preset's tables, the neutral ones in their place, an ask for a rule that throws (FR-5)", async (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  const neutral = await loadTables(r.root);
+  assert.deepEqual(
+    neutral.bash.map((x) => x.id),
+    SIDE_DOORS.map((x) => x.id),
+  );
+  assert.equal(neutral.prompt, undefined);
+  writeFileSync(join(r.root, CONFIG_FILE), JSON.stringify({ version: 1, preset: "stackra" }));
+  const stackra = await loadTables(r.root);
+  assert.ok(stackra.prompt && stackra.session, "stackra's hints");
+  assert.equal(stackra.paths[0].id, "secret-file", "neutral's path rules until stackra has its own");
+  const event = { event: /** @type {const} */ ("PreToolUse"), tool: "Bash", cwd: r.root, root: r.root };
+  const broken = {
+    ...neutral,
+    bash: [
+      { id: "boom", decision: /** @type {const} */ ("deny"), reason: "", match: () => { throw new Error("x"); } },
+    ],
+  };
+  const d = decideEvent({ ...event, input: { command: "ls" } }, broken);
+  assert.equal(d.decision, "ask");
+  assert.match(d.reason ?? "", /rule boom failed/);
+  assert.equal(decideEvent({ ...event, input: { command: "ls" } }, neutral).decision, "allow");
+});
+
+test("engine: tables that fail to load deny every tool call, closed (FR-5)", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  mkdirSync(join(r.root, "ours", "guard"), { recursive: true });
+  writeFileSync(join(r.root, "ours", "guard", "bash-rules.mjs"), "export const BASH_RULES = {;\n");
+  writeFileSync(join(r.root, CONFIG_FILE), JSON.stringify({ version: 1, preset: "ours" }));
+  const d = hook(r.root, "PreToolUse", { tool_name: "Bash", tool_input: { command: "ls" } });
+  assert.equal(d?.permissionDecision, "deny");
+  assert.match(d?.permissionDecisionReason, /guard tables failed to load/);
+  assert.equal(hook(r.root, "UserPromptSubmit", { prompt: "implement x" }), undefined);
 });
