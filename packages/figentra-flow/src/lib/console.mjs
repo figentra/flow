@@ -3,9 +3,9 @@
  * Purpose: `fflow` on the one CLI engine, `@stackra/console` (STA-1966, FR-31): the Flow theme and every command,
  *   grouped, so `fflow` alone prints the banner, the version and the grouped commands, `<command> --help` prints its
  *   usage and runs nothing, an unknown command names the closest match and exits 2, and a failure is one error block.
- *   `doctor`, `status`, `next`, `resume`, `task start|done`, `session stop` and the governance commands (`update`,
- *   `check`, `diff`, `validate`, STA-1945 FR-1) declare their arguments and options; every other command is
- *   passthrough (migration only, ADR 0500 decision 7): it still parses its own flags from `io.rest`, and
+ *   `doctor`, `status`, `next`, `resume`, `task start|done`, `todo`, `ledger`, `session stop` and the governance
+ *   commands (`update`, `check`, `diff`, `validate`, STA-1945 FR-1) declare their arguments and options; every other
+ *   command is passthrough (migration only, ADR 0500 decision 7): it still parses its own flags from `io.rest`, and
  *   `PASSTHROUGH` in the tests pins that list.
  * Boundary: the registry and the repository check, in the CLI layer only: the governance core (gate, approve, land,
  *   record, lock, baseline) imports nothing from `@stackra/*`. A command's module is imported when it runs, never for
@@ -13,7 +13,8 @@
  *   JavaScript: the engine's legacy field decorators are applied by hand after each class, exactly as TypeScript's
  *   emit applies them.
  * Runtime: node
- * Governing contract: STA-1945 FR-1, FR-31 (AC-35, AC-36, AC-37), FR-13, FR-19, FR-23; STA-1966 (FR-024, FR-031).
+ * Governing contract: STA-1945 FR-1, FR-31 (AC-35, AC-36, AC-37), FR-13, FR-19, FR-21, FR-23; STA-1966 (FR-024,
+ *   FR-031).
  * Secrets: none.
  */
 import { Argument, Command, CommandError, Option, UsageError } from "@stackra/console";
@@ -419,6 +420,60 @@ Option({ description: "The session's kind, as the record keeps it" })(
 );
 Str()(SessionStopCommand.prototype, "kind");
 
+class TodoCommand extends Command({
+  name: "todo",
+  description:
+    "Everything waiting on the owner across the workspace, each with the command that clears it",
+  group: GROUPS.work,
+  docs: DOCS,
+  examples: [`${NAME} todo`, `${NAME} todo --repo ../app --json`],
+}) {
+  /** @type {string | undefined} */
+  repo = undefined;
+
+  /** @param {CommandIo} io */
+  async handle(io) {
+    const { handle } = await import("../commands/todo.mjs");
+    return refusing(() => handle(io, this));
+  }
+}
+Option({ description: "One repository's path instead of the workspace list" })(
+  TodoCommand.prototype,
+  "repo",
+);
+Str()(TodoCommand.prototype, "repo");
+
+class LedgerCommand extends Command({
+  name: "ledger",
+  description: "What landed, released and shipped across the workspace, by day and track",
+  group: GROUPS.land,
+  docs: DOCS,
+  examples: [`${NAME} ledger`, `${NAME} ledger --since 2026-11-01 --json`],
+}) {
+  /** @type {string | undefined} */
+  since = undefined;
+  /** @type {string | undefined} */
+  repo = undefined;
+
+  /** @param {CommandIo} io */
+  async handle(io) {
+    const { handle, refusal } = await import("../commands/ledger.mjs");
+    const refused = refusal(this);
+    if (refused) throw new UsageError(refused.message, refused.hint);
+    return refusing(() => handle(io, this));
+  }
+}
+Option({ description: "The first day listed, as YYYY-MM-DD (UTC)" })(
+  LedgerCommand.prototype,
+  "since",
+);
+Str()(LedgerCommand.prototype, "since");
+Option({ description: "One repository's path instead of the workspace list" })(
+  LedgerCommand.prototype,
+  "repo",
+);
+Str()(LedgerCommand.prototype, "repo");
+
 /** Every command, in the order the list shows them within their group. */
 export const COMMANDS = [
   passthrough({
@@ -455,7 +510,7 @@ export const COMMANDS = [
   governance({
     name: "check",
     description:
-      "The CI check: owned files, the preset and the config against the lock; writes nothing",
+      "The CI check: owned files, preset, config and overrides against the lock, and review dates; writes nothing",
     examples: [`${NAME} check`, `${NAME} check --workspace ~/code`],
   }),
   governance({
@@ -467,7 +522,8 @@ export const COMMANDS = [
   }),
   governance({
     name: "validate",
-    description: "Check flow.config.json against its schema, naming each field that breaks it",
+    description:
+      "Check flow.config.json and .flow/overrides/ against their schemas and the mandatory policies, naming each break",
     examples: [`${NAME} validate`, `${NAME} validate --workspace ~/code`],
   }),
   DoctorCommand,
@@ -535,6 +591,13 @@ export const COMMANDS = [
     examples: [`${NAME} linear tasks .agents/specs/sta-12-x/tasks.md --dry-run`],
   }),
   passthrough({
+    name: "adr",
+    description:
+      "Reserve the next ADR number under the queue lock; prints it once it is on the default branch",
+    group: GROUPS.specs,
+    examples: [`${NAME} adr reserve cancel-order --issue STA-12`],
+  }),
+  passthrough({
     name: "start",
     description: "Make the issue's worktree and branch from the default branch",
     group: GROUPS.work,
@@ -545,11 +608,19 @@ export const COMMANDS = [
   ResumeCommand,
   TaskStartCommand,
   TaskDoneCommand,
+  TodoCommand,
   passthrough({
     name: "clean",
     description: "Remove finished worktrees and report what was kept",
     group: GROUPS.work,
     examples: [`${NAME} clean --dry-run`, `${NAME} clean --budget`, `${NAME} clean --all`],
+  }),
+  passthrough({
+    name: "hooks",
+    description:
+      "Run a stage's lefthook jobs here, else on the runner's box, and stamp the Hooks-Run trailer",
+    group: GROUPS.work,
+    examples: [`${NAME} hooks run pre-commit`, `${NAME} hooks run commit-msg .git/COMMIT_EDITMSG`],
   }),
   passthrough({
     name: "land",
@@ -575,9 +646,11 @@ export const COMMANDS = [
     group: GROUPS.land,
     examples: [`${NAME} release`, `${NAME} release --offline --json`],
   }),
+  LedgerCommand,
   passthrough({
     name: "guard",
-    description: "The agent hook that keeps worktrees inside .claude/worktrees/",
+    description:
+      "The guard engine on the hook event: the preset's rules, the side doors and the secret files",
     group: GROUPS.agents,
     examples: [`${NAME} guard --print-settings`],
   }),

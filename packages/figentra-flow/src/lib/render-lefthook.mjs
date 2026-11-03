@@ -3,9 +3,10 @@
  * Purpose: `lefthook.yml` and the `mise.toml` tool pins (STA-1945 FR-7, AC-8). The preset's `surfaces/lefthook.yml`
  *   holds the hook jobs as core proved them (STA-1865, os#112), under the hook rule of STA-2039: oxfmt and oxlint run
  *   the mise-pinned binary, named in `mise exec`, and the stackra preset skips them with a note where mise is missing
- *   (no `pnpm exec` fallback: pnpm 12's exec installs); oxfmt's exit 2 ("every staged file is ignored") passes,
- *   commitlint skips without `node_modules/.bin/commitlint`, and oxlint skips when its config extends `@stackra/oxlint-config` and no
- *   workspace install has it. The configuration's `lefthook` adds its own jobs per hook after the preset's. Every
+ *   (no `pnpm exec` fallback: pnpm 12's exec installs); oxfmt's `--no-error-on-unmatched-pattern` passes an
+ *   all-ignored staged set and its exit 2 (a file it cannot parse) fails, commitlint skips without
+ *   `node_modules/.bin/commitlint`, and oxlint skips when its config extends `@stackra/oxlint-config` and no workspace
+ *   install has it. The configuration's `lefthook` adds its own jobs per hook after the preset's. Every
  *   pre-push job, the preset's and the configuration's, skips only on the registry's 401 (pnpm's metadata fetch or its
  *   lockfile supply-chain check on a machine with no read token, STA-1936), the 401 on the error's own line; any
  *   other failure still blocks the push. A configured pre-push job must have a `run`, which is what gets wrapped.
