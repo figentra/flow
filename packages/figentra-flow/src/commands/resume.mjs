@@ -39,7 +39,7 @@ const BIN = fileURLToPath(new URL("../../bin/fflow.mjs", import.meta.url));
  */
 export function locate(cwd, key) {
   const task = findTask(cwd, key);
-  if (!task.ok) return task;
+  if (task.ok === false) return { ok: false, problem: task.problem };
   if (task.path) return { ok: true, path: task.path, made: false };
   const branch = task.branch;
   if (!branch)
@@ -94,7 +94,8 @@ function runStep(command, cwd) {
  * Resumes `key`.
  * @param {{ cwd: string, key: string, run?: (command: string, cwd: string) => number }} options
  * @returns {{ ok: true, path: string, made: boolean, stage: string, command: string, ran: boolean, exit?: number,
- *             pushed?: boolean, problem?: string, hooks?: string } | { ok: false, problem: string }}
+ *             pushed?: boolean, uncommitted?: boolean, problem?: string, hooks?: string }
+ *   | { ok: false, problem: string }}
  */
 export function resume({ cwd, key, run: runCommand = runStep }) {
   const root = mainCheckout(cwd);
@@ -104,7 +105,7 @@ export function resume({ cwd, key, run: runCommand = runStep }) {
   const fetched = fetch(root);
   if (!fetched.ok) return { ok: false, problem: `fetch failed: ${fetched.err}` };
   const at = locate(cwd, k);
-  if (!at.ok) return at;
+  if (at.ok === false) return { ok: false, problem: at.problem };
   const stale = sync(at.path);
   if (stale) return { ok: false, problem: stale };
   let record;
@@ -136,6 +137,7 @@ export function resume({ cwd, key, run: runCommand = runStep }) {
     ran: true,
     exit,
     pushed: saved.pushed,
+    uncommitted: saved.uncommitted,
     problem: saved.problem,
     hooks: saved.hooks,
   };
@@ -149,7 +151,7 @@ export async function run(args = []) {
     return 2;
   }
   const result = resume({ cwd: process.cwd(), key });
-  if (!result.ok) {
+  if (result.ok === false) {
     console.error(`${NAME} resume: ${result.problem}`);
     return 1;
   }
@@ -167,6 +169,11 @@ export async function run(args = []) {
     say(
       "blocked",
       `the hooks refused the record's commit: ${result.hooks}; the record stays in the worktree, uncommitted`,
+    );
+  else if (result.uncommitted)
+    say(
+      "blocked",
+      `the record was not committed: ${result.problem}; it stays in the worktree, uncommitted`,
     );
   else if (!result.pushed)
     say("waiting", `the record is committed but not pushed: ${result.problem}`);

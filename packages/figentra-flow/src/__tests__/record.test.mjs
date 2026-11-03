@@ -3,8 +3,10 @@
  * Purpose: hold Flow's record to its contract: the shipped schema is `RECORD_SCHEMA`; `updateRecord` starts a new
  *   record, applies a change and refuses one that fails the schema (naming the field, writing nothing); a key never
  *   leaves the record folder; `commitRecord` commits and pushes the task's branch, merges once on a rejected push (and
- *   aborts a merge that does not apply clean), never commits on the default branch or a detached HEAD, commits only
- *   the record unless it is a stop, never stages an untracked or secret-named file, and reports hooks that refuse.
+ *   aborts a merge that does not apply clean, and never merges into a worktree holding work left out), never commits
+ *   on the default branch or a detached HEAD, commits only the record unless it is a stop, never stages an untracked
+ *   or secret-named file, runs the hooks whatever `LEFTHOOK` says, reports hooks that refuse apart from git's own
+ *   failures, and undoes its staging when nothing is committed.
  * Boundary: temporary repositories with a local bare origin; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
@@ -180,15 +182,84 @@ test("record: a record commit takes only the record; a stop takes tracked change
   );
 });
 
-test("record: hooks that refuse the commit leave the work uncommitted, with their output", (t) => {
+test("record: hooks that refuse the commit leave the work uncommitted and unstaged, with their output", (t) => {
   const r = repo();
   t.after(r.dispose);
   sh(r.root, "switch", "-q", "-c", BRANCH);
   refuseCommits(r.root, "lint: 2 problems");
+  writeFileSync(join(r.root, "README.md"), "changed\n");
   updateRecord(r.root, "sta-1", (rec) => rec);
   const saved = commitRecord(r.root, "sta-1", { message: "wip(s): stop", wip: true });
   assert.equal(saved.pushed, false);
+  assert.equal(saved.uncommitted, true);
   assert.match(saved.hooks ?? "", /lint: 2 problems/);
   assert.equal(sh(r.root, "rev-list", "--count", "HEAD"), "1");
   assert.ok(existsSync(join(r.root, ".flow", "record", "sta-1.json")));
+  assert.equal(sh(r.root, "diff", "--cached", "--name-only"), "", "the staging is undone");
+  assert.equal(sh(r.root, "diff", "--name-only"), "README.md", "the working tree keeps the change");
+});
+
+test("record: a commit git itself refuses is reported as git's failure, never as the hooks'", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  sh(r.root, "switch", "-q", "-c", BRANCH);
+  // Signing with a program that does not exist: git fails with its own `fatal:`, no hook involved.
+  sh(r.root, "config", "commit.gpgsign", "true");
+  sh(r.root, "config", "gpg.program", join(dirname(r.root), "no-such-gpg"));
+  updateRecord(r.root, "sta-1", (rec) => rec);
+  const saved = commitRecord(r.root, "sta-1", { message: "wip(s): stop", wip: true });
+  assert.equal(saved.pushed, false);
+  assert.equal(saved.uncommitted, true);
+  assert.equal(saved.hooks, undefined);
+  assert.match(saved.problem ?? "", /^git commit failed: [\s\S]*fatal: /);
+  assert.equal(sh(r.root, "rev-list", "--count", "HEAD"), "1");
+  assert.equal(sh(r.root, "diff", "--cached", "--name-only"), "");
+});
+
+test("record: the commit runs the hooks even when LEFTHOOK or LEFTHOOK_EXCLUDE is set (FR-18)", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  const was = { LEFTHOOK: process.env.LEFTHOOK, LEFTHOOK_EXCLUDE: process.env.LEFTHOOK_EXCLUDE };
+  t.after(() => {
+    for (const [name, value] of Object.entries(was))
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+  });
+  process.env.LEFTHOOK = "0";
+  process.env.LEFTHOOK_EXCLUDE = "oxlint";
+  sh(r.root, "switch", "-q", "-c", BRANCH);
+  const hooks = join(dirname(r.root), "hooks");
+  mkdirSync(hooks, { recursive: true });
+  writeFileSync(
+    join(hooks, "pre-commit"),
+    `#!/bin/sh\n[ -z "\${LEFTHOOK+x}\${LEFTHOOK_EXCLUDE+x}" ] || { echo 'LEFTHOOK reached the hook' >&2; exit 1; }\n`,
+    { mode: 0o755 },
+  );
+  sh(r.root, "config", "core.hooksPath", hooks);
+  updateRecord(r.root, "sta-1", (rec) => rec);
+  const saved = commitRecord(r.root, "sta-1", { message: "wip(s): stop", wip: true });
+  assert.equal(saved.hooks, undefined, saved.problem);
+  assert.equal(saved.pushed, true, saved.problem);
+  assert.equal(sh(r.root, "rev-list", "--count", "HEAD"), "2");
+});
+
+test("record: a rejected push never merges into a worktree holding work left out of the commit", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  sh(r.root, "switch", "-q", "-c", BRANCH);
+  sh(r.root, "push", "-q", "-u", "origin", BRANCH);
+  const other = join(dirname(r.root), "other");
+  sh(dirname(r.root), "clone", "-q", "-b", BRANCH, r.origin, other);
+  commit(other, "theirs.txt");
+  sh(other, "push", "-q", "origin", BRANCH);
+  writeFileSync(join(r.root, "notes.txt"), "mine\n");
+  updateRecord(r.root, "sta-1", (rec) => rec);
+  const saved = commitRecord(r.root, "sta-1", { message: "wip(s): stop", wip: true });
+  assert.equal(saved.pushed, false);
+  assert.equal(saved.uncommitted, undefined);
+  assert.match(saved.problem ?? "", /origin moved; resume first/);
+  assert.doesNotMatch(saved.problem ?? "", /does not merge cleanly/);
+  assert.equal(sh(r.root, "rev-list", "--count", "HEAD"), "2", "the stop's commit, no merge");
+  assert.equal(sh(r.root, "status", "--porcelain"), "?? notes.txt");
+  assert.notEqual(sh(r.origin, "rev-parse", BRANCH), saved.sha);
 });

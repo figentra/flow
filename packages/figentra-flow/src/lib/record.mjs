@@ -6,9 +6,10 @@
  *   `readRecordAt` reads it from a branch with no checkout; `commitRecord` commits it (with the tracked changes for a
  *   session's stop) and pushes the branch through the credentials port (FR-19).
  * Boundary: writes only the record file, one commit on the task's branch and a push of that branch. Never commits on
- *   or pushes to the default branch, never rebases or force-pushes: a rejected push is merged once and retried, then
- *   reported as `pushed: false`. Never stages an untracked file but the record, or a file named like a secret; the
- *   hooks always run (FR-18).
+ *   or pushes to the default branch, never rebases or force-pushes: a rejected push is merged once (never into a
+ *   worktree holding uncommitted work) and retried, then reported as `pushed: false`. Never stages an untracked file
+ *   but the record, or a file named like a secret; the hooks always run (FR-18), `LEFTHOOK` and `LEFTHOOK_EXCLUDE`
+ *   stripped from their environment.
  * Runtime: node
  * Governing contract: STA-1945 (FR-14, FR-19, AC-13, AC-18, P-019).
  * Secrets: none; network git goes through `remote` and the configured credentials.
@@ -215,7 +216,20 @@ export function updateRecord(root, key, change) {
 }
 
 /**
- * Pushes the current branch to origin; a rejected push is merged (never rebased or forced) and retried once.
+ * The environment a commit, merge or push of the record runs in: the caller's, less what would skip or trim the
+ * hooks, which always run (FR-18).
+ */
+function hooked() {
+  const env = { ...process.env };
+  delete env.LEFTHOOK;
+  delete env.LEFTHOOK_EXCLUDE;
+  return env;
+}
+
+/**
+ * Pushes the current branch to origin; a rejected push is merged (never rebased or forced) and retried once. A
+ * worktree holding work left out of the commit is never merged into: it is pushed only when origin's branch is still
+ * an ancestor of HEAD.
  * @param {string} root
  * @param {string} branch
  * @returns {string | undefined} why it was not pushed
@@ -223,16 +237,21 @@ export function updateRecord(root, key, change) {
 function push(root, branch) {
   const to = ["push", "-q", "origin", `HEAD:refs/heads/${branch}`];
   try {
-    let r = remote(root, to);
+    let r = remote(root, to, hooked());
     if (r.ok) return undefined;
     const fetched = remote(root, ["fetch", "-q", "origin", branch]);
     if (!fetched.ok) return `push failed (${r.err}) and fetch failed (${fetched.err})`;
-    const merged = git(root, ["merge", "-q", "--no-edit", "FETCH_HEAD"]);
-    if (!merged.ok) {
-      git(root, ["merge", "--abort"]);
-      return `push rejected and origin/${branch} does not merge cleanly: ${merged.err || merged.out}`;
+    if (git(root, ["status", "--porcelain"]).out) {
+      if (!git(root, ["merge-base", "--is-ancestor", "FETCH_HEAD", "HEAD"]).ok)
+        return `push rejected: origin moved; resume first (origin/${branch} has commits this branch lacks, and the worktree holds work left out of the commit, so nothing was merged)`;
+    } else {
+      const merged = git(root, ["merge", "-q", "--no-edit", "FETCH_HEAD"], hooked());
+      if (!merged.ok) {
+        git(root, ["merge", "--abort"]);
+        return `push rejected and origin/${branch} does not merge cleanly: ${merged.err || merged.out}`;
+      }
     }
-    r = remote(root, to);
+    r = remote(root, to, hooked());
     return r.ok ? undefined : `push failed after a merge: ${r.err}`;
   } catch (error) {
     return /** @type {Error} */ (error).message;
@@ -248,27 +267,27 @@ const paths = (/** @type {string} */ out) => out.split("\0").filter(Boolean);
 /**
  * Commits the record of `key` on the current branch and pushes it. With `wip` (a session's stop) the commit also
  * takes every tracked change (`git add -u`), never an untracked file but the record, and never a file whose name looks
- * like a secret: those are reported as `secrets` and `untracked`, left in the worktree. The hooks always run; when
- * they refuse the commit, `hooks` is their output's tail and nothing is committed or pushed.
+ * like a secret: those are reported as `secrets` and `untracked`, left in the worktree. The hooks always run, even
+ * when the caller's environment sets `LEFTHOOK` or `LEFTHOOK_EXCLUDE`. When nothing could be committed `uncommitted`
+ * is set and the staging is undone (the working tree is unchanged); when it is the hooks that refused, `hooks` is
+ * their output's tail.
  * @param {string} root the task's worktree
  * @param {string} key
  * @param {{ message: string, wip?: boolean, push?: boolean }} options `push: false` commits only
- * @returns {{ sha: string, pushed: boolean, problem?: string, hooks?: string, secrets?: string[],
- *             untracked?: string[] }}
+ * @returns {{ sha: string, pushed: boolean, uncommitted?: boolean, problem?: string, hooks?: string,
+ *             secrets?: string[], untracked?: string[] }}
  */
 export function commitRecord(root, key, { message, wip = false, push: send = true }) {
   const head = () => git(root, ["rev-parse", "HEAD"]).out;
-  const branch = git(root, ["branch", "--show-current"]).out;
-  if (!branch) return { sha: head(), pushed: false, problem: "HEAD is detached: no branch" };
-  if (branch === defaultBranch(root))
-    return {
-      sha: head(),
-      pushed: false,
-      problem: `${branch} is the default branch: the record lives on the task's branch`,
-    };
-  const file = recordPath(root, key);
   /** @type {{ secrets?: string[], untracked?: string[] }} */
   const left = {};
+  /** @param {string} problem */
+  const failed = (problem) => ({ sha: head(), pushed: false, uncommitted: true, problem, ...left });
+  const branch = git(root, ["branch", "--show-current"]).out;
+  if (!branch) return failed("HEAD is detached: no branch");
+  if (branch === defaultBranch(root))
+    return failed(`${branch} is the default branch: the record lives on the task's branch`);
+  const file = recordPath(root, key);
   if (wip) {
     const record = relative(root, file);
     const untracked = paths(git(root, ["ls-files", "-z", "--others", "--exclude-standard"]).out);
@@ -279,32 +298,28 @@ export function commitRecord(root, key, { message, wip = false, push: send = tru
     if (secrets.length) left.secrets = secrets;
     if (others.length) left.untracked = others;
     const staged = git(root, ["add", "-u"]);
-    if (!staged.ok)
-      return { sha: head(), pushed: false, problem: `git add -u failed: ${staged.err}`, ...left };
+    if (!staged.ok) return failed(`git add -u failed: ${staged.err}`);
     // `add -u` stages a changed secret like any tracked change: take it back out before anything commits.
     const kept = changed.filter(secret);
     const unstaged = kept.length
       ? git(root, ["--literal-pathspecs", "reset", "-q", "--", ...kept])
       : staged;
-    if (!unstaged.ok)
-      return { sha: head(), pushed: false, problem: `git reset failed: ${unstaged.err}`, ...left };
+    if (!unstaged.ok) return failed(`git reset failed: ${unstaged.err}`);
   }
   const added = git(root, ["add", "--", file]);
-  if (!added.ok)
-    return { sha: head(), pushed: false, problem: `git add failed: ${added.err}`, ...left };
+  if (!added.ok) return failed(`git add failed: ${added.err}`);
   // Only a stop commits more than the record.
   const only = wip ? [] : ["--", file];
   if (!git(root, ["diff", "--cached", "--quiet", ...only]).ok) {
-    const committed = git(root, ["commit", "-q", "-m", message, ...only]);
+    const committed = git(root, ["commit", "-q", "-m", message, ...only], hooked());
     if (!committed.ok) {
-      const hooks = `${committed.out}\n${committed.err}`.trim().split("\n").slice(-12).join("\n");
-      return {
-        sha: head(),
-        pushed: false,
-        problem: `the hooks refused the commit: ${hooks}`,
-        hooks,
-        ...left,
-      };
+      // Undo the staging (a stop's whole index, else the record); the working tree keeps every change.
+      git(root, ["reset", "-q", ...only]);
+      const tail = `${committed.out}\n${committed.err}`.trim().split("\n").slice(-12).join("\n");
+      // A refusing hook makes git exit silently; git's own failures (identity, signing, a lock) end in `fatal:`.
+      if ((tail.split("\n").at(-1) ?? "").startsWith("fatal: "))
+        return failed(`git commit failed: ${tail}`);
+      return { ...failed(`the hooks refused the commit: ${tail}`), hooks: tail };
     }
   }
   if (!send) return { sha: head(), pushed: false, ...left };

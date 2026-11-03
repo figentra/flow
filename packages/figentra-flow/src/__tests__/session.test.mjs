@@ -3,9 +3,10 @@
  * Purpose: hold `fflow session stop` to its contract (FR-19, AC-18, P-019): on a task's branch the session's work and
  *   its end in the record are committed as `wip(<name>)` and pushed; a second stop updates the same session, whose
  *   start is unknown when it was first seen at a stop; untracked and secret-named files are listed, never committed;
- *   hooks that refuse the commit are reported as that; a broken record still lets the work be saved; the default
- *   branch is left alone; a push that fails is recorded as `pushed: false` and committed locally, and a later pushed
- *   stop clears it.
+ *   hooks that refuse the commit are reported as that, and git's own refusal as nothing committed, the staging undone;
+ *   a broken record still lets the work be saved; the default branch is left alone; `--save-only` writes only the
+ *   record; a push that fails is recorded as `pushed: false` and committed locally, kept by a stop that saves nothing
+ *   and cleared only by a later stop whose push succeeds.
  * Boundary: temporary repositories with a local bare origin; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
@@ -87,6 +88,45 @@ test("session stop: hooks that refuse the WIP commit are reported as that, never
     "fflow session stop: the hooks refused the WIP commit: lint: 2 problems; the work stays in the worktree, uncommitted",
   );
   assert.doesNotMatch(line[1], /committed \(|but not pushed/);
+  assert.equal(sh(r.root, "diff", "--cached", "--name-only"), "", "the staging is undone");
+});
+
+test("session stop: a commit git refuses (not the hooks) reports nothing committed, never committed (FR-18)", (t) => {
+  const r = repo({ "work.txt": "x\n" });
+  t.after(r.dispose);
+  sh(r.root, "switch", "-q", "-c", BRANCH);
+  sh(r.root, "config", "commit.gpgsign", "true");
+  sh(r.root, "config", "gpg.program", join(r.root, "..", "no-such-gpg"));
+  writeFileSync(join(r.root, "work.txt"), "unsaved\n");
+  const result = stopSession({ cwd: r.root, name: NAME });
+  assert.ok("uncommitted" in result && result.uncommitted, JSON.stringify(result));
+  assert.equal(sh(r.root, "rev-list", "--count", "HEAD"), "1", "nothing committed");
+  assert.equal(readRecord(r.root, "sta-5")?.sessions[0].pushed, undefined, "no pushed-false entry");
+  const [[state, line]] = stopReport(NAME, result);
+  assert.equal(state, "blocked");
+  assert.match(
+    line,
+    /^fflow session stop: nothing was committed: git commit failed: [\s\S]*uncommitted$/,
+  );
+  assert.doesNotMatch(line, /hooks refused|is committed/);
+});
+
+test("session stop --save-only (the Stop hook) writes the record and commits and pushes nothing", (t) => {
+  const r = repo({ "work.txt": "x\n" });
+  t.after(r.dispose);
+  sh(r.root, "switch", "-q", "-c", BRANCH);
+  writeFileSync(join(r.root, "work.txt"), "unsaved\n");
+  const result = stopSession({
+    cwd: r.root,
+    name: NAME,
+    now: "2026-11-03T10:00:00Z",
+    saveOnly: true,
+  });
+  assert.deepEqual(result, { key: "sta-5", local: true });
+  assert.deepEqual(stopReport(NAME, result), []);
+  assert.equal(readRecord(r.root, "sta-5")?.sessions[0].end, "2026-11-03T10:00:00Z");
+  assert.equal(sh(r.root, "rev-list", "--count", "HEAD"), "1", "nothing committed");
+  assert.throws(() => sh(r.origin, "rev-parse", "--verify", BRANCH), "nothing pushed");
 });
 
 test("session stop: a record that fails its schema still saves the work, and names the field", (t) => {
@@ -193,7 +233,15 @@ test("session stop: a failed push is recorded as pushed false and committed loca
   assert.equal(sh(r.root, "status", "--porcelain"), "");
   assert.match(stopReport(NAME, result)[0][1], /is committed \(\w+\) but not pushed: /);
 
+  // A stop that saves nothing (the hooks refuse) keeps the earlier `pushed: false`.
   sh(r.root, "remote", "set-url", "origin", r.origin);
+  refuseCommits(r.root, "lint: 1 problem");
+  writeFileSync(join(r.root, "work.txt"), "again\n");
+  const refused = stopSession({ cwd: r.root, name: NAME, id: "abc" });
+  assert.ok("hooks" in refused && refused.hooks !== undefined, JSON.stringify(refused));
+  assert.equal(readRecord(r.root, "sta-5")?.sessions[0].pushed, false);
+
+  sh(r.root, "config", "--unset", "core.hooksPath");
   const later = stopSession({ cwd: r.root, name: NAME, id: "abc" });
   assert.ok("pushed" in later && later.pushed, JSON.stringify(later));
   const [session] = readRecord(r.root, "sta-5")?.sessions ?? [];

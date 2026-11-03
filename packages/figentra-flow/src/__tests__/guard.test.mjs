@@ -3,9 +3,10 @@
  * Purpose: hold `fflow guard` to its contract: a `git worktree add` whose path is outside the repository's
  *   `.claude/worktrees/` is denied, through `cd … &&`, `git -C`, relative paths and quotes; one inside, other git
  *   commands and commands outside a repository pass; the settings entry runs the guard before Bash. The lifecycle's
- *   other side doors (a push to the default branch, `gh pr merge`, `LEFTHOOK=0` set as a variable) are denied,
- *   directly, by the program's path, behind `env`/`command`/`exec` or through a wrapper, each naming the Flow command
- *   to use instead; `LEFTHOOK=0` as an argument passes.
+ *   other side doors (a push to the default branch, `gh pr merge`, `LEFTHOOK=0` set as a variable, `--no-verify`,
+ *   `commit -n` and a `core.hooksPath` override) are denied, directly, by the program's path, behind
+ *   `env`/`command`/`exec` or through a wrapper, each naming the Flow command to use instead; `LEFTHOOK=0` as an
+ *   argument, `-n` as a message and `push -n` pass.
  * Boundary: a temporary repository; no network.
  * Runtime: node
  * Governing contract: ADR 0022; Stackra ADR 0503; STA-1729; STA-1945.
@@ -75,6 +76,41 @@ test("guard: gh pr merge and LEFTHOOK=0 are denied, naming the Flow command (P-0
   ])
     assert.equal(decide(command, r.root), undefined, command);
   assert.match(decide("X=1 git worktree add ../y", r.root) ?? "", /fflow start/);
+});
+
+test("guard: --no-verify, commit -n and a core.hooksPath override are denied: the hooks always run (FR-18)", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  for (const command of [
+    "git commit --no-verify -m x",
+    "git commit --no-veri -m x",
+    "git commit -n -m x",
+    "git commit -anm x",
+    "git commit -m x -n",
+    "git push --no-verify origin figentra/sta-1-a",
+    "git merge --no-verify topic",
+    "/usr/bin/git -C . commit --no-verify -m x",
+    "git -c core.hooksPath=/dev/null commit -m x",
+    "git -c CORE.HOOKSPATH= push origin x",
+    "git --config-env=core.hooksPath=HOOKS commit -m x",
+    "git -c user.name=x -c core.hooksPath=/tmp status",
+    "git config core.hooksPath /dev/null",
+    "git config set --local core.hooksPath x",
+  ])
+    assert.match(decide(command, r.root) ?? "", /skips the hooks.*fflow hooks run/, command);
+  for (const command of [
+    "git commit -m n",
+    "git commit -m -n",
+    `git commit -m "fix -n parsing"`,
+    "git commit -am x",
+    "git commit -- -n",
+    "git push -n origin figentra/sta-1-a",
+    "git -c user.name=x commit -m x",
+    "git config core.hooksPath",
+    "git config --get core.hooksPath",
+    "git config --unset core.hooksPath",
+  ])
+    assert.equal(decide(command, r.root), undefined, command);
 });
 
 test("words: splits simple commands and honours quotes", () => {

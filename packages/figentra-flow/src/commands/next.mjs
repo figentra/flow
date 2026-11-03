@@ -99,7 +99,7 @@ export function next({ cwd, key }) {
     : scheme.keys(git(top.out, ["branch", "--show-current"]).out)[0];
   if (!k) return { ok: false, problem: `no issue key: pass one, or work on the issue's branch` };
   const task = findTask(top.out, k);
-  if (!task.ok) return task;
+  if (task.ok === false) return { ok: false, problem: task.problem };
   const root = task.path ?? top.out;
   let record;
   try {
@@ -127,7 +127,7 @@ export function next({ cwd, key }) {
 export async function run(args = []) {
   const key = args.find((a) => !a.startsWith("--"));
   const result = next({ cwd: process.cwd(), key });
-  if (!result.ok) {
+  if (result.ok === false) {
     console.error(`${NAME} next: ${result.problem}`);
     return 1;
   }
