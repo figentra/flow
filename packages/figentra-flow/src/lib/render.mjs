@@ -52,6 +52,12 @@ import { withHeader } from "./provenance.mjs";
 import { renderReadme } from "./readme.mjs";
 import { parseYaml, YamlError } from "./yaml.mjs";
 
+/**
+ * What a surface renderer (`render-*.mjs`) reads: the repository, its configuration and its preset's folder. Each one
+ * returns its files, path to text, and nothing when the preset has no such surface (STA-1945 C5).
+ * @typedef {{ root: string, config: Record<string, any>, presetDir: string }} RenderContext
+ */
+
 /** The eight commands, in workflow order. */
 export const VERBS = [
   "specify",
