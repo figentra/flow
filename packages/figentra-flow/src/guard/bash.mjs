@@ -1,8 +1,10 @@
 /**
  * Figentra Flow file contract:
- * Purpose: the guard engine's Bash decision: a command against a preset's rule table (any deny wins over any ask; a
- *   rule that throws asks for that call), and the lifecycle's side doors (FR-13) as engine rules every preset's table
- *   takes: a `git … worktree add <path>` outside that repository's `.claude/worktrees/` (naming `fflow start`), a
+ * Purpose: the guard engine's Bash decision: a command against a preset's rule table, then the engine's own rules
+ *   (any deny wins over any ask; a rule that throws asks for that call). The engine's rules are the lifecycle's side
+ *   doors (FR-13), checked for every preset whatever its table holds (FR-5: the guard itself is mandatory), after the
+ *   table so a preset's own reason wins for a command both deny: a `git … worktree add <path>` outside that
+ *   repository's `.claude/worktrees/` (naming `fflow start`), a
  *   push to the default branch or `gh pr merge` (naming `fflow land`), and skipping the hooks (FR-18): `LEFTHOOK=0`
  *   set as a variable, `--no-verify` on a commit, push or merge, `-n` on a commit, or a `core.hooksPath` override
  *   (naming `fflow hooks run`).
@@ -21,8 +23,10 @@ import { NAME } from "../lib/product.mjs";
 import { argsOf, split, words } from "./words.mjs";
 
 /**
- * A Bash rule of a preset's table. `match` returns true for a hit, or a string that replaces `reason`.
- * @typedef {{ id: string, match: (command: string, cwd: string) => boolean | string | undefined,
+ * A Bash rule of a preset's table. `match` returns true for a hit, or a string that replaces `reason`; it is handed
+ * the hook's whole payload (the agent type, the session), the same object for every rule of one decision.
+ * @typedef {{ payload?: Record<string, any> }} BashHow
+ * @typedef {{ id: string, match: (command: string, cwd: string, how: BashHow) => boolean | string | undefined,
  *   decision: "deny" | "ask", reason: string }} BashRule
  */
 /** @typedef {{ decision: "allow" | "deny" | "ask", reason?: string, context?: string }} Decision */
@@ -31,20 +35,22 @@ import { argsOf, split, words } from "./words.mjs";
 export const ALLOW = { decision: "allow" };
 
 /**
- * The decision for one Bash command: the first deny, else the first ask, else allow. A rule that throws makes the
- * call an ask: a broken rule neither lets a command through silently nor blocks every agent.
+ * The decision for one Bash command against `rules` followed by the side doors (each rule once): the first deny,
+ * else the first ask, else allow. A rule that throws makes the call an ask: a broken rule neither lets a command
+ * through silently nor blocks every agent.
  * @param {string} command
  * @param {string} cwd
- * @param {BashRule[]} rules
+ * @param {BashRule[]} rules the preset's table
+ * @param {BashHow} [how]
  * @returns {Decision}
  */
-export function decideBash(command, cwd, rules) {
+export function decideBash(command, cwd, rules, how = {}) {
   /** @type {string | undefined} */
   let asked;
-  for (const rule of rules) {
+  for (const rule of new Set([...rules, ...SIDE_DOORS])) {
     let hit;
     try {
-      hit = rule.match(command, cwd);
+      hit = rule.match(command, cwd, how);
     } catch (error) {
       asked ??= `The guard rule ${rule.id} failed on this command (${/** @type {Error} */ (error)?.message}); confirm it by hand.`;
       continue;

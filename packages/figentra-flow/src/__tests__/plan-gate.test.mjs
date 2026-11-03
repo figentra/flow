@@ -10,10 +10,10 @@
  */
 // @covers sta-614:FR-001 sta-614:FR-002 sta-614:FR-003 sta-614:FR-004
 // @covers sta-1945:FR-7 sta-1945:FR-11 sta-1945:AC-9 sta-1945:P-012
-import { test } from "node:test";
+import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { decidePaths } from "../guard/paths.mjs";
@@ -21,7 +21,10 @@ import { decidePlanGate, hotfixApproved } from "../guard/plan-gate.mjs";
 import { loadTables } from "../guard/tables.mjs";
 import { presetRoot, runHook } from "./__fixtures__/guard.mjs";
 
-const tables = await loadTables(presetRoot());
+/** Every temporary root of this file, removed after its tests. */
+const roots = [presetRoot()];
+after(() => roots.forEach((r) => rmSync(r, { recursive: true, force: true })));
+const tables = await loadTables(roots[0]);
 const GATED = /** @type {RegExp} */ (tables.planGated);
 
 const IMPACT = [
@@ -58,6 +61,7 @@ const HOTFIX = "**Approved by**: owner\n**Approved on**: 2026-10-25\n**Reason**:
  */
 function repo(folder, files = {}) {
   const root = presetRoot();
+  roots.push(root);
   if (folder) {
     const dir = join(root, ".agents/specs", folder);
     mkdirSync(dir, { recursive: true });

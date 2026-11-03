@@ -11,8 +11,9 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { FLOW_ASSETS } from "../../lib/flow-dir.mjs";
 import { CONFIG_FILE } from "../../lib/product.mjs";
 import { CONFIG } from "./repo.mjs";
 
@@ -34,11 +35,22 @@ export function presetRoot(preset = "stackra") {
  * @param {string} event
  * @param {Record<string, unknown> | string} input
  * @param {Record<string, string | undefined>} [env] the child's environment
+ * @param {string} [cwd] the child's folder
  * @returns {import("node:child_process").SpawnSyncReturns<string>}
  */
-export const runHook = (event, input, env = process.env) =>
+export const runHook = (event, input, env = process.env, cwd = undefined) =>
   spawnSync(process.execPath, [ENTRY, event], {
     input: typeof input === "string" ? input : JSON.stringify(input),
     env,
+    cwd,
     encoding: "utf8",
   });
+
+/**
+ * A module of the stackra preset's `guard/` folder, loaded as the engine loads it (by URL, so the type checker
+ * leaves core's moved code alone).
+ * @param {string} file e.g. `bash-rules.mjs`
+ * @returns {Promise<any>}
+ */
+export const stackraGuard = (file) =>
+  import(pathToFileURL(join(FLOW_ASSETS, "presets", "stackra", "guard", file)).href);

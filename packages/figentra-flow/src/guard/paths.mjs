@@ -2,13 +2,15 @@
  * Figentra Flow file contract:
  * Purpose: the guard engine's path decision for the file tools, ported from core's `guard-paths.mjs`: every path a
  *   Read, Grep, Glob, Write, Edit, MultiEdit or NotebookEdit call names (a Grep's or Glob's pattern under its folder;
- *   a Grep's folder searched recursively) against a preset's path table; a rule marked `writes` applies to the write
- *   tools only.
+ *   a Grep's folder searched recursively) against a preset's path table, then the neutral preset's (generic secret
+ *   files, `flow.config.json` written only by the owner), which every preset keeps whatever its table holds (FR-5);
+ *   a rule marked `writes` applies to the write tools only.
  * Boundary: decides only; reads nothing.
  * Runtime: node
- * Governing contract: STA-1945 (FR-7, P-012).
+ * Governing contract: STA-1945 (FR-5, FR-7, P-012).
  * Secrets: none.
  */
+import { PATH_RULES as MANDATORY } from "../../assets/flow/presets/neutral/guard/path-rules.mjs";
 import { ALLOW } from "./bash.mjs";
 
 /**
@@ -30,15 +32,16 @@ const under = (/** @type {string} */ dir, /** @type {string} */ glob) =>
   glob.startsWith("/") || glob.startsWith("~") ? glob : `${dir}/${glob}`;
 
 /**
- * The decision for one file tool call: the first rule a named path hits denies it. A rule that throws makes the call
- * an ask.
+ * The decision for one file tool call: the first rule (of `rules`, then the neutral preset's, each once) a named path
+ * hits denies it. A rule that throws makes the call an ask.
  * @param {string} tool
  * @param {Record<string, any>} input the tool's input
  * @param {string} cwd
- * @param {PathRule[]} rules
+ * @param {PathRule[]} rules the preset's table
  * @returns {import("./bash.mjs").Decision}
  */
 export function decidePaths(tool, input, cwd, rules) {
+  const all = [...new Set([...rules, ...MANDATORY])];
   const base = str(input.path) ?? cwd;
   // Grep searches its path recursively; its `glob` filter and Glob's `pattern` are relative to it.
   /** @type {[unknown, boolean][]} */
@@ -56,7 +59,7 @@ export function decidePaths(tool, input, cwd, rules) {
   for (const [path, recursive] of named) {
     if (!str(path)) continue;
     const p = /** @type {string} */ (path);
-    for (const rule of rules) {
+    for (const rule of all) {
       if (rule.writes && !write) continue;
       try {
         const hit = rule.match(p, cwd, { recursive, input });

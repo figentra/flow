@@ -6,9 +6,11 @@
  *   other side doors (a push to the default branch, `gh pr merge`, `LEFTHOOK=0` set as a variable, `--no-verify`,
  *   `commit -n` and a `core.hooksPath` override) are denied, directly, by the program's path, behind
  *   `env`/`command`/`exec` or through a wrapper, each naming the Flow command to use instead; `LEFTHOOK=0` as an
- *   argument, `-n` as a message and `push -n` pass. The side doors are engine rules: `fflow guard` and the hook entry
- *   run the engine on the repository's preset tables (the neutral preset's when the preset has none), deny a secret
- *   file to every file tool, ask when a rule throws, and deny every tool call when the tables fail to load.
+ *   argument, `-n` as a message, `push -n` and a heredoc body pass. The side doors are engine rules: `fflow guard`
+ *   and the hook entry run the engine on the repository's preset tables (the neutral preset's when the preset has
+ *   none), and a preset whose tables are empty still has the side doors, the secret files and its own configuration
+ *   denied (FR-5); a rule or the plan gate that throws asks, tables that fail to load (or a table that is not a list)
+ *   deny every tool call, and a payload without `cwd` is decided in the hook's folder.
  * Boundary: temporary repositories; the hook entry runs as a child process; no network.
  * Runtime: node
  * Governing contract: ADR 0022; Stackra ADR 0503; STA-1729; STA-1945.
@@ -18,8 +20,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -29,6 +31,7 @@ import { decide as decideEvent } from "../guard/engine.mjs";
 import { loadTables } from "../guard/tables.mjs";
 import { words } from "../guard/words.mjs";
 import { CONFIG_FILE } from "../lib/product.mjs";
+import { presetRoot, runHook } from "./__fixtures__/guard.mjs";
 import { repo, sh } from "./__fixtures__/repo.mjs";
 
 /** The side doors' denial reason for `command`, or undefined when they let it run. */
@@ -156,6 +159,28 @@ test("words: splits simple commands and honours quotes", () => {
   ]);
 });
 
+test("words: a heredoc body is text, unless a shell reads it", (t) => {
+  assert.deepEqual(words("cat > n.md <<'EOF'\ngit push origin main\nEOF\ngit status"), [
+    ["cat", ">", "n.md", "<<EOF"],
+    ["git", "status"],
+  ]);
+  const r = repo();
+  t.after(r.dispose);
+  for (const command of [
+    "cat <<-EOF\n\tgit push origin main is prose\n\tEOF",
+    'cat > notes.md <<"E_1"\ngit commit --no-verify -m x\nE_1',
+    "cat <<A <<B\na\nA\ngh pr merge 1\nB",
+  ])
+    assert.equal(decide(command, r.root), undefined, command);
+  for (const command of [
+    "bash <<'EOF'\ngit push origin main\nEOF",
+    "cat <<'EOF' | sh\ngh pr merge 1\nEOF",
+    "cat <<EOF |\ngit commit -n -m x\nEOF\nsh",
+    "cat <<EOF\ngit push origin main",
+  ])
+    assert.ok(decide(command, r.root), command);
+});
+
 test("guard: allows a worktree inside .claude/worktrees and denies one outside, however it is written", (t) => {
   const r = repo();
   t.after(r.dispose);
@@ -253,13 +278,15 @@ test("engine: the preset's tables, the neutral ones in their place, an ask for a
   const r = repo();
   t.after(r.dispose);
   const neutral = await loadTables(r.root);
-  assert.deepEqual(
-    neutral.bash.map((x) => x.id),
-    SIDE_DOORS.map((x) => x.id),
-  );
+  assert.deepEqual(neutral.bash, [], "the side doors are the engine's, not table data");
   assert.equal(neutral.prompt, undefined);
   writeFileSync(join(r.root, CONFIG_FILE), JSON.stringify({ version: 1, preset: "stackra" }));
   const stackra = await loadTables(r.root);
+  assert.deepEqual(
+    stackra.bash.map((x) => x.id),
+    ["stackra-deny", "stackra-ask"],
+    "core's decision",
+  );
   assert.ok(stackra.prompt && stackra.session, "stackra's hints");
   assert.equal(stackra.paths[0].id, "secrets-read", "stackra's own path rules first");
   assert.ok(
@@ -306,4 +333,88 @@ test("engine: tables that fail to load deny every tool call, closed (FR-5)", (t)
   assert.equal(d?.permissionDecision, "deny");
   assert.match(d?.permissionDecisionReason, /guard tables failed to load/);
   assert.equal(hook(r.root, "UserPromptSubmit", { prompt: "implement x" }), undefined);
+});
+
+/**
+ * A repository whose preset is its own folder `ours/` holding `files` in `guard/`.
+ * @param {Record<string, string>} files
+ */
+const ours = (files) => {
+  const r = repo();
+  mkdirSync(join(r.root, "ours", "guard"), { recursive: true });
+  for (const [name, text] of Object.entries(files))
+    writeFileSync(join(r.root, "ours", "guard", name), text);
+  writeFileSync(join(r.root, CONFIG_FILE), JSON.stringify({ version: 1, preset: "ours" }));
+  return r;
+};
+
+test("engine: a preset with empty tables still denies the side doors, secret files and its configuration (FR-5)", (t) => {
+  const r = ours({
+    "bash-rules.mjs": "export const BASH_RULES = [];\n",
+    "path-rules.mjs": "export const PATH_RULES = [];\n",
+  });
+  t.after(r.dispose);
+  const bash = (/** @type {string} */ command) =>
+    hook(r.root, "PreToolUse", { tool_name: "Bash", tool_input: { command } });
+  assert.match(bash("gh pr merge 12")?.permissionDecisionReason, /fflow land <pr>/);
+  assert.match(bash("git worktree add ../x")?.permissionDecisionReason, /fflow start/);
+  assert.match(bash("LEFTHOOK=0 git commit -m x")?.permissionDecisionReason, /fflow hooks run/);
+  const file = (/** @type {string} */ tool, /** @type {string} */ path) =>
+    hook(r.root, "PreToolUse", { tool_name: tool, tool_input: { file_path: path } });
+  assert.match(file("Read", `${r.root}/.env`)?.permissionDecisionReason, /Secrets guard/);
+  for (const tool of ["Write", "Edit"])
+    assert.match(
+      file(tool, `${r.root}/${CONFIG_FILE}`)?.permissionDecisionReason,
+      /only the owner changes it[^]*Blocked path: /,
+      tool,
+    );
+  assert.equal(file("Read", `${r.root}/${CONFIG_FILE}`), undefined, "reading it is fine");
+  assert.equal(bash("git status"), undefined);
+});
+
+test("engine: a rule table that is not a list fails the load, so every tool call is denied (FR-5)", async (t) => {
+  const r = ours({ "bash-rules.mjs": "export const BASH_RULES = {};\n" });
+  t.after(r.dispose);
+  await assert.rejects(loadTables(r.root), /BASH_RULES is not a list/);
+  const d = hook(r.root, "PreToolUse", { tool_name: "Read", tool_input: { file_path: "a.md" } });
+  assert.match(d?.permissionDecisionReason, /failed to load \(BASH_RULES is not a list\)/);
+});
+
+test("engine: a path rule or the plan gate that throws asks for that call (FR-5)", async (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  const tables = await loadTables(r.root);
+  const boom = () => {
+    throw new Error("x");
+  };
+  const event = { event: /** @type {const} */ ("PreToolUse"), cwd: r.root, root: r.root };
+  const read = await decideEvent(
+    { ...event, tool: "Read", input: { file_path: `${r.root}/a.md` } },
+    { ...tables, paths: [{ id: "boom", reason: "", match: boom }] },
+  );
+  assert.equal(read.decision, "ask");
+  assert.match(read.reason ?? "", /rule boom failed on .*a\.md/);
+  const write = await decideEvent(
+    { ...event, tool: "Write", input: { file_path: `${r.root}/src/a.mjs` } },
+    { ...tables, planGated: /** @type {RegExp} */ (/** @type {unknown} */ ({ test: boom })) },
+  );
+  assert.equal(write.decision, "ask");
+  assert.match(write.reason ?? "", /plan gate failed on .*src\/a\.mjs/);
+});
+
+test("engine: a payload without cwd is decided in the hook's own folder, so a relative glob resolves (P-012)", (t) => {
+  const root = presetRoot();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const glob = (/** @type {Record<string, unknown>} */ extra) => {
+    const r = runHook(
+      "PreToolUse",
+      { tool_name: "Glob", tool_input: { pattern: "Secrets-in*/x" }, ...extra },
+      { ...process.env, CLAUDE_PROJECT_DIR: root },
+      homedir(),
+    );
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout;
+  };
+  assert.match(glob({}), /"permissionDecision":"deny"[^]*Secrets-inbox/);
+  assert.equal(glob({ cwd: "/" }), "", "the payload's cwd wins");
 });

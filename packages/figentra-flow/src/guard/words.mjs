@@ -1,6 +1,7 @@
 /**
  * Figentra Flow file contract:
- * Purpose: shell words for the guard engine: a command split into simple commands of words (quotes honoured), the
+ * Purpose: shell words for the guard engine: a command split into simple commands of words (quotes honoured, heredoc
+ *   bodies that no shell reads dropped), the
  *   variables a simple command sets and the program it runs past `env`, `command` and `exec`, and the arguments it
  *   hands git or gh, directly or through a wrapper script.
  * Boundary: pure; reads nothing.
@@ -9,12 +10,42 @@
  * Secrets: none.
  */
 
+/** A program on a heredoc's operator line that runs the body as a script. */
+const SHELL = /(?:^|[\s;&|(])(?:sh|bash|zsh|dash|ksh|eval|source|\.)(?=\s|$)/;
+
 /**
- * Splits a shell command into simple commands (on `&&`, `||`, `;`, `|` and newlines) of words, honouring quotes.
+ * `command` without its heredoc bodies, which are text (`cat > notes.md <<EOF`), unless the operator line hands the
+ * body to a shell (`bash <<EOF`, `cat <<EOF | sh`, a line ending in `|`); core's scanner strips the same bodies.
+ * shortcut: an operator inside quotes or arithmetic (`echo '<<EOF'`, `$((1<<EOF))`) still strips, and a body with no
+ *   closing line stays commands; upgrade with the side doors' move onto the shell scanner (`split` below).
  * @param {string} command
+ */
+export function withoutHeredocs(command) {
+  const lines = command.split("\n");
+  /** @type {string[]} */
+  const out = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    out.push(lines[i]);
+    if (SHELL.test(lines[i]) || /\|&?\s*$/.test(lines[i])) continue;
+    for (const [, dash, , end] of lines[i].matchAll(/(?<!<)<<(?!<)(-?)\s*(['"]?)(\w+)\2/g)) {
+      let j = i + 1;
+      while (j < lines.length && (dash ? lines[j].replace(/^\t+/, "") : lines[j]) !== end) j += 1;
+      // No closing line: the rest stays commands, and no later operator is looked for (linear in the input).
+      if (j === lines.length) return [...out, ...lines.slice(i + 1)].join("\n");
+      i = j;
+    }
+  }
+  return out.join("\n");
+}
+
+/**
+ * Splits a shell command into simple commands (on `&&`, `||`, `;`, `|` and newlines) of words, honouring quotes;
+ * heredoc bodies are dropped (`withoutHeredocs`).
+ * @param {string} raw
  * @returns {string[][]}
  */
-export function words(command) {
+export function words(raw) {
+  const command = withoutHeredocs(raw);
   /** @type {string[][]} */
   const out = [[]];
   let word = "";
@@ -65,8 +96,11 @@ const ENV_VALUED = new Set(["-u", "--unset", "-C", "--chdir"]);
  * shortcut: not read through: a subshell or group (`( git … )`, `{ git …; }`), `time`, `nohup`, `sudo` and `timeout`
  *   prefixes, `exec -a <name>`, `declare -x`/`typeset -x`/`readonly` (`declare -x LEFTHOOK=0`), `sh -c '…'`, `bash -c`,
  *   `eval`, `xargs`, `pnpm exec git`, `npx`, `env -S`, `GIT_CONFIG_*` variables, git aliases and scripts; the default
- *   branch's ruleset and the gate still refuse what they would slip past. Upgrade to the ported shell scanner when
- *   the stackra tables land (STA-1945 PR 4, T052).
+ *   branch's ruleset and the gate still refuse what they would slip past. In a stackra repository core's rules (the
+ *   preset's `bash-rules.mjs`, on its shell scanner) read those forms for what they deny themselves (a push to the
+ *   default branch, `gh pr merge`); a hook skip or a worktree path behind them is the side doors' alone. Upgrade by
+ *   moving the side doors onto that scanner (`inbox.mjs`'s `simpleCommands` and `commandAt`, moved into
+ *   `src/guard/`) when a neutral repository needs them read through.
  * @param {string[]} w
  * @returns {{ sets: string[], cmd: string[] }}
  */

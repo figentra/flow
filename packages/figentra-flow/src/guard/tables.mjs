@@ -2,7 +2,8 @@
  * Figentra Flow file contract:
  * Purpose: the guard engine's tables: the repository's preset's `guard/` modules (`bash-rules.mjs` → `BASH_RULES`,
  *   `path-rules.mjs` → `PATH_RULES` and `PLAN_GATED`, the source paths of the plan gate, `hints.mjs` → `PROMPT`
- *   and `SESSION`), each falling back to the neutral preset's module when the preset has none.
+ *   and `SESSION`), each falling back to the neutral preset's module when the preset has none. The engine's own rules
+ *   (the side doors, the neutral path rules) are not table data: `decideBash` and `decidePaths` add them to any table.
  * Boundary: imports preset modules; throws when one fails to load or a rule table is not a list, so the engine
  *   denies (closed on the mandatory policies).
  * Runtime: node

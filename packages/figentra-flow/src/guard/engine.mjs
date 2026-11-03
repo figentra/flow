@@ -2,10 +2,13 @@
  * Figentra Flow file contract:
  * Purpose: the guard engine's event dispatch: a hook event (PreToolUse for Bash and the file tools, with the plan
  *   gate after the path rules for a write, PostToolUse, UserPromptSubmit, SessionStart) decided against the
- *   repository's preset tables, and `main`, which reads the payload on stdin and writes the hook's JSON answer.
+ *   repository's preset tables (the engine's side doors and the neutral path rules after them, for every preset), and
+ *   `main`, which reads the payload on stdin and writes the hook's JSON answer.
  * Boundary: reads stdin, the repository's configuration and preset tables and git state; writes only the answer.
- *   Unparseable input and the engine's own errors allow (core's fail-open, kept for parity); tables that fail to
- *   load deny every tool call (closed on the mandatory policies).
+ *   Unparseable input and the engine's own errors allow (core's fail-open, kept for parity); a rule or the plan gate
+ *   that throws asks; tables that fail to load deny every tool call (closed on the mandatory policies). A payload
+ *   without `cwd` is decided in the hook's own folder (core resolved no relative path then; this resolves them, so
+ *   it denies more, never less).
  * Runtime: node
  * Governing contract: STA-1945 (FR-5, FR-7, AC-9, P-012).
  * Secrets: none.
@@ -22,8 +25,9 @@ import { loadTables } from "./tables.mjs";
 
 /** @typedef {"PreToolUse" | "PostToolUse" | "UserPromptSubmit" | "SessionStart"} HookEventName */
 /**
+ * A hook event; `payload` is the whole hook payload, which Bash rules read (the agent type, the session).
  * @typedef {{ event: HookEventName, tool?: string, input: Record<string, any>, cwd: string, root: string,
- *   prompt?: string, source?: string }} HookEvent
+ *   prompt?: string, source?: string, payload?: Record<string, any> }} HookEvent
  */
 /** @typedef {import("./bash.mjs").Decision} Decision */
 
@@ -42,7 +46,7 @@ export async function decide(event, tables) {
     case "PreToolUse": {
       if (event.tool === "Bash") {
         const command = String(event.input.command ?? "");
-        const d = decideBash(command, event.cwd, tables.bash);
+        const d = decideBash(command, event.cwd, tables.bash, { payload: event.payload ?? {} });
         if (d.decision === "allow") return d;
         const label = d.decision === "deny" ? "Blocked command" : "Command";
         return { ...d, reason: `${d.reason}\n${label}: ${command.slice(0, 200)}` };
@@ -52,7 +56,17 @@ export async function decide(event, tables) {
       const target = String(event.input.file_path ?? event.input.notebook_path ?? "");
       if (d.decision !== "allow" || !tables.planGated || !WRITE_TOOLS.has(event.tool) || !target)
         return d;
-      const g = await decidePlanGate(target, tables.planGated, { cwd: event.cwd });
+      /** @type {Decision} */
+      let g;
+      try {
+        g = await decidePlanGate(target, tables.planGated, { cwd: event.cwd });
+      } catch (error) {
+        // As for a rule that throws: a broken gate neither lets a write through silently nor blocks every agent.
+        return {
+          decision: "ask",
+          reason: `The plan gate failed on ${target} (${/** @type {Error} */ (error)?.message}); confirm it by hand.`,
+        };
+      }
       return g.decision === "allow" ? g : { ...g, reason: `${g.reason}\nBlocked path: ${target}` };
     }
     case "PostToolUse":
@@ -89,6 +103,7 @@ export async function main(name) {
     root,
     prompt: String(payload.prompt ?? payload.user_input ?? ""),
     source: typeof payload.source === "string" ? payload.source : undefined,
+    payload,
   };
   let tables;
   try {
