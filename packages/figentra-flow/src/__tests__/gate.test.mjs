@@ -284,7 +284,7 @@ test("specDir names the folder from the branch key, reuses an existing one, and 
     assert.deepEqual(specDir({ root, branch: "figentra/sta-7-foo", slug: "foo" }), {
       dir: ".agents/specs/sta-7-foo",
     });
-    assert.match(specDir({ root, branch: "figentra/sta-7-foo" }).error, /--slug/);
+    assert.match(specDir({ root, branch: "figentra/sta-7-foo" }).fix ?? "", /--slug/);
     assert.match(specDir({ root, branch: "main", slug: "foo" }).error, /no issue key/);
     mkdirSync(join(root, ".agents/specs/sta-7-bar"), { recursive: true });
     assert.deepEqual(specDir({ root, key: "STA-7" }), { dir: ".agents/specs/sta-7-bar" });

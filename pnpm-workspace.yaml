@@ -10,6 +10,10 @@ catalogMode: strict
 engineStrict: true
 
 catalog:
+  # The one CLI engine every Figentra CLI runs on (STA-1966, STA-1945 FR-31). Flow takes it as an optional peer and a dev
+  # dependency, never a runtime one (NFR-1); without it `fflow` prints plain text. Exact pins.
+  "@stackra/console": 0.6.1
+  "@stackra/validation": 0.6.1
   "@types/node": 26.6.4
   # The Linear client's network layer: an Agent with a 30 s connect timeout (STA-302), as in Stackra core.
   undici: 8.12.2
@@ -34,3 +38,8 @@ allowBuilds:
   lefthook: true
 minimumReleaseAgeExclude:
   - "@figentra-oss/flow@0.2.3"
+  # Our own engine, published from core's CI on 2026-11-02 (STA-1966).
+  - "@stackra/console@0.6.1"
+  - "@stackra/container@0.6.1"
+  - "@stackra/contracts@0.6.1"
+  - "@stackra/validation@0.6.1"

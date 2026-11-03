@@ -14,9 +14,22 @@ pnpm exec fflow sync         # re-render the flow-* skills after a preset or Flo
 
 ## Commands
 
+`fflow` runs on [`@stackra/console`](https://github.com/figentra/stackra/tree/main/packages/developer/console), the
+one CLI engine of every Figentra CLI. `fflow` alone prints the banner, the version and the commands by group;
+`fflow <command> --help` (or `fflow help <command>`) prints its usage and runs nothing; a mistyped command names the
+closest one and exits 2. A failure is one error block: what failed, why, the fix and a docs link. Output is plain text
+under `NO_COLOR` or in a pipe, and `doctor`, `status` and `status --metrics` take `--json`, which writes one document,
+`{ "ok", "data" }`.
+
+The engine is an optional peer: Flow installs nothing beyond `undici`. Add `@stackra/console` and
+`@stackra/validation` (0.6.1) to get the banner, the help and the error block; they come from the Stackra registry,
+so map the scope first (`@stackra:registry=https://npm.stackra.figentra.com/` in `.npmrc`), never npmjs. Without them
+every command still runs, `doctor` and `status` print the same checklist and tables as plain text, and `--json` writes
+the same document. `fflow guard`, the agent hook, never loads the engine.
+
 | Command                                                               | What it does                                                                                                                                                                                     |
 | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `fflow init [--force]`                                                | writes `.flow/` (README, a starter constitution, `.gitignore`) and renders the `flow-*` skills                                                                                                   |
+| `fflow init [--force]`                                                | writes `.flow/` (README, a starter constitution, `.gitignore`), a starter `flow.config.json` when there is none, and renders the `flow-*` skills                                                 |
 | `fflow migrate [--dry-run]`                                           | moves a spec-kit repository onto `.flow/` (constitution, `.specify/` and `.agents/speckit/` deleted, scripts, pins and skips), then syncs                                                        |
 | `fflow spec paths\|setup-plan\|setup-tasks\|template`                 | the spec folder, its documents and the resolved templates as JSON, for the `flow-*` commands                                                                                                     |
 | `fflow sync [--direct]`                                               | renders the `flow-*` skills (for the repository's projector, or Claude Code and OpenCode directly) and writes `.flow/lock.json`                                                                  |
@@ -25,7 +38,7 @@ pnpm exec fflow sync         # re-render the flow-* skills after a preset or Flo
 | `fflow train <open\|add\|close\|build\|eject\|depart\|status>`        | the release train: board green PRs, cut off, build `train/<version>` by merge commits with bisect ejection, depart by fast-forward (see [Release trains](#release-trains))                       |
 | `fflow ship <dev\|staging> [--workflow f] [--dry-run]`                | dispatches the product's Runway deploy workflow (`deploy.yml`, input `environment`) on main; production is refused: the owner promotes                                                           |
 | `fflow release [--json] [--offline]`                                  | what the next release would publish: pending changesets and next versions, the version PR, the Release workflow's last run and its notices, the registry's versions; it publishes nothing        |
-| `fflow doctor [--json] [--offline]`                                   | checks Node, git, the configuration, the `.flow/` install, the ignored worktree folder, the roster and the credentials, each with its fix                                                        |
+| `fflow doctor [--json] [--offline]`                                   | checks Node, git, the configuration, the `.flow/` install, the ignored worktree folder, the roster and the credentials, grouped (Machine, Repo, Flow, GitHub), each with its fix               |
 | `fflow gate plan <spec.md>`                                           | exits 1 until the spec may be planned (run by `fflow spec setup-plan`)                                                                                                                           |
 | `fflow gate check <dir>` / `tasks <tasks.md>`                         | the stage rules for the spec's `**Status**`; the tasks lint                                                                                                                                      |
 | `fflow gate lane` / `branch` / `ci` / `dir`                           | the lane check, the branch warning, the CI gate with the install check, the spec folder                                                                                                          |
@@ -319,14 +332,16 @@ branch, key, dirty state, idle hours, whether a process works in them, and ahead
 `fflow/gate` on the head, the counted AI review and whether they are stacked; and the sessions, each a
 spec's `**Session**:` with the worktree carrying its key and that head's gate. More building sessions (a spec at
 Tasked or Implementing) than `sessionCap:` in the workspace file (default 2) is a warning, and the exit code is 1.
-`--json` prints the snapshot (`fflow.status/1`); `--offline` makes no GitHub call. `--web [--port 4747]` serves the same
+It prints one table each for specs, worktrees, PRs and sessions; each spec's problems are counted, and `--verbose`
+lists them. `--json` writes the snapshot (`fflow.status/1`) as the document's `data`; `--offline` makes no GitHub call. `--web [--port 4747]` serves the same
 snapshot as a local page on 127.0.0.1 that refreshes every 30 seconds (read-only; GET only; no external assets).
 
 `fflow status --metrics [--since 30d]` reports, for the PRs merged in the window, per repository and in total:
 lead time (opened to merged) and cycle time (first commit to merged) as median and p90 hours, `fflow/gate`
 runs per PR and their red share, rework (heads pushed after the first gate), review rounds (`AI-REVIEW: FAIL`
 verdicts) and approval latency (a merged spec's Draft line to its last approval), with the age of the open PRs. It
-is computed from GitHub and the specs on each call; nothing is stored.
+is computed from GitHub and the specs on each call; nothing is stored. `--json` writes the metrics as the document's
+`data`.
 
 `fflow mcp` is a read-only MCP server over stdio for agents. It offers five tools, each returning JSON:
 `fflow_status` (`repo?`, `offline?`), `fflow_spec` (`repo`, `key`: status, tier, session, approvals

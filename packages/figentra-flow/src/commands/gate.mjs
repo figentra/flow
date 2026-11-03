@@ -741,21 +741,41 @@ export function checkBug(folder, tests, keys = repoScheme()) {
 }
 
 /**
- * The repo-relative spec folder for a key: its existing `<key>-*` folder, else one named from `slug`.
+ * The repo-relative spec folder for a key: its existing `<key>-*` folder, else one named from `slug`. A branch with no
+ * key falls back to the one folder whose slug is exactly the branch's last segment, as `feature/cancel-order` →
+ * `<key>-cancel-order` (FR-31). A refusal's `fix` is the flag that settles it (`--key` or `--slug`), so a caller
+ * names it, never another command that sends back here.
  * @param {{ root?: string, branch?: string, key?: string, slug?: string, keys?: KeyScheme }} [options]
  */
 export function specDir({ root = ROOT, branch = "", key, slug, keys = repoScheme() } = {}) {
   const k = key === undefined ? keys.keys(branch)[0] : keys.parse(key);
-  if (!k) return { error: `no issue key in ${key ? `--key ${key}` : `branch \`${branch}\``}` };
   const specs = specsDirs(root).dir;
   const base = join(root, specs);
+  if (!k) {
+    if (key !== undefined) return { error: `no issue key in --key ${key}`, fix: "--key <key>" };
+    const tail = branch.split("/").pop() ?? "";
+    const folderSlug = (/** @type {string} */ d) => {
+      const own = keys.folderKey(d);
+      return own === undefined ? undefined : d.slice(own.length + 1);
+    };
+    const named =
+      tail && existsSync(base) ? readdirSync(base).filter((d) => folderSlug(d) === tail) : [];
+    if (named.length === 1) return { dir: `${specs}/${named[0]}` };
+    return {
+      error: `no issue key in branch \`${branch}\` and ${named.length ? `several spec folders named for it: ${named.join(", ")}` : "no spec folder named for its slug"}`,
+      fix: "--key <key>",
+    };
+  }
   const existing = existsSync(base) ? readdirSync(base).filter((d) => keys.folderKey(d) === k) : [];
   if (existing.length > 1)
     return { error: `several folders for ${keys.display(k)}: ${existing.join(", ")}` };
   if (existing.length) return { dir: `${specs}/${existing[0]}` };
   const name = keys.folder(k, slug ?? "");
   if (keys.folderKey(name) !== k)
-    return { error: `no folder for ${keys.display(k)} yet; pass --slug <kebab-case short name>` };
+    return {
+      error: `no folder for ${keys.display(k)} yet`,
+      fix: "--slug <kebab-case short name>",
+    };
   return { dir: `${specs}/${name}` };
 }
 
@@ -990,9 +1010,13 @@ export function run([mode, ...args]) {
     } catch {
       // not a git checkout: no branch, so --key and --slug decide
     }
-    const { dir, error } = specDir({ branch: branch.trim(), key: opt("key"), slug: opt("slug") });
+    const { dir, error, fix } = specDir({
+      branch: branch.trim(),
+      key: opt("key"),
+      slug: opt("slug"),
+    });
     if (error) {
-      console.error(`spec-gate: ${error}`);
+      console.error(`spec-gate: ${error}${fix ? `; pass ${fix}` : ""}`);
       return 1;
     }
     // Every later `fflow spec` call resolves the spec folder from here (ADR 0510).
