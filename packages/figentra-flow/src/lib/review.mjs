@@ -1,15 +1,17 @@
 /**
  * Figentra Flow file contract:
  * Purpose: the independent AI review of Stackra ADR 0230, as `fflow land` reads it: the counted verdict on a PR's
- *   head from the `stackra-reviewer` App (matched by App identity, never a login string), unedited, first line
- *   `AI-REVIEW: PASS <40-hex head> base=<base>`, never from the PR's author or the head commit's author or committer;
- *   or the owner's APPROVED review on the head with the `owner-approval` token. A FAIL for the head beats any PASS.
+ *   head from a listed reviewer App (`stackra-reviewer` or the Flow App; matched by App identity, never a login
+ *   string), unedited, first line `AI-REVIEW: PASS <40-hex head> base=<base>`, never from the PR's author or the head
+ *   commit's author or committer; or the owner's APPROVED review on the head with the `owner-approval` token. A FAIL for the head beats any PASS.
  * Boundary: pure; ported from Stackra core's `tools/scripts/pr-merge.mjs` (`aiReview`, `byReviewerApp`, `actor`,
  *   `ownerApproves`), without its patch-id survival: `land` merges the exact head, so a verdict must name that head.
  * Runtime: node
  * Governing contract: Stackra ADR 0230 (reviewer identity), ADR 0285; STA-1729 phase 3 (AC-031).
  * Secrets: none.
  */
+
+import { GATE_MARKER } from "./product.mjs";
 
 // Optional `role=<id> session=<name>` (a quoted name may hold spaces) name the reviewer for a roster (AC-051).
 const VERDICT_LINE =
@@ -31,9 +33,9 @@ export const actor = (login = "") =>
     .replace(/\[bot\]$/, "")
     .toLowerCase();
 
-/** A REST issue comment written by the reviewer App itself, not by an account that only shares its name. */
-export const byReviewerApp = (/** @type {any} */ c, /** @type {string} */ reviewer) =>
-  c.user?.type === "Bot" && c.performed_via_github_app?.slug === reviewer;
+/** A REST issue comment written by a listed reviewer App itself, not by an account that only shares its name. */
+export const byReviewerApp = (/** @type {any} */ c, /** @type {string | string[]} */ reviewer) =>
+  c.user?.type === "Bot" && [reviewer].flat().includes(c.performed_via_github_app?.slug);
 
 /** A REST pull request review approving `sha` by the owner user with the `owner-approval` token. */
 export const ownerApproves = (
@@ -54,13 +56,17 @@ export const ownerApproves = (
  * @param {any[]} comments
  * @param {any[]} reviews
  * @param {(string | undefined)[]} authors
- * @param {{ reviewer: string | undefined, owner?: string }} identities the configuration's `apps.review.slug` and
- *   `apps.owner`; with no reviewer nothing counts, with no owner no owner review counts
+ * @param {{ reviewer: string | (string | undefined)[] | undefined, owner?: string }} identities the reviewer App
+ *   slugs (`apps.review.slug`, `apps.gate.slug`) and `apps.owner`; with no reviewer nothing counts, with no owner no
+ *   owner review counts
  * @returns {{ verdict: "PASS" | "FAIL" | null, ignored: string[],
  *            passes: { role: string | null, session: string | null }[] }} `passes`: who signed each counted reviewer PASS
  */
-export function aiReview(pr, comments, reviews, authors, { reviewer, owner }) {
-  if (!reviewer)
+export function aiReview(pr, comments, reviews, authors, { reviewer: listed, owner }) {
+  // An unset or empty slug drops out, so an empty list means no reviewer is configured.
+  const reviewer = /** @type {string[]} */ ([listed ?? []].flat().filter(Boolean));
+  const names = reviewer.join(" or ");
+  if (!reviewer.length)
     return {
       verdict: null,
       ignored: ["no review App is configured (apps.review.slug)"],
@@ -70,10 +76,16 @@ export function aiReview(pr, comments, reviews, authors, { reviewer, owner }) {
   const self = new Set(authors.filter(Boolean).map((a) => actor(a)));
   /** @type {string[]} */
   const ignored = [];
-  // An edit to any reviewer comment voids every reviewer verdict posted before it.
+  // An edit to any reviewer comment voids every reviewer verdict posted before it, except the gate's own comment,
+  // which it rewrites in place and which never holds a verdict line.
   const voidBefore =
     comments
-      .filter((c) => byReviewerApp(c, reviewer) && c.updated_at !== c.created_at)
+      .filter(
+        (c) =>
+          byReviewerApp(c, reviewer) &&
+          c.updated_at !== c.created_at &&
+          !String(c.body ?? "").startsWith(GATE_MARKER),
+      )
       .map((c) => String(c.updated_at))
       .toSorted()
       .at(-1) ?? "";
@@ -90,11 +102,11 @@ export function aiReview(pr, comments, reviews, authors, { reviewer, owner }) {
     if (match ? match[2].toLowerCase() !== sha : !loose || !failForHead(loose[1], sha)) continue;
     const who = c.user?.login ?? "unknown";
     const [, kind, , base] = match ?? [line, "FAIL"];
-    if (!byReviewerApp(c, reviewer)) ignored.push(`${who} is not the ${reviewer} app`);
+    if (!byReviewerApp(c, reviewer)) ignored.push(`${who} is not the ${names} app`);
     else if (self.has(actor(who))) ignored.push(`${who} authored this change and cannot review it`);
     else if (c.updated_at !== c.created_at) ignored.push(`a verdict by ${who} was edited`);
     else if (String(c.created_at) < voidBefore)
-      ignored.push(`a ${reviewer} comment was edited after this verdict; post a new one`);
+      ignored.push(`a ${names} comment was edited after this verdict; post a new one`);
     else if (kind.toUpperCase() === "PASS" && base !== target)
       ignored.push(`a PASS names base ${base ?? "none"}, the PR targets ${target}`);
     else {
