@@ -174,3 +174,27 @@ test("status --offline: no GitHub call; the cap is the owner's", (t) => {
   assert.deepEqual(snap.warnings, []);
   assert.equal(snap.version, "fflow.status/1");
 });
+
+// @covers sta-1945:FR-25 sta-1945:AC-27 sta-1945:P-030
+test("status lists a Done spec's skipped optional tasks", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  for (const [folder, status] of [
+    ["sta-5-done", "Done"],
+    ["sta-6-open", "Implementing"],
+  ]) {
+    const dir = join(r.root, ".agents/specs", folder);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "spec.md"), spec(status, "s5"));
+    writeFileSync(
+      join(dir, "tasks.md"),
+      "## Phase 1\n- [x] T001 Do\n- [ ] T002* Polish\n- [x] T003* Docs\n- [ ] ~~T004*~~ gone\n",
+    );
+  }
+  const snap = snapshot({ repos: [{ path: r.root, github: "acme/app" }], offline: true });
+  const skipped = Object.fromEntries(
+    snap.repos[0].specs.map((/** @type {any} */ s) => [s.folder, s.skipped]),
+  );
+  assert.deepEqual(skipped, { "sta-5-done": ["T002"], "sta-6-open": [] });
+  assert.match(render(snap), /done sta-5-done .*skipped optional T002/);
+});

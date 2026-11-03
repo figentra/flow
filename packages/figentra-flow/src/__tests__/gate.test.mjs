@@ -174,6 +174,41 @@ test("Implementing needs a ticked task; Done needs them all", () => {
   assert.match(stageOf(at("Done"), { tasks: one }).join(), /T002 are unticked/);
 });
 
+// @covers sta-1945:FR-25 sta-1945:AC-27 sta-1945:P-030
+test("optional and checkpoint tasks: the lint accepts them, Done skips an open optional task", () => {
+  const extra = (optional, checkpoint) =>
+    `${fixture("tasks.md")}- [${optional}] T004* Polish in \`packages/foundation/widget/README.md\` — covers: FR-001 — route: spec-task\n- [${checkpoint}] T005 Checkpoint: \`pnpm verify\` [STA-904]\n`;
+  const lint = (t) => checkTasks(t, { spec: fixture("spec.md"), plan: fixture("plan.md"), known });
+  assert.deepEqual(lint(extra(" ", " ")), []);
+  assert.deepEqual(stageOf(at("Done"), { tasks: extra(" ", "x") }), []);
+  assert.match(stageOf(at("Done"), { tasks: extra(" ", " ") }).join(), /T005 are unticked/);
+  // queued and in progress are not done
+  assert.match(stageOf(at("Done"), { tasks: extra("x", "-") }).join(), /T005 are unticked/);
+  assert.match(stageOf(at("Done"), { tasks: extra("x", "~") }).join(), /T005 are unticked/);
+  const early = fixture("tasks.md").replace(
+    "- [x] T001",
+    "- [x] T009 Checkpoint: pnpm test\n- [x] T001",
+  );
+  assert.match(lint(early).join(), /T009 is a checkpoint, but T001 follows it in its phase/);
+  assert.match(
+    lint(`${fixture("tasks.md")}- [ ] T005* Checkpoint: pnpm verify\n`).join(),
+    /T005 is a checkpoint, which cannot be optional/,
+  );
+  assert.match(
+    lint(`${fixture("tasks.md")}- [ ] T005 Checkpoint:\n`).join(),
+    /T005 is a checkpoint with no command/,
+  );
+  // a tiered spec's tasks: a checkpoint needs no acceptance criterion and no file
+  assert.deepEqual(
+    checkTraceTasks(
+      "- [ ] T001 Do in `a.mjs` — covers: AC-001\n- [ ] T002 Checkpoint: `pnpm verify`\n",
+      "- **AC-001**: WHEN x THE y SHALL z.\n",
+      "tasks.md",
+    ),
+    [],
+  );
+});
+
 test("lane: feat commits need a spec through the branch or Refs keys", () => {
   const specKeys = new Set(["sta-163"]);
   const taskKeys = new Set(["sta-170"]);
@@ -404,10 +439,12 @@ test("spec-linear parses links and finds unlinked tasks", () => {
     project: undefined,
     title: "Foo",
   });
-  const tasks = unlinkedTasks("- [ ] T001 One\n- [x] T002 Two [STA-9]\n- [ ] T003 [P] Three\nnote");
+  const tasks = unlinkedTasks(
+    "- [ ] T001 One\n- [x] T002 Two [STA-9]\n- [ ] T003 [P] Three\n- [-] T004* Four\n- [~] T005 Five\nnote",
+  );
   assert.deepEqual(
     tasks.map((t) => t.id),
-    ["T001", "T003"],
+    ["T001", "T003", "T004", "T005"],
   );
 });
 

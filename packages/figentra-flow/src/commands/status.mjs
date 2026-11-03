@@ -56,7 +56,7 @@ export function render(snap, color = false) {
       String(a.status).localeCompare(String(b.status)),
     ))
       out.push(
-        `    ${s.status ?? "?"} ${s.folder}${s.tier ? ` [${s.tier}]` : ""}${s.session ? ` session ${s.session}` : ""}${s.problems.length ? ` — ${s.problems.length} problem(s)` : ""}`,
+        `    ${s.status ?? "?"} ${s.folder}${s.tier ? ` [${s.tier}]` : ""}${s.session ? ` session ${s.session}` : ""}${s.skipped?.length ? ` — skipped optional ${s.skipped.join(", ")}` : ""}${s.problems.length ? ` — ${s.problems.length} problem(s)` : ""}`,
       );
     out.push("  worktrees:");
     if (!repo.worktrees.length) out.push("    none");

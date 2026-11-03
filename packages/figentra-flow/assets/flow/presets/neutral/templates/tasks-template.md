@@ -12,6 +12,10 @@ description: "Task list template: every task covers acceptance criteria and name
   - Each task names at least one file in backticks.
   - `deps:` names earlier tasks; dependencies are acyclic.
   - `[P]` tasks in one phase are a wave: they never share a backticked path.
+  - Markers: `[ ]` not started, `[~]` queued, `[-]` in progress, `[x]` done; only `[x]` counts as done.
+  - `T012*` marks a task optional: it may stay `[ ]` at Done.
+  - A phase may end in a checkpoint, ``- [ ] T013 Checkpoint: `<command>` ``: a required task that runs the command
+    and covers nothing; no later phase starts before it is done. It is the last task of its phase and never optional.
 - Do not keep sample tasks.
 
 ## Phase 1: Setup
@@ -22,3 +26,5 @@ description: "Task list template: every task covers acceptance criteria and name
 
 - [ ] T002 [P] [test first] in `path` — covers: AC-001 — deps: T001
 - [ ] T003 [implementation] in `path` — covers: FR-001 — deps: T002
+- [ ] T004* [optional polish] in `path` — covers: AC-001 — deps: T003
+- [ ] T005 Checkpoint: `npm test`

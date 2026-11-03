@@ -267,8 +267,18 @@ export function checkTasks(
     seen.set(t.id, t.line);
   }
   const live = tasks.filter((t) => !t.struck);
-  for (const t of live) {
+  for (const [i, t] of live.entries()) {
     const at = `tasks.md:${t.line}: ${t.id}`;
+    // FR-25: a checkpoint runs a command at its phase's end; it covers nothing and names no route
+    if (t.checkpoint !== undefined) {
+      if (!t.checkpoint) problems.push(`${at} is a checkpoint with no command`);
+      if (t.optional) problems.push(`${at} is a checkpoint, which cannot be optional`);
+      if (live[i + 1]?.phase === t.phase)
+        problems.push(`${at} is a checkpoint, but ${live[i + 1].id} follows it in its phase`);
+      for (const d of t.deps)
+        if (!seen.has(d)) problems.push(`${at} depends on ${d}, which does not exist`);
+      continue;
+    }
     if (!t.covers.length) problems.push(`${at} has no \`covers:\``);
     for (const id of t.covers)
       if (!ids.has(id))
@@ -395,13 +405,10 @@ export function checkStage(
   const live = parseTasks(tasks).filter((t) => !t.struck);
   if (atLeast(status, "implementing") && !live.some((t) => t.done))
     problems.push(`status ${status}, but no task is ticked`);
-  if (status === "done" && live.some((t) => !t.done))
-    problems.push(
-      `status done, but ${live
-        .filter((t) => !t.done)
-        .map((t) => t.id)
-        .join(", ")} are unticked`,
-    );
+  // FR-25: an optional task may stay open at Done (status reports it)
+  const open = live.filter((t) => !t.done && !t.optional).map((t) => t.id);
+  if (status === "done" && open.length)
+    problems.push(`status done, but ${open.join(", ")} are unticked`);
   return problems;
 }
 
@@ -653,7 +660,7 @@ export function checkTraceTasks(tasks, spec, where) {
   const live = parseTasks(tasks).filter((t) => !t.struck);
   if (live.length === 0) return [`${where}: no \`- [ ] T###\` task lines`];
   const problems = [];
-  for (const t of live) {
+  for (const t of live.filter((x) => x.checkpoint === undefined)) {
     const at = `${where}:${t.line}: ${t.id}`;
     if (!t.covers.some((id) => criteria.has(id)))
       problems.push(`${at} covers no acceptance criterion (AC-###) of spec.md (ADR 0502)`);

@@ -31,6 +31,7 @@ import { defaultBranch, git, idleHours, inUse, isClean, worktrees } from "./git.
 import { STATUS_CONTEXT } from "./product.mjs";
 import { aiReview } from "./review.mjs";
 import { ownerStopsOf, roleOf } from "./roles.mjs";
+import { parseTasks } from "./spec-parse.mjs";
 import { loadTeam } from "./team.mjs";
 
 /** The snapshot's schema; a breaking change raises it. */
@@ -61,6 +62,7 @@ function specsIn(checkout, { keys, rules, team }) {
     .map((folder) => {
       const dir = join(base, folder);
       const text = readIf(join(dir, "spec.md"));
+      const tasks = readIf(join(dir, "tasks.md"));
       return {
         key: keys.folderKey(folder) ?? null,
         folder,
@@ -71,9 +73,16 @@ function specsIn(checkout, { keys, rules, team }) {
         ownerStops: ownerStopsOf(text) ?? null,
         // An owner-kept spec with a stage approval missing waits on the owner.
         ownerWaiting: Boolean(ownerStopsOf(text)?.length) && checkApproval(text).length > 0,
+        // FR-25: optional tasks a Done spec left open
+        skipped:
+          statusOf(text) === "done"
+            ? parseTasks(tasks)
+                .filter((t) => t.optional && !t.done && !t.struck)
+                .map((t) => t.id)
+            : [],
         problems: checkStage(folder, text, {
           files: readdirSync(dir),
-          tasks: readIf(join(dir, "tasks.md")),
+          tasks,
           plan: readIf(join(dir, "plan.md")),
           keys,
           rules,
