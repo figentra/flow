@@ -4,10 +4,11 @@
  *   version and every command under its group; `<command> --help` prints its usage and runs nothing; an unknown
  *   command names the closest match and exits 2; and the passthrough list (commands not yet ported, STA-1966 FR-031)
  *   is pinned, so porting one is a deliberate change here; and only src/lib/console.mjs (with bin/fflow.mjs) imports
- *   `@stackra/*`, so the governance core stays free of the engine.
+ *   `@stackra/*`, so the governance core stays free of the engine; and the governance commands' `--help` lists their
+ *   options (STA-1945 FR-1).
  * Boundary: the engine's in-process test harness and the text of src/; no command runs.
  * Runtime: node
- * Governing contract: ADR 0022; STA-1945 FR-31; STA-1966 FR-031.
+ * Governing contract: ADR 0022; STA-1945 FR-1, FR-31; STA-1966 FR-031.
  */
 // @covers sta-1945:FR-31 sta-1945:AC-36 sta-1945:P-035
 import { test } from "node:test";

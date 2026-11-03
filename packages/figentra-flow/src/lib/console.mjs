@@ -149,7 +149,7 @@ function governance({ name, description, examples, direct = false, preset = fals
 
     /** @param {CommandIo} io */
     async handle(io) {
-      if (this.workspace === undefined) requireRepository(io.cwd, io.verbose);
+      if (this.workspace === undefined) requireRepository(io.cwd);
       const { run } = await import(`../commands/${name}.mjs`);
       const args = [
         ...(this.workspace === undefined ? [] : ["--workspace", this.workspace]),
