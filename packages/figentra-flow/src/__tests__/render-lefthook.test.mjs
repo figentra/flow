@@ -231,14 +231,23 @@ test("the config's lefthook: a hook that is not a list, or a pre-push job withou
 });
 
 test("the neutral preset: mise first, the installed binary without mise, no stackra skip", (t) => {
-  const { root, withMise } = fixture(t);
+  const { root, withMise, noMise } = fixture(t);
   const parsed = hooks({}, NEUTRAL);
   const oxfmt = runOf(parsed, "pre-commit", "oxfmt");
   assert.equal(
     runJob(oxfmt, root, withMise).stdout.trim(),
     "mise exec npm:oxfmt -- oxfmt --check --no-error-on-unmatched-pattern a.mjs",
   );
-  assert.match(oxfmt, /exec node_modules\/\.bin\/oxfmt --check --no-error-on-unmatched-pattern/);
+  assert.equal(runJob(oxfmt, root, withMise, { STUB_EXIT: "2" }).status, 2, "a parse error fails");
+  const bin = join(root, "node_modules/.bin");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, "oxfmt"), STUB);
+  chmodSync(join(bin, "oxfmt"), 0o755);
+  assert.equal(
+    runJob(oxfmt, root, noMise).stdout.trim(),
+    "oxfmt --check --no-error-on-unmatched-pattern a.mjs",
+  );
+  assert.equal(runJob(oxfmt, root, noMise, { STUB_EXIT: "2" }).status, 2, "without mise too");
   assert.doesNotMatch(runOf(parsed, "pre-commit", "oxlint"), /@stackra/);
   assert.equal(
     renderLefthook({ root, config: {}, presetDir: root }).size,

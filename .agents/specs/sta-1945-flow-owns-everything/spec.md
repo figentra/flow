@@ -134,10 +134,10 @@ detectable hand edits, reviewed overrides and policies no repository can switch 
   - `.mcp.yaml`: the preset's servers plus the config's additions, secrets by name;
   - `lefthook.yml`: the preset's hook steps plus the config's, including `fflow gate branch`;
     the oxfmt and oxlint jobs follow core's hook rule (STA-1865, as STA-2039 amended it) in every repository: they
-    run the mise-pinned binary, named in `mise exec` (`mise exec npm:oxfmt -- oxfmt …`), pass an all-ignored staged
-    set through `--no-error-on-unmatched-pattern` (exit 2, a file oxfmt cannot parse, fails), and never fall back to
-    `pnpm exec`: where mise is missing the stackra preset skips them with a
-    note and CI checks, and the neutral preset runs the installed `node_modules/.bin` binary. `pnpm exec` runs pnpm
+    run the mise-pinned binary, named in `mise exec` (`mise exec npm:oxfmt -- oxfmt …`), and never fall back to
+    `pnpm exec`: where mise is missing the stackra preset skips them with a note and CI checks, and the neutral
+    preset runs the installed `node_modules/.bin` binary. The oxfmt job passes an all-ignored staged set through
+    `--no-error-on-unmatched-pattern`, and its exit 2 (a file oxfmt cannot parse) fails. `pnpm exec` runs pnpm
     12's lockfile trust-policy check first, which fetches registry metadata (a 401 on a Mac with no @figentra read
     token, os STA-1936), and pnpm 12's exec installs whole workspaces from a hook (STA-2039). `sync` makes sure
     `mise.toml` pins `npm:oxfmt` and `npm:oxlint` at the versions the catalog pins, which `repo-checks/tool-pins`
