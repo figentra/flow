@@ -353,8 +353,8 @@ AC-28 to AC-34, listed under `## Acceptance criteria`.
 ## Acceptance criteria
 
 AC-1 to AC-12 restate FR-1 to FR-12 as checkable criteria; AC-13 to AC-34 are the amendments' (A-1 to A-3,
-approved 2026-11-03); AC-35 to AC-42 restate FR-31 and the parts of FR-13, FR-15 and FR-21 that no criterion covered.
-None adds a decision.
+approved 2026-11-03); AC-35 to AC-42 restate FR-31 and the parts of FR-13, FR-15 and FR-21 that no criterion covered;
+AC-43 restates the template part of FR-26 and FR-27 (P-031). None adds a decision.
 
 - **AC-1**: WHEN `fflow check`, `diff` or `validate` runs THE command SHALL write no file; `check` SHALL exit non-zero
   and name each cause (an owned file that differs from the lock, with or without a provenance header; the preset
@@ -452,6 +452,9 @@ None adds a decision.
   status, green only when every shard passed (FR-15).
 - **AC-42**: WHEN `fflow ledger --since <date>` runs THE output SHALL list what landed, released and shipped since that
   date, by day and track, read from Flow's records only (FR-21).
+- **AC-43**: WHEN either preset's spec and plan templates are read THE asset test SHALL find every section A-3 names
+  for each tier: Discovery and Sources, the plan's components with their trees and interfaces, and the small tier's
+  one-page design with its tree and interfaces (FR-26, FR-27).
 
 ## Success criteria
 
@@ -553,3 +556,7 @@ test-level baseline inventory (STA-1942 v2).
 - 2026-11-03: owner decision "Yes, bot first", relayed by the leader session. FR-22 (baseline-aware approval) and FR-16
   (`land --stack`) are built before the rest of 0.3.0, as small PRs. FR-15's gate stage gains the testbed contract
   (owner-approved, STA-2042). No scope change
+- 2026-11-03: tasks.md corrected after PR 19 and PR 20, content only and no new decision: AC-43 restates the
+  templates' part of FR-26 and FR-27 (P-031), which T038 to T041 now cover instead of AC-28 and AC-29; T128 (FR-27's
+  small-tier design) and T129 (FR-30's task trees) added; T052 to T059's tests sit in `src/__tests__/`; T100 waits for
+  T091 (PR 14)
