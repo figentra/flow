@@ -1,5 +1,6 @@
 # Figentra Flow file contract:
-# Purpose: git hooks — pre-commit format and lint on staged files, pre-push typecheck and tests. Advisory; CI is the
+# Purpose: git hooks — pre-commit format and lint on staged files; typecheck and tests run on the box and in
+#          CI, never on a Mac. Advisory; CI is the
 #          gate. Installed by `pnpm install` (prepare).
 # Owner: release-operations
 # Secrets: forbidden
@@ -9,16 +10,14 @@ pre-commit:
     - name: oxfmt
       glob: "*.{js,mjs,ts,json,jsonc,yaml,yml,md}"
       # oxfmt exits 2 when every staged file is ignored: that is not a finding.
-      # The mise-pinned oxfmt runs without a workspace install, so a commit never installs; pnpm's is the fallback where
-      # mise is missing (STA-2039).
+      # The mise-pinned oxfmt runs without a workspace install, so a commit never installs; where mise is missing the
+      # job is skipped and CI checks (STA-2039; no pnpm fallback: pnpm 12's exec installs).
       run: >-
-        sh -c 'if command -v mise >/dev/null 2>&1; then mise exec -- oxfmt --check "$@"; else pnpm exec oxfmt --check "$@"; fi;
+        sh -c 'command -v mise >/dev/null 2>&1 || { echo "oxfmt skipped: mise not installed; CI checks"; exit 0; };
+        mise exec npm:oxfmt -- oxfmt --check "$@";
         s=$?; [ $s -eq 2 ] && exit 0; exit $s' -- {staged_files}
     - name: oxlint
       glob: "*.{js,mjs,ts}"
-      run: sh -c 'if command -v mise >/dev/null 2>&1; then exec mise exec -- oxlint "$@"; fi; exec pnpm exec oxlint "$@"' -- {staged_files}
-
-pre-push:
-  jobs:
-    - name: typecheck-test
-      run: pnpm exec turbo run typecheck test
+      run: >-
+        sh -c 'command -v mise >/dev/null 2>&1 || { echo "oxlint skipped: mise not installed; CI lints"; exit 0; };
+        exec mise exec npm:oxlint -- oxlint "$@"' -- {staged_files}

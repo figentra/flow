@@ -2,10 +2,11 @@
  * Figentra Flow file contract:
  * Purpose: hold `fflow doctor` to its rules: a freshly initialised repository passes every offline check; a
  *   hand-edited rendered file fails `install`, an unignored worktree folder fails `worktrees`, invalid configuration
- *   fails `config`; outside git only `node` and `git` are reported; the binary exits 1 with the JSON report.
+ *   fails `config`; outside git only `node` and `git` are reported; the binary exits 1 with the JSON report; the
+ *   checks are grouped checklist rows, and a fresh local repository's missing credentials are information (FR-31).
  * Boundary: scratch git repositories and `--offline`; no network.
  * Runtime: node
- * Governing contract: ADR 0022; STA-1729 (FR-13, AC-055); STA-1846.
+ * Governing contract: ADR 0022; STA-1729 (FR-13, AC-055); STA-1846; STA-1945 FR-31.
  */
 // @covers sta-1729:FR-13 sta-1729:AC-055 sta-1729:P-013
 import { test } from "node:test";
@@ -16,7 +17,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { checks, meets } from "../commands/doctor.mjs";
+import { CHECK_GROUPS, checks, meets, rowsOf } from "../commands/doctor.mjs";
 import { init } from "../commands/init.mjs";
 import { LOCK } from "../lib/flow-dir.mjs";
 
@@ -29,8 +30,13 @@ function repo() {
   return { root, dispose: () => rmSync(root, { recursive: true, force: true }) };
 }
 
-const byId = (/** @type {import("../commands/doctor.mjs").Check[]} */ all) =>
-  Object.fromEntries(all.map((c) => [c.id, c]));
+/**
+ * Checks or checklist rows by id.
+ * @template {{ id: string }} T
+ * @param {T[]} all
+ * @returns {Record<string, T>}
+ */
+const byId = (all) => Object.fromEntries(all.map((c) => [c.id, c]));
 
 test("doctor: Node against a >= range", () => {
   assert.equal(meets("24.0.0", ">=24.0.0"), true);
@@ -97,7 +103,37 @@ test("doctor: the binary exits 1 with a JSON report when a check fails", (t) => 
     encoding: "utf8",
   });
   assert.equal(out.status, 1);
-  const report = JSON.parse(out.stdout);
-  assert.equal(report.schema, "fflow.doctor/1");
-  assert.equal(byId(report.checks).worktrees.ok, false);
+  const report = /** @type {{ ok: boolean, data: ReturnType<typeof rowsOf> }} */ (
+    JSON.parse(out.stdout)
+  );
+  assert.equal(report.ok, false);
+  assert.equal(byId(report.data).worktrees.ok, false);
+  assert.equal(byId(report.data).worktrees.status, "fail");
+});
+
+// @covers sta-1945:FR-31 sta-1945:AC-37 sta-1945:P-035
+test("doctor: the checks are grouped rows; a fresh local repository's missing credentials are information", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  const disk = () => ({ free: 100 * GB, total: 200 * GB });
+  const rows = rowsOf(checks(r.root, { disk }));
+  assert.deepEqual(
+    rows.map((row) => [row.group, row.name, row.status]),
+    [
+      ["Machine", "node", "ok"],
+      ["Repo", "git", "ok"],
+      ["Flow", "config", "ok"],
+      ["Flow", "install", "ok"],
+      ["Repo", "worktrees", "ok"],
+      ["Repo", "worktree-budget", "ok"],
+      ["Machine", "disk", "ok"],
+      ["GitHub", "credentials", "info"],
+    ],
+  );
+  assert.deepEqual(CHECK_GROUPS, ["Machine", "Repo", "Flow", "GitHub"]);
+  // With a remote there is something to read, so the missing block fails.
+  spawnSync("git", ["remote", "add", "origin", "https://github.com/acme/app.git"], { cwd: r.root });
+  const credentials = rowsOf(checks(r.root, { disk })).find((row) => row.name === "credentials");
+  assert.equal(credentials?.status, "fail");
+  assert.match(credentials?.fix ?? "", /credentials/);
 });

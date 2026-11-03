@@ -3,7 +3,8 @@
  * Purpose: `--workspace <dir>` for `sync`, `update`, `check`, `diff` and `validate` (STA-1945 FR-1, AC-3): the command
  *   runs in every repository under `<dir>` that has `flow.config.json`, as it would there alone, and prints one line per
  *   repository, `<repo>: <line>`. A repository that throws prints its error as its line and the run goes on; the exit
- *   code is the worst one. Without `--workspace`, the command runs in the current repository and prints in full.
+ *   code is the worst one, and 1 when no repository under `<dir>` has `flow.config.json`. Without `--workspace`, the
+ *   command runs in the current repository and prints in full.
  * Boundary: finds the repositories with `findRepos`; each command does its own reads and writes.
  * Runtime: node
  * Governing contract: STA-1945 (FR-1, AC-3, P-003).
@@ -30,7 +31,7 @@ import { findRepos } from "./workspace.mjs";
  * @param {string} dir
  * @param {(root: string) => Promise<{ code: number, line: string }> | { code: number, line: string }} fn
  * @param {(line: string) => void} [log]
- * @returns {Promise<number>} the worst exit code
+ * @returns {Promise<number>} the worst exit code; 1 when no repository under `dir` has `flow.config.json`
  */
 export async function eachRepo(dir, fn, log = console.log) {
   let worst = 0;
@@ -47,7 +48,11 @@ export async function eachRepo(dir, fn, log = console.log) {
     log(`${relative(dir, path) || basename(path)}: ${result.line}`);
     worst = Math.max(worst, result.code);
   }
-  if (!repos.length) log(`${NAME}: no repository under ${dir} has ${CONFIG_FILE}`);
+  // A folder with no governed repository fails, so a mistyped `--workspace` never reads as a green check.
+  if (!repos.length) {
+    log(`${NAME}: no repository under ${dir} has ${CONFIG_FILE}`);
+    return 1;
+  }
   return worst;
 }
 

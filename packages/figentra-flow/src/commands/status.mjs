@@ -2,16 +2,17 @@
  * Figentra Flow file contract:
  * Purpose: `fflow status [--repo <path>] [--json] [--offline] [--metrics [--since <n>d]] [--by role [--role <id>]]`
  *   (FR-7, FR-12, AC-012, AC-024, AC-026, AC-032, AC-050): one block per
- *   repository of the workspace (or the one named, or the current one) with its specs by status, worktrees, open PRs
- *   and sessions; `--json` prints the snapshot itself. Exit 0, or 1 when a warning (more building sessions than the
- *   cap) is present, so a script can alert.
+ *   repository of the workspace (or the one named, or the current one) with its specs, worktrees, open PRs and
+ *   sessions as four tables (FR-31), each problem counted and, under `--verbose`, every one listed; `--json` writes
+ *   the snapshot as the console's data. Exit 0, or 1 when a warning (more building sessions than the cap) is present,
+ *   so a script can alert. The options are declared in src/lib/console.mjs; `refusal` names a combination they
+ *   refuse, and `status` runs them.
  * Boundary: read-only; GitHub through each repository's credentials, none with `--offline`.
  * Runtime: node
- * Governing contract: STA-1729 phase 4 (the leader's plan stop of 2026-10-31).
+ * Governing contract: STA-1729 phase 4 (the leader's plan stop of 2026-10-31); STA-1945 FR-31 (AC-37).
  * Secrets: none.
  */
 import { slugOf } from "./gate-run.mjs";
-import { colorFor, gateGlyph, glyph } from "../lib/cli.mjs";
 import { busyFolders, git } from "../lib/git.mjs";
 import { github } from "../lib/github.mjs";
 import { NAME, STATUS_CONTEXT } from "../lib/product.mjs";
@@ -33,59 +34,6 @@ export function reposFor(repo, cwd) {
   const top = git(repo ?? cwd, ["rev-parse", "--show-toplevel"]);
   const path = top.ok ? top.out : (repo ?? cwd);
   return [{ path, github: slugOf(git(path, ["remote", "get-url", "origin"]).out) ?? "" }];
-}
-
-/**
- * The snapshot as text, one block per repository.
- * @param {any} snap
- * @param {boolean} [color] colour the glyphs
- * @returns {string}
- */
-export function render(snap, color = false) {
-  /** @type {string[]} */
-  const out = [];
-  for (const repo of snap.repos) {
-    out.push(`${repo.github ?? repo.path}${repo.github ? `  (${repo.path})` : ""}`);
-    if (repo.error) {
-      out.push(`  skipped: ${repo.error}`, "");
-      continue;
-    }
-    out.push("  specs:");
-    if (!repo.specs.length) out.push("    none");
-    for (const s of [...repo.specs].sort((a, b) =>
-      String(a.status).localeCompare(String(b.status)),
-    ))
-      out.push(
-        `    ${s.status ?? "?"} ${s.folder}${s.tier ? ` [${s.tier}]` : ""}${s.session ? ` session ${s.session}` : ""}${s.problems.length ? ` — ${s.problems.length} problem(s)` : ""}`,
-      );
-    out.push("  worktrees:");
-    if (!repo.worktrees.length) out.push("    none");
-    for (const t of repo.worktrees) {
-      const marks = [
-        t.dirty ? "dirty" : "clean",
-        t.inUse ? "in use" : null,
-        `idle ${t.idleHours} h`,
-        t.ahead !== null ? `+${t.ahead}/-${t.behind}` : "not pushed",
-      ].filter(Boolean);
-      out.push(`    ${t.branch ?? "(detached)"} ${t.path} — ${marks.join(", ")}`);
-    }
-    out.push("  PRs:");
-    if (repo.prsProblem) out.push(`    ${repo.prsProblem}`);
-    else if (!repo.prs.length) out.push("    none");
-    for (const p of repo.prs)
-      out.push(
-        `    ${glyph(gateGlyph(p.gate?.state), color)}#${p.number} ${p.title} — ${STATUS_CONTEXT} ${p.gate?.state ?? "none"}${p.gate && p.gate.trusted === false ? " (untrusted poster)" : ""}, review ${p.review ?? "none"}${p.draft ? ", draft" : ""}${p.stacked ? `, stacked on ${p.base}` : ""}`,
-      );
-    out.push("  sessions:");
-    if (!repo.sessions.length) out.push("    none");
-    for (const s of repo.sessions)
-      out.push(
-        `    ${s.name}${s.building ? " (building)" : ""}: ${s.specs.join(", ")}; worktree ${s.worktrees.join(", ") || "none"}; gate ${s.gates.map((/** @type {any} */ g) => g ?? "none").join(", ") || "none"}`,
-      );
-    out.push("");
-  }
-  for (const w of snap.warnings) out.push(`warning: ${w}`);
-  return out.join("\n");
 }
 
 /**
@@ -133,76 +81,189 @@ export function renderMetrics(m) {
   ].join("\n");
 }
 
-/** `fflow status [--repo <path>] [--json] [--offline] [--metrics [--since <n>d]] [--web [--port <n>]]`. */
-export function run(/** @type {string[]} */ args) {
-  const opt = (/** @type {string} */ name) =>
-    args.includes(`--${name}`) ? args[args.indexOf(`--${name}`) + 1] : undefined;
-  const offline = args.includes("--offline");
-  if (args.includes("--web")) {
-    const port = Number(opt("port") ?? 4747);
-    if (!Number.isInteger(port) || port < 0 || port > 65535) {
-      console.error(`${NAME} status: --port takes a port number`);
-      return 2;
-    }
-    const read = () =>
-      snapshot({
-        repos: reposFor(opt("repo"), process.cwd()),
-        cap: readSessionCap(),
-        offline,
-        busy: busyFolders(),
-        api: offline ? undefined : (root) => github(root),
-      });
+/** A gate state as a table's status cell. */
+const GATE_CELL = { success: "ok", pending: "warn", failure: "fail", error: "fail" };
+
+/**
+ * One repository's four tables (FR-31): specs, worktrees, PRs and sessions; every problem under `verbose`.
+ * @param {any} repo
+ * @param {boolean} verbose
+ * @returns {{ title: string, columns: { header: string, key: string, kind?: "status" | "count" }[], rows: Record<string, unknown>[], problems?: string[] }[]}
+ */
+export function tablesOf(repo, verbose) {
+  const specs = [...repo.specs].sort((a, b) => String(a.status).localeCompare(String(b.status)));
+  return [
+    {
+      title: "Specs",
+      columns: [
+        { header: "Status", key: "status" },
+        { header: "Spec", key: "folder" },
+        { header: "Tier", key: "tier" },
+        { header: "Session", key: "session" },
+        { header: "Problems", key: "problems", kind: "count" },
+      ],
+      rows: specs.map((s) => ({
+        status: s.status ?? "?",
+        folder: s.folder,
+        tier: s.tier ?? "",
+        session: s.session ?? "",
+        problems: s.problems.length,
+      })),
+      ...(verbose
+        ? {
+            problems: specs.flatMap((s) =>
+              s.problems.map((/** @type {string} */ p) => `${s.folder}: ${p}`),
+            ),
+          }
+        : {}),
+    },
+    {
+      title: "Worktrees",
+      columns: [
+        { header: "Branch", key: "branch" },
+        { header: "Path", key: "path" },
+        { header: "State", key: "state" },
+        { header: "Idle h", key: "idle", kind: "count" },
+        { header: "Ahead/behind", key: "drift" },
+      ],
+      rows: repo.worktrees.map((/** @type {any} */ t) => ({
+        branch: t.branch ?? "(detached)",
+        path: t.path,
+        state: [t.dirty ? "dirty" : "clean", t.inUse ? "in use" : null].filter(Boolean).join(", "),
+        idle: t.idleHours,
+        drift: t.ahead !== null ? `+${t.ahead}/-${t.behind}` : "not pushed",
+      })),
+    },
+    {
+      title: "PRs",
+      columns: [
+        { header: "Gate", key: "gate", kind: "status" },
+        { header: "PR", key: "number" },
+        { header: "Title", key: "title" },
+        { header: "Review", key: "review" },
+        { header: "Notes", key: "notes" },
+      ],
+      rows: repo.prs.map((/** @type {any} */ p) => ({
+        gate: GATE_CELL[/** @type {keyof typeof GATE_CELL} */ (p.gate?.state)] ?? "skip",
+        number: `#${p.number}`,
+        title: p.title,
+        review: p.review ?? "none",
+        notes: [
+          `${STATUS_CONTEXT} ${p.gate?.state ?? "none"}`,
+          p.gate && p.gate.trusted === false ? "untrusted poster" : null,
+          p.draft ? "draft" : null,
+          p.stacked ? `stacked on ${p.base}` : null,
+        ]
+          .filter(Boolean)
+          .join(", "),
+      })),
+      ...(repo.prsProblem ? { problems: [repo.prsProblem] } : {}),
+    },
+    {
+      title: "Sessions",
+      columns: [
+        { header: "Session", key: "name" },
+        { header: "Specs", key: "specs" },
+        { header: "Worktree", key: "worktrees" },
+        { header: "Gate", key: "gates" },
+      ],
+      rows: repo.sessions.map((/** @type {any} */ s) => ({
+        name: `${s.name}${s.building ? " (building)" : ""}`,
+        specs: s.specs.join(", "),
+        worktrees: s.worktrees.join(", ") || "none",
+        gates: s.gates.map((/** @type {any} */ g) => g ?? "none").join(", ") || "none",
+      })),
+    },
+  ];
+}
+
+/** @typedef {{ repo?: string, offline: boolean, metrics: boolean, since: string, by?: string, role?: string, web: boolean, port: number }} StatusOptions */
+
+/**
+ * What is wrong with `fflow status`'s options, as a usage error's message and hint, or undefined.
+ * @param {StatusOptions} options
+ * @returns {{ message: string, hint: string } | undefined}
+ */
+export function refusal({ offline, metrics: wanted, since, by, role, port }) {
+  if (!Number.isInteger(port) || port < 0 || port > 65535)
+    return { message: "--port takes a port number", hint: `${NAME} status --web --port 4747` };
+  if (wanted && offline)
+    return { message: "--metrics reads GitHub; it cannot run --offline", hint: "drop --offline" };
+  if (wanted && !(Number(since.replace(/d$/, "")) > 0))
+    return {
+      message: "--since takes a number of days",
+      hint: `${NAME} status --metrics --since 30d`,
+    };
+  if (by !== undefined && by !== "role")
+    return { message: "--by takes `role`", hint: `${NAME} status --by role` };
+  if (role !== undefined && by !== "role")
+    return {
+      message: "--role goes with --by role",
+      hint: `${NAME} status --by role --role ${role}`,
+    };
+  return undefined;
+}
+
+/**
+ * `fflow status`, after `refusal` passed its options.
+ * @param {import("../lib/console.mjs").Io} io
+ * @param {StatusOptions} options
+ * @returns {Promise<number>}
+ */
+export async function status(io, { repo, offline, metrics: wanted, since, by, role, web, port }) {
+  const repos = () => reposFor(repo, io.cwd);
+  const read = () =>
+    snapshot({
+      repos: repos(),
+      cap: readSessionCap(),
+      offline,
+      busy: busyFolders(),
+      api: offline ? undefined : (root) => github(root),
+    });
+  if (web) {
     const server = statusServer(read);
     // Never resolves: the page is served until the process is stopped (Ctrl-C).
     return new Promise(() =>
       server.listen(port, "127.0.0.1", () => {
         const address = /** @type {import("node:net").AddressInfo} */ (server.address());
-        console.log(`${NAME} status: http://127.0.0.1:${address.port}/ (Ctrl-C stops it)`);
+        io.output.line(`${NAME} status: http://127.0.0.1:${address.port}/ (Ctrl-C stops it)`);
       }),
     );
   }
-  if (args.includes("--metrics")) {
-    if (offline) {
-      console.error(`${NAME} status: --metrics reads GitHub; it cannot run --offline`);
-      return 2;
-    }
-    const days = Number((opt("since") ?? "30d").replace(/d$/, ""));
-    if (!Number.isFinite(days) || days <= 0) {
-      console.error(`${NAME} status: --since takes a number of days, e.g. 30d`);
-      return 2;
-    }
+  if (wanted) {
+    const days = Number(since.replace(/d$/, ""));
     const m = metrics({
-      repos: reposFor(opt("repo"), process.cwd()),
+      repos: repos(),
       api: (root) => github(root),
       since: Date.now() - days * 86_400_000,
     });
-    console.log(args.includes("--json") ? JSON.stringify(m, null, 2) : renderMetrics(m));
+    if (io.json) io.output.json(m);
+    else io.output.line(renderMetrics(m));
     return 0;
   }
-  const snap = snapshot({
-    repos: reposFor(opt("repo"), process.cwd()),
-    cap: readSessionCap(),
-    offline,
-    busy: busyFolders(),
-    api: offline ? undefined : (root) => github(root),
-  });
-  const byRole = opt("by") === "role";
-  if (opt("role") !== undefined && !byRole) {
-    console.error(`${NAME} status: --role goes with --by role`);
-    return 2;
+  const snap = read();
+  const code = snap.warnings.length ? 1 : 0;
+  if (io.json) {
+    io.output.json(snap);
+    return code;
   }
-  if (opt("by") !== undefined && !byRole) {
-    console.error(`${NAME} status: --by takes \`role\``);
-    return 2;
-  }
-  console.log(
-    args.includes("--json")
-      ? JSON.stringify(snap, null, 2)
-      : byRole
-        ? renderByRole(snap, opt("role"))
-        : render(snap, colorFor(process.stdout)),
-  );
-  if (snap.warnings.length && !args.includes("--json"))
-    console.error(`${NAME} status: see the warning above`);
-  return snap.warnings.length ? 1 : 0;
+  if (by === "role") io.output.line(renderByRole(snap, role));
+  else
+    for (const r of snap.repos) {
+      io.output.title(`${r.github ?? r.path}${r.github ? `  (${r.path})` : ""}`);
+      if (r.error) {
+        io.output.warn(`skipped: ${r.error}`);
+        continue;
+      }
+      for (const { title, columns, rows, problems = [] } of tablesOf(r, io.verbose)) {
+        if (rows.length) io.output.table({ title, columns, rows });
+        else io.output.line(`  ${title}: none`);
+        if (problems.length) io.output.list(problems);
+      }
+      const counted = r.specs.reduce((n, /** @type {any} */ s) => n + s.problems.length, 0);
+      if (counted && !io.verbose)
+        io.output.note(`${counted} spec problem(s); \`${NAME} status --verbose\` lists them`);
+    }
+  for (const w of snap.warnings) io.output.warn(w);
+  return code;
 }

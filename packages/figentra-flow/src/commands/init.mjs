@@ -1,11 +1,13 @@
 /**
  * Figentra Flow file contract:
  * Purpose: `fflow init [--force]` — install `.flow/` (ADR 0510: README, a starter `constitution.md`,
- *   `.gitignore`) into the current repository and render the `flow-*` skills with `sync` (the constitution is the
- *   repository's own and is never overwritten).
+ *   `.gitignore`) into the current repository, write a starter `flow.config.json` when it has none (FR-31), and
+ *   render the `flow-*` skills with `sync`, naming what it rendered (the constitution and the configuration are the
+ *   repository's own and are never overwritten).
  *   `fflow init --workspace <dir>…` writes the workspace list instead: every git repository in or directly under
  *   those folders, with its GitHub slug (STA-1729).
- * Boundary: writes only `.flow/`, what `sync` renders and `.claude/worktrees/README.md` (STA-1871); refuses an existing
+ * Boundary: writes only `.flow/`, a missing config file, what `sync` renders and `.claude/worktrees/README.md`
+ *   (STA-1871); refuses an existing
  *   `.flow/` unless `--force`. `--workspace` writes only the
  *   workspace file (`~/.config/fflow/workspace.yaml`, or `FFLOW_WORKSPACE`).
  *   `fflow init --runner github-actions [--force]` writes only the gate workflow
@@ -44,13 +46,16 @@ This folder belongs to Figentra Flow (\`${NAME}\`, ADR 0510). Do not hand-edit w
  * Installs `.flow/` into `root` (README, a starter constitution from the template, `.gitignore`), makes the
  * repository's `.gitignore` ignore `.claude/worktrees/` (FR-3), and renders the
  * \`flow-*\` skills: through the repository's projector when its package.json has \`agents:sync\`, else directly.
- * Refuses an installed `.flow/` (its README) unless `force`; an existing constitution is always kept.
+ * Refuses an installed `.flow/` (its README) unless `force`; an existing constitution is always kept. With `config`,
+ * a repository with no config file first gets the starter one (FR-31), so `sync` and `doctor` read it.
  * @param {string} root
- * @param {{ force?: boolean, log?: (s: string) => void }} [options]
+ * @param {{ force?: boolean, config?: boolean, log?: (s: string) => void }} [options]
  */
-export function init(root, { force = false, log = () => {} } = {}) {
+export function init(root, { force = false, config = false, log = () => {} } = {}) {
   // `.flow/readme.yml` alone is not an install (STA-1879): `init` writes `.flow/README.md`.
   if (existsSync(join(root, FLOW_DIR, "README.md")) && !force) return false;
+  if (config && writeStarterConfig(root))
+    log(`${NAME} init: wrote ${CONFIG_FILE}; the defaults apply`);
   writeFlowDir(root);
   ignoreWorktrees(root);
   writeWorktreesReadme(root);
@@ -72,6 +77,23 @@ export function writeFlowDir(root) {
   if (!existsSync(constitution) && template) copyFileSync(template, constitution);
 }
 
+/** The configuration `init` starts a repository with: the schema and the version, so every default applies. */
+export const STARTER_CONFIG = {
+  $schema: `./node_modules/${PACKAGE}/schema/${CONFIG_FILE.replace(".json", ".schema.json")}`,
+  version: 1,
+};
+
+/**
+ * Writes the starter configuration when `root` has no config file.
+ * @param {string} root
+ * @returns {boolean} whether it wrote one
+ */
+export function writeStarterConfig(root) {
+  if (existsSync(join(root, CONFIG_FILE))) return false;
+  writeFileSync(join(root, CONFIG_FILE), `${JSON.stringify(STARTER_CONFIG, null, 2)}\n`);
+  return true;
+}
+
 /**
  * Writes the gate workflow for the `github-actions` runner, and a starter config when there is none.
  * @param {string} root
@@ -89,11 +111,7 @@ export function initGithubActions(root, { force = false, version = VERSION } = {
   writeFileSync(file, gateWorkflow({ version }));
   const lines = [`wrote .github/workflows/${GATE_WORKFLOW}`];
   if (!existsSync(join(root, CONFIG_FILE))) {
-    const starter = {
-      $schema: `./node_modules/${PACKAGE}/schema/${CONFIG_FILE.replace(".json", ".schema.json")}`,
-      version: 1,
-      runner: { kind: "github-actions" },
-    };
+    const starter = { ...STARTER_CONFIG, runner: { kind: "github-actions" } };
     writeFileSync(join(root, CONFIG_FILE), `${JSON.stringify(starter, null, 2)}\n`);
     lines.push(`wrote ${CONFIG_FILE} with the github-actions runner`);
   } else if (loadConfig(root).config.runner?.kind !== "github-actions") {
@@ -135,9 +153,8 @@ export function run(args) {
     return 0;
   }
   const top = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
-  if (
-    !init(top.ok ? top.out : process.cwd(), { force: args.includes("--force"), log: console.log })
-  ) {
+  const force = args.includes("--force");
+  if (!init(top.ok ? top.out : process.cwd(), { force, config: true, log: console.log })) {
     console.error(`${NAME} init: .flow/ already exists (pass --force to re-render it)`);
     return 1;
   }
