@@ -13,6 +13,10 @@ engineStrict: true
 verifyDepsBeforeRun: warn
 
 catalog:
+  # The one CLI engine every Figentra CLI depends on (STA-1966, STA-1945 FR-31; ADR 0506 decision 8, owner 2026-11-03):
+  # runtime dependencies, loaded by the CLI layer only, never by the governance core or `fflow guard`. Exact pins.
+  "@stackra/console": 0.7.1
+  "@stackra/validation": 0.7.1
   "@types/node": 26.6.4
   # The Linear client's network layer: an Agent with a 30 s connect timeout (STA-302), as in Stackra core.
   undici: 8.12.2
@@ -37,3 +41,8 @@ allowBuilds:
   lefthook: true
 minimumReleaseAgeExclude:
   - "@figentra-oss/flow@0.2.3"
+  # Our own engine, published from core's CI on 2026-11-03 (STA-1966).
+  - "@stackra/console@0.7.1"
+  - "@stackra/container@0.7.1"
+  - "@stackra/contracts@0.7.1"
+  - "@stackra/validation@0.7.1"

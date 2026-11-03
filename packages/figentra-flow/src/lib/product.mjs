@@ -24,6 +24,9 @@ export const VERSION = MANIFEST.version;
 /** The Node range Flow needs, from `package.json`'s `engines`. */
 export const NODE_RANGE = MANIFEST.engines?.node ?? ">=0";
 
+/** The docs link every command's help and error block give, from `package.json`'s `homepage`. */
+export const HOMEPAGE = MANIFEST.homepage;
+
 /** The registry the package is published to (`publishConfig.registry`), or undefined for npm's default. */
 export const REGISTRY = MANIFEST.publishConfig?.registry;
 
