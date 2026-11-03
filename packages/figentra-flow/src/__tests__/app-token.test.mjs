@@ -291,6 +291,7 @@ test("grant: GitHub's metadata: read is the only extra; anything wider, narrower
   for (const [grant, message] of bad) {
     const { calls, fetch } = world({ grant });
     await assert.rejects(mint("approve", options({ fetch })), (error) => {
+      assert.ok(error instanceof Error);
       assert.match(error.message, message);
       assert.match(error.message, /the token was revoked/);
       noSecret(error.message);
@@ -301,9 +302,12 @@ test("grant: GitHub's metadata: read is the only extra; anything wider, narrower
       [`Bearer ${TOKEN}`],
     );
   }
-  // A failed revoke still refuses with the grant's reason.
+  // A failed revoke still refuses with the grant's reason, and says the token is still live.
   const { fetch } = world({ grant: { permissions: { contents: "write" } }, revoke: 500 });
-  await assert.rejects(mint("approve", options({ fetch })), /granted as null.*revoked/);
+  await assert.rejects(
+    mint("approve", options({ fetch })),
+    /granted as null.*revoking it failed \(it expires within the hour\)$/,
+  );
 });
 
 test("installation: another account's or another App's refuses before any token is asked for", async () => {
@@ -348,6 +352,7 @@ test("Infisical and GitHub failures carry the named messages, mint nothing, and 
   for (const [over, message] of cases) {
     const { calls, fetch } = world(over);
     await assert.rejects(mint("approve", options({ fetch })), (error) => {
+      assert.ok(error instanceof Error);
       assert.match(error.message, message);
       noSecret(error.message);
       noSecret(inspect(error));
@@ -377,6 +382,53 @@ test("Infisical and GitHub failures carry the named messages, mint nothing, and 
   );
 });
 
+test("a 2xx answer without its value, or with no JSON, fails at its step and mints nothing", async () => {
+  const NO_JSON = Symbol("no JSON");
+  /** @type {[string, unknown, RegExp][]} */
+  const cases = [
+    [
+      "pipelines.actions.test",
+      {},
+      /^Error: app-token: oidc: the token is missing from the answer$/,
+    ],
+    [
+      "pipelines.actions.test",
+      NO_JSON,
+      /^Error: app-token: oidc: GET \/idtoken\/1 answered no JSON$/,
+    ],
+    ["oidc-auth/login", { accessToken: "" }, /infisical login: the access token is missing/],
+    ["oidc-auth/login", NO_JSON, /infisical login: POST .* answered no JSON/],
+    ["GATE_APP_ID", { secret: {} }, /infisical secret: FFLOW_GATE_APP_ID is missing/],
+    ["GATE_PRIVATE_KEY", { secret: { secretValue: "" } }, /FFLOW_GATE_PRIVATE_KEY is missing/],
+    ["access_tokens", { permissions: {}, repositories: [] }, /access token: the token is missing/],
+    ["access_tokens", NO_JSON, /access token: POST .* answered no JSON/],
+  ];
+  for (const [match, json, message] of cases) {
+    const { calls, fetch } = world();
+    /** @type {import("../lib/app-token.mjs").Fetch} */
+    const patched = async (url, init) => {
+      const real = await fetch(url, init);
+      if (!url.includes(match)) return real;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => {
+          if (json === NO_JSON) throw new SyntaxError("Unexpected token");
+          return json;
+        },
+      };
+    };
+    await assert.rejects(mint("approve", options({ fetch: patched })), message);
+    // No token came back, so nothing is revoked; a failed Infisical step never reaches GitHub.
+    assert.ok(!calls.some((c) => c.method === "DELETE"));
+    if (match !== "access_tokens") assert.ok(!calls.some((c) => c.url.includes("access_tokens")));
+    if (!["access_tokens", "GATE_PRIVATE_KEY"].includes(match))
+      assert.ok(!calls.some((c) => c.url.includes("GATE_PRIVATE_KEY")));
+    if (match !== "access_tokens")
+      assert.ok(!calls.some((c) => c.url.startsWith("https://api.github.com")));
+  }
+});
+
 test("withToken: the token is revoked after a return and after a throw", async () => {
   const ok = world();
   assert.equal(
@@ -396,6 +448,18 @@ test("withToken: the token is revoked after a return and after a throw", async (
     /use failed/,
   );
   assert.equal(thrown.calls.filter((c) => c.method === "DELETE").length, 1);
+  // A failed revoke does not hide use's own error; on a return it is thrown, and a second revoke retries.
+  const both = world({ revoke: 500 });
+  await assert.rejects(
+    withToken("verdict", options({ fetch: both.fetch }), async () => {
+      throw new Error("use failed");
+    }),
+    /^Error: use failed$/,
+  );
+  const minted = await mint("verdict", options({ fetch: both.fetch }));
+  await assert.rejects(minted.revoke(), /revoke: DELETE \/installation\/token answered 500/);
+  await assert.rejects(minted.revoke(), /answered 500/);
+  assert.equal(both.calls.filter((c) => c.method === "DELETE").length, 3);
 });
 
 test("logs: only ::add-mask:: lines, and only in Actions; no console line, env write or error holds a value", async (t) => {
@@ -409,6 +473,7 @@ test("logs: only ::add-mask:: lines, and only in Actions; no console line, env w
   const out = [];
   const mask = masker(ENV, (text) => out.push(text));
   const env = Object.freeze({ ...ENV });
+  const processEnv = { ...process.env };
   const { fetch } = world();
   const minted = await mint("approve", {
     oidc: OIDC,
@@ -423,6 +488,7 @@ test("logs: only ::add-mask:: lines, and only in Actions; no console line, env w
   await assert.rejects(
     mint("approve", { oidc: OIDC, defaultBranch: "main", env, fetch: failing.fetch, mask }),
     (error) => {
+      assert.ok(error instanceof Error);
       noSecret(String(error.stack));
       return true;
     },
@@ -430,6 +496,7 @@ test("logs: only ::add-mask:: lines, and only in Actions; no console line, env w
   t.mock.restoreAll();
   assert.deepEqual(logged, []);
   assert.deepEqual(env, ENV);
+  assert.deepEqual({ ...process.env }, processEnv);
   const lines = out.join("").split("\n").filter(Boolean);
   assert.ok(lines.every((l) => l.startsWith("::add-mask::")));
   for (const value of SECRETS.filter((v) => v !== REQUEST_TOKEN))
@@ -440,4 +507,12 @@ test("logs: only ::add-mask:: lines, and only in Actions; no console line, env w
   const quiet = [];
   masker({ ...ENV, GITHUB_ACTIONS: "" }, (text) => quiet.push(text))(TOKEN);
   assert.deepEqual(quiet, []);
+  // A key stored on one line, armour and body together, is still masked; a bare armour line is not.
+  const oneLine = [];
+  masker(ENV, (text) => oneLine.push(text))(
+    "-----BEGIN PRIVATE KEY----- MIIEabc -----END PRIVATE KEY-----\n-----END PRIVATE KEY-----",
+  );
+  assert.deepEqual(oneLine, [
+    "::add-mask::-----BEGIN PRIVATE KEY----- MIIEabc -----END PRIVATE KEY-----\n",
+  ]);
 });

@@ -49,6 +49,8 @@ const REPO = /^[\w.-]+\/[\w.-]+$/;
 const BRANCH = /^(?!.*\.\.)[\w.-]+(?:\/[\w.-]+)*$/;
 const HTTPS = /^https:\/\/[\w.-]+(?::\d+)?(?:\/[\w./-]*)?$/;
 const SECRET_PATH = /^\/[\w./-]*$/;
+// Only a whole armour line; a key stored on one line, armour and body together, is masked.
+const ARMOUR = /^-----(?:BEGIN|END) [A-Z ]+-----$/;
 
 /**
  * @typedef {{ identityId: string, audience: string, domain: string, projectId: string, env: string, path: string }} Oidc
@@ -112,7 +114,7 @@ export function masker(env, write = (text) => process.stdout.write(text)) {
   return (/** @type {string} */ value) => {
     if (env.GITHUB_ACTIONS !== "true") return;
     for (const line of value.split(/\r?\n/))
-      if (line.trim() && !line.startsWith("-----")) write(`::add-mask::${line}\n`);
+      if (line.trim() && !ARMOUR.test(line.trim())) write(`::add-mask::${line}\n`);
   };
 }
 
@@ -262,15 +264,21 @@ export async function mint(role, options = {}) {
   let live = true;
   const revoke = async () => {
     if (!live) return;
-    live = false;
     await call("revoke", `${API}/installation/token`, { method: "DELETE", token });
+    // Only after GitHub confirms, so a failed revoke can be retried.
+    live = false;
   };
 
   // 8. The grant must be exactly what was asked, on exactly this repository.
   const problem = grantProblem(grant, permissions, repo, String(env.GITHUB_REPOSITORY_ID));
   if (problem) {
-    await revoke().catch(() => {});
-    throw fail(`access token: ${problem}; the token was revoked`);
+    const revoked = await revoke().then(
+      () => true,
+      () => false,
+    );
+    throw fail(
+      `access token: ${problem}; ${revoked ? "the token was revoked" : "revoking it failed (it expires within the hour)"}`,
+    );
   }
   const minted = { slug: String(installation.app_slug ?? ""), revoke };
   // Not enumerable, so a stray console.log or JSON.stringify of the result never shows it.
@@ -303,7 +311,8 @@ export function grantProblem(grant, permissions, repo, repoId) {
 }
 
 /**
- * Mints `role`'s token, hands it to `use`, and revokes it in a `finally`, on a return or a throw alike.
+ * Mints `role`'s token, hands it to `use`, and revokes it on a return or a throw alike; when `use` throws, its error
+ * is the one thrown, even if the revoke fails too.
  * @template T
  * @param {string} role
  * @param {Parameters<typeof mint>[1]} options
@@ -312,9 +321,13 @@ export function grantProblem(grant, permissions, repo, repoId) {
  */
 export async function withToken(role, options, use) {
   const minted = await mint(role, options);
+  let result;
   try {
-    return await use(minted.token, minted.slug);
-  } finally {
-    await minted.revoke();
+    result = await use(minted.token, minted.slug);
+  } catch (error) {
+    await minted.revoke().catch(() => {});
+    throw error;
   }
+  await minted.revoke();
+  return result;
 }
