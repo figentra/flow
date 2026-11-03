@@ -5,7 +5,8 @@
  *   off; build merges in board order with merge commits, ejects a conflicting member and goes on, and on red bisects
  *   the prefixes to eject the first breaking member (or stops when eject is manual); depart refuses unless the gate is
  *   green on the tip's exact sha, the move is a fast-forward and every `after` upstream is published, then closes the
- *   milestone and opens the next train; status reports it all; `--dry-run` writes nothing.
+ *   milestone and opens the next train; status reports it all; `--dry-run` writes nothing. A renamed gate App (ADR
+ *   0523) boards from either configured login, never a third.
  * Boundary: temporary repositories with a local bare origin; GitHub and the gate runner are fakes; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1746.
@@ -236,6 +237,28 @@ test("add: refuses a PR that is not green on its exact head, or not on the defau
     assert.match(r.problems?.join("\n") ?? "", /** @type {RegExp} */ (reason));
     assert.deepEqual(h.writes(), []);
   }
+});
+
+test("add: a renamed gate App's status boards from either configured login, not from a third", async () => {
+  const head = "a".repeat(40);
+  const by = (/** @type {string} */ login) =>
+    hub({
+      milestones: { [REPO]: [milestone("1.0.0")] },
+      prs: { 7: pr(7, head) },
+      statuses: { [head]: [{ ...green()[0], creator: { login } }] },
+    });
+  const both = (/** @type {ReturnType<typeof hub>} */ h) => ({
+    ...ctx(h, { dry: true }),
+    gateApp: [GATE_APP, "figentra-flow[bot]"],
+  });
+  assert.equal((await trainAdd(both(by(GATE_APP)), 7)).code, 0);
+  assert.equal((await trainAdd(both(by("figentra-flow[bot]")), 7)).code, 0);
+  const third = await trainAdd(both(by("figentra-other[bot]")), 7);
+  assert.equal(third.code, 1);
+  assert.match(
+    third.problems?.join() ?? "",
+    /posted by figentra-other\[bot\], not figentra-gate\[bot\] or figentra-flow\[bot\]/,
+  );
 });
 
 test("add: a green PR boards in order with the label and milestone; after the cut-off it waits for the next train", async () => {

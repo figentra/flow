@@ -102,7 +102,8 @@ export const SCHEMA = {
           type: "object",
           additionalProperties: false,
           required: ["login"],
-          properties: { slug: str, login: str },
+          // `aliases`: the App's other logins, for a rename (ADR 0523): its status counts from any of them.
+          properties: { slug: str, login: str, aliases: strs },
         },
         review: {
           type: "object",
@@ -229,7 +230,8 @@ export function validate(schema, value, path = "") {
 
 /**
  * @typedef {{ version?: number, preset?: string, team?: string, specs?: { dir?: string, bugsDir?: string }, tracker?: any, credentials?: any, runner?: any, secrets?: any,
- *             apps?: { gate?: { slug?: string, login: string }, review?: { slug: string }, owner?: string },
+ *             apps?: { gate?: { slug?: string, login: string, aliases?: string[] }, review?: { slug: string },
+ *                      owner?: string },
  *             gate?: { check?: string }, approve?: { ownerOnly?: string[], checks?: Record<string, string> },
  *             clean?: { keep?: string[], budget?: number }, review?: { required?: string[] },
  *             baseline?: { tasks?: string[], mustPass?: string[], install?: string, setup?: Record<string, unknown>[], branch?: string },
@@ -282,6 +284,17 @@ export function loadConfig(root) {
   }
   return { config: {}, source: undefined, warnings: [], errors: [] };
 }
+
+/**
+ * Who may post the gate status: `apps.gate.login`, or with its `aliases` the list of logins (a renamed App, ADR 0523).
+ * @param {Config["apps"]} apps
+ * @returns {string | string[] | undefined}
+ */
+export const gateLogins = (apps) =>
+  // Only a list counts: a bare string spread here would trust each of its characters.
+  Array.isArray(apps?.gate?.aliases) && apps.gate.aliases.length
+    ? [apps.gate.login, ...apps.gate.aliases].filter((x) => typeof x === "string" && x !== "")
+    : apps?.gate?.login;
 
 /** Raised when a command needs a setting the configuration does not hold, or the configuration is invalid. */
 export class ConfigError extends Error {}

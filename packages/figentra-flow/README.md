@@ -23,9 +23,10 @@ under `NO_COLOR` or in a pipe, and `doctor`, `status` and `status --metrics` tak
 `{ "schema": "fflow.doctor/1", "checks" }` (its check rows, each with `id`, `ok`, `status` and `group`, are `data`), and
 `status --json` and `status --metrics --json` put the snapshot and the metrics in `data`.
 
-`doctor` and `status` are ported to the engine. Every other command is passthrough, keeping its own flags and output
-until it is ported: `app`, `clean`, `gate`, `guard`, `init`, `land`, `linear`, `mcp`, `migrate`, `parse`, `readme`,
-`release`, `ship`, `spec`, `start`, `sync`, `team`, `trace` and `train`.
+`doctor`, `status` and the governance commands (`update`, `check`, `diff`, `validate`) are ported to the engine.
+Every other command is passthrough, keeping its own flags and output until it is ported: `app`, `clean`, `gate`,
+`guard`, `init`, `land`, `linear`, `mcp`, `migrate`, `parse`, `readme`, `release`, `ship`, `spec`, `start`, `sync`,
+`team`, `trace` and `train`.
 
 `@stackra/console` and `@stackra/validation` (0.7.1) are runtime dependencies of Flow (ADR 0506 decision 8, owner
 2026-11-03; this replaces STA-1945 NFR-1's "no runtime dependency, an optional peer"). They come from the Stackra
@@ -39,7 +40,12 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow init [--force]`                                                | writes `.flow/` (README, a starter constitution, `.gitignore`), a starter `flow.config.json` when there is none, and renders the `flow-*` skills                                                 |
 | `fflow migrate [--dry-run]`                                           | moves a spec-kit repository onto `.flow/` (constitution, `.specify/` and `.agents/speckit/` deleted, scripts, pins and skips), then syncs                                                        |
 | `fflow spec paths\|setup-plan\|setup-tasks\|template`                 | the spec folder, its documents and the resolved templates as JSON, for the `flow-*` commands                                                                                                     |
-| `fflow sync [--direct]`                                               | renders the `flow-*` skills (for the repository's projector, or Claude Code and OpenCode directly) and writes `.flow/lock.json`                                                                  |
+| `fflow sync [--direct]`                                               | renders the `flow-*` skills (for the repository's projector, or Claude Code and OpenCode directly), each with its provenance header, and writes `.flow/lock.json`; refuses a preset that differs from the lock |
+| `fflow update [--preset <version>]`                                   | prints the diff, adopts the installed preset into the lock, then syncs; `--preset` refuses any version but the installed one |
+| `fflow check`                                                         | the CI check: fails, naming each cause, on an owned file that differs from the lock, a preset that differs from its locked digest, or an invalid config; writes nothing |
+| `fflow diff`                                                          | prints every file `sync` or `update` would add, change or delete, with the lines; writes nothing |
+| `fflow validate`                                                      | checks `flow.config.json` against its schema, naming each field that breaks it; writes nothing |
+| `… --workspace <dir>`                                                 | runs `sync`, `update`, `check`, `diff` or `validate` in every repository under `<dir>` that has `flow.config.json`, one line each |
 | `fflow gate run [--ref b] [--box host] [-- flags]`                    | the repository's checks through the configured runner (or on `--box`) at the pushed head; the box posts `fflow/gate` as the gate App                                                             |
 | `fflow land [<pr>] [--stack] [--dry-run] [--manual-ok]`               | squash-merges a PR that is green on `fflow/gate` from the gate App on its head and has its approvals; Linear Done, worktree and branch removed                                                   |
 | `fflow train <open\|add\|close\|build\|eject\|depart\|status>`        | the release train: board green PRs, cut off, build `train/<version>` by merge commits with bisect ejection, depart by fast-forward (see [Release trains](#release-trains))                       |
@@ -154,7 +160,9 @@ setting you have not made refuses and names it.
   `maxBytes` defaults to 5 MB. A change that adds or changes such a file is refused, with each file named.
 
 - `apps` names the GitHub Apps Flow trusts:
-  - `gate.login`: the gate App whose status `land` trusts;
+  - `gate.login`: the gate App whose status `land` trusts; `gate.aliases` lists its other logins while the App is
+    renamed, and its status counts from any of them. Add the new login as an alias before the rename; in the same step
+    as the rename, make it the `login` and drop the alias, since GitHub frees the old name for another App;
   - `review.slug`: the review App whose verdict counts;
   - `owner`: the owner whose `owner-approval` review also counts.
 
@@ -224,7 +232,7 @@ check exited 0. Nothing secret reaches the comment or the log. Exit codes: 0 gre
 `fflow land` is the lander's checklist as code. The PR must be:
 
 - open, not a draft and not conflicting, and based on the default branch (`--stack` lands a stack bottom-up);
-- green on `fflow/gate` on its exact head, posted by the configuration's `apps.gate.login`;
+- green on `fflow/gate` on its exact head, posted by the configuration's `apps.gate.login` (or one of its `aliases`);
 - titled with a conventional commit header;
 - approved as its spec's tier requires (ADR 0502), and at Tasked or later for a feature or big spec.
 - for a change with a spec: reviewed. The `stackra-reviewer` App's unedited `AI-REVIEW: PASS <head> base=<base>`

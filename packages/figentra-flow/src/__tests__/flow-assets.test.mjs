@@ -4,18 +4,28 @@
  *   and exactly the eight `flow-*` commands; every command and the checklist and constitution templates carry the
  *   spec-kit attribution line; no asset still names spec-kit's machinery (`.specify`, `SPECIFY_*`, `extensions.yml`,
  *   `speckit`, the bash scripts, `{SCRIPT}`); the package ships `THIRD_PARTY_NOTICES.md`; and the spec and plan
- *   templates carry the sections of STA-1945 A-3 per tier, which `/flow-specify` asks for.
- * Boundary: reads the package's files; no process, no network.
+ *   templates carry the sections of STA-1945 A-3 per tier, which `/flow-specify` asks for. What `sync` writes from
+ *   them starts with its provenance header, and `.flow/lock.json` v2 records each digest; a v1 lock still reads
+ *   (STA-1945).
+ * Boundary: reads the package's files and writes temporary folders; no process, no network.
  * Runtime: node
  * Governing contract: ADR 0022; ADR 0502; ADR 0510; STA-1729; STA-1945.
  */
 // @covers sta-1729:FR-11
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+
 import { checkDesign, checkSmallDesign, DESIGN_SECTIONS } from "../commands/gate.mjs";
+import { sync } from "../commands/sync.mjs";
+import { LOCK } from "../lib/flow-dir.mjs";
+import { digestOf, readLock, treeDigest } from "../lib/lock.mjs";
+import { VERSION } from "../lib/product.mjs";
+import { commentStyle, headerText } from "../lib/provenance.mjs";
+import { installProblems } from "../lib/render.mjs";
 import { strip } from "../lib/spec-parse.mjs";
+import { governed } from "./__fixtures__/governed.mjs";
 
 const PKG = new URL("../..", import.meta.url).pathname;
 const FLOW = join(PKG, "assets", "flow");
@@ -86,6 +96,73 @@ test("flow assets: derived texts carry the attribution; nothing names spec-kit's
       "THIRD_PARTY_NOTICES.md",
     ),
   );
+});
+
+// @covers sta-1945:FR-2 sta-1945:FR-3 sta-1945:AC-2 sta-1945:P-004 sta-1945:P-006
+test("writeRendered: every comment-capable file starts with its header, and the lock is v2 with each digest", (t) => {
+  const root = governed(t, { config: { apps: { owner: "o" } } });
+  const { files } = sync(root, { direct: true, log: () => {} });
+  assert.ok(files.includes(".github/CODEOWNERS"));
+  assert.ok(files.includes(".github/workflows/fflow-approve.yml"));
+  const lock = /** @type {import("../lib/lock.mjs").Lock} */ (readLock(root));
+  assert.deepEqual(
+    { ...lock, files: undefined },
+    {
+      lockVersion: 2,
+      flow: VERSION,
+      preset: {
+        name: "neutral",
+        version: VERSION,
+        digest: treeDigest(join(FLOW, "presets", "neutral")),
+      },
+      profile: "*",
+      overrides: "",
+      files: undefined,
+      skills: {},
+    },
+  );
+  assert.deepEqual(Object.keys(lock.files), files);
+  const words = headerText({ preset: "neutral", version: VERSION });
+  for (const path of files) {
+    const text = readFileSync(join(root, path), "utf8");
+    assert.equal(lock.files[path], digestOf(text), `${path} is locked as written`);
+    const style = commentStyle(path);
+    if (style === "#") assert.ok(text.startsWith(`# ${words}\n`), path);
+    else if (style === "frontmatter")
+      assert.ok(
+        text.startsWith(`---\n# ${words}\n`) || text.startsWith(`<!-- ${words} -->\n`),
+        path,
+      );
+    else assert.fail(`${path} has no comment style`);
+  }
+  assert.deepEqual(installProblems(root), []);
+});
+
+// @covers sta-1945:FR-2 sta-1945:AC-2
+test("installProblems reads a v1 lock; the next sync rewrites it as v2", (t) => {
+  const root = governed(t);
+  sync(root, { log: () => {} });
+  const v2 = /** @type {import("../lib/lock.mjs").Lock} */ (readLock(root));
+  const v1 = {
+    version: VERSION,
+    preset: "neutral",
+    files: Object.fromEntries(
+      Object.entries(v2.files).map(([p, d]) => [p, d.slice("sha256:".length)]),
+    ),
+  };
+  writeFileSync(join(root, LOCK), JSON.stringify(v1));
+  assert.deepEqual(installProblems(root), []);
+  writeFileSync(join(root, LOCK), JSON.stringify({ ...v1, version: "0.0.1" }));
+  assert.match(
+    installProblems(root).join(),
+    /written by fflow 0\.0\.1, .* is installed \(run `fflow update`\)/,
+  );
+  sync(root, { log: () => {} });
+  assert.equal(JSON.parse(readFileSync(join(root, LOCK), "utf8")).lockVersion, 2);
+  assert.deepEqual(installProblems(root), []);
+  const [first] = Object.keys(v1.files);
+  writeFileSync(join(root, first), "hand edit\n");
+  assert.match(installProblems(root).join(), /differs from what `fflow sync` rendered/);
 });
 
 // STA-1945 A-3: the spec and plan templates carry the sections FR-26 and FR-27 name, per tier; worked examples sit in
