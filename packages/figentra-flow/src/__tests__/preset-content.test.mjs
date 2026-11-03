@@ -1,10 +1,12 @@
 /**
  * Figentra Flow file contract:
  * Purpose: hold STA-1945's C6 to its contract: the stackra preset carries core's content (27 role agents beside the
- *   three stewards, 15 rules, 38 skills, 29 reference files, routing and models) and `sync` renders all of it, the
- *   skills beside the `flow-*` ones and the reference, routing and models always under `.agents/`, byte for byte; the
- *   neutral preset renders none of it; `renderReference` reads only the preset folder it is given; the stackra
- *   profiles' splits name only what the preset carries, with the counts each profile selects.
+ *   three stewards, 15 rules, 38 skills, 29 reference files, routing and models) and `sync` renders it, the skills
+ *   beside the `flow-*` ones and the reference, routing and models always under `.agents/`, as in the preset with
+ *   the provenance header; each stackra profile renders its split (agents and skills, counted) and the lock records
+ *   it; the neutral preset renders none of it; a preset skill named `flow-*` or a file that is not UTF-8 is refused;
+ *   `renderReference` reads only the preset folder it is given; the profiles name only what the preset carries, and
+ *   `validate` names each agent or skill a profile selects that its preset lacks.
  * Boundary: temporary folders; no network.
  * Runtime: node
  * Governing contract: STA-1945 (C6, D2).
@@ -14,12 +16,17 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { sync } from "../commands/sync.mjs";
+import { validateRepo } from "../commands/validate.mjs";
 import { FLOW_ASSETS } from "../lib/flow-dir.mjs";
+import { readLock } from "../lib/lock.mjs";
+import { VERSION } from "../lib/product.mjs";
+import { withHeader } from "../lib/provenance.mjs";
 import { installProblems, renderReference } from "../lib/render.mjs";
 import { parseYaml } from "../lib/yaml.mjs";
+import { governed, OWN_PRESET, snapshot } from "./__fixtures__/governed.mjs";
 
 const STACKRA = join(FLOW_ASSETS, "presets", "stackra");
 const quiet = { log: () => {} };
@@ -28,11 +35,15 @@ const quiet = { log: () => {} };
  * A repository on `preset`, removed after the test.
  * @param {import("node:test").TestContext} t
  * @param {string} preset
+ * @param {string} [profile]
  */
-function repo(t, preset) {
+function repo(t, preset, profile) {
   const root = mkdtempSync(join(tmpdir(), `flow-content-${preset}-`));
   t.after(() => rmSync(root, { recursive: true }));
-  writeFileSync(join(root, "flow.config.json"), JSON.stringify({ version: 1, preset }));
+  writeFileSync(
+    join(root, "flow.config.json"),
+    JSON.stringify({ version: 1, preset, ...(profile ? { profile } : {}) }),
+  );
   return root;
 }
 
@@ -55,18 +66,85 @@ test("sync renders core's content from the stackra preset, file for file, and ho
   for (const skill of skills) assert.ok(files.includes(`.agents/skills/${skill}/SKILL.md`), skill);
   assert.equal(under(files, ".agents/reference/").length, 29);
   assert.ok(files.includes(".agents/reference/encore/encore-api/SKILL.md"));
+  // As in the preset, with the provenance header where the file can carry one (a shebang stays first).
   for (const path of [
     "skills/archify/bin/archify.mjs",
+    "skills/tdd/SKILL.md",
     "reference/encore/encore-api/LICENSE",
     "routing.yaml",
     "models.yaml",
   ])
     assert.equal(
       readFileSync(join(root, ".agents", path), "utf8"),
-      readFileSync(join(STACKRA, path), "utf8"),
+      withHeader(`.agents/${path}`, readFileSync(join(STACKRA, path), "utf8"), {
+        preset: "stackra",
+        version: VERSION,
+      }),
       path,
     );
+  assert.equal(readLock(root)?.profile, "framework");
   assert.deepEqual(installProblems(root), []);
+});
+
+test("each stackra profile renders its split of agents and skills, and the lock records it", (t) => {
+  /** [agents, skills]: everything for core; all but compiler-engineer where members are built; brand's design side. */
+  const expected = {
+    framework: [30, 46],
+    platform: [29, 46],
+    product: [29, 46],
+    brand: [9, 17],
+    starter: [29, 46],
+  };
+  for (const [profile, [agents, skills]] of Object.entries(expected)) {
+    const root = repo(t, "stackra", profile);
+    const { files } = sync(root, quiet);
+    const rendered = names(files, ".agents/agents/");
+    assert.equal(rendered.length, agents, `${profile}: agents`);
+    assert.equal(names(files, ".agents/skills/").length, skills, `${profile}: skills`);
+    assert.equal(rendered.includes("compiler-engineer.md"), profile === "framework", profile);
+    assert.equal(readLock(root)?.profile, profile);
+    assert.deepEqual(installProblems(root), [], profile);
+    assert.deepEqual(validateRepo(root).problems, [], profile);
+  }
+  const brand = names(sync(repo(t, "stackra", "brand"), quiet).files, ".agents/skills/");
+  assert.ok(brand.includes("archify") && brand.includes("flow-plan"));
+  assert.equal(brand.includes("tdd"), false);
+});
+
+test("a preset skill named flow-*, or a skill file that is not UTF-8, is refused and nothing is written", (t) => {
+  for (const [path, bytes] of /** @type {[string, Buffer][]} */ ([
+    ["skills/flow-plan/SKILL.md", Buffer.from("---\nname: flow-plan\n---\n")],
+    ["skills/logo/logo.png", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0xfe])],
+  ])) {
+    const root = governed(t, { own: true });
+    mkdirSync(join(root, OWN_PRESET, dirname(path)), { recursive: true });
+    writeFileSync(join(root, OWN_PRESET, path), bytes);
+    const before = snapshot(root);
+    assert.throws(() => sync(root, quiet), /flow-\* is the commands' name|is not UTF-8 text/, path);
+    assert.deepEqual(snapshot(root), before, "a refused sync writes nothing");
+  }
+});
+
+test("validate names each agent or skill the profile selects that its preset lacks", (t) => {
+  const root = governed(t, { own: true });
+  const file = join(root, OWN_PRESET, "preset.yml");
+  writeFileSync(
+    file,
+    readFileSync(file, "utf8").replace(
+      /default: default[\s\S]*/,
+      `default: lean
+profiles:
+  lean:
+    agents: [git-steward, ghost]
+    skills: [flow-plan, nowhere]
+    hooks: ["*"]
+`,
+    ),
+  );
+  assert.deepEqual(validateRepo(root).problems, [
+    'profile "lean" selects agents "ghost", which the preset lacks',
+    'profile "lean" selects skills "nowhere", which the preset lacks',
+  ]);
 });
 
 test("direct: the skills go to .claude/skills; reference, routing and models stay under .agents/", (t) => {
@@ -90,7 +168,7 @@ test("the neutral preset renders none of core's content", (t) => {
   assert.equal(files.includes(".agents/models.yaml"), false);
 });
 
-test("the stackra profiles split core's content: every name is in the preset, with the expected counts", () => {
+test("the stackra profiles name only what the preset carries, with the counts each selects", () => {
   const manifest = parseYaml(readFileSync(join(STACKRA, "preset.yml"), "utf8"));
   assert.equal(manifest.default, "framework");
   const md = (/** @type {string} */ f) => f.replace(/\.md$/, "");

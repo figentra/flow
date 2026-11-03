@@ -6,8 +6,9 @@
  *   `.agents/agents/<id>.md` or, with `direct`, `.claude/agents/<id>.md`), the approval workflow (its secret names
  *   from `preset.yml`'s `approve`) and, with `apps.owner`, a CODEOWNERS for the owner-only paths (STA-1856); the
  *   preset's own skills (`skills/<name>/**`, beside the `flow-*` ones) and, with `renderReference`, its agent
- *   reference, routing and models under `.agents/` (STA-1945, C6). Only the skills and agents the config's profile
- *   selects are rendered, and the lock records the profile (STA-1945 FR-6). Each written file carries its provenance
+ *   reference, routing and models under `.agents/` (STA-1945, C6); a preset skill folder named `flow-*` or a preset
+ *   file that is not UTF-8 is refused. Only the skills and agents the config's profile selects are rendered, the lock
+ *   records the profile, and `profileGaps` names what a profile selects that the preset lacks (STA-1945 FR-6). Each written file carries its provenance
  *   header and `.flow/lock.json` v2 records the Flow version, the preset with its digest, the profile and each
  *   written file's digest (STA-1945 FR-2, FR-3); `installProblems`, reading a v1 or v2 lock, is the check that
  *   replaces spec-kit's tripwire: no hand edit, no forgotten `sync`, and no spec-kit leftover. With a
@@ -28,7 +29,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 
 import { approveWorkflow } from "./approve-workflow.mjs";
 import { baselineWorkflow } from "./baseline-workflow.mjs";
@@ -150,9 +151,18 @@ export function render(root, { direct = false } = {}) {
   // STA-1871: the preset's agent rules (the worktree rule among them).
   for (const [id, text] of presetDocs(root, "rules"))
     out.set(direct ? `.claude/rules/${id}.md` : `.agents/rules/${id}.md`, text);
-  // STA-1945 (D2): the preset's own skills ship in the package, file for file.
-  for (const [path, text] of presetTree(join(presetDir(root), "skills")))
-    out.set(`${direct ? ".claude" : ".agents"}/skills/${path}`, text);
+  // STA-1945 (D2): the preset's own skills ship in the package, file for file, each folder as the profile selects it.
+  const skills = join(presetDir(root), "skills");
+  for (const [path, text] of presetTree(skills)) {
+    const name = path.split("/")[0];
+    // A preset folder named like a rendered `flow-*` skill would silently replace it.
+    if (name.startsWith("flow-"))
+      throw new ConfigError(
+        `${join(skills, name)}: flow-* is the commands' name; rename the skill`,
+      );
+    if (selects(profile, "skills", name))
+      out.set(`${direct ? ".claude" : ".agents"}/skills/${path}`, text);
+  }
   for (const [path, text] of renderReference({ presetDir: presetDir(root) })) out.set(path, text);
   const readme = renderReadme(root);
   if (readme !== undefined) out.set("README.md", readme);
@@ -264,16 +274,51 @@ export function profileProblem(root) {
 }
 
 /**
- * Every file under `dir`, its path relative to `dir` and its text, sorted by path; none when `dir` is missing.
+ * The agents and skills the config's profile names that its preset does not carry (STA-1945 C6): `sync` renders
+ * nothing for them, so `validate` names each one.
+ * @param {string} root
+ * @returns {string[]}
+ * @throws {ConfigError} as `selectedProfile` does; call it only once `profileProblem` found none
+ */
+export function profileGaps(root) {
+  const profile = selectedProfile(root);
+  const skills = join(presetDir(root), "skills");
+  const carried = {
+    agents: [...presetDocs(root, "agents").keys()],
+    skills: [
+      ...VERBS.map((verb) => `flow-${verb}`),
+      ...(existsSync(skills) ? readdirSync(skills) : []),
+    ],
+  };
+  return /** @type {const} */ (["agents", "skills"]).flatMap((kind) =>
+    profile[kind]
+      .filter((id) => id !== "*" && !carried[kind].includes(id))
+      .map((id) => `profile "${profile.name}" selects ${kind} "${id}", which the preset lacks`),
+  );
+}
+
+/**
+ * Every file under `dir`, its `/`-separated path relative to `dir` and its text, sorted by path; none when `dir` is
+ * missing.
  * @param {string} dir
  * @returns {[string, string][]}
+ * @throws {ConfigError} on a file that is not UTF-8 text: rendered as text it would be corrupted, and the lock with it
  */
 function presetTree(dir) {
   if (!existsSync(dir)) return [];
   return readdirSync(dir, { recursive: true, encoding: "utf8" })
     .filter((path) => statSync(join(dir, path)).isFile())
+    .map((path) => path.split(sep).join("/"))
     .toSorted()
-    .map((path) => [path, readFileSync(join(dir, path), "utf8")]);
+    .map((path) => {
+      const bytes = readFileSync(join(dir, path));
+      const text = bytes.toString("utf8");
+      if (!Buffer.from(text, "utf8").equals(bytes))
+        throw new ConfigError(
+          `${join(dir, path)} is not UTF-8 text; a preset ships text files only`,
+        );
+      return /** @type {[string, string]} */ ([path, text]);
+    });
 }
 
 /**

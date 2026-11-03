@@ -1,0 +1,6 @@
+// Figentra Flow file contract:
+// Purpose: oxlint settings for the package. The presets' vendored skill scripts (archify's generated validators among
+//          them) are copies kept byte for byte, as core keeps them, so they are not linted here.
+{
+  "ignorePatterns": ["assets/**"],
+}

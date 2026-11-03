@@ -1,8 +1,9 @@
 /**
  * Figentra Flow file contract:
  * Purpose: `fflow validate [--workspace <dir>]` (STA-1945 FR-1, AC-1): checks `flow.config.json` against its schema and
- *   names each field that breaks it, and a `profile` the preset lacks (FR-6); a repository without the file is a
- *   problem too. The overrides' schema and the mandatory policies join with STA-1945 PR 2.
+ *   names each field that breaks it, a `profile` the preset lacks (FR-6), and each agent or skill that profile names
+ *   but the preset does not carry (C6); a repository without the file is a problem too. The overrides' schema and the
+ *   mandatory policies join with STA-1945 PR 2.
  * Boundary: reads only; writes nothing.
  * Runtime: node
  * Governing contract: STA-1945 (FR-1, FR-6, P-001).
@@ -10,7 +11,7 @@
  */
 import { loadConfig } from "../lib/config.mjs";
 import { CONFIG_FILE, NAME } from "../lib/product.mjs";
-import { profileProblem } from "../lib/render.mjs";
+import { profileGaps, profileProblem } from "../lib/render.mjs";
 import { runIn } from "../lib/workspace-run.mjs";
 
 /**
@@ -22,7 +23,10 @@ export function validateRepo(root) {
   const { source, errors, warnings } = loadConfig(root);
   if (!source) return { problems: [`no ${CONFIG_FILE} (run \`${NAME} init\`)`], warnings };
   const unresolved = profileProblem(root);
-  return { problems: unresolved ? [...errors, unresolved] : errors, warnings };
+  return {
+    problems: [...errors, ...(unresolved ? [unresolved] : profileGaps(root))],
+    warnings,
+  };
 }
 
 /**
