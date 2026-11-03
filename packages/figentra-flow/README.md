@@ -246,6 +246,12 @@ everything at the checked head: the files from the merge base, and each required
 trusted source is the App the ruleset pins (`integration_id`), or the login `approve.checks` or the gate App names.
 The author must not be the approving App.
 
+On a red main the check compares failures with main's recorded baseline (STA-1945). A required check that fails on
+the head and, from its trusted source, on the commit that left the base's nearest baseline too is tolerated, but only
+while the ruleset requires the `Baseline` check and it is green on the head, since that check compares each task. A
+check that passed or never ran there still refuses, and with no baseline every required check must be green. The
+approval names the baseline's commit and the checks it tolerated.
+
 The workflow then either approves at that head or comments the reasons. After approving, it re-reads the PR and
 dismisses its own review if the head moved. The App's id and key are secrets of that environment, under names of
 their own: `FFLOW_APPROVER_APP_ID` and `FFLOW_APPROVER_PRIVATE_KEY`, unless the preset's `approve`

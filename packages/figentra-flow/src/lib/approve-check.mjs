@@ -10,7 +10,11 @@
  *   - the author is not the approving App;
  *   - nothing between the merge base and that head is owner-only (paths, a rename's old path, root scripts, a
  *     dependency moved off its catalog);
- *   - every required check on that head is green from its trusted source, with one success;
+ *   - every required check on that head is green from its trusted source, with one success, or it adds no new failure
+ *     against the default branch's recorded baseline (STA-1945 FR-22): a required check that fails on the head and,
+ *     from its trusted source, on the baseline's commit too is not new, while the `Baseline` check, which the ruleset
+ *     must then require, is green on the head and never tolerated itself (it compares each task with the baseline,
+ *     a newly reached failure excepted). Without a baseline every required check must be green, as before;
  *   - the base's ruleset requires the code owner's review and the base holds `.github/CODEOWNERS`, so GitHub itself
  *     asks the owner for owner-only paths.
  *   Everything is read at that SHA, so a later push cannot change what was checked. After approving it re-reads the
@@ -19,13 +23,15 @@
  * Boundary: GitHub REST only: reads with the job's token, the review and the comment with the App's token. It never
  *   checks out or runs the PR's code and never merges.
  * Runtime: node (GitHub Actions)
- * Governing contract: STA-1856 FR-4 (the security review of 2026-11-01).
+ * Governing contract: STA-1856 FR-4 (the security review of 2026-11-01); STA-1945 FR-22.
  * Secrets: `GITHUB_TOKEN` and `APP_TOKEN` from the environment; never printed.
  */
 import { basename } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { findBaseline } from "./baseline.mjs";
 import { ownerOnlyPaths, packageFindings } from "./owner-only.mjs";
+import { BASELINE_CHECK } from "./product.mjs";
 import { requiredCheckState, requiredContexts } from "./required-checks.mjs";
 
 /** GitHub lists at most this many files in a comparison; at the limit the owner reviews it. */
@@ -56,7 +62,9 @@ async function textAt(api, repo, path, ref) {
  * Every reason not to approve, and the head it checked.
  * @param {{ api: Rest, repo: string, number: number, expectedHead: string, approver: string, ref: string,
  *           environment: string, trusted?: Record<string, string>, extraOwnerOnly?: string[] }} input
- * @returns {Promise<{ refuse: string[], sha?: string, nodeId?: string }>}
+ * @returns {Promise<{ refuse: string[], sha?: string, nodeId?: string,
+ *                     baseline?: { sha: string, tolerated: string[] } }>} `baseline`: what the failures were compared
+ *   against, and the required checks failing there too
  */
 export async function decide({
   api,
@@ -152,30 +160,54 @@ export async function decide({
   if ((await textAt(api, repo, ".github/CODEOWNERS", p.base.sha)) === undefined)
     refuse.push(`${p.base.ref} has no .github/CODEOWNERS (\`fflow sync\` writes it)`);
   const required = requiredContexts(ruleList);
+  /** @type {{ sha: string, tolerated: string[] } | undefined} */
+  let baseline;
   if (!required.length) refuse.push(`${p.base.ref} requires no status check`);
   else {
-    const state = requiredCheckState({
-      required,
-      statuses:
-        (await api("GET", `/repos/${repo}/commits/${sha}/statuses?per_page=100`)).json ?? [],
-      checkRuns:
-        (await api("GET", `/repos/${repo}/commits/${sha}/check-runs?per_page=100`)).json
-          ?.check_runs ?? [],
-      trusted,
-    });
+    const at = async (/** @type {string} */ commit, contexts = required) =>
+      requiredCheckState({
+        required: contexts,
+        statuses:
+          (await api("GET", `/repos/${repo}/commits/${commit}/statuses?per_page=100`)).json ?? [],
+        checkRuns:
+          (await api("GET", `/repos/${repo}/commits/${commit}/check-runs?per_page=100`)).json
+            ?.check_runs ?? [],
+        trusted,
+      });
+    const state = await at(sha);
+    let failed = state.failed;
+    // STA-1945 FR-22: on a red default branch, a check failing on its recorded baseline too is not a new failure.
+    if (failed.length) {
+      const found = await findBaseline({ api, repo, base: p.base.sha });
+      const gate = required.filter((r) => r.context === BASELINE_CHECK);
+      if ("searched" in found)
+        refuse.push(
+          `no baseline at ${p.base.sha} or its ${found.searched.length - 1} nearest ancestors, so every required check must be green`,
+        );
+      // Only the per-task comparison shows the failures are the same ones; a skipped Baseline compared nothing.
+      else if (!gate.length || (await at(sha, gate)).succeeded !== 1)
+        refuse.push(
+          `a failure is tolerated only beside a green \`${BASELINE_CHECK}\` check, which ${p.base.ref}'s ruleset must require`,
+        );
+      else {
+        // Baseline itself is green here, so a red Baseline run on main never excuses one on the head.
+        const before = (await at(found.sha)).failed;
+        const tolerated = failed.filter((c) => before.includes(c));
+        failed = failed.filter((c) => !tolerated.includes(c));
+        baseline = { sha: found.sha, tolerated };
+      }
+    }
     if (state.pending.length)
       refuse.push(`required checks still running: ${state.pending.join(", ")}`);
-    if (state.failed.length) refuse.push(`required checks failed: ${state.failed.join(", ")}`);
+    if (failed.length)
+      refuse.push(
+        `required checks failed${baseline ? ` that do not fail on the baseline at ${baseline.sha}` : ""}: ${failed.join(", ")}`,
+      );
     refuse.push(...state.untrusted);
-    if (
-      !state.pending.length &&
-      !state.failed.length &&
-      !state.untrusted.length &&
-      !state.succeeded
-    )
+    if (!state.pending.length && !failed.length && !state.untrusted.length && !state.succeeded)
       refuse.push("no required check succeeded (all were skipped)");
   }
-  return { refuse, sha, nodeId: p.node_id };
+  return { refuse, sha, nodeId: p.node_id, baseline };
 }
 
 /** Turns auto-merge off on the PR with node `id`. */
@@ -219,7 +251,7 @@ export async function main(env, deps = {}) {
   const repo = String(env.REPO);
   const number = Number(env.PR);
   const run = String(env.RUN_URL ?? "");
-  const { refuse, sha, nodeId } = await decide({
+  const { refuse, sha, nodeId, baseline } = await decide({
     api: read,
     repo,
     number,
@@ -240,7 +272,11 @@ export async function main(env, deps = {}) {
   const review = await write("POST", `/repos/${repo}/pulls/${number}/reviews`, {
     commit_id: sha,
     event: "APPROVE",
-    body: `Approved at ${sha}: no owner-only change, every required check green from its source ([run](${run})).`,
+    body: baseline
+      ? `Approved at ${sha}: no owner-only change, and no new failure against the default branch's baseline at ` +
+        `${baseline.sha}. Tolerated, as they fail there too: ${baseline.tolerated.map((c) => `\`${c}\``).join(", ")}. ` +
+        `\`${BASELINE_CHECK}\` compared each task; its summary lists the pre-existing and newly reached ones ([run](${run})).`
+      : `Approved at ${sha}: no owner-only change, every required check green from its source ([run](${run})).`,
   });
   if (!review.ok) {
     log(`::error::the review was refused (HTTP ${review.status})`);
