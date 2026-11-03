@@ -61,8 +61,8 @@ export function meets(version, range) {
 }
 
 /**
- * One row per machine-only skill the preset lists (STA-1945 FR-8, D1), naming the source to install it from on this
- * machine; a `third-party.yml` that is not valid fails.
+ * One row per machine-only skill the preset lists (STA-1945 FR-8, D1), naming where on this machine to install it
+ * (the user's Claude skills folder) and the source to install it from; a `third-party.yml` that is not valid fails.
  * @param {string} root
  * @returns {Check[]}
  */
@@ -86,7 +86,7 @@ export function machineOnlyRows(root) {
     .map((s) => ({
       id: `machine-only:${s.id}`,
       ok: true,
-      detail: `install it on this machine from ${s.source} (${s.licence}); ${NAME} sync never installs it and no repository carries it`,
+      detail: `install it on this machine into ~/.claude/skills/${s.id}/ from ${s.source} (${s.licence}); ${NAME} sync never installs it and no repository carries it`,
     }));
 }
 

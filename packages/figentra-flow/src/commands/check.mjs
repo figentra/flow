@@ -9,8 +9,6 @@
  * Governing contract: STA-1945 (FR-1, FR-3, FR-8, P-001, P-005, P-013).
  * Secrets: none.
  */
-import { basename } from "node:path";
-
 import { ConfigError, loadConfig } from "../lib/config.mjs";
 import { presetDir } from "../lib/flow-dir.mjs";
 import { LockError, readLock } from "../lib/lock.mjs";
@@ -54,8 +52,8 @@ function machineOnlyCommitted(root) {
   }
   const sources = new Map(skills.map((s) => [s.id, s.source]));
   return machineOnlyProblems(root, skills).map(
-    (dir) =>
-      `${dir} is the machine-only skill ${basename(dir)}, which no repository carries (remove it from git; install it on the machine from ${sources.get(basename(dir))}, as \`${NAME} doctor\` lists)`,
+    ({ dir, id }) =>
+      `${dir} is the machine-only skill ${id}, which no repository carries (remove it from git; install it on the machine from ${sources.get(id)}, as \`${NAME} doctor\` lists)`,
   );
 }
 

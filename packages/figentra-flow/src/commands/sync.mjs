@@ -21,8 +21,16 @@ import { fileURLToPath } from "node:url";
 
 import { NAME } from "../lib/product.mjs";
 import { ConfigError } from "../lib/config.mjs";
+import { presetDir } from "../lib/flow-dir.mjs";
 import { LockError, NewerLockError, readLock } from "../lib/lock.mjs";
-import { migrateLegacy, presetDrift, render, writeRendered } from "../lib/render.mjs";
+import {
+  legacyConflict,
+  migrateLegacy,
+  presetDrift,
+  render,
+  writeRendered,
+} from "../lib/render.mjs";
+import { installSkills, loadThirdParty } from "../lib/skills.mjs";
 import { runIn } from "../lib/workspace-run.mjs";
 
 /** The package's assets folder. */
@@ -72,11 +80,16 @@ export function sync(root, { direct = false, log = console.log, adopt = false, f
   const lock = lockOrNone(root);
   const drift = adopt ? undefined : presetDrift(root, lock);
   if (drift) throw new SyncRefusal(drift);
+  // Both config files would resolve the wrong preset; refuse before the install prunes anything.
+  const conflict = legacyConflict(root);
+  if (conflict) throw new ConfigError(conflict);
+  // First: a skill that may not or cannot install refuses before the rename or the render writes anything.
+  installSkills(root, loadThirdParty(presetDir(root)), { fetchTree });
   const migrated = migrateLegacy(root);
   if (migrated.error) throw new ConfigError(migrated.error);
   for (const line of migrated.done) log(`${NAME} sync: ${line} (the ${NAME} rename)`);
   const files = render(root, { direct });
-  const removed = writeRendered(root, files, { fetchTree });
+  const removed = writeRendered(root, files);
   for (const p of removed) log(`${NAME} sync: removed ${p} (spec-kit)`);
   log(`${NAME} sync: rendered ${files.size} file(s); .flow/lock.json written`);
   return { files: [...files.keys()], removed };

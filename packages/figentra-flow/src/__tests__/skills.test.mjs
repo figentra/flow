@@ -3,9 +3,12 @@
  * Purpose: hold the third-party skills to STA-1945 FR-8 and D1: `third-party.yml` is checked entry by entry; only an
  *   allowed licence or the owner's entry installs; each skill is fetched into a temporary folder and moves into the
  *   git-ignored `.agents/skills/.vendor/` only when every one matches its pinned digest; a machine-only skill is never
- *   fetched, installed or locked, and `machineOnlyProblems` finds a committed one; `sync` locks the pins and refuses
- *   without writing; the stackra preset lists D1's machine-only skills.
- * Boundary: temporary folders and scratch git repositories; `fetchTree` copies a local folder, so no network.
+ *   fetched, installed or locked, and `machineOnlyProblems` finds a committed one by folder or front-matter name; a
+ *   vendor folder that is a symbolic link refuses; `gitFetchTree` fetches only the skill's folder at its commit;
+ *   `sync` locks the pins and refuses without writing (a legacy config not renamed); the stackra preset lists D1's
+ *   machine-only skills.
+ * Boundary: temporary folders and scratch git repositories; `fetchTree` copies a local folder, and `gitFetchTree`
+ *   reaches `https://github.com/` only through a `url.<local>.insteadOf` mirror, so no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
  */
@@ -21,7 +24,9 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -32,6 +37,7 @@ import { sync } from "../commands/sync.mjs";
 import { ConfigError } from "../lib/config.mjs";
 import { FLOW_ASSETS, LOCK } from "../lib/flow-dir.mjs";
 import { readLock, treeDigest } from "../lib/lock.mjs";
+import { CONFIG_FILE, LEGACY_CONFIG_FILE } from "../lib/product.mjs";
 import {
   ALLOWED_LICENCES,
   gitFetchTree,
@@ -45,6 +51,7 @@ import {
   VENDOR,
 } from "../lib/skills.mjs";
 import { governed, OWN_PRESET, snapshot } from "./__fixtures__/governed.mjs";
+import { sh } from "./__fixtures__/repo.mjs";
 
 const COMMIT = "a".repeat(40);
 const ZERO = `sha256:${"0".repeat(64)}`;
@@ -144,6 +151,7 @@ test("loadThirdParty: none without the file; each entry checked; a machine-only 
     [yamlOf([{ ...a, version: "" }]), /skills\[0\] \(a\) needs `version`/],
     [yamlOf([{ id: "m", licence: "own", machineOnly: true }]), /skills\[0\] \(m\) needs `source`/],
     [yamlOf([{ ...a, digest: "abc" }]), /\(a\) has a digest that is not sha256:<64 hex digits>/],
+    [yamlOf([{ ...a, ownerEntry: 1 }]), /\(a\) has an `ownerEntry` that is not text/],
   ]) {
     writeFileSync(join(dir, THIRD_PARTY), /** @type {string} */ (text));
     assert.throws(
@@ -177,7 +185,7 @@ test("installSkills: each skill lands in the git-ignored vendor folder at its pi
   const b = upstream(dir, "b", "Apache-2.0");
   const m = machineOnly("m");
   const { calls, fetchTree } = localFetch(dir);
-  assert.deepEqual(installSkills(root, [a, b, m], { fetchTree }), { a: pinOf(a), b: pinOf(b) });
+  installSkills(root, [a, b, m], { fetchTree });
   const vendor = join(root, VENDOR);
   assert.deepEqual(readdirSync(vendor).toSorted(), [".gitignore", "a", "b"]);
   assert.equal(readFileSync(join(vendor, ".gitignore"), "utf8"), "*\n");
@@ -198,8 +206,26 @@ test("installSkills: each skill lands in the git-ignored vendor folder at its pi
   installSkills(root, [a], { fetchTree });
   assert.equal(treeDigest(join(vendor, "a")), a.digest);
   assert.equal(calls.length, 3);
-  assert.deepEqual(installSkills(root, [m], { fetchTree }), {});
+  installSkills(root, [m], { fetchTree });
   assert.equal(existsSync(vendor), false);
+});
+
+test("installSkills: a vendor folder that is a symbolic link refuses, and its target keeps every file", (t) => {
+  const dir = scratch(t);
+  const root = join(dir, "repo");
+  const library = join(dir, "library");
+  mkdirSync(join(library, "animate"), { recursive: true });
+  writeFileSync(join(library, "animate", "SKILL.md"), "---\nname: animate\n---\n");
+  mkdirSync(join(root, ".agents", "skills"), { recursive: true });
+  symlinkSync(library, join(root, VENDOR));
+  const before = snapshot(library);
+  const { fetchTree } = localFetch(dir);
+  for (const skills of [[upstream(dir, "a")], [machineOnly("m")]])
+    assert.throws(
+      () => installSkills(root, skills, { fetchTree }),
+      (e) => e instanceof SkillError && e.message.includes("is a symbolic link"),
+    );
+  assert.deepEqual(snapshot(library), before);
 });
 
 test("installSkills: a licence not allowed, a failed fetch or a digest mismatch refuses and installs nothing", (t) => {
@@ -220,12 +246,20 @@ test("installSkills: a licence not allowed, a failed fetch or a digest mismatch 
   };
   assert.throws(
     () => installSkills(root, [a], { fetchTree: unreachable }),
-    /^a: could not fetch github:o\/r\/skills\/a at a{40}: could not resolve host; without network, mirror the source/,
+    (e) =>
+      e instanceof SkillError &&
+      /^a: could not fetch github:o\/r\/skills\/a at a{40}: could not resolve host; without network, mirror the source/.test(
+        e.message,
+      ),
   );
   const b = { ...upstream(dir, "b"), digest: ZERO };
   assert.throws(
     () => installSkills(root, [a, b], { fetchTree }),
-    /^b: github:o\/r\/skills\/b at a{40} has the digest sha256:[0-9a-f]{64}, not the sha256:0{64} the preset pins$/,
+    (e) =>
+      e instanceof SkillError &&
+      /^b: github:o\/r\/skills\/b at a{40} has the digest sha256:[0-9a-f]{64}, not the sha256:0{64} the preset pins$/.test(
+        e.message,
+      ),
   );
   assert.deepEqual(
     readdirSync(vendor),
@@ -240,32 +274,101 @@ test("gitFetchTree: only github:<owner>/<repo>/<path> at a full commit id, refus
     ["github:o/r", COMMIT, /is not github:/],
     ["github:o/r/../x", COMMIT, /is not github:/],
     ["github:o/r/x", "main", /^main is not a full commit id$/],
-    ["github:o/r/x", "--upload-pack=x", /is not a full commit id/],
+    ["github:o/r/x", "--upload-pack=x", /^--upload-pack=x is not a full commit id$/],
   ])
     assert.throws(
       () => gitFetchTree(String(source), String(version), tmpdir()),
-      /** @type {RegExp} */ (problem),
+      (e) => e instanceof Error && /** @type {RegExp} */ (problem).test(e.message),
+      String(version),
     );
+});
+
+/**
+ * Points `https://github.com/` at the local folder `dir` for the test's git runs, the mirror route the fetch hint
+ * names.
+ * @param {{ after: (fn: () => void) => void }} t
+ * @param {string} dir
+ */
+function mirrorGithub(t, dir) {
+  const keys = ["GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0"];
+  const saved = keys.map((k) => process.env[k]);
+  Object.assign(process.env, {
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: `url.file://${dir}/.insteadOf`,
+    GIT_CONFIG_VALUE_0: "https://github.com/",
+  });
+  t.after(() =>
+    keys.forEach((k, i) => {
+      if (saved[i] === undefined) delete process.env[k];
+      else process.env[k] = saved[i];
+    }),
+  );
+}
+
+test("gitFetchTree: fetches only the skill's folder at the pinned commit, not the tip; a missing source fails with the hint", (t) => {
+  const dir = scratch(t);
+  const upstreamRepo = join(dir, "o", "r.git");
+  mkdirSync(join(upstreamRepo, "skills", "x"), { recursive: true });
+  sh(upstreamRepo, "init", "-q");
+  // Served over file://: the filter and a want by commit id, as GitHub allows.
+  sh(upstreamRepo, "config", "uploadpack.allowFilter", "true");
+  sh(upstreamRepo, "config", "uploadpack.allowAnySHA1InWant", "true");
+  writeFileSync(join(upstreamRepo, "skills", "x", "SKILL.md"), "---\nname: x\n---\n");
+  writeFileSync(join(upstreamRepo, "README.md"), "not the skill\n");
+  sh(upstreamRepo, "add", "-A");
+  sh(upstreamRepo, "commit", "-q", "-m", "pinned");
+  const pinned = sh(upstreamRepo, "rev-parse", "HEAD");
+  writeFileSync(join(upstreamRepo, "skills", "x", "SKILL.md"), "---\nname: x\n---\nlater\n");
+  sh(upstreamRepo, "commit", "-q", "-am", "tip");
+  mirrorGithub(t, dir);
+
+  const dest = join(dir, "dest");
+  mkdirSync(dest);
+  gitFetchTree("github:o/r/skills/x", pinned, dest);
+  assert.deepEqual(readdirSync(dest), ["SKILL.md"]);
+  assert.equal(readFileSync(join(dest, "SKILL.md"), "utf8"), "---\nname: x\n---\n");
+
+  const root = join(dir, "repo");
+  mkdirSync(root);
+  const missing = {
+    id: "y",
+    source: "github:o/missing/skills/y",
+    version: pinned,
+    licence: "MIT",
+    digest: ZERO,
+  };
+  assert.throws(
+    () => installSkills(root, [missing]),
+    (e) =>
+      e instanceof SkillError &&
+      e.message.startsWith(`y: could not fetch github:o/missing/skills/y at ${pinned}: `) &&
+      e.message.includes("url.<mirror>.insteadOf https://github.com/"),
+  );
+  assert.deepEqual(readdirSync(join(root, VENDOR)), [".gitignore"]);
 });
 
 test("machineOnlyProblems: a committed machine-only skill wherever it sits; not an untracked or a listed one", (t) => {
   const root = scratch(t);
   spawnSync("git", ["init", "-q"], { cwd: root });
-  const dirs = [
-    ".claude/skills/animate",
-    "docs/skills/remotion-docs",
-    ".agents/skills/tdd",
-    ".claude/skills/better-ui",
+  /** @type {[string, string, string][]} folder, file name, front-matter name */
+  const files = [
+    [".claude/skills/animate", "SKILL.md", "x"],
+    ["docs/skills/remotion-docs", "skill.md", "x"],
+    [".claude/skills/remotion", "SKILL.md", '"remotion-render"'],
+    [".agents/skills/tdd", "SKILL.md", "tdd"],
+    [".claude/skills/better-ui", "SKILL.md", "better-ui"],
   ];
-  for (const d of dirs) {
+  for (const [d, file, name] of files) {
     mkdirSync(join(root, d), { recursive: true });
-    writeFileSync(join(root, d, "SKILL.md"), "---\nname: x\n---\n");
+    writeFileSync(join(root, d, file), `---\nname: ${name}\n---\n`);
   }
-  spawnSync("git", ["add", ...dirs.slice(0, 3)], { cwd: root });
-  const skills = ["animate", "remotion-docs", "better-ui"].map(machineOnly);
+  spawnSync("git", ["add", ...files.slice(0, 4).map(([d]) => d)], { cwd: root });
+  const skills = ["animate", "remotion-docs", "remotion-render", "better-ui"].map(machineOnly);
+  // By folder name, a lower-case skill.md among them, or by the name its front matter gives.
   assert.deepEqual(machineOnlyProblems(root, skills), [
-    ".claude/skills/animate",
-    "docs/skills/remotion-docs",
+    { dir: ".claude/skills/animate", id: "animate" },
+    { dir: ".claude/skills/remotion", id: "remotion-render" },
+    { dir: "docs/skills/remotion-docs", id: "remotion-docs" },
   ]);
   // A committed skill the list installs is not machine-only.
   assert.deepEqual(machineOnlyProblems(root, [{ ...machineOnly("tdd"), machineOnly: false }]), []);
@@ -296,6 +399,23 @@ test("sync installs the preset's skills and locks their pins; a refusal writes n
       e instanceof ConfigError && e.message.startsWith("a: its licence GPL-3.0 is not allowed"),
   );
   assert.deepEqual(snapshot(root), before, "nothing written");
+  // Under the legacy config name, the refusal comes before the rename.
+  renameSync(join(root, CONFIG_FILE), join(root, LEGACY_CONFIG_FILE));
+  const legacy = snapshot(root);
+  assert.throws(
+    () => sync(root, { ...quiet, adopt: true }),
+    (e) => e instanceof SkillError && e.message.startsWith("a: its licence GPL-3.0"),
+  );
+  assert.deepEqual(snapshot(root), legacy, "not renamed");
+  // Both config files: refused before the install prunes the vendor folder.
+  writeFileSync(file, yamlOf([a]));
+  writeFileSync(join(root, CONFIG_FILE), readFileSync(join(root, LEGACY_CONFIG_FILE), "utf8"));
+  const both = snapshot(root);
+  assert.throws(
+    () => sync(root, { ...quiet, adopt: true }),
+    (e) => e instanceof ConfigError && /both exist/.test(e.message),
+  );
+  assert.deepEqual(snapshot(root), both, "the vendor folder kept");
 });
 
 // @covers sta-1945:FR-8 sta-1945:AC-10 sta-1945:P-013

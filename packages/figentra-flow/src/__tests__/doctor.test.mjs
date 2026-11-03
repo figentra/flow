@@ -124,7 +124,18 @@ test("doctor: names each machine-only skill's source; a third-party.yml it canno
   assert.ok(rows.every((c) => c.ok));
   assert.match(
     byId(rows)["machine-only:remotion-docs"].detail,
-    /^install it on this machine from github:remotion-dev\/skills \(.*\); fflow sync never installs it/,
+    /^install it on this machine into ~\/\.claude\/skills\/remotion-docs\/ from github:remotion-dev\/skills \(.*\); fflow sync never installs it/,
+  );
+  // An invalid config is the config row's failure; no rows are read from the preset it names.
+  writeFileSync(
+    join(r.root, CONFIG_FILE),
+    JSON.stringify({ version: 1, preset: "stackra", bogus: true }),
+  );
+  const invalid = checks(r.root, { offline: true, disk });
+  assert.equal(byId(invalid).config.ok, false);
+  assert.deepEqual(
+    invalid.filter((c) => c.id.startsWith("machine-only:")),
+    [],
   );
   mkdirSync(join(r.root, "ours"));
   writeFileSync(join(r.root, "ours", "third-party.yml"), "skills: nope\n");

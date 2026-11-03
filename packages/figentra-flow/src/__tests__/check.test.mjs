@@ -127,6 +127,14 @@ test("check: refuses a committed machine-only skill, naming its source; an untra
     problems(root),
     /^\.claude\/skills\/animate is the machine-only skill animate, .*install it on the machine from the owner's library/,
   );
+  // An invalid config is its own problem; the preset it names is not read for machine-only skills.
+  const config = join(root, "flow.config.json");
+  const valid = readFileSync(config, "utf8");
+  writeFileSync(config, JSON.stringify({ ...JSON.parse(valid), bogus: true }));
+  const invalid = problems(root);
+  assert.match(invalid, /flow\.config\.json/);
+  assert.doesNotMatch(invalid, /machine-only/);
+  writeFileSync(config, valid);
   writeFileSync(join(root, OWN_PRESET, THIRD_PARTY), "skills: nope\n");
   assert.match(problems(root), /third-party\.yml: `skills` is not a list/);
 });

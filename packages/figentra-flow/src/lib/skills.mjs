@@ -4,7 +4,8 @@
  *   licence and digest; `installSkills` fetches each into a temporary folder, refuses a licence the preset has not
  *   allowed and a tree whose digest is not the pinned one, and only then moves the skills into the git-ignored
  *   `.agents/skills/.vendor/`. A `machineOnly` skill (HeroUI Pro's, Remotion's, the owner's own) is never installed
- *   or pinned; `machineOnlyProblems` finds one committed to a repository.
+ *   or pinned; `machineOnlyProblems` finds one committed to a repository. `sync` installs before it writes anything
+ *   else, and the lock's pins are `pinsOf` the list, so `diff` needs no fetch.
  * Boundary: `installSkills` writes only `.agents/skills/.vendor/` and the OS temp folder; `gitFetchTree` runs network
  *   git against public sources. Everything else reads.
  * Runtime: node
@@ -14,6 +15,7 @@
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -135,7 +137,7 @@ export function pinsOf(skills) {
 
 /**
  * Fetches `github:<owner>/<repo>/<path>` at the commit `version` into `dest`: a shallow clone without blobs, then only
- * the skill's folder.
+ * the skill's folder. `version` is a full commit id, never a tag or branch, so a preset pins what it digested.
  * @type {FetchTree}
  */
 export function gitFetchTree(source, version, dest) {
@@ -177,15 +179,18 @@ export function gitFetchTree(source, version, dest) {
  * @param {string} root
  * @param {ThirdPartySkill[]} skills
  * @param {{ fetchTree?: FetchTree }} [deps]
- * @returns {Record<string, import("./lock.mjs").SkillPin>} the pins for the lock
- * @throws {SkillError} on a licence not allowed, a failed fetch or a digest mismatch, with nothing installed
+ * @throws {SkillError} on a vendor folder that is a symbolic link, a licence not allowed, a failed fetch or a digest
+ *   mismatch, with nothing installed
  */
 export function installSkills(root, skills, { fetchTree = gitFetchTree } = {}) {
   const wanted = skills.filter((s) => !s.machineOnly);
   const vendor = join(root, VENDOR);
+  // The prune below would empty the link's target (say, the machine's own skill library).
+  if (lstatSync(vendor, { throwIfNoEntry: false })?.isSymbolicLink())
+    throw new SkillError(`${VENDOR} is a symbolic link: remove it and run \`sync\` again`);
   if (!wanted.length) {
     rmSync(vendor, { recursive: true, force: true });
-    return {};
+    return;
   }
   for (const skill of wanted) {
     const problem = licenceProblem(skill);
@@ -225,26 +230,40 @@ export function installSkills(root, skills, { fetchTree = gitFetchTree } = {}) {
   const keep = new Set([".gitignore", ...wanted.map((s) => s.id)]);
   for (const name of readdirSync(vendor))
     if (!keep.has(name)) rmSync(join(vendor, name), { recursive: true, force: true });
-  return pinsOf(wanted);
 }
 
 /**
- * The machine-only skills committed to the repository at `root`: each tracked folder holding a `SKILL.md` whose name
- * is a machine-only id, in path order.
+ * The `name` in a `SKILL.md`'s front matter, or undefined.
+ * @param {string} file
+ */
+function skillName(file) {
+  if (!existsSync(file)) return undefined;
+  const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(readFileSync(file, "utf8"))?.[1] ?? "";
+  return /^name:[ \t]*["']?([^"'\r\n]*?)["']?[ \t]*$/m.exec(front)?.[1];
+}
+
+/**
+ * The machine-only skills committed to the repository at `root`: each tracked folder holding a `SKILL.md` (any case)
+ * whose folder name or front-matter `name` is a machine-only id, in path order.
+ * shortcut: only the repository is checked; FR-8's registry case waits for registry `skill` items (FR-12, after
+ * 0.3.0), whose publish step must refuse them the same way.
  * @param {string} root
  * @param {ThirdPartySkill[]} skills
- * @returns {string[]} the folders, relative to `root`
+ * @returns {{ dir: string, id: string }[]} each folder, relative to `root`, and the id it carries
  */
 export function machineOnlyProblems(root, skills) {
   const ids = new Set(skills.filter((s) => s.machineOnly).map((s) => s.id));
   if (!ids.size) return [];
-  const tracked = git(root, ["ls-files", "-z", "--", "*SKILL.md"]);
+  const tracked = git(root, ["ls-files", "-z", "--", ":(icase)*skill.md"]);
   if (!tracked.ok) return [];
-  /** @type {Set<string>} */
-  const dirs = new Set();
+  /** @type {Map<string, string>} */
+  const found = new Map();
   for (const file of tracked.out.split("\0")) {
-    const m = /^((?:.*\/)?([^/]+))\/SKILL\.md$/.exec(file);
-    if (m && ids.has(m[2])) dirs.add(m[1]);
+    const m = /^((?:.*\/)?([^/]+))\/skill\.md$/i.exec(file);
+    if (!m) continue;
+    const name = skillName(join(root, file));
+    const id = ids.has(m[2]) ? m[2] : name && ids.has(name) ? name : undefined;
+    if (id) found.set(m[1], id);
   }
-  return [...dirs].toSorted();
+  return [...found.keys()].toSorted().map((dir) => ({ dir, id: found.get(dir) ?? "" }));
 }
