@@ -5,3 +5,11 @@ preset:
   description: "Specs in .agents/specs/<key>-<slug>, a clarifications marker, the issue key, tiers and approval stops, and a plan gate"
   author: "figentra"
   license: "MIT"
+
+# What each repository gets (STA-1945 FR-6): one profile, selecting all.
+default: default
+profiles:
+  default:
+    agents: ["*"]
+    skills: ["*"]
+    hooks: ["*"]

@@ -188,6 +188,11 @@ setting you have not made refuses and names it.
   Without a config file the preset is `neutral`. A repository changes one template or command without forking a
   preset in `.flow/overrides/` (`<name>.md`, or `commands/flow-<verb>.md`).
 
+- `profile` picks which of the preset's agents, skills and hooks `sync` renders, from the profiles its `preset.yml`
+  declares (`profiles: { <name>: { agents, skills, hooks } }`, `"*"` for all); `.flow/lock.json` records it. Without
+  it, the preset's `default` applies. `neutral` has one profile, `default`; `stackra` has `framework` (the default),
+  `platform`, `product`, `brand` and `starter`, which all select everything for now. An unknown name is refused.
+
 - `specs` sets where specs live: `dir` (default `.agents/specs`) and `bugsDir` (default `.agents/specs/bugs`).
 
 Only

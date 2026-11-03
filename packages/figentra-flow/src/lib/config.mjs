@@ -42,6 +42,8 @@ export const SCHEMA = {
     $schema: str,
     version: { const: 1 },
     preset: str,
+    // STA-1945 FR-6: the preset's profile; without it, the preset's default.
+    profile: str,
     team: str,
     specs: {
       type: "object",
@@ -228,7 +230,7 @@ export function validate(schema, value, path = "") {
 }
 
 /**
- * @typedef {{ version?: number, preset?: string, team?: string, specs?: { dir?: string, bugsDir?: string }, tracker?: any, credentials?: any, runner?: any, secrets?: any,
+ * @typedef {{ version?: number, preset?: string, profile?: string, team?: string, specs?: { dir?: string, bugsDir?: string }, tracker?: any, credentials?: any, runner?: any, secrets?: any,
  *             apps?: { gate?: { slug?: string, login: string }, review?: { slug: string }, owner?: string },
  *             gate?: { check?: string }, approve?: { ownerOnly?: string[], checks?: Record<string, string> },
  *             clean?: { keep?: string[], budget?: number }, review?: { required?: string[] },
