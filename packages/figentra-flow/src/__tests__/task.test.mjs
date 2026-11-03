@@ -13,6 +13,8 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { runCommandForTest } from "@stackra/console/testing";
+
 import {
   docsDigest,
   doneTask,
@@ -22,7 +24,8 @@ import {
   startTask,
   TaskError,
 } from "../commands/task.mjs";
-import { readRecord } from "../lib/record.mjs";
+import { CONSOLE } from "../lib/console.mjs";
+import { readRecord, recordPath } from "../lib/record.mjs";
 import { repo, sh } from "./__fixtures__/repo.mjs";
 
 const TASKS = `# Tasks
@@ -104,6 +107,23 @@ test("task done: a dirty tree keeps the marker; a secret-looking command never r
   assert.throws(() => doneTask(s.root, "STA-7", "T002", "env > leak.txt"), /secret/);
   assert.equal(existsSync(join(s.root, "leak.txt")), false);
   assert.equal(readRecord(s.root, "sta-7")?.tasks.T002.length, 1);
+});
+
+test("task through the console: a refusal exits 2 and runs nothing; a broken record exits 1", async (t) => {
+  const s = setup(t);
+  const run = (/** @type {string[]} */ argv) =>
+    runCommandForTest(CONSOLE, argv, { cwd: s.root, columns: 400 });
+  const missing = await run(["task", "start", "STA-7", "T009"]);
+  assert.equal(missing.exitCode, 2, missing.stdout + missing.stderr);
+  assert.match(missing.stdout + missing.stderr, /no live T009/);
+  assert.equal((await run(["task", "start", "STA-7", "T001"])).exitCode, 0);
+  const secret = await run(["task", "done", "STA-7", "T001", "--command", "env > leak.txt"]);
+  assert.equal(secret.exitCode, 2, secret.stdout + secret.stderr);
+  assert.equal(existsSync(join(s.root, "leak.txt")), false);
+  writeFileSync(recordPath(s.root, "sta-7"), JSON.stringify({ recordVersion: 1, key: "sta-7" }));
+  const broken = await run(["task", "start", "STA-7", "T002"]);
+  assert.equal(broken.exitCode, 1, broken.stdout + broken.stderr);
+  assert.match(broken.stdout + broken.stderr, /stage: is required/);
 });
 
 test("a changed document resets a started task with the reason; a marker move changes nothing", (t) => {

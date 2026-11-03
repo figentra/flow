@@ -17,7 +17,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { basename, dirname, join } from "node:path";
 
 import { writeFlowDir } from "./init.mjs";
-import { BUNDLED, hasProjector, run as runSync, sync } from "./sync.mjs";
+import { BUNDLED, hasProjector, project, sync } from "./sync.mjs";
 import { CONFIG_FILE, NAME } from "../lib/product.mjs";
 import { CONSTITUTION } from "../lib/flow-dir.mjs";
 import { git } from "../lib/git.mjs";
@@ -134,7 +134,8 @@ export function run(/** @type {string[]} */ args) {
   const dry = args.includes("--dry-run");
   migrate(top.out, { dry });
   // the repository's projector renders the neutral skills for its tools, as `sync` does
-  if (!dry && hasProjector(top.out) && runSync([])) return 1;
+  if (!dry && hasProjector(top.out) && project(top.out, false, { log: console.log, quiet: false }))
+    return 1;
   if (!dry)
     console.log(
       `${NAME} migrate: done. Prose (docs, ADRs, specs, hooks) still names spec-kit; change it in its own reviewed commit.`,
