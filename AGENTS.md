@@ -20,4 +20,13 @@ One pnpm workspace, one package: `packages/figentra-flow` (`fflow`, binaries `ff
   repository's `infisical run` wrapper provides. Never read, print or commit a token.
 - Worktrees live only in `.claude/worktrees/` (Stackra ADR 0503): make one with `fflow start`, remove one with
   `fflow clean`. Worktree tests use the local repository fixture in `src/__tests__/__fixtures__/`.
-- Done = `pnpm verify` green. Conventional commits; a changeset for every package change.
+- Done = `pnpm verify` green on the box ("Tests run on the box" below). Conventional commits; a changeset for every package change.
+
+## Tests run on the box
+
+GitHub CI runs no tests: no unit `test`, no integration (`test:int`, Postgres), no Playwright e2e, no `encore test`.
+It checks (format, lint, typecheck, validate and the rest), builds and deploys (owner decision 2026-11-03, STA-2064).
+Before a pull request is marked ready, its tests run on the box:
+`ci-box run "<who> <what>" <dir> "<cmd>"`, for example `ci-box run "flow STA-n" . "pnpm verify"` (box 1 today;
+`stackra testbed run` once the testbed is live). The pull request body carries the box evidence: the command, the
+commit it ran on and the result. Nothing installs or tests on a workstation.
