@@ -5,7 +5,8 @@
  *   spec-kit attribution line; no asset still names spec-kit's machinery (`.specify`, `SPECIFY_*`, `extensions.yml`,
  *   `speckit`, the bash scripts, `{SCRIPT}`); and the package ships `THIRD_PARTY_NOTICES.md`.
  *   What `sync` writes from them starts with its provenance header, and `.flow/lock.json` v2 records each digest; a v1
- *   lock still reads (STA-1945).
+ *   lock still reads (STA-1945). `sync` applies the overrides, each to its target only, skips one that breaks a
+ *   mandatory policy, and the header names the override that shaped a file (STA-1945 FR-4).
  * Boundary: reads the package's files and writes temporary folders; no process, no network.
  * Runtime: node
  * Governing contract: ADR 0022; ADR 0510; STA-1729; STA-1945.
@@ -13,8 +14,8 @@
 // @covers sta-1729:FR-11
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import { sync } from "../commands/sync.mjs";
 import { LOCK } from "../lib/flow-dir.mjs";
@@ -160,4 +161,52 @@ test("installProblems reads a v1 lock; the next sync rewrites it as v2", (t) => 
   const [first] = Object.keys(v1.files);
   writeFileSync(join(root, first), "hand edit\n");
   assert.match(installProblems(root).join(), /differs from what `fflow sync` rendered/);
+});
+
+// @covers sta-1945:FR-4 sta-1945:FR-3 sta-1945:AC-4 sta-1945:P-007 sta-1945:P-006
+test("sync applies the overrides, each to its target only, and the header names the override that shaped a file", (t) => {
+  const root = governed(t, { config: { apps: { owner: "o" } } });
+  const governance = "reason: ours\nowner: o\nreview: 2027-01-31\n";
+  const own = {
+    "rules/worktrees.yml": "kind: extend\ntarget: .agents/rules/worktrees.md\nitems:\n  - Ours.\n",
+    "agents/ci.yml": `kind: disable\ntarget: .agents/agents/ci-steward.md\n${governance}`,
+    "commands/plan.yml": `kind: replace\ntarget: commands/flow-plan.md\nfile: commands/plan.md\n${governance}`,
+    "commands/plan.md": "---\ndescription: Our plan.\n---\n\nOur plan.\n",
+    "policies/owner.yml": 'kind: extend\ntarget: owner-only\nitems:\n  - "deploy/**"\n',
+    "policies/off.yml": `kind: disable\ntarget: .github/CODEOWNERS\n${governance}`,
+  };
+  for (const [path, text] of Object.entries(own)) {
+    mkdirSync(dirname(join(root, ".flow/overrides", path)), { recursive: true });
+    writeFileSync(join(root, ".flow/overrides", path), text);
+  }
+  const { files } = sync(root, { log: () => {} });
+  const read = (/** @type {string} */ path) => readFileSync(join(root, path), "utf8");
+  const shaped = (/** @type {string} */ override) =>
+    `---\n# ${headerText({ preset: "neutral", version: VERSION, override })}\n`;
+  assert.ok(!files.includes(".agents/agents/ci-steward.md"), "disable drops its output");
+  assert.ok(files.includes(".agents/agents/git-steward.md"), "and nothing else");
+  assert.ok(
+    read(".agents/rules/worktrees.md").startsWith(shaped(".flow/overrides/rules/worktrees.yml")),
+  );
+  assert.ok(read(".agents/rules/worktrees.md").endsWith("\n- Ours.\n"));
+  const plan = read(".agents/skills/flow-plan/SKILL.md");
+  assert.ok(plan.startsWith(shaped(".flow/overrides/commands/plan.yml")));
+  assert.match(plan, /description: "Our plan\."[\s\S]*\nOur plan\.\n$/);
+  assert.ok(
+    read(".agents/skills/flow-tasks/SKILL.md").startsWith(
+      `---\n# ${headerText({ preset: "neutral", version: VERSION })}\n`,
+    ),
+    "an output no override names keeps the plain header",
+  );
+  const owners = read(".github/CODEOWNERS");
+  assert.ok(
+    owners.startsWith(
+      `# ${headerText({ preset: "neutral", version: VERSION, override: ".flow/overrides/policies/owner.yml" })}\n`,
+    ),
+    "a disable of a mandatory policy is not applied; the extend that tightened it is named",
+  );
+  assert.ok(owners.split("\n").includes("/deploy/** @o"));
+  assert.match(read(".github/workflows/fflow-approve.yml"), /deploy\/\*\*/);
+  const lock = /** @type {import("../lib/lock.mjs").Lock} */ (readLock(root));
+  assert.equal(lock.overrides, treeDigest(join(root, ".flow/overrides")));
 });

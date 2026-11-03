@@ -23,7 +23,7 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 
 import { validate } from "./config.mjs";
 import { OVERRIDES } from "./flow-dir.mjs";
-import { RULE_LISTS } from "./policies.mjs";
+import { policyOf, RULE_LISTS } from "./policies.mjs";
 import { NAME } from "./product.mjs";
 import { parseYaml, YamlError } from "./yaml.mjs";
 
@@ -48,7 +48,14 @@ const kind = (
   type: "object",
   additionalProperties: false,
   required: ["kind", "target", ...required],
-  properties: { kind: { const: name }, target: str, ...properties, reason: str, owner: str, review },
+  properties: {
+    kind: { const: name },
+    target: str,
+    ...properties,
+    reason: str,
+    owner: str,
+    review,
+  },
 });
 const governed = ["reason", "owner", "review"];
 
@@ -271,11 +278,15 @@ export function targetProblems(overrides, outputs, { params = {}, sources = new 
     if (o.kind === "configure") {
       const block = params[o.target];
       if (!block || typeof block !== "object")
-        problems.push(`${o.path}: configure ${o.target}: the preset declares no such parameter block`);
+        problems.push(
+          `${o.path}: configure ${o.target}: the preset declares no such parameter block`,
+        );
       else
         for (const key of Object.keys(o.values ?? {}))
           if (!(key in block))
-            problems.push(`${o.path}: configure ${o.target}: the preset declares no parameter ${key}`);
+            problems.push(
+              `${o.path}: configure ${o.target}: the preset declares no parameter ${key}`,
+            );
     } else if (outputs.has(o.target)) {
       if (o.kind === "extend" && o.section && !hasSection(outputs.get(o.target), o.section))
         problems.push(`${o.path}: extend ${o.target}: it has no section "${o.section}"`);
@@ -291,6 +302,38 @@ export function targetProblems(overrides, outputs, { params = {}, sources = new 
 }
 
 /**
+ * The preset source a rendered output comes from (`commands/`, `agents/` or `rules/` `<name>.md`), or undefined.
+ * @param {string} path
+ */
+function sourceOf(path) {
+  const command =
+    path.match(/^\.(?:claude|agents)\/skills\/([^/]+)\/SKILL\.md$/) ??
+    path.match(/^\.opencode\/commands\/([^/]+)\.md$/);
+  if (command) return `commands/${command[1]}.md`;
+  return path.match(/^\.(?:claude|agents)\/((?:agents|rules)\/[^/]+\.md)$/)?.[1];
+}
+
+/**
+ * The paths of the overrides that shape the rendered output `path`: one on the output, on its preset source, or an
+ * `extend` of the policy it holds (FR-3: its header names them).
+ * @param {Override[]} overrides
+ * @param {string} path
+ * @returns {string[]}
+ */
+export function shapedBy(overrides, path) {
+  const source = sourceOf(path);
+  const policy = policyOf(path);
+  return overrides
+    .filter(
+      (o) =>
+        o.target === path ||
+        (source && o.kind === "replace" && o.target === source) ||
+        (policy && o.kind === "extend" && o.target === policy),
+    )
+    .map((o) => o.path);
+}
+
+/**
  * Where `override` stands against its review date on `now`'s UTC day: `due` from 14 days before it, `expired` after
  * it, `ok` otherwise and without one.
  * @param {Override} override
@@ -301,6 +344,8 @@ export function reviewState(override, now) {
   if (!override.review) return "ok";
   const today = now.toISOString().slice(0, 10);
   if (override.review < today) return "expired";
-  const notice = new Date(now.getTime() + REVIEW_NOTICE_DAYS * 86_400_000).toISOString().slice(0, 10);
+  const notice = new Date(now.getTime() + REVIEW_NOTICE_DAYS * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
   return override.review <= notice ? "due" : "ok";
 }

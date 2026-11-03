@@ -4,14 +4,16 @@
  *   documents either as neutral skill documents for the repository's own projector (`.agents/skills/flow-<verb>/`) or,
  *   with `direct`, as Claude Code skills and OpenCode commands; the preset's agent definitions (`agents/`, as
  *   `.agents/agents/<id>.md` or, with `direct`, `.claude/agents/<id>.md`), the approval workflow (its secret names
- *   from `preset.yml`'s `approve`) and, with `apps.owner`, a CODEOWNERS for the owner-only paths (STA-1856). Each
- *   written file carries its provenance header and `.flow/lock.json` v2 records the Flow version, the preset with its
+ *   from `preset.yml`'s `approve`) and, with `apps.owner`, a CODEOWNERS for the owner-only paths (STA-1856). The
+ *   repository's overrides apply (STA-1945 FR-4, `overrides.mjs`), except one that breaks a mandatory policy (FR-5),
+ *   which `validate` and `check` name instead. Each written file carries its provenance header, naming the overrides
+ *   that shaped it, and `.flow/lock.json` v2 records the Flow version, the preset with its
  *   digest and each written file's digest (STA-1945 FR-2, FR-3); `installProblems`, reading a v1 or v2 lock, is the check that replaces spec-kit's tripwire: no hand edit, no
  *   forgotten `sync`, and no spec-kit leftover. With a `.flow/readme.yml`, `README.md` is rendered too (STA-1879).
  * Boundary: `render` and `installProblems` read; `writeRendered` writes the rendered files and the lock and removes
  *   spec-kit's rendered `speckit-*` skills and commands. Nothing here deletes `.specify/` (that is `migrate`).
  * Runtime: node
- * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-2, FR-3).
+ * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-2, FR-3, FR-4, FR-5).
  * Secrets: none.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -20,7 +22,7 @@ import { dirname, join } from "node:path";
 import { approveWorkflow } from "./approve-workflow.mjs";
 import { baselineWorkflow } from "./baseline-workflow.mjs";
 import { loadConfig } from "./config.mjs";
-import { LOCK, OVERRIDES, presetDir } from "./flow-dir.mjs";
+import { FLOW_ASSETS, LOCK, OVERRIDES, presetDir } from "./flow-dir.mjs";
 import {
   digestOf,
   driftOf,
@@ -31,7 +33,9 @@ import {
   treeDigest,
   writeLock,
 } from "./lock.mjs";
+import { applyOverrides, loadOverrides, shapedBy } from "./overrides.mjs";
 import { codeowners } from "./owner-only.mjs";
+import { policyProblems } from "./policies.mjs";
 import {
   APPROVE_WORKFLOW,
   BASELINE_WORKFLOW,
@@ -47,6 +51,8 @@ import {
 import { withHeader } from "./provenance.mjs";
 import { renderReadme } from "./readme.mjs";
 import { parseYaml, YamlError } from "./yaml.mjs";
+
+/** @typedef {import("./overrides.mjs").Override} Override */
 
 /** The eight commands, in workflow order. */
 export const VERBS = [
@@ -78,18 +84,44 @@ function parse(text) {
 }
 
 /**
- * The repository's rendered files, path to text.
+ * The overrides `sync` applies: each valid one that keeps every mandatory policy (`validate` and `check` name the
+ * rest).
  * @param {string} root
- * @param {{ direct?: boolean }} [options]
+ * @returns {Override[]}
+ */
+export function appliedOverrides(root) {
+  return loadOverrides(root).overrides.filter((o) => !policyProblems([o]).length);
+}
+
+/**
+ * The repository's rendered files, path to text, with `overrides` applied (FR-4).
+ * @param {string} root
+ * @param {{ direct?: boolean, overrides?: Override[] }} [options] `overrides` defaults to `appliedOverrides`
  * @returns {Map<string, string>}
  */
-export function render(root, { direct = false } = {}) {
+export function render(root, { direct = false, overrides = appliedOverrides(root) } = {}) {
+  return applyOverrides(renderPreset(root, direct, overrides), overrides, root);
+}
+
+/**
+ * The preset's outputs before the output overrides: each source a `replace` names read from its file instead, and the
+ * owner-only list with each `extend` of `owner-only`.
+ * @param {string} root
+ * @param {boolean} direct
+ * @param {Override[]} overrides
+ * @returns {Map<string, string>}
+ */
+function renderPreset(root, direct, overrides) {
+  /** The file `target` (a preset source) is read from: its replacement's (a `.yml` one before a legacy one), else `preset`. */
+  const source = (/** @type {string} */ target, /** @type {string} */ preset) => {
+    const swap = overrides.find((o) => o.kind === "replace" && o.target === target);
+    return swap ? join(root, OVERRIDES, swap.file) : preset;
+  };
   const dir = join(presetDir(root), "commands");
   /** @type {Map<string, string>} */
   const out = new Map();
   for (const verb of VERBS) {
-    const own = join(root, OVERRIDES, "commands", `flow-${verb}.md`);
-    const file = existsSync(own) ? own : join(dir, `flow-${verb}.md`);
+    const file = source(`commands/flow-${verb}.md`, join(dir, `flow-${verb}.md`));
     if (!existsSync(file)) continue;
     const { meta, body } = parse(readFileSync(file, "utf8"));
     const name = `flow-${verb}`;
@@ -127,17 +159,22 @@ export function render(root, { direct = false } = {}) {
       );
     } else out.set(`.agents/skills/${name}/SKILL.md`, skill);
   }
-  for (const [id, text] of presetDocs(root, "agents"))
+  for (const [id, text] of presetDocs(root, "agents", source))
     out.set(direct ? `.claude/agents/${id}.md` : `.agents/agents/${id}.md`, text);
   // STA-1871: the preset's agent rules (the worktree rule among them).
-  for (const [id, text] of presetDocs(root, "rules"))
+  for (const [id, text] of presetDocs(root, "rules", source))
     out.set(direct ? `.claude/rules/${id}.md` : `.agents/rules/${id}.md`, text);
   const readme = renderReadme(root);
   if (readme !== undefined) out.set("README.md", readme);
   const { apps, approve, baseline } = loadConfig(root).config;
   // STA-1942: only a repository whose main is red asks for the baseline gate.
   if (baseline) out.set(`.github/workflows/${BASELINE_WORKFLOW}`, baselineWorkflow(baseline));
-  const ownerOnly = approve?.ownerOnly ?? [];
+  const ownerOnly = [
+    ...(approve?.ownerOnly ?? []),
+    ...overrides.flatMap((o) =>
+      o.kind === "extend" && o.target === "owner-only" ? (o.items ?? []) : [],
+    ),
+  ];
   // No owner, no approval path: GitHub must be able to ask someone for the owner-only paths (CODEOWNERS).
   if (!apps?.owner) return out;
   out.set(
@@ -182,23 +219,60 @@ export function lockedIntegrity(root, pkg, version) {
 }
 
 /**
- * The preset's documents in `folder` (`agents` or `rules`), id to text; `.flow/overrides/<folder>/<id>.md` replaces one.
+ * The preset's documents in `folder` (`agents` or `rules`), id to text; a `replace` of `<folder>/<id>.md` replaces one.
  * @param {string} root
  * @param {string} folder
+ * @param {(target: string, preset: string) => string} source the file a preset source is read from
  * @returns {Map<string, string>}
  */
-function presetDocs(root, folder) {
+function presetDocs(root, folder, source) {
   const dir = join(presetDir(root), folder);
   /** @type {Map<string, string>} */
   const out = new Map();
   if (!existsSync(dir)) return out;
   for (const file of readdirSync(dir)
     .filter((f) => f.endsWith(".md"))
-    .toSorted()) {
-    const own = join(root, OVERRIDES, folder, file);
-    out.set(file.slice(0, -3), readFileSync(existsSync(own) ? own : join(dir, file), "utf8"));
-  }
+    .toSorted())
+    out.set(file.slice(0, -3), readFileSync(source(`${folder}/${file}`, join(dir, file)), "utf8"));
   return out;
+}
+
+/**
+ * What an override may target besides a rendered output: the preset's sources (`commands/`, `agents/`, `rules/`
+ * and `templates/` `<name>.md`, Flow's base templates among them) and the parameter blocks `preset.yml` declares.
+ * @param {string} root
+ * @returns {{ sources: Set<string>, params: Record<string, any> }}
+ */
+export function presetTargets(root) {
+  const dir = presetDir(root);
+  /** @type {Set<string>} */
+  const sources = new Set();
+  for (const [folder, base] of [
+    ["commands", dir],
+    ["agents", dir],
+    ["rules", dir],
+    ["templates", dir],
+    ["templates", FLOW_ASSETS],
+  ])
+    if (existsSync(join(base, folder)))
+      for (const f of readdirSync(join(base, folder)))
+        if (f.endsWith(".md")) sources.add(`${folder}/${f}`);
+  return { sources, params: presetYml(root)?.parameters ?? {} };
+}
+
+/**
+ * The preset's `preset.yml`, or undefined when it has none or it is outside the YAML subset (the defaults apply).
+ * @param {string} root
+ * @returns {any}
+ */
+function presetYml(root) {
+  const file = join(presetDir(root), "preset.yml");
+  try {
+    return existsSync(file) ? parseYaml(readFileSync(file, "utf8")) : undefined;
+  } catch (error) {
+    if (!(error instanceof YamlError)) throw error;
+    return undefined;
+  }
 }
 
 /** A secret name GitHub accepts. */
@@ -211,14 +285,9 @@ const SECRET_NAME = /^[A-Z_][A-Z0-9_]*$/;
  */
 export function approveSecrets(root) {
   const file = join(presetDir(root), "preset.yml");
+  // A repository's own preset.yml outside the YAML subset keeps the default names.
   /** @type {{ app_id?: string, private_key?: string } | undefined} */
-  let approve;
-  try {
-    approve = existsSync(file) ? parseYaml(readFileSync(file, "utf8"))?.approve : undefined;
-  } catch (error) {
-    // A repository's own preset.yml outside the YAML subset keeps the default names.
-    if (!(error instanceof YamlError)) throw error;
-  }
+  const approve = presetYml(root)?.approve;
   const names = {
     appId: approve?.app_id ?? `${ENV_PREFIX}APPROVER_APP_ID`,
     privateKey: approve?.private_key ?? `${ENV_PREFIX}APPROVER_PRIVATE_KEY`,
@@ -327,7 +396,13 @@ export function provenanceOf(root) {
  */
 export function withHeaders(root, files) {
   const meta = provenanceOf(root);
-  return new Map([...files].map(([path, text]) => [path, withHeader(path, text, meta)]));
+  const overrides = appliedOverrides(root);
+  return new Map(
+    [...files].map(([path, text]) => {
+      const override = shapedBy(overrides, path).join(", ") || undefined;
+      return [path, withHeader(path, text, { ...meta, override })];
+    }),
+  );
 }
 
 /**

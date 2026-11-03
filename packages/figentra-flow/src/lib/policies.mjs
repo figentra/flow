@@ -9,6 +9,7 @@
  * Governing contract: STA-1945 (FR-5, AC-5, P-008).
  * Secrets: none.
  */
+import { OWNER_ONLY } from "./owner-only.mjs";
 import { APPROVE_WORKFLOW } from "./product.mjs";
 
 /** The mandatory policies (FR-5). */
@@ -16,6 +17,13 @@ export const MANDATORY = ["guard.secrets", "guard.tenancy", "owner-only", "guard
 
 /** The policies held as a rule list, which an `extend` of the policy's id with `items` adds to. */
 export const RULE_LISTS = ["guard.secrets", "guard.tenancy", "owner-only"];
+
+/**
+ * Each rule-list policy's rules before any override. The guard's secret and tenancy tables join as preset data with
+ * STA-1945 PR 4; until then an `extend` of them is checked but changes nothing.
+ * @type {Record<string, string[]>}
+ */
+export const PRESET_RULES = { "guard.secrets": [], "guard.tenancy": [], "owner-only": OWNER_ONLY };
 
 /**
  * The rendered outputs each policy lives in: an override on one of them is an override on the policy. The guard's
@@ -63,10 +71,10 @@ export function tightensOnly(before, after) {
 /**
  * Each override that disables, replaces, configures or loosens a mandatory policy, naming the policy (AC-5).
  * @param {import("./overrides.mjs").Override[]} overrides
- * @param {Record<string, string[]>} presetRules each rule-list policy's rules before any override
+ * @param {Record<string, string[]>} [presetRules] each rule-list policy's rules before any override
  * @returns {string[]}
  */
-export function policyProblems(overrides, presetRules) {
+export function policyProblems(overrides, presetRules = PRESET_RULES) {
   /** @type {string[]} */
   const problems = [];
   for (const o of overrides) {
