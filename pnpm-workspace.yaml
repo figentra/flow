@@ -8,6 +8,9 @@ packages:
 
 catalogMode: strict
 engineStrict: true
+# A `pnpm <script>` or `pnpm exec` never installs on its own (pnpm 12 installed whole workspaces from commit hooks
+# on a Mac, 2026-11-03); it warns, and installs run on the box and in CI.
+verifyDepsBeforeRun: warn
 
 catalog:
   "@types/node": 26.6.4
