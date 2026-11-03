@@ -1,10 +1,10 @@
 /**
  * The neutral preset's path rules for the guard engine: generic secret files are never read, searched or written by
  * an agent (`.env*` except `*.example`, `.dev.vars`, `*.pem`, `*.key`, SSH keys, `*.secrets*`), and `flow.config.json`
- * is never written by one. The engine checks them for every preset after the preset's own table (`decidePaths`,
- * FR-5), so a preset's `guard/path-rules.mjs` cannot drop them.
+ * (or its legacy name) is never written by one. The engine checks them for every preset after the preset's own table
+ * (`decidePaths`, FR-5), so a preset's `guard/path-rules.mjs` cannot drop them.
  */
-import { CONFIG_FILE } from "../../../../../src/lib/product.mjs";
+import { CONFIG_FILE, LEGACY_CONFIG_FILE } from "../../../../../src/lib/product.mjs";
 
 /** Files that hold secret values. */
 const SECRET_FILE = [
@@ -37,7 +37,11 @@ export const PATH_RULES = [
   {
     id: "flow-config",
     writes: true,
-    match: (p) => p.split("/").at(-1)?.toLowerCase() === CONFIG_FILE,
+    // The legacy name is still read (and both at once is an error), so it picks the preset too.
+    match: (p) => {
+      const name = p.split("/").at(-1)?.toLowerCase();
+      return name === CONFIG_FILE || name === LEGACY_CONFIG_FILE;
+    },
     reason: `${CONFIG_FILE} picks the preset, and so the guard's own tables: only the owner changes it.`,
   },
 ];

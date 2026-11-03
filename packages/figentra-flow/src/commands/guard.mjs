@@ -2,8 +2,8 @@
  * Figentra Flow file contract:
  * Purpose: `fflow guard [--print-settings]` — the PreToolUse hook through the dispatcher: it runs the guard engine
  *   (`src/guard/engine.mjs`) on the event on stdin: the preset's rules, then the engine's own (the side doors,
- *   FR-13, and the neutral path rules), which every preset keeps (FR-5). `--print-settings` prints the `.claude/settings.json` hooks that wire every guard event to
- *   `bin/fflow-guard.mjs` directly (NFR-2).
+ *   FR-13, and the neutral path rules), which every preset keeps (FR-5). `--print-settings` prints
+ *   the `.claude/settings.json` hooks that wire every guard event to `bin/fflow-guard.mjs` directly (NFR-2).
  * Boundary: reads stdin, writes the hook's JSON answer on a denial, an ask or context, and nothing otherwise. Wiring
  *   it into a repository is guard configuration, which the owner applies.
  * Runtime: node

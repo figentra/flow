@@ -30,7 +30,7 @@ import { decideBash, SIDE_DOORS } from "../guard/bash.mjs";
 import { decide as decideEvent } from "../guard/engine.mjs";
 import { loadTables } from "../guard/tables.mjs";
 import { words } from "../guard/words.mjs";
-import { CONFIG_FILE } from "../lib/product.mjs";
+import { CONFIG_FILE, LEGACY_CONFIG_FILE } from "../lib/product.mjs";
 import { presetRoot, runHook } from "./__fixtures__/guard.mjs";
 import { repo, sh } from "./__fixtures__/repo.mjs";
 
@@ -349,6 +349,23 @@ test("engine: tables that fail to load deny every tool call, closed (FR-5)", (t)
   assert.equal(d?.permissionDecision, "deny");
   assert.match(d?.permissionDecisionReason, /guard tables failed to load/);
   assert.equal(hook(r.root, "UserPromptSubmit", { prompt: "implement x" }), undefined);
+});
+
+test("engine: the legacy configuration name is never written, and a configuration that did not load denies (FR-5)", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  writeFileSync(join(r.root, CONFIG_FILE), JSON.stringify({ version: 1, preset: "stackra" }));
+  const write = hook(r.root, "PreToolUse", {
+    tool_name: "Write",
+    tool_input: { file_path: `${r.root}/${LEGACY_CONFIG_FILE}`, content: "{}" },
+  });
+  assert.equal(write?.permissionDecision, "deny");
+  assert.match(write?.permissionDecisionReason, /only the owner changes it/);
+  // Both names at once is a configuration error: the stackra tables must not quietly become the neutral ones.
+  writeFileSync(join(r.root, LEGACY_CONFIG_FILE), "{}");
+  const d = hook(r.root, "PreToolUse", { tool_name: "Bash", tool_input: { command: "ls" } });
+  assert.equal(d?.permissionDecision, "deny");
+  assert.match(d?.permissionDecisionReason, /guard tables failed to load[^]*both exist/);
 });
 
 /**

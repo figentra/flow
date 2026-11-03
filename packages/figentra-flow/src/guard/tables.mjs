@@ -4,8 +4,8 @@
  *   `path-rules.mjs` → `PATH_RULES` and `PLAN_GATED`, the source paths of the plan gate, `hints.mjs` → `PROMPT`
  *   and `SESSION`), each falling back to the neutral preset's module when the preset has none. The engine's own rules
  *   (the side doors, the neutral path rules) are not table data: `decideBash` and `decidePaths` add them to any table.
- * Boundary: imports preset modules; throws when one fails to load or a rule table is not a list, so the engine
- *   denies (closed on the mandatory policies).
+ * Boundary: reads the configuration and imports preset modules; throws when the configuration did not load, when a
+ *   module fails to load or when a rule table is not a list, so the engine denies (closed on the mandatory policies).
  * Runtime: node
  * Governing contract: STA-1945 (FR-5, FR-7, P-012).
  * Secrets: none.
@@ -14,6 +14,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { loadConfig } from "../lib/config.mjs";
 import { FLOW_ASSETS, presetDir } from "../lib/flow-dir.mjs";
 
 /**
@@ -48,12 +49,15 @@ function list(value, name) {
 
 /**
  * The guard tables of the repository at `root`.
- * shortcut: the profile's selection (T034) and `extend` overrides (PR 2) are not applied yet; they join here when
- *   those land on this branch's base.
+ * shortcut: the profile's selection (T034, landed) is ignored on purpose, so every rule applies (closed), and
+ *   `extend` overrides (PR 2) are not applied; both join here with T037/PR 2.
  * @param {string} root
  * @returns {Promise<GuardTables>}
  */
 export async function loadTables(root) {
+  const { config, errors } = loadConfig(root);
+  // A configuration that did not load (both names, bad JSON) must not fall back to the neutral tables.
+  if (errors.length && config.preset === undefined) throw new Error(errors.join("; "));
   const dir = join(presetDir(root), "guard");
   return {
     bash: list(await table(dir, "bash-rules.mjs", "BASH_RULES"), "BASH_RULES"),
