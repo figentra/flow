@@ -32,3 +32,10 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## The stackra preset's skills and reference
+
+`assets/flow/presets/stackra/skills/` and `assets/flow/presets/stackra/reference/` are copied from Stackra core
+(STA-1945). Some of them are vendored from upstream projects under MIT or Apache-2.0: each such folder keeps its
+upstream `LICENSE` (and `NOTICE`, where the upstream has one), and `fflow sync` renders those files with the rest of
+the folder. The others are Figentra's own, under this package's MIT licence.

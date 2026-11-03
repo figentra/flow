@@ -4,12 +4,14 @@
  *   documents either as neutral skill documents for the repository's own projector (`.agents/skills/flow-<verb>/`) or,
  *   with `direct`, as Claude Code skills and OpenCode commands; the preset's agent definitions (`agents/`, as
  *   `.agents/agents/<id>.md` or, with `direct`, `.claude/agents/<id>.md`), the approval workflow (its secret names
- *   from `preset.yml`'s `approve`) and, with `apps.owner`, a CODEOWNERS for the owner-only paths (STA-1856). Only
- *   the skills and agents the config's profile selects are rendered, and the lock records the profile (STA-1945
- *   FR-6). Each written file carries its provenance header and `.flow/lock.json` v2 records the Flow version, the
- *   preset with its digest, the profile and each written file's digest (STA-1945 FR-2, FR-3); `installProblems`,
- *   reading a v1 or v2 lock, is the check that replaces spec-kit's tripwire: no hand edit, no forgotten `sync`, and
- *   no spec-kit leftover. With a `.flow/readme.yml`, `README.md` is rendered too (STA-1879).
+ *   from `preset.yml`'s `approve`) and, with `apps.owner`, a CODEOWNERS for the owner-only paths (STA-1856); the
+ *   preset's own skills (`skills/<name>/**`, beside the `flow-*` ones) and, with `renderReference`, its agent
+ *   reference, routing and models under `.agents/` (STA-1945, C6). Only the skills and agents the config's profile
+ *   selects are rendered, and the lock records the profile (STA-1945 FR-6). Each written file carries its provenance
+ *   header and `.flow/lock.json` v2 records the Flow version, the preset with its digest, the profile and each
+ *   written file's digest (STA-1945 FR-2, FR-3); `installProblems`, reading a v1 or v2 lock, is the check that
+ *   replaces spec-kit's tripwire: no hand edit, no forgotten `sync`, and no spec-kit leftover. With a
+ *   `.flow/readme.yml`, `README.md` is rendered too (STA-1879).
  * Boundary: `render` and `installProblems` read; `writeRendered` writes the rendered files and the lock and removes
  *   spec-kit's rendered `speckit-*` skills and commands. Nothing here deletes `.specify/` (that is `migrate`), nor,
  *   yet, an owned file a narrower profile no longer renders (STA-1945 T068).
@@ -17,7 +19,15 @@
  * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-2, FR-3, FR-6).
  * Secrets: none.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 
 import { approveWorkflow } from "./approve-workflow.mjs";
@@ -140,6 +150,10 @@ export function render(root, { direct = false } = {}) {
   // STA-1871: the preset's agent rules (the worktree rule among them).
   for (const [id, text] of presetDocs(root, "rules"))
     out.set(direct ? `.claude/rules/${id}.md` : `.agents/rules/${id}.md`, text);
+  // STA-1945 (D2): the preset's own skills ship in the package, file for file.
+  for (const [path, text] of presetTree(join(presetDir(root), "skills")))
+    out.set(`${direct ? ".claude" : ".agents"}/skills/${path}`, text);
+  for (const [path, text] of renderReference({ presetDir: presetDir(root) })) out.set(path, text);
   const readme = renderReadme(root);
   if (readme !== undefined) out.set("README.md", readme);
   const { apps, approve, baseline } = loadConfig(root).config;
@@ -247,6 +261,37 @@ export function profileProblem(root) {
     return error.message;
   }
   return undefined;
+}
+
+/**
+ * Every file under `dir`, its path relative to `dir` and its text, sorted by path; none when `dir` is missing.
+ * @param {string} dir
+ * @returns {[string, string][]}
+ */
+function presetTree(dir) {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { recursive: true, encoding: "utf8" })
+    .filter((path) => statSync(join(dir, path)).isFile())
+    .toSorted()
+    .map((path) => [path, readFileSync(join(dir, path), "utf8")]);
+}
+
+/**
+ * The preset's agent reference, routing and models, as they are in the preset (STA-1945, C6). They always go under
+ * `.agents/`: agents read them by that path, whichever assistant runs them.
+ * @param {{ presetDir: string }} ctx the render context; only its preset folder is read
+ * @returns {Map<string, string>} `.agents/reference/*`, `.agents/routing.yaml`, `.agents/models.yaml`
+ */
+export function renderReference(ctx) {
+  /** @type {Map<string, string>} */
+  const out = new Map();
+  for (const [path, text] of presetTree(join(ctx.presetDir, "reference")))
+    out.set(`.agents/reference/${path}`, text);
+  for (const file of ["routing.yaml", "models.yaml"]) {
+    const at = join(ctx.presetDir, file);
+    if (existsSync(at)) out.set(`.agents/${file}`, readFileSync(at, "utf8"));
+  }
+  return out;
 }
 
 /** A secret name GitHub accepts. */
