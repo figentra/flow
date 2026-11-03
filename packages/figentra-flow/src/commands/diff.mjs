@@ -16,6 +16,7 @@ import { LOCK } from "../lib/flow-dir.mjs";
 import { lockText } from "../lib/lock.mjs";
 import { NAME } from "../lib/product.mjs";
 import {
+  dropped,
   lockOf,
   presetDrift,
   removable,
@@ -80,7 +81,8 @@ export function diff(root, { direct } = {}) {
       if (now !== text) changes.push({ path, kind: "change", patch: linePatch(now, text) });
     }
   }
-  for (const path of removable(root)) changes.push({ path, kind: "delete", patch: "" });
+  for (const path of [...removable(root), ...dropped(root, written)])
+    changes.push({ path, kind: "delete", patch: "" });
   return changes;
 }
 

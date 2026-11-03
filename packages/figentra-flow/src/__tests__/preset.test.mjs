@@ -34,6 +34,7 @@ import {
   RULES,
 } from "../commands/gate.mjs";
 import { keyScheme } from "../adapters/tracker/index.mjs";
+import { diff } from "../commands/diff.mjs";
 import { sync } from "../commands/sync.mjs";
 import { FLOW_ASSETS, presetDir } from "../lib/flow-dir.mjs";
 import { digestOf } from "../lib/lock.mjs";
@@ -133,6 +134,11 @@ test("sync: an unedited flow-* skill the last sync rendered and this one does no
   writeFileSync(
     join(root, ".flow/lock.json"),
     JSON.stringify({ ...lock, files: { ...lock.files, ...old } }),
+  );
+  assert.deepEqual(
+    diff(root).filter((c) => c.kind === "delete"),
+    [{ path: ".claude/skills/flow-tasks/SKILL.md", kind: "delete", patch: "" }],
+    "diff names what sync drops",
   );
   const { removed } = sync(root, { direct: true, log: () => {} });
   assert.deepEqual(removed, [".claude/skills/flow-tasks/SKILL.md"]);

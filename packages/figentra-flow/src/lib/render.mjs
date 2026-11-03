@@ -358,13 +358,8 @@ export function migrateLegacy(root) {
 export function writeRendered(root, files) {
   const removed = removable(root);
   for (const p of removed) rmSync(join(root, p), { recursive: true, force: true });
-  // A `flow-*` skill or command the last sync rendered and this one does not (`flow-tasks`, FR-15) goes, unless it
-  // was edited since; nothing else the lock lists is removed.
-  for (const [p, digest] of Object.entries(lockedFiles(root))) {
+  for (const p of dropped(root, files)) {
     const at = join(root, p);
-    if (files.has(p) || !SKILL_DIRS.some((d) => p.startsWith(`${d}/flow-`)) || p.includes(".."))
-      continue;
-    if (!existsSync(at) || digestOf(readFileSync(at, "utf8")) !== digest) continue;
     rmSync(at);
     removed.push(p);
     if (!readdirSync(dirname(at)).length) rmSync(dirname(at), { recursive: true });
@@ -377,6 +372,25 @@ export function writeRendered(root, files) {
   // The lock goes last: a failed write leaves the old lock, and `check` names what differs.
   writeLock(root, lockOf(root, written));
   return removed;
+}
+
+/**
+ * The `flow-*` skills and commands the lock lists that `files` no longer holds (`flow-tasks`, FR-15) and nobody
+ * edited since: what `writeRendered` removes besides spec-kit's. Nothing else the lock lists goes.
+ * @param {string} root
+ * @param {Map<string, string>} files
+ */
+export function dropped(root, files) {
+  return Object.entries(lockedFiles(root))
+    .filter(
+      ([p, digest]) =>
+        !files.has(p) &&
+        SKILL_DIRS.some((d) => p.startsWith(`${d}/flow-`)) &&
+        !p.includes("..") &&
+        existsSync(join(root, p)) &&
+        digestOf(readFileSync(join(root, p), "utf8")) === digest,
+    )
+    .map(([p]) => p);
 }
 
 /**
