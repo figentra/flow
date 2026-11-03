@@ -7,7 +7,12 @@
  *   failed Linear call only warns; `--stack` lands bottom-up and stops at a red gate, the next PR updated by a merge
  *   commit and a normal push. STA-1856: an owner-only path refuses; a ruleset that requires a review gets the
  *   approval workflow dispatched and auto-merge turned on at the head instead of a merge, or a refusal when the
- *   workflow is not installed; `land` on a merged PR runs only the steps after the merge.
+ *   workflow is not installed; `land` on a merged PR runs only the steps after the merge. STA-1945 FR-16: a three-PR
+ *   stack lands with no human step; a conflict that is only the landed parent's change is resolved, any other stops
+ *   the stack with the file named; a PR GitHub did not retarget is retargeted, and a refused retarget stops; a re-run
+ *   after a stop resumes from the record, also after a run that died right after a merge; a missing worktree, a
+ *   refused push, a red gate and a branch with no PR below each stop; `--dry-run` prints the plan and changes nothing.
+ *   A renamed gate App (ADR 0523) counts from either configured login, never a third.
  * Boundary: temporary repositories with a local bare origin; GitHub, Linear and the gate injected; no network.
  * Runtime: node
  * Governing contract: ADR 0022; Stackra ADR 0503; STA-1729 phase 3.
@@ -16,9 +21,10 @@
 // @covers sta-1856:FR-1 sta-1856:FR-2 sta-1856:FR-3 sta-1856:FR-6
 // @covers sta-1856:AC-001 sta-1856:AC-003 sta-1856:AC-004 sta-1856:AC-005 sta-1856:AC-006 sta-1856:AC-007
 // @covers sta-1856:P-001 sta-1856:P-002 sta-1856:P-003
+// @covers sta-1945:FR-16 sta-1945:AC-14 sta-1945:P-022
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { landOne, landRules, landStack, squashMessage } from "../commands/land.mjs";
@@ -77,6 +83,34 @@ test("rules: a green, approved, conventional PR on main may land; each rule name
     );
   assert.deepEqual(landRules({ ...ok, required: false, manualOk: true }), []);
   assert.deepEqual(landRules({ ...ok, pr: pr({ base: { ref: "x" } }), stack: true }), []);
+});
+
+test("rules: a renamed gate App (ADR 0523) counts from either login the configuration names, not from a third", () => {
+  const by = (/** @type {string} */ login) => [
+    { context: "fflow/gate", state: "success", creator: { login } },
+  ];
+  const ok = {
+    pr: pr(),
+    base: "main",
+    required: true,
+    gateApp: [GATE_APP, "figentra-flow[bot]"],
+  };
+  assert.deepEqual(landRules({ ...ok, statuses: by(GATE_APP) }), []);
+  assert.deepEqual(landRules({ ...ok, statuses: by("figentra-flow[bot]") }), []);
+  assert.match(
+    landRules({ ...ok, statuses: by("figentra-other[bot]") }).join("\n"),
+    /posted by figentra-other\[bot\], not figentra-gate\[bot\] or figentra-flow\[bot\]/,
+  );
+  assert.match(
+    landRules({ ...ok, gateApp: [], statuses: by(GATE_APP) }).join("\n"),
+    /no gate App is configured/,
+  );
+  const ghost = [{ context: "fflow/gate", state: "success", creator: null }];
+  for (const gateApp of ["", [""]])
+    assert.match(
+      landRules({ ...ok, gateApp, statuses: ghost }).join("\n"),
+      /no gate App is configured/,
+    );
 });
 
 test("rules: a feature spec needs its approval and Tasked; a spec without a tier passes", () => {
@@ -301,10 +335,10 @@ test("land --stack: lands the bottom, updates the next by a merge commit and a p
         json: pr({ number: 8, base: { ref: w.branch }, head: { sha: "d".repeat(40), ref: top } }),
         err: "",
       };
-    if (method === "GET" && p.startsWith("/repos/figentra/flow/pulls?state=open&head=figentra:"))
+    if (method === "GET" && p.startsWith("/repos/figentra/flow/pulls?state=all&head=figentra:"))
       return {
         ok: true,
-        json: [{ number: 7, base: { ref: "main" }, head: { ref: w.branch } }],
+        json: [{ number: 7, state: "open", base: { ref: "main" }, head: { ref: w.branch } }],
         err: "",
       };
     return w.api(method, p, body);
@@ -542,4 +576,358 @@ test("land: an unreadable package.json refuses, and so do 300 changed files", as
   });
   assert.equal(b.code, 1);
   assert.match(b.problems?.join() ?? "", /300 files changed, at the approval check's limit of 300/);
+});
+
+/**
+ * A stack of PRs #7, #8, … each in its own worktree on the one below, and a GitHub stand-in that keeps their state:
+ * a head is origin's tip, a merge squashes onto main and pushes, deleting a head branch retargets the PRs on it
+ * (unless `retarget` is off), and `fflow/gate` from the gate App is on each commit the injected gate passed.
+ * @param {{ layers: [string, string][][], files?: Record<string, string>, retarget?: boolean,
+ *           failPatch?: boolean, hotfix?: [string, string], gateCode?: number, crash?: boolean,
+ *           hide?: number }} options  `layers[i]` is PR i's commits, bottom first; `hotfix` lands on main right
+ *   after the bottom PR merges; `crash` throws right after that merge, its branch deleted (the process died);
+ *   `hide` leaves that PR out of the head lookup
+ */
+function stackWorld({
+  layers,
+  files = {},
+  retarget = true,
+  failPatch = false,
+  hotfix,
+  gateCode = 0,
+  crash = false,
+  hide,
+}) {
+  const r = repo(files);
+  /** @type {{ number: number, branch: string, path: string, base: string, merged?: string, head?: string }[]} */
+  const prs = [];
+  let below = "main";
+  for (const [i, layer] of layers.entries()) {
+    const branch = `figentra/sta-${5 + i}-layer${i}`;
+    const path = join(r.root, ".claude", "worktrees", `sta-${5 + i}-layer${i}`);
+    sh(r.root, "worktree", "add", "-q", "-b", branch, path, below);
+    for (const [name, text] of layer) commit(path, name, text);
+    sh(path, "push", "-q", "origin", branch);
+    prs.push({ number: 7 + i, branch, path, base: below });
+    below = branch;
+  }
+  const tip = (/** @type {string} */ branch) => {
+    try {
+      return sh(r.origin, "rev-parse", "-q", "--verify", `refs/heads/${branch}`);
+    } catch {
+      return undefined;
+    }
+  };
+  const passed = new Set([tip(prs[0].branch)]);
+  /** @type {{ method: string, path: string, body?: any }[]} */
+  const calls = [];
+  /** @type {string[]} */
+  const logs = [];
+  const view = (/** @type {(typeof prs)[number]} */ p) => ({
+    number: p.number,
+    state: p.merged ? "closed" : "open",
+    merged: Boolean(p.merged),
+    merged_at: p.merged ? "2026-11-02T00:00:00Z" : null,
+    merge_commit_sha: p.merged ?? null,
+    draft: false,
+    mergeable_state: "clean",
+    title: `feat(flow): layer ${p.number}`,
+    node_id: `PR_${p.number}`,
+    base: { ref: p.base },
+    head: { ref: p.branch, sha: p.head ?? tip(p.branch) },
+  });
+  const ok = (/** @type {unknown} */ json) => ({ ok: true, json, err: "" });
+  const no = (/** @type {string} */ err) => ({ ok: false, json: undefined, err });
+  /** @type {import("../lib/github.mjs").Api} */
+  const api = (method, full, body) => {
+    calls.push({ method, path: full, body });
+    const b = /** @type {any} */ (body);
+    const at = full.replace("/repos/figentra/flow", "");
+    const n = Number(at.match(/^\/pulls\/(\d+)/)?.[1]);
+    const p = prs.find((x) => x.number === n);
+    if (method === "GET" && p && at === `/pulls/${n}`) return ok(view(p));
+    if (method === "GET" && at.startsWith("/pulls?state=all&head=figentra:")) {
+      const branch = decodeURIComponent(at.split("head=figentra:")[1]);
+      return ok(prs.filter((x) => x.branch === branch && x.number !== hide).map(view));
+    }
+    if (/^\/commits\/\w+\/statuses/.test(at)) return ok(passed.has(at.split("/")[2]) ? GREEN : []);
+    if (at === "/rules/branches/main")
+      return ok([
+        {
+          type: "required_status_checks",
+          parameters: { required_status_checks: [{ context: "fflow/gate" }] },
+        },
+      ]);
+    if (method === "GET" && at.startsWith("/git/ref/heads/")) {
+      const sha = tip(at.slice("/git/ref/heads/".length));
+      return sha ? ok({ object: { sha } }) : no("HTTP 404");
+    }
+    if (at.startsWith("/contents/")) return no("HTTP 404");
+    if (method === "PUT" && p && at === `/pulls/${n}/merge`) {
+      if (p.base !== "main") return no(`#${n} is based on ${p.base}`);
+      if (b.sha !== tip(p.branch)) return no("Head branch was modified (HTTP 409)");
+      sh(r.root, "fetch", "-q", "origin");
+      sh(r.root, "merge", "-q", "--squash", `origin/${p.branch}`);
+      sh(r.root, "commit", "-q", "-m", b.commit_title);
+      sh(r.root, "push", "-q", "origin", "main");
+      p.head = b.sha;
+      p.merged = sh(r.root, "rev-parse", "HEAD");
+      if (hotfix && p === prs[0]) {
+        commit(r.root, ...hotfix);
+        sh(r.root, "push", "-q", "origin", "main");
+      }
+      if (crash && p === prs[0]) {
+        sh(r.origin, "update-ref", "-d", `refs/heads/${p.branch}`);
+        for (const x of prs) if (x.base === p.branch) x.base = "main";
+        throw new Error("killed after the merge");
+      }
+      return ok({ sha: p.merged });
+    }
+    if (method === "DELETE" && at.startsWith("/git/refs/heads/")) {
+      const branch = at.slice("/git/refs/heads/".length);
+      sh(r.origin, "update-ref", "-d", `refs/heads/${branch}`);
+      if (retarget) for (const x of prs) if (x.base === branch) x.base = "main";
+      return ok({});
+    }
+    if (method === "PATCH" && p) {
+      if (failPatch) return no("HTTP 422");
+      p.base = b.base;
+      return ok({});
+    }
+    if (/^\/pulls\/\d+\/commits/.test(at)) return ok([{ commit: { message: "feat: x" } }]);
+    return ok([]);
+  };
+  /** @type {string[]} */
+  const gated = [];
+  const deps = {
+    api,
+    done: async () => {},
+    log: (/** @type {string} */ s) => void logs.push(s),
+    warn: () => {},
+    gate: async (/** @type {string} */ dir) => {
+      gated.push(dir);
+      if (gateCode === 0) passed.add(sh(dir, "rev-parse", "HEAD"));
+      return gateCode;
+    },
+  };
+  /** `fflow land --stack <top>` against this world. */
+  const land = (/** @type {{ number?: number, dry?: boolean }} */ over = {}) =>
+    landStack({
+      root: r.root,
+      repo: "figentra/flow",
+      base: "main",
+      number: prs[prs.length - 1].number,
+      gateApp: GATE_APP,
+      deps,
+      ...over,
+    });
+  const main = (/** @type {string} */ name) => sh(r.root, "show", `origin/main:${name}`);
+  return { r, prs, calls, logs, gated, land, main, tip };
+}
+
+/** Three PRs, each adding its own file. */
+const THREE = /** @type {[string, string][][]} */ ([
+  [["a.txt", "a\n"]],
+  [["b.txt", "b\n"]],
+  [["c.txt", "c\n"]],
+]);
+
+test("land --stack: --dry-run prints the plan, checks the bottom and changes nothing", async (t) => {
+  const w = stackWorld({ layers: THREE });
+  t.after(w.r.dispose);
+  const tips = w.prs.map((p) => w.tip(p.branch));
+  const result = await w.land({ dry: true });
+  assert.equal(result.code, 0, JSON.stringify(result));
+  assert.match(w.logs.join("\n"), /#7 → #8 → #9 into main, bottom first/);
+  assert.match(w.logs.join("\n"), /would squash-merge #7/);
+  assert.match(w.logs.join("\n"), /would merge main into figentra\/sta-6-layer1 .*retarget #8/);
+  assert.match(w.logs.join("\n"), /would merge main into figentra\/sta-7-layer2 .*retarget #9/);
+  assert.deepEqual(
+    w.calls.filter((c) => c.method !== "GET"),
+    [],
+  );
+  assert.deepEqual(
+    w.prs.map((p) => w.tip(p.branch)),
+    tips,
+  );
+  assert.deepEqual(w.gated, []);
+});
+
+test("land --stack: a clean three-PR stack lands bottom-up with no human step, each update a merge commit", async (t) => {
+  const w = stackWorld({ layers: THREE });
+  t.after(w.r.dispose);
+  const heads = w.prs.map((p) => w.tip(p.branch) ?? "");
+  const result = await w.land();
+  assert.equal(result.code, 0, JSON.stringify(result));
+  assert.deepEqual(
+    w.prs.map((p) => Boolean(p.merged)),
+    [true, true, true],
+  );
+  assert.deepEqual([w.main("a.txt"), w.main("b.txt"), w.main("c.txt")], ["a", "b", "c"]);
+  // Each upper PR was gated on its new head, which keeps its old head as an ancestor: a merge, never a rewrite.
+  assert.deepEqual(w.gated, [w.prs[1].path, w.prs[2].path]);
+  for (const [i, p] of w.prs.entries())
+    assert.equal(sh(w.r.root, "merge-base", "--is-ancestor", heads[i], p.head ?? ""), "");
+  assert.equal(
+    w.calls.some((c) => c.method === "PATCH"),
+    false,
+  );
+  for (const p of w.prs) assert.equal(existsSync(p.path), false);
+});
+
+test("land --stack: a conflict that is only the landed parent's change is resolved; any other stops and names the file", async (t) => {
+  const layers = /** @type {[string, string][][]} */ ([
+    [["shared.txt", "one\n"]],
+    [["shared.txt", "two\n"]],
+  ]);
+  const w = stackWorld({ layers, files: { "shared.txt": "zero\n" } });
+  t.after(w.r.dispose);
+  const result = await w.land();
+  assert.equal(result.code, 0, JSON.stringify(result));
+  assert.equal(w.main("shared.txt"), "two");
+  assert.match(
+    w.logs.join("\n"),
+    /#8: resolved shared\.txt, where main holds the landed parent's version/,
+  );
+
+  const real = stackWorld({ layers: THREE, hotfix: ["b.txt", "hotfix\n"] });
+  t.after(real.r.dispose);
+  const before = sh(real.prs[1].path, "rev-parse", "HEAD");
+  const stopped = await real.land();
+  assert.equal(stopped.code, 1);
+  assert.match(
+    stopped.problems?.join() ?? "",
+    /#8: merging main into figentra\/sta-6-layer1 conflicts in b\.txt, which main changed beyond the landed parent; the merge is aborted/,
+  );
+  // The bottom landed; the next is untouched and unmerged, its worktree clean.
+  assert.deepEqual(
+    real.prs.map((p) => Boolean(p.merged)),
+    [true, false, false],
+  );
+  assert.equal(sh(real.prs[1].path, "rev-parse", "HEAD"), before);
+  assert.equal(sh(real.prs[1].path, "status", "--porcelain"), "");
+});
+
+test("land --stack: a PR GitHub did not retarget is retargeted; a refused retarget stops with the PR on its old base", async (t) => {
+  const two = THREE.slice(0, 2);
+  const w = stackWorld({ layers: two, retarget: false });
+  t.after(w.r.dispose);
+  const result = await w.land();
+  assert.equal(result.code, 0, JSON.stringify(result));
+  assert.deepEqual(
+    w.calls.filter((c) => c.method === "PATCH").map((c) => [c.path, c.body]),
+    [["/repos/figentra/flow/pulls/8", { base: "main" }]],
+  );
+  assert.equal(w.prs[1].base, "main");
+
+  const refused = stackWorld({ layers: two, retarget: false, failPatch: true });
+  t.after(refused.r.dispose);
+  const stopped = await refused.land();
+  assert.equal(stopped.code, 1);
+  assert.match(
+    stopped.problems?.join() ?? "",
+    /#8: retargeting to main failed: HTTP 422; it stays on `figentra\/sta-5-layer0`/,
+  );
+  assert.equal(refused.prs[1].merged, undefined);
+});
+
+test("land --stack: run again after a stop, it resumes from the record and lands the rest", async (t) => {
+  const w = stackWorld({ layers: THREE, hotfix: ["b.txt", "hotfix\n"] });
+  t.after(w.r.dispose);
+  assert.equal((await w.land()).code, 1);
+  // GitHub retargeted #8 when #7's branch went, so only the record still names #8's landed parent.
+  assert.equal(w.prs[1].base, "main");
+  // The human resolves the real conflict in #8's worktree and commits; Flow pushes, gates and lands from there.
+  const path = w.prs[1].path;
+  try {
+    sh(path, "merge", "-q", "--no-edit", "origin/main");
+  } catch {
+    // conflicts, as the stop said
+  }
+  writeFileSync(join(path, "b.txt"), "both\n");
+  sh(path, "add", "b.txt");
+  sh(path, "commit", "-q", "--no-edit");
+  const result = await w.land();
+  assert.equal(result.code, 0, JSON.stringify(result));
+  assert.deepEqual(
+    w.prs.map((p) => Boolean(p.merged)),
+    [true, true, true],
+  );
+  // #9 took b.txt as its parent's resolution left it, and kept its own c.txt.
+  assert.equal(w.main("b.txt"), "both");
+  assert.equal(w.main("c.txt"), "c");
+  assert.equal(readFileSync(join(w.r.root, "b.txt"), "utf8"), "both\n");
+});
+
+test("land --stack: a PR stacked on a branch with no open PR and none merged refuses before any change", async (t) => {
+  const w = stackWorld({ layers: THREE, hide: 8 });
+  t.after(w.r.dispose);
+  const result = await w.land();
+  assert.equal(result.code, 1);
+  assert.match(
+    result.problems?.join() ?? "",
+    /#9 is stacked on `figentra\/sta-6-layer1`, which has no open PR and none merged into main/,
+  );
+  assert.deepEqual(
+    w.calls.filter((c) => c.method !== "GET"),
+    [],
+  );
+});
+
+test("land --stack: the next PR stops when it has no worktree, its push is refused or its gate fails", async (t) => {
+  const two = THREE.slice(0, 2);
+  const gone = stackWorld({ layers: two });
+  t.after(gone.r.dispose);
+  sh(gone.r.root, "worktree", "remove", "--force", gone.prs[1].path);
+  const a = await gone.land();
+  assert.equal(a.code, 1);
+  assert.match(
+    a.problems?.join() ?? "",
+    /#8 \(figentra\/sta-6-layer1\) has no local worktree to update/,
+  );
+  assert.deepEqual(
+    gone.prs.map((p) => Boolean(p.merged)),
+    [true, false],
+  );
+
+  const refused = stackWorld({ layers: two });
+  t.after(refused.r.dispose);
+  const hooks = join(refused.r.origin, "hooks");
+  mkdirSync(hooks, { recursive: true });
+  writeFileSync(
+    join(hooks, "pre-receive"),
+    '#!/bin/sh\nwhile read o n ref; do [ "$ref" = refs/heads/figentra/sta-6-layer1 ] && { echo denied >&2; exit 1; }; done\nexit 0\n',
+    { mode: 0o755 },
+  );
+  const b = await refused.land();
+  assert.equal(b.code, 1);
+  assert.match(b.problems?.join() ?? "", /#8: push failed: .*denied/s);
+  assert.equal(refused.prs[1].merged, undefined);
+
+  const red = stackWorld({ layers: two, gateCode: 1 });
+  t.after(red.r.dispose);
+  const c = await red.land();
+  assert.equal(c.code, 1);
+  assert.match(c.problems?.join() ?? "", /#8: fflow gate run exited 1; the stack stops here/);
+  assert.deepEqual(red.gated, [red.prs[1].path]);
+  assert.equal(red.prs[1].merged, undefined);
+});
+
+test("land --stack: a run that dies right after a merge resumes, the next PR's parent recorded before it", async (t) => {
+  const layers = /** @type {[string, string][][]} */ ([
+    [["shared.txt", "one\n"]],
+    [["shared.txt", "two\n"]],
+  ]);
+  const w = stackWorld({ layers, files: { "shared.txt": "zero\n" }, crash: true });
+  t.after(w.r.dispose);
+  await assert.rejects(w.land(), /killed after the merge/);
+  // GitHub retargeted #8 and #7's finish never ran: only the record written before the merge names the parent.
+  assert.equal(w.prs[1].base, "main");
+  const result = await w.land();
+  assert.equal(result.code, 0, JSON.stringify(result));
+  assert.equal(w.main("shared.txt"), "two");
+  assert.match(
+    w.logs.join("\n"),
+    /#8: resolved shared\.txt, where main holds the landed parent's version/,
+  );
 });

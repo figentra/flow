@@ -37,10 +37,11 @@ export const CACHES = [
  * Runs `git args` in `cwd`.
  * @param {string} cwd
  * @param {string[]} args
+ * @param {NodeJS.ProcessEnv} [env]
  * @returns {{ ok: boolean, out: string, err: string }}
  */
-export function git(cwd, args) {
-  const r = spawnSync("git", args, { cwd, encoding: "utf8", maxBuffer: 64 << 20 });
+export function git(cwd, args, env = process.env) {
+  const r = spawnSync("git", args, { cwd, env, encoding: "utf8", maxBuffer: 64 << 20 });
   return { ok: r.status === 0, out: (r.stdout ?? "").trim(), err: (r.stderr ?? "").trim() };
 }
 
@@ -73,10 +74,11 @@ const isLocal = (/** @type {string} */ url) =>
  * prefix). A local origin needs none; otherwise a missing `credentials` block is refused, never a personal login.
  * @param {string} root
  * @param {string[]} args
+ * @param {NodeJS.ProcessEnv} [env]
  * @returns {{ ok: boolean, out: string, err: string }}
  */
-export function remote(root, args) {
-  if (isLocal(git(root, ["remote", "get-url", "origin"]).out)) return git(root, args);
+export function remote(root, args, env = process.env) {
+  if (isLocal(git(root, ["remote", "get-url", "origin"]).out)) return git(root, args, env);
   const loaded = loadConfig(root);
   // An invalid configuration is that error, never a failed git call (a missing tip read as "push it first").
   if (loaded.errors.length) throw new ConfigError(loaded.errors.join("\n"));
@@ -86,8 +88,8 @@ export function remote(root, args) {
   if (!prefix)
     return { ok: false, out: "", err: 'credentials: set "git" (the command for network git)' };
   const [command, ...pre] = prefix;
-  if (command === "git") return git(root, [...pre, ...args]);
-  const r = spawnSync(command, [...pre, ...args], { cwd: root, encoding: "utf8" });
+  if (command === "git") return git(root, [...pre, ...args], env);
+  const r = spawnSync(command, [...pre, ...args], { cwd: root, env, encoding: "utf8" });
   return { ok: r.status === 0, out: (r.stdout ?? "").trim(), err: (r.stderr ?? "").trim() };
 }
 

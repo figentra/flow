@@ -22,7 +22,7 @@ engine, and the divergence report with the docs. The minor release waits for the
 - **Language**: plain ESM JavaScript with JSDoc, checked by `tsc` (`checkJs`); Node 24; no runtime dependency (the
   YAML that overrides and preset data need is read by `src/lib/yaml.mjs`, which exists for the agent roster).
 - **Members**: `packages/figentra-flow` (`@figentra-oss/flow`) only; Flow's ADRs in `docs/adr/`.
-- **Testing**: `node:test` in `src/__tests__/*.test.mjs` (the guard's in `src/guard/__tests__/`), on fixture
+- **Testing**: `node:test` in `src/__tests__/*.test.mjs` (the guard's too), on fixture
   repositories in temporary folders (`src/__tests__/__fixtures__/repo.mjs`); no network. On the Mac only oxfmt and
   oxlint run; typecheck and tests run on the testbed and in CI.
 - **What exists**:
@@ -78,7 +78,7 @@ engine, and the divergence report with the docs. The minor release waits for the
 | Secrets (ADR 0009)        | PASS   | Flow reads none; `.mcp.yaml` and the guard's tables carry secret names only                       |
 | Security                  | PASS   | the guard's rules become mandatory policies; overrides are owner-only paths; `check` fails closed |
 | Not built yet (ADR 0011)  | PASS   | no skill-publish pipeline (D2); `sync --workspace` opening PRs stays out ("Not now")              |
-| Test placement (ADR 0022) | PASS   | `src/__tests__/` and `src/guard/__tests__/`; core's guard tests are ported there                  |
+| Test placement (ADR 0022) | PASS   | `src/__tests__/`; core's guard tests are ported there                                             |
 | Versions and catalogs     | PASS   | no dependency; third-party skills are pinned by digest, not installed as packages                 |
 | Licences                  | PASS   | per D1, nothing proprietary or unlicensed is redistributed                                        |
 
@@ -102,7 +102,7 @@ engine, and the divergence report with the docs. The minor release waits for the
 - **P-008**: `validate` accepts an override set only if every mandatory policy keeps every preset rule — Validates: FR-5
 - **P-009**: the rendered set is exactly the profile's selection, and the lock records that profile — Validates: FR-6
 - **P-010**: outputs are the preset's plus the config's; dropped owned files go; `.agents/specs/` is untouched — Validates: FR-7, FR-12
-- **P-011**: lefthook runs mise first, `pnpm exec` only without mise, exit 2 passes; `mise.toml` pins match the catalog — Validates: FR-7
+- **P-011**: lefthook runs the named mise tool, never `pnpm exec`, skips without mise (stackra), exit 2 passes; `mise.toml` pins match the catalog — Validates: FR-7
 - **P-012**: for every input of the ported corpus the engine with the stackra tables decides as core's tests expect — Validates: FR-7, FR-11
 - **P-013**: a skill installs only with an allowed licence; a `machine-only` one is never installed or recorded — Validates: FR-8
 - **P-014**: the divergence report lists exactly the lag, overrides by kind, replacements and disables, and drift — Validates: FR-9
@@ -351,7 +351,7 @@ packages/figentra-flow/
 ├── src/guard/words.mjs                     (new: shell splitting, from guard.mjs `words`)
 ├── src/guard/io.mjs                        (new: from core's `_io.mjs`)
 ├── src/guard/{bash,paths,plan-gate,session-context,post-write,prompt-hints}.mjs (new)
-├── src/guard/__tests__/{guard-bash,guard-paths,plan-gate,post-write-checks,prompt-hints,guard-differential,session-context}.test.mjs
+├── src/__tests__/{guard-bash,guard-paths,plan-gate,post-write-checks,prompt-hints,guard-differential,session-context}.test.mjs
 ├── src/commands/guard.mjs                  (changed: delegates to the engine; `--print-settings`)
 ├── assets/flow/presets/stackra/guard/{bash-rules,path-rules,inbox,reviewer-agents,hints}.mjs (new: core's tables)
 └── assets/flow/presets/neutral/guard/{bash-rules,path-rules}.mjs (new: worktree and side-door rules, generic secrets)
@@ -427,9 +427,9 @@ export function pinTools(miseToml, catalog) {}
 
 **Behaviour**: `.claude/settings.json` wires every guard event to
 `node node_modules/@figentra-oss/flow/bin/fflow-guard.mjs <event>` (NFR-2) and the Stop event to
-`fflow session stop` (C10). The lefthook jobs run `mise exec -- oxfmt …` when `mise` is on PATH, else `pnpm exec`;
-exit 2 passes; commit-msg skips without `node_modules/.bin/commitlint`; pre-push skips only on
-`ERR_PNPM_META_FETCH_FAIL` or the supply-chain 401; oxlint skips without `node_modules/@stackra/oxlint-config`.
+`fflow session stop` (C10). The lefthook jobs run `mise exec npm:oxfmt -- oxfmt …` when `mise` is on PATH, else
+skip with a note (STA-2039); exit 2 passes; commit-msg skips without `node_modules/.bin/commitlint`; pre-push skips
+only on `ERR_PNPM_META_FETCH_FAIL` or the supply-chain 401; oxlint skips without `node_modules/@stackra/oxlint-config`.
 **Failure modes**: no catalog in `pnpm-workspace.yaml` → the pins stay as they are and `validate` warns; a
 `mise.toml` line other than the two pins is never touched.
 
@@ -898,28 +898,28 @@ block, never a pass.
 New files per PR (under `packages/figentra-flow/` unless rooted elsewhere); the component trees above list every
 changed file.
 
-| PR  | New files                                                                                                       |
-| --- | --------------------------------------------------------------------------------------------------------------- |
-| 1   | `src/lib/{lock,provenance,workspace-run}.mjs`, `src/commands/{check,diff,validate,update}.mjs`                  |
-| 2   | `src/lib/{overrides,policies}.mjs`, `schema/override.schema.json`                                               |
-| 3   | `src/lib/profiles.mjs`                                                                                          |
-| 4   | `bin/fflow-guard.mjs`, `src/guard/*.mjs` (10), `src/guard/__tests__/*` (7), `assets/flow/presets/*/guard/*.mjs` |
-| 5   | `src/lib/render-{settings,opencode,mcp,lefthook,agents-md}.mjs`, `assets/flow/presets/*/surfaces/**`            |
-| 6   | `assets/flow/presets/stackra/{reference/,routing.yaml,models.yaml}`, the agents and skills moved from core      |
-| 7   | `src/lib/skills.mjs`, `assets/flow/presets/stackra/third-party.yml`                                             |
-| 8   | `src/lib/divergence.mjs`, `docs/adr/0002-governed-preset.md`, `.changeset/flow-0-3-0.md`                        |
-| 9   | `src/lib/{output,help}.mjs`                                                                                     |
-| 10  | `schema/record.schema.json`, `src/lib/{record,stages}.mjs`, `src/commands/{next,resume,session}.mjs`            |
-| 11  | `src/lib/stack.mjs`, `src/commands/stack.mjs`                                                                   |
-| 12  | `src/lib/queue.mjs`, `src/commands/adr.mjs`                                                                     |
-| 13  | `src/lib/hooks-run.mjs`, `src/commands/hooks.mjs`                                                               |
-| 14  | `src/commands/{plan,review}.mjs`, `src/lib/shards.mjs`, `assets/flow/presets/*/commands/flow-{review,gate}.md`  |
-| 15  | `src/lib/{sessions,records}.mjs`, `src/commands/{todo,ledger}.mjs`                                              |
-| 16  | none (changes `land.mjs` and `gate-run.mjs`)                                                                    |
-| 17  | `src/lib/evidence.mjs`, `src/commands/task.mjs`                                                                 |
-| 18  | `src/lib/waves.mjs`, `assets/flow/presets/*/commands/flow-build.md`                                             |
-| 19  | none (changes the templates)                                                                                    |
-| 20  | `src/lib/{scope-drift,contract-drift}.mjs`, `assets/flow/presets/*/quality-words.yml`                           |
+| PR  | New files                                                                                                      |
+| --- | -------------------------------------------------------------------------------------------------------------- |
+| 1   | `src/lib/{lock,provenance,workspace-run}.mjs`, `src/commands/{check,diff,validate,update}.mjs`                 |
+| 2   | `src/lib/{overrides,policies}.mjs`, `schema/override.schema.json`                                              |
+| 3   | `src/lib/profiles.mjs`                                                                                         |
+| 4   | `bin/fflow-guard.mjs`, `src/guard/*.mjs` (10), `src/__tests__/*` (7 more), `assets/flow/presets/*/guard/*.mjs` |
+| 5   | `src/lib/render-{settings,opencode,mcp,lefthook,agents-md}.mjs`, `assets/flow/presets/*/surfaces/**`           |
+| 6   | `assets/flow/presets/stackra/{reference/,routing.yaml,models.yaml}`, the agents and skills moved from core     |
+| 7   | `src/lib/skills.mjs`, `assets/flow/presets/stackra/third-party.yml`                                            |
+| 8   | `src/lib/divergence.mjs`, `docs/adr/0002-governed-preset.md`, `.changeset/flow-0-3-0.md`                       |
+| 9   | `src/lib/{output,help}.mjs`                                                                                    |
+| 10  | `schema/record.schema.json`, `src/lib/{record,stages}.mjs`, `src/commands/{next,resume,session}.mjs`           |
+| 11  | `src/lib/stack.mjs`, `src/commands/stack.mjs`                                                                  |
+| 12  | `src/lib/queue.mjs`, `src/commands/adr.mjs`                                                                    |
+| 13  | `src/lib/hooks-run.mjs`, `src/commands/hooks.mjs`                                                              |
+| 14  | `src/commands/{plan,review}.mjs`, `src/lib/shards.mjs`, `assets/flow/presets/*/commands/flow-{review,gate}.md` |
+| 15  | `src/lib/{sessions,records}.mjs`, `src/commands/{todo,ledger}.mjs`                                             |
+| 16  | none (changes `land.mjs` and `gate-run.mjs`)                                                                   |
+| 17  | `src/lib/evidence.mjs`, `src/commands/task.mjs`                                                                |
+| 18  | `src/lib/waves.mjs`, `assets/flow/presets/*/commands/flow-build.md`                                            |
+| 19  | none (changes the templates)                                                                                   |
+| 20  | `src/lib/{scope-drift,contract-drift}.mjs`, `assets/flow/presets/*/quality-words.yml`                          |
 
 Each new command is also a `COMMANDS` entry in `bin/fflow.mjs`; each new library has its test in `src/__tests__/`.
 

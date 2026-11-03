@@ -20,9 +20,9 @@ const APP_TOKEN =
 /**
  * The workflow's YAML.
  * @param {{ version: string, integrity?: string, appId: string, privateKey: string,
- *           trusted?: Record<string, string>, ownerOnly?: string[] }} options the package version to run and its
- *   lockfile integrity (`sha512-…`; without one the workflow refuses to run), the App secret names, the trusted check
- *   sources (context to login) and the repository's extra owner-only globs
+ *           trusted?: Record<string, string | string[]>, ownerOnly?: string[] }} options the package version to run
+ *   and its lockfile integrity (`sha512-…`; without one the workflow refuses to run), the App secret names, the
+ *   trusted check sources (context to a login or a list of logins) and the repository's extra owner-only globs
  */
 export function approveWorkflow({
   version,

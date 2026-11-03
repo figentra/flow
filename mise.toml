@@ -5,7 +5,7 @@
 # Secrets: forbidden
 [tools]
 node = "24.22.0"
-pnpm = "12.6.0"
+pnpm = "12.16.1"
 # The hooks' formatter and linter without a workspace install (matching the catalog; STA-2039, core's STA-1865).
 "npm:oxfmt" = "0.71.0"
 "npm:oxlint" = "1.86.0"
