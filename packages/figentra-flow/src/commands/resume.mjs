@@ -1,12 +1,12 @@
 /**
  * Figentra Flow file contract:
  * Purpose: `fflow resume <key>` (FR-13, AC-13; declared in src/lib/console.mjs, which refuses a failed `resume` and
- *   has `show` print the rest): re-enters the stage a dead session left half done. It finds the
- *   task's worktree (this checkout, a linked worktree, or a new one in `.claude/worktrees/` from the branch a stopped
- *   session pushed), fast-forwards it to the pushed branch (refusing when the two have diverged), reads Flow's record
- *   there and, when the recorded stage is active or failed, re-runs that
- *   stage's command if it is one Flow can repeat unattended (`RERUNNABLE`), records the outcome and pushes it. Any
- *   other half-done stage is the session's or the owner's: its command is printed.
+ *   has `show` print the rest): re-enters the stage a dead session left half done. It finds the task's worktree (this
+ *   checkout, a linked worktree, or a new one in `.claude/worktrees/` from the branch a stopped session pushed),
+ *   fast-forwards it to the pushed branch (refusing when the two have diverged), reads Flow's record there and, when
+ *   the recorded stage is active or failed, re-runs that stage's command if it is one Flow can repeat unattended
+ *   (`RERUNNABLE`), records the outcome and pushes it. Any other half-done stage is the session's or the owner's: its
+ *   command is printed.
  * Boundary: may add one worktree (inside `.claude/worktrees/`), runs one `fflow` command, writes the record and commits
  *   and pushes it on the task's branch.
  * Runtime: node

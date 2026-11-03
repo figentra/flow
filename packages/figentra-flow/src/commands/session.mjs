@@ -1,9 +1,9 @@
 /**
  * Figentra Flow file contract:
  * Purpose: `fflow session stop [--save-only] [--session <name>] [--kind <kind>]` (FR-19, AC-18; declared in
- *   src/lib/console.mjs). Run by the agent's
- *   SessionEnd hook, on a task's branch it writes the session's end into Flow's record, commits the tracked changes and
- *   the record as `wip(<session name>): …` and pushes the branch as the bot, so nothing is left only on one machine.
+ *   src/lib/console.mjs). Run by the agent's SessionEnd hook, on a task's branch it writes the session's end into
+ *   Flow's record, commits the tracked changes and the record as `wip(<session name>): …` and pushes the branch as the
+ *   bot, so nothing is left only on one machine.
  *   Run by the Stop hook (every turn) with `--save-only`, it only writes the record: no commit, no push. Untracked
  *   files and files named like secrets are never committed, only listed. The hooks always run (FR-18): when they or
  *   git refuse the commit, that is reported (the hooks' output tail names the failing files) and the work stays
@@ -222,7 +222,8 @@ const TONE = /** @type {const} */ ({
 
 /**
  * `fflow session stop`, run by the hooks: reads the hook's JSON on stdin, stops the session and reports it. Always
- * exits 0: a hook that fails must not trap the session.
+ * returns 0: a hook that fails must not trap the session (only a malformed hook line, refused by the engine before
+ * this runs, exits 2).
  * @param {import("../lib/console.mjs").Io} io
  * @param {{ saveOnly: boolean, session?: string, kind?: string }} options
  * @returns {Promise<number>}
