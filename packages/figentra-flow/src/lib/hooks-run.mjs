@@ -197,11 +197,9 @@ function onBox({ root, stage, args = [], runner, artifacts }) {
       if (!r.ok) return refuse(`git ${step.join(" ")} failed: ${r.err}`);
     }
     // The stage is one of HOOK_STAGES and the message has a fixed name, so nothing here needs quoting.
-    let hook = stage;
-    if (stage === "commit-msg") {
+    if (stage === "commit-msg")
       copyFileSync(resolve(root, args[0]), join(dir, ".git", "COMMIT_EDITMSG"));
-      hook = `${stage} .git/COMMIT_EDITMSG`;
-    }
+    const hook = stage === "commit-msg" ? `${stage} .git/COMMIT_EDITMSG` : stage;
     // The caller's environment reaches a `local` or `command` runner's job: no LEFTHOOK there either.
     const command = `pnpm install --frozen-lockfile && env -u LEFTHOOK -u LEFTHOOK_EXCLUDE pnpm exec lefthook run ${hook}`;
     const code = runner.run({ dir, command, label: `${NAME} hooks ${stage} ${run}`, flags: [] });
