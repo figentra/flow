@@ -3281,11 +3281,11 @@ test("STA-351 follow-up: scratchpad_dir meets the same real-path check as the de
     assert.equal(find(fake, [swapped]), "");
     assert.equal(find(pad, ["another-session"]), "");
     assert.equal(inSession(`rm -rf ${pad}/sub`, { session_id: id, scratchpad_dir: pad }), "allow");
-    for (const [c, payload] of [
+    for (const [c, payload] of /** @type {[string, Record<string, string>][]} */ ([
       [`rm -rf ${fake}/sub`, { session_id: swapped, scratchpad_dir: fake }],
       [`rm -rf ${outside}/sub`, { session_id: id, scratchpad_dir: outside }],
       [`rm -rf ${fake}/sub`, { session_id: id, scratchpad_dir: fake }],
-    ])
+    ]))
       assert.equal(inSession(c, payload), "deny", c);
   } finally {
     for (const d of [project, outside, projectDir]) rmSync(d, { recursive: true, force: true });
@@ -3359,7 +3359,7 @@ test("deploys: the QA/release role runs development, preview and staging without
 
 test("deploys: production asks the owner on each run, naming the workflow, ref or sha and environment", () => {
   const { worktree, done } = repoWithWorktree();
-  for (const [c, shown] of [
+  for (const [c, shown] of /** @type {[string, RegExp][]} */ ([
     ["pnpm runway promote 0123abc", /runway promote/],
     ["pnpm runway deploy cloudflare-workers", /environment production/],
     ["stackra deploy --product --env production --approved", /environment production/],
@@ -3374,7 +3374,7 @@ test("deploys: production asks the owner on each run, naming the workflow, ref o
       "pnpm bot:gh -- api -X POST repos/figentra/stackra/actions/workflows/deploy.yml/dispatches -f ref=main",
       /the dispatches API/,
     ],
-  ]) {
+  ])) {
     const out = run({ tool_input: { command: c }, cwd: worktree }, { STACKRA_ROLE: "qa-release" });
     assert.equal(out.permissionDecision, "ask", c);
     assert.match(out.permissionDecisionReason, shown, c);
