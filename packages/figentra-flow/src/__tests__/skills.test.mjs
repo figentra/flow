@@ -5,8 +5,8 @@
  *   git-ignored `.agents/skills/.vendor/` only when every one matches its pinned digest; a machine-only skill is never
  *   fetched, installed or locked, and `machineOnlyProblems` finds a committed one by folder or front-matter name; a
  *   vendor folder that is a symbolic link refuses; `gitFetchTree` fetches only the skill's folder at its commit;
- *   `sync` locks the pins and refuses without writing (a legacy config not renamed); the stackra preset lists D1's
- *   machine-only skills.
+ *   `sync` locks the pins and refuses without writing (a legacy config not renamed), and installs and pins only the
+ *   skills the profile selects (FR-6); the stackra preset lists D1's machine-only skills.
  * Boundary: temporary folders and scratch git repositories; `fetchTree` copies a local folder, and `gitFetchTree`
  *   reaches `https://github.com/` only through a `url.<local>.insteadOf` mirror, so no network.
  * Runtime: node
@@ -416,6 +416,25 @@ test("sync installs the preset's skills and locks their pins; a refusal writes n
     (e) => e instanceof ConfigError && /both exist/.test(e.message),
   );
   assert.deepEqual(snapshot(root), both, "the vendor folder kept");
+});
+
+// @covers sta-1945:FR-6 sta-1945:FR-8
+test("sync installs and pins only the third-party skills the profile selects", (t) => {
+  const dir = scratch(t);
+  const root = governed(t, { own: true, config: { profile: "lean" } });
+  writeFileSync(
+    join(root, OWN_PRESET, "preset.yml"),
+    'preset:\n  id: "ours"\nprofiles:\n  lean:\n    agents: []\n    skills: [flow-plan, a]\n    hooks: []\n',
+  );
+  const a = upstream(dir, "a");
+  const b = upstream(dir, "b");
+  writeFileSync(join(root, OWN_PRESET, THIRD_PARTY), yamlOf([a, b]));
+  const { calls, fetchTree } = localFetch(dir);
+  sync(root, { log: () => {}, fetchTree });
+  assert.deepEqual(calls, [a.source], "b is never fetched");
+  assert.deepEqual(readLock(root)?.skills, { a: pinOf(a) });
+  assert.equal(readLock(root)?.profile, "lean");
+  assert.deepEqual(readdirSync(join(root, VENDOR)).toSorted(), [".gitignore", "a"]);
 });
 
 // @covers sta-1945:FR-8 sta-1945:AC-10 sta-1945:P-013

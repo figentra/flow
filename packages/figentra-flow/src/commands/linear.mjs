@@ -33,7 +33,7 @@ export function specLinks(text) {
 export function unlinkedTasks(text) {
   return text
     .split("\n")
-    .map((line, i) => ({ line, i, m: line.match(/^- \[[ xX]\] (T\d+)\s+(.*)$/) }))
+    .map((line, i) => ({ line, i, m: line.match(/^- \[[ xX~-]\] (T\d+)\*?\s+(.*)$/) }))
     .filter(({ m, line }) => m && !/\[STA-\d+\]\s*$/.test(line))
     .map(({ m, i }) => ({ index: i, id: m[1], title: m[2].trim() }));
 }

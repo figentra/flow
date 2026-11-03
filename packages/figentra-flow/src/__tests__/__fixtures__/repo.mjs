@@ -7,7 +7,7 @@
  * Governing contract: ADR 0022; STA-1729.
  */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -69,6 +69,20 @@ export function repo(files = {}) {
   sh(root, "push", "-q", "-u", "origin", "main");
   sh(root, "remote", "set-head", "origin", "main");
   return { root, origin, dispose: () => rmSync(top, { recursive: true, force: true }) };
+}
+
+/**
+ * Installs a pre-commit hook in the repository at `root` that refuses every commit, printing `message`.
+ * @param {string} root
+ * @param {string} message
+ */
+export function refuseCommits(root, message) {
+  const hooks = join(root, "..", "hooks");
+  mkdirSync(hooks, { recursive: true });
+  writeFileSync(join(hooks, "pre-commit"), `#!/bin/sh\necho '${message}' >&2\nexit 1\n`, {
+    mode: 0o755,
+  });
+  sh(root, "config", "core.hooksPath", hooks);
 }
 
 /**

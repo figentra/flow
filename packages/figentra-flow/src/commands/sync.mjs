@@ -7,7 +7,8 @@
  *   renders Claude Code skills and OpenCode commands itself, for a repository without a projector. Nothing runs
  *   spec-kit's `specify`. It renders only the locked preset: when the installed preset's name or digest differs from
  *   the lock's, it refuses and names `fflow update` (STA-1945 FR-1, FR-2). It installs the preset's third-party skills
- *   into `.agents/skills/.vendor/`, pinned in the lock, and refuses one it may not or cannot install (FR-8).
+ *   the profile selects (FR-6) into `.agents/skills/.vendor/`, pinned in the lock, and refuses one it may not or
+ *   cannot install (FR-8).
  * Boundary: writes only the rendered files, `.agents/skills/.vendor/`, `.flow/lock.json`, and what the repository's
  *   own `agents:sync` writes; fetches third-party skills from their public sources.
  * Runtime: node
@@ -21,16 +22,16 @@ import { fileURLToPath } from "node:url";
 
 import { NAME } from "../lib/product.mjs";
 import { ConfigError } from "../lib/config.mjs";
-import { presetDir } from "../lib/flow-dir.mjs";
 import { LockError, NewerLockError, readLock } from "../lib/lock.mjs";
 import {
   legacyConflict,
   migrateLegacy,
   presetDrift,
   render,
+  selectedSkills,
   writeRendered,
 } from "../lib/render.mjs";
-import { installSkills, loadThirdParty } from "../lib/skills.mjs";
+import { installSkills } from "../lib/skills.mjs";
 import { runIn } from "../lib/workspace-run.mjs";
 
 /** The package's assets folder. */
@@ -84,7 +85,7 @@ export function sync(root, { direct = false, log = console.log, adopt = false, f
   const conflict = legacyConflict(root);
   if (conflict) throw new ConfigError(conflict);
   // First: a skill that may not or cannot install refuses before the rename or the render writes anything.
-  installSkills(root, loadThirdParty(presetDir(root)), { fetchTree });
+  installSkills(root, selectedSkills(root), { fetchTree });
   const migrated = migrateLegacy(root);
   if (migrated.error) throw new ConfigError(migrated.error);
   for (const line of migrated.done) log(`${NAME} sync: ${line} (the ${NAME} rename)`);
