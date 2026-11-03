@@ -291,7 +291,11 @@ written, the install, and one `turbo run <tasks> --continue --summarize`, then `
     is red on main;
   - more failed tasks than main has.
 
-  The job summary lists all of these, plus fixed tasks and tasks still failing.
+  A task that failed or never ran on main and passes now is a gain. A task main never ran because an upstream task
+  of its own package failed there, and that now runs and fails, is newly reached: it is listed with the task that
+  unblocked it and is neither a new failure nor debt. A task that passed on main and fails now is still a regression.
+  The job summary lists all of these, plus tasks still failing; `check --json` prints the same result, or
+  `{ ok: false, reason }` when it fails closed.
 
 Only an artifact from a push run on the default branch, at exactly that commit, counts as a baseline. Security checks
 (gitleaks, CodeQL, dependency review, the secrets checks) stay required on their own; `Baseline` replaces only the full
