@@ -2,7 +2,7 @@
  * Figentra Flow file contract:
  * Purpose: hold the wave graph to STA-1945 FR-24 and FR-25: deps come first, no two tasks of a wave share a path, a
  *   wave holds at most five tasks, a checkpoint runs alone with nothing below it starting before it, a cycle is
- *   refused, and `nextWave` holds a wave while one of its tasks is unfinished, skipping only an optional task left
+ *   refused, and `nextWave` holds a wave while one of its tasks is unfinished and never queues an optional task left
  *   `[ ]`.
  * Boundary: pure; no files.
  * Runtime: node
@@ -63,26 +63,42 @@ test("waves: a wave holds at most five tasks; a cycle is refused", () => {
 });
 
 test("nextWave: a failed or dead task holds its wave and restarts there (AC-25, AC-26)", () => {
-  assert.deepEqual(nextWave(parseTasks(TASKS)), { wave: 1, ids: ["T001", "T002"] });
+  assert.deepEqual(nextWave(parseTasks(TASKS)), {
+    wave: 1,
+    ids: ["T001", "T002"],
+    restarts: false,
+  });
   // T001 done, T002 failed (still [-]): the next wave never starts
-  assert.deepEqual(nextWave(marked({ T001: "x", T002: "-" })), { wave: 1, ids: ["T002"] });
+  assert.deepEqual(nextWave(marked({ T001: "x", T002: "-" })), {
+    wave: 1,
+    ids: ["T002"],
+    restarts: true,
+  });
   // a dead session's queued and started tasks: the wave restarts at its first unfinished one
   assert.deepEqual(nextWave(marked({ T001: "x", T002: "x", T003: "~", T004: "-" })), {
     wave: 2,
     ids: ["T003", "T004"],
+    restarts: true,
   });
   assert.deepEqual(nextWave(marked({ T001: "x", T002: "x", T003: "x", T004: "x" })), {
     wave: 3,
     ids: ["T005"],
+    restarts: false,
   });
 });
 
-test("nextWave: an optional task left [ ] does not hold the build; one started does (P-030)", () => {
+test("nextWave: an optional task left [ ] is never queued and holds nothing; one started is (P-030)", () => {
   const before = { T001: "x", T002: "x", T003: "x", T004: "x", T005: "x" };
-  assert.deepEqual(nextWave(marked(before)), { wave: 4, ids: ["T006", "T008"] });
+  // T006* shares wave 4 with T008 but runs only once someone starts it
+  assert.deepEqual(nextWave(marked(before)), { wave: 4, ids: ["T008"], restarts: false });
   assert.equal(nextWave(marked({ ...before, T008: "x" })), undefined);
   assert.deepEqual(nextWave(marked({ ...before, T006: "-", T008: "x" })), {
     wave: 4,
     ids: ["T006"],
+    restarts: true,
   });
+  // a task with deps on a skipped optional one runs without it
+  const skipped = parseTasks("- [ ] T001* A in `a.mjs`\n- [ ] T002 B in `b.mjs` — deps: T001\n");
+  assert.deepEqual(waves(skipped), [["T001"], ["T002"]]);
+  assert.deepEqual(nextWave(skipped), { wave: 2, ids: ["T002"], restarts: false });
 });

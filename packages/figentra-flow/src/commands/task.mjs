@@ -6,8 +6,9 @@
  *                                         digest of spec, plan and tasks) in Flow's record
  *   done <key> <task> --command <cmd>     runs the check command (`runEvidence`), keeps the attempt in the record and
  *                                         sets `[x]` only on exit 0 at a clean HEAD; refuses a secret-looking command
- *   wave <key> [--json]                   prints the build's next wave (`nextWave`), its `[ ]` tasks set to `[~]`; a
- *                                         wave holding a failed task is printed again, so the next one never starts
+ *   wave <key> [--json]                   refuses as `start` does, then prints the build's next wave (`nextWave`), its
+ *                                         `[ ]` tasks set to `[~]`; a wave holding a failed task is printed again, so
+ *                                         the next one never starts
  *   `resetChanged` is what `check` calls (T024): a task in progress whose documents changed since its start goes back
  *   to `[ ]` with the reason; `handTicks` names each `[x]` with no passing evidence (AC-22).
  * Boundary: writes the task's line in tasks.md and the record (`.flow/record/<key>.json`); runs the check command in
@@ -229,34 +230,41 @@ export function resetChanged(root, key) {
 /**
  * The next wave of `key`'s build (FR-24), its `[ ]` tasks set to `[~]` (queued): the wave's number, how many waves
  * there are, and its tasks still to run in document order; a task already `[-]` (a dead session's) is in it, to finish
- * with `task done`. Undefined once every wave is done.
+ * with `task done`, and an optional task left `[ ]` is not. Undefined once every wave is done.
  * @param {string} root
  * @param {string} key
  * @returns {{ wave: number, of: number, tasks: import("../lib/spec-parse.mjs").Task[] } | undefined}
- * @throws {TaskError} when the spec has no tasks.md or its deps form a cycle
+ * @throws {TaskError} when the spec has no tasks.md, is not Tasked or Implementing with its approvals (markers follow
+ *   the spec's state, as at `task start`), or its deps form a cycle
  */
 export function queueWave(root, key) {
-  const { file, text } = tasksOf(root, key);
+  const { dir, file, text } = tasksOf(root, key);
+  const spec = readFileSync(join(dir, "spec.md"), "utf8");
+  const status = statusOf(spec);
+  const problems = checkApproval(spec);
+  if (status !== "tasked" && status !== "implementing")
+    problems.unshift(
+      `the spec is ${status || "without a status"}: a wave is queued at Tasked or Implementing`,
+    );
+  if (problems.length) throw new TaskError(problems.join("; "));
   const tasks = parseTasks(text);
-  let next;
-  let of;
+  let all;
   try {
-    next = nextWave(tasks);
-    of = waves(tasks).length;
+    all = waves(tasks);
   } catch (error) {
     if (!(error instanceof WaveError)) throw error;
     throw new TaskError(error.message);
   }
+  const next = nextWave(tasks, all);
   if (!next) return undefined;
-  const ids = next.ids;
-  const queued = tasks.filter((t) => !t.struck && ids.includes(t.id));
+  const queued = tasks.filter((t) => !t.struck && next.ids.includes(t.id));
   const out = queued
     .filter((t) => t.marker === " ")
     .reduce((acc, t) => setMarker(acc, t.id, "~"), text);
   if (out !== text) writeFileSync(file, out);
   return {
     wave: next.wave,
-    of,
+    of: all.length,
     tasks: queued.map((t) => (t.marker === " " ? { ...t, marker: /** @type {const} */ ("~") } : t)),
   };
 }

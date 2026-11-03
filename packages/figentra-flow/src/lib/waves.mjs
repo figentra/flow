@@ -3,7 +3,8 @@
  * Purpose: the wave graph of tasks.md (FR-24, FR-25). `waves` puts each live task in the first wave after its `deps`
  *   where no task shares one of its paths and fewer than `MAX_PARALLEL` run; a checkpoint runs alone after every task
  *   above it, and every task below it comes later. `nextWave` names the first wave the build has not finished, with
- *   the tasks still to run in it, so a failed task holds its wave and a dead session restarts there.
+ *   the tasks still to run in it, so a failed task holds its wave and a dead session restarts there; an optional task
+ *   left `[ ]` is never in it.
  * Boundary: pure: reads nothing, writes nothing.
  * Runtime: node
  * Governing contract: STA-1945 (FR-24, FR-25, AC-25, AC-26, P-029, P-030).
@@ -47,9 +48,8 @@ export function waves(tasks) {
   /** @type {Map<string, number>} */
   const placed = new Map();
   const open = new Set();
+  // a checkpoint needs no clash rule: its implied deps already leave it alone in its wave
   const clash = (/** @type {Task} */ a, /** @type {Task} */ b) =>
-    a.checkpoint !== undefined ||
-    b.checkpoint !== undefined ||
     a.paths.some((p) => b.paths.includes(p));
   /** @returns {number} */
   const place = (/** @type {Task} */ t) => {
@@ -77,22 +77,33 @@ export function waves(tasks) {
 }
 
 /**
- * A task the build still owes: not `[x]`, and not an optional task left `[ ]` (it may be skipped, FR-25).
+ * A wave of the build: its number from 1, the tasks the build still owes in it in document order, and whether one of
+ *   them is already queued or in progress (a dead or failed session's, so the wave restarts rather than starts).
+ * @typedef {{ wave: number, ids: string[], restarts: boolean }} Wave
+ */
+
+/**
+ * A task the build still owes: not `[x]`, and not an optional task left `[ ]`. An optional task runs only once someone
+ * starts it, and a task with `deps:` on one left `[ ]` runs without it (FR-25).
  * @param {Task} t
  */
 const owed = (t) => t.marker !== "x" && !(t.optional && t.marker === " ");
 
 /**
- * The first wave with a task the build still owes, numbered from 1, with every task of it not yet `[x]` (an optional
- * one too) in document order; undefined once every wave is done.
+ * The first wave with a task the build still owes, with those tasks; undefined once every wave is done.
  * @param {Task[]} tasks
- * @returns {{ wave: number, ids: string[] } | undefined}
+ * @param {string[][]} [all] `waves(tasks)`, when the caller has it
+ * @returns {Wave | undefined}
  * @throws {WaveError} on a dependency cycle
  */
-export function nextWave(tasks) {
+export function nextWave(tasks, all = waves(tasks)) {
   const byId = new Map(tasks.filter((t) => !t.struck).map((t) => [t.id, t]));
-  const all = waves(tasks);
-  const i = all.findIndex((ids) => ids.some((id) => owed(/** @type {Task} */ (byId.get(id)))));
+  const due = all.map((ids) => ids.map((id) => /** @type {Task} */ (byId.get(id))).filter(owed));
+  const i = due.findIndex((ts) => ts.length > 0);
   if (i < 0) return undefined;
-  return { wave: i + 1, ids: all[i].filter((id) => byId.get(id)?.marker !== "x") };
+  return {
+    wave: i + 1,
+    ids: due[i].map((t) => t.id),
+    restarts: due[i].some((t) => t.marker === "-" || t.marker === "~"),
+  };
 }

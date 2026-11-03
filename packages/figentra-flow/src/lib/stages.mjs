@@ -60,9 +60,9 @@ const BY_STATUS = {
  * left it names that wave, so a dead session's restarts at its first unfinished task; with every wave done it is the
  * gate's turn.
  * @param {import("./record.mjs").FlowRecord} record
- * @param {{ specStatus?: string, specDir?: string, wave?: { wave: number, ids: string[] }, built?: boolean }} [facts]
+ * @param {{ specStatus?: string, specDir?: string, wave?: import("./waves.mjs").Wave, built?: boolean }} [facts]
  *   `wave` is `nextWave` of the spec's tasks; `built` says tasks.md has tasks and no wave is left
- * @returns {{ stage: Stage, command: string, wave?: { wave: number, ids: string[] } }}
+ * @returns {{ stage: Stage, command: string, wave?: import("./waves.mjs").Wave }}
  */
 export function nextStep(record, facts = {}) {
   let at = STAGES.indexOf(record.stage);

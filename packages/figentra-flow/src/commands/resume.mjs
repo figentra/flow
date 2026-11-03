@@ -94,7 +94,7 @@ function runStep(command, cwd) {
  * Resumes `key`.
  * @param {{ cwd: string, key: string, run?: (command: string, cwd: string) => number }} options
  * @returns {{ ok: true, path: string, made: boolean, stage: string, command: string, ran: boolean, exit?: number,
- *             wave?: { wave: number, ids: string[] }, pushed?: boolean, problem?: string } | { ok: false, problem: string }}
+ *             wave?: import("../lib/waves.mjs").Wave, pushed?: boolean, problem?: string } | { ok: false, problem: string }}
  */
 export function resume({ cwd, key, run: runCommand = runStep }) {
   const root = mainCheckout(cwd);
@@ -145,7 +145,7 @@ export async function run(args = []) {
   if (result.made) say("checking", `worktree ready at ${result.path}`);
   if (!result.ran) {
     const from = result.wave
-      ? ` wave ${result.wave.wave} restarts at ${result.wave.ids[0]} (${result.wave.ids.join(", ")})`
+      ? ` wave ${result.wave.wave} ${result.wave.restarts ? "restarts" : "starts"} at ${result.wave.ids[0]} (${result.wave.ids.join(", ")})`
       : "";
     say("waiting", `${key.toUpperCase()}: ${result.stage};${from} continue with:`);
     console.log(result.command);

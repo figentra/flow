@@ -67,7 +67,7 @@ test("stages: the spec's status moves an early stage up to what it proves", () =
 });
 
 test("stages: the build names the wave its markers leave; with every wave done the gate is next (FR-24)", () => {
-  const wave = { wave: 2, ids: ["T003", "T004"] };
+  const wave = { wave: 2, ids: ["T003", "T004"], restarts: false };
   assert.deepEqual(nextStep(at("build", "active"), { wave }), {
     stage: "build",
     command: "fflow task wave STA-9",
@@ -80,6 +80,15 @@ test("stages: the build names the wave its markers leave; with every wave done t
   assert.deepEqual(nextStep(at("worktree", "done"), { specStatus: "implementing", built: true }), {
     stage: "gate",
     command: "fflow gate run",
+  });
+  // a build waiting on an owner ask stays on the ask, every task done or not
+  const asked = {
+    ...at("build", "waiting"),
+    asks: [{ what: "approve the migration", command: "https://example.test/ask/2" }],
+  };
+  assert.deepEqual(nextStep(asked, { specStatus: "implementing", built: true }), {
+    stage: "build",
+    command: "https://example.test/ask/2",
   });
   // the wave is only the build's
   assert.deepEqual(nextStep(at("gate", "active"), { wave }), {

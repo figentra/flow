@@ -29,7 +29,8 @@ are the only way a task's marker moves. Never edit a marker in tasks.md by hand:
 
 2. Run `fflow task wave <key> --json`. It prints the wave's number, how many waves there are, and its tasks still to
    run (`tasks`), each with its `id`, `marker`, `paths`, `deps` and `checkpoint`; their `[ ]` markers are now `[~]`
-   (queued). Empty `tasks` means every wave is done: go to step 7.
+   (queued). Empty `tasks` means every wave is done: go to step 7. An optional task (`T###*`) left `[ ]` is never
+   in a wave and holds nothing; it runs only once someone starts it with `fflow task start`.
 
 3. For each task of the wave, in order, run `fflow task start <key> <T###>`, except a task already `[-]`: a dead
    session started it, and it restarts here at its first unfinished task without a new start. Run these one at a

@@ -114,7 +114,7 @@ test("resume: a dead session's build restarts at its wave's first unfinished tas
   assert.ok("path" in build && !build.ran, JSON.stringify(build));
   assert.equal(build.command, "fflow task wave STA-3");
   // T004 shares a.mjs with T001, so it waits for wave 2
-  assert.deepEqual(build.wave, { wave: 1, ids: ["T002", "T003"] });
+  assert.deepEqual(build.wave, { wave: 1, ids: ["T002", "T003"], restarts: true });
   tasks(build.path, ["x", "x", "x", "x"]);
   const after = resume({ cwd: r.root, key: "STA-3", run: never });
   assert.ok("path" in after && !after.ran, JSON.stringify(after));

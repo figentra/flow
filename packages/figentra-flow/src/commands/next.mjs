@@ -26,7 +26,7 @@ import { nextWave, WaveError } from "../lib/waves.mjs";
  * from tasks.md's markers (`built` once tasks.md has tasks and none is owed; neither on a dependency cycle).
  * @param {string} root
  * @param {string} key
- * @returns {{ specDir?: string, specStatus?: string, wave?: { wave: number, ids: string[] }, built?: boolean }}
+ * @returns {{ specDir?: string, specStatus?: string, wave?: import("../lib/waves.mjs").Wave, built?: boolean }}
  */
 export function specFacts(root, key) {
   const found = specDir({ root, key, keys: schemeFor(root) });
@@ -52,7 +52,7 @@ export function specFacts(root, key) {
  * The next step of a task.
  * @param {{ cwd: string, key?: string }} options
  * @returns {{ ok: true, key: string, recorded: boolean, state: string, stage: import("../lib/stages.mjs").Stage,
- *             command: string, wave?: { wave: number, ids: string[] }, unpushed: boolean } | { ok: false, problem: string }}
+ *             command: string, wave?: import("../lib/waves.mjs").Wave, unpushed: boolean } | { ok: false, problem: string }}
  */
 export function next({ cwd, key }) {
   const top = git(cwd, ["rev-parse", "--show-toplevel"]);
@@ -100,7 +100,7 @@ export async function run(args = []) {
   if (result.wave)
     say(
       "checking",
-      `wave ${result.wave.wave} restarts at ${result.wave.ids[0]}: ${result.wave.ids.join(", ")}`,
+      `wave ${result.wave.wave} ${result.wave.restarts ? "restarts" : "starts"} at ${result.wave.ids[0]}: ${result.wave.ids.join(", ")}`,
     );
   if (result.unpushed)
     say(
