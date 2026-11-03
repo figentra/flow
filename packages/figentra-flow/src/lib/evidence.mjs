@@ -65,8 +65,9 @@ export function secretLooking(command) {
 }
 
 /**
- * Whether a task's recorded attempts include a passing one: exit 0 at a clean HEAD (P-028).
- * @param {TaskEvidence[] | undefined} attempts
+ * Whether a task's recorded attempts include a passing one: exit 0 at a clean HEAD (P-028). It reads only those two
+ * fields, so an attempt from a record that predates `ms` counts too.
+ * @param {Pick<TaskEvidence, "exit" | "clean">[] | undefined} attempts
  */
 export const passed = (attempts) => (attempts ?? []).some((e) => e.exit === 0 && e.clean);
 
