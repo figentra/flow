@@ -3,13 +3,13 @@
  * Purpose: `fflow todo [--repo <path>] [--json]` (FR-21, AC-20, P-026): everything waiting on the owner across the
  *   workspace (or the repository named, or the current one), each with the command or link that clears it: every
  *   open owner ask of each task's newest record (approvals, merges, releases, promotions, decisions, secrets to set).
- *   Exit 0, or 1 when a record could not be read (listed as a problem).
+ *   Exit 0, or 1 when a record could not be read (listed as a problem). The options are declared in
+ *   src/lib/console.mjs; `handle` runs them.
  * Boundary: read-only; reads Flow's records only (`allRecords`), no network.
  * Runtime: node
  * Governing contract: STA-1945 (FR-21, AC-20, P-026).
  * Secrets: none.
  */
-import { NAME } from "../lib/product.mjs";
 import { allRecords } from "../lib/records.mjs";
 import { reposFor } from "./status.mjs";
 
@@ -39,15 +39,15 @@ export function render({ asks, problems }) {
   return out.join("\n");
 }
 
-/** @param {string[]} args */
-export function run(args = []) {
-  const at = args.indexOf("--repo");
-  if (at >= 0 && !args[at + 1]) {
-    console.error(`usage: ${NAME} todo [--repo <path>] [--json]`);
-    return 2;
-  }
-  const repos = reposFor(at < 0 ? undefined : args[at + 1], process.cwd());
-  const list = todo(allRecords(repos.map((r) => r.path)));
-  console.log(args.includes("--json") ? JSON.stringify(list, null, 2) : render(list));
+/**
+ * `fflow todo`; `--json` writes the to-do as the console's data.
+ * @param {import("../lib/console.mjs").Io} io
+ * @param {{ repo?: string }} options
+ * @returns {number}
+ */
+export function handle(io, { repo }) {
+  const list = todo(allRecords(reposFor(repo, io.cwd).map((r) => r.path)));
+  if (io.json) io.output.json(list);
+  else io.output.line(render(list));
   return list.problems.length ? 1 : 0;
 }

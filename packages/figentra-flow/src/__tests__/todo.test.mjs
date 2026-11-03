@@ -2,7 +2,7 @@
  * Figentra Flow file contract:
  * Purpose: hold `fflow todo` to FR-21 and AC-20: every open owner ask of the records, each with its command or link,
  *   read from the records only (here a task branch's); an unreadable record or a missing repository is listed as a
- *   problem and exits 1; nothing waiting says so; a `--repo` without a path is a usage error.
+ *   problem and exits 1, through the console as through `todo`; nothing waiting says so.
  * Boundary: temporary repositories with a local bare origin; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
@@ -13,7 +13,10 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { render, run, todo } from "../commands/todo.mjs";
+import { runCommandForTest } from "@stackra/console/testing";
+
+import { render, todo } from "../commands/todo.mjs";
+import { CONSOLE } from "../lib/console.mjs";
 import { commitRecord, updateRecord } from "../lib/record.mjs";
 import { allRecords } from "../lib/records.mjs";
 import { repo, sh } from "./__fixtures__/repo.mjs";
@@ -58,33 +61,27 @@ test("todo: every open owner ask of the records, with its command", (t) => {
   );
 });
 
-test("todo: an unreadable record is a problem; --repo needs a path", (t) => {
+test("todo: an unreadable record is a problem", () => {
   const text = render(
     todo([{ repo: "/r", key: "sta-8", from: "main", problem: "not valid JSON" }]),
   );
   assert.equal(text, "nothing waits on the owner\nproblem: /r main: not valid JSON");
-  t.mock.method(console, "error", () => {});
-  assert.equal(run(["--repo"]), 2);
 });
 
-test("todo: run exits 1 on a broken record or a missing repository, and prints --json", (t) => {
+test("todo: the command exits 1 on a broken record or a missing repository, and writes --json", async (t) => {
   const r = repo();
   t.after(r.dispose);
   mkdirSync(join(r.root, ".flow", "record"), { recursive: true });
   writeFileSync(join(r.root, ".flow", "record", "sta-6.json"), "{");
-  /** @type {string[]} */
-  const printed = [];
-  t.mock.method(console, "log", (/** @type {string} */ text) => printed.push(text));
-  assert.equal(run(["--repo", r.root]), 1);
-  assert.match(printed[0], /^nothing waits on the owner\nproblem: .*sta-6\.json: not valid JSON/);
-  assert.equal(run(["--repo", r.root, "--json"]), 1);
-  const json = JSON.parse(printed[1]);
-  assert.deepEqual(json.asks, []);
-  assert.deepEqual(
-    json.problems.map((/** @type {any} */ p) => p.key),
-    ["sta-6"],
-  );
+  const options = { cwd: r.root, columns: 400 };
+  const text = await runCommandForTest(CONSOLE, ["todo", "--repo", r.root], options);
+  assert.equal(text.exitCode, 1, text.stdout + text.stderr);
+  assert.match(text.stdout, /nothing waits on the owner\nproblem: .*sta-6\.json: not valid JSON/);
+  const json = await runCommandForTest(CONSOLE, ["todo", "--repo", r.root, "--json"], options);
+  assert.equal(json.exitCode, 1, json.stdout + json.stderr);
+  assert.match(json.stdout, /"sta-6"/);
   const missing = join(r.root, "missing");
-  assert.equal(run(["--repo", missing]), 1);
-  assert.equal(printed[2], `nothing waits on the owner\nproblem: ${missing}: missing`);
+  const gone = await runCommandForTest(CONSOLE, ["todo", "--repo", missing], options);
+  assert.equal(gone.exitCode, 1, gone.stdout + gone.stderr);
+  assert.match(gone.stdout, /nothing waits on the owner\nproblem: .*missing: missing/);
 });

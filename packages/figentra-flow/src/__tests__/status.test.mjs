@@ -263,13 +263,32 @@ test("status shows the live sessions by title, state, worktree and stage, and wa
   assert.deepEqual(snap.warnings, [
     `session "projects-2e" in ${path}: not \`TRACK · job (key)\` (ADR 0001)`,
   ]);
-  const text = render(snap);
-  assert.match(
-    text,
-    /live sessions:\n {4}FLOW · live sessions \(STA-5\) — active, .*sta-5-live, stage gate, pid 31\n/,
-  );
-  assert.match(text, /projects-2e — active, .*, pid 32 — not `TRACK · job \(key\)`/);
-  assert.match(text, /\(untitled\) — active, .*, pid 33 \(title not readable for opencode\)\n/);
-  assert.match(text, /warning: session "projects-2e"/);
+  const live = tablesOf(snap.repos[0], false).find((table) => table.title === "Live sessions");
+  assert.deepEqual(live?.rows, [
+    {
+      name: "FLOW · live sessions (STA-5)",
+      state: "active",
+      worktree: path,
+      stage: "gate",
+      pid: 31,
+      notes: "",
+    },
+    {
+      name: "projects-2e",
+      state: "active",
+      worktree: path,
+      stage: "gate",
+      pid: 32,
+      notes: "not `TRACK · job (key)` (ADR 0001)",
+    },
+    {
+      name: "(untitled)",
+      state: "active",
+      worktree: path,
+      stage: "gate",
+      pid: 33,
+      notes: "title not readable for opencode",
+    },
+  ]);
   assert.equal(snapshot({ repos: [{ path: r.root }], offline: true }).repos[0].live, undefined);
 });

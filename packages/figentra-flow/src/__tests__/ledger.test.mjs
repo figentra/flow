@@ -14,7 +14,10 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { ledger, render, run } from "../commands/ledger.mjs";
+import { runCommandForTest } from "@stackra/console/testing";
+
+import { ledger, refusal, render } from "../commands/ledger.mjs";
+import { CONSOLE } from "../lib/console.mjs";
 import { emptyRecord, updateRecord } from "../lib/record.mjs";
 import { allRecords } from "../lib/records.mjs";
 import { repo, sh } from "./__fixtures__/repo.mjs";
@@ -121,33 +124,31 @@ test("ledger: read from the history `updateRecord` dates; a broken record is a p
   assert.match(render(list), /\nproblem: \/r main: not valid JSON$/);
 });
 
-test("ledger: run exits 1 on a broken record or a missing repository, and prints --json", (t) => {
+test("ledger: the command exits 1 on a broken record or a missing repository, and writes --json", async (t) => {
   const r = repo();
   t.after(r.dispose);
   mkdirSync(join(r.root, ".flow", "record"), { recursive: true });
   writeFileSync(join(r.root, ".flow", "record", "sta-6.json"), "{");
-  /** @type {string[]} */
-  const printed = [];
-  t.mock.method(console, "log", (/** @type {string} */ text) => printed.push(text));
-  assert.equal(run(["--repo", r.root]), 1);
-  assert.match(printed[0], /\nproblem: .*sta-6\.json: not valid JSON/);
-  assert.equal(run(["--repo", r.root, "--json"]), 1);
-  const json = JSON.parse(printed[1]);
-  assert.deepEqual(json.rows, []);
-  assert.deepEqual(
-    json.problems.map((/** @type {any} */ p) => p.key),
-    ["sta-6"],
-  );
-  assert.equal(run(["--repo", join(r.root, "missing")]), 1);
-  assert.equal(
-    printed[2],
-    `nothing landed, released or shipped\nproblem: ${join(r.root, "missing")}: missing`,
-  );
+  const options = { cwd: r.root, columns: 400 };
+  const text = await runCommandForTest(CONSOLE, ["ledger", "--repo", r.root], options);
+  assert.equal(text.exitCode, 1, text.stdout + text.stderr);
+  assert.match(text.stdout, /problem: .*sta-6\.json: not valid JSON/);
+  const json = await runCommandForTest(CONSOLE, ["ledger", "--repo", r.root, "--json"], options);
+  assert.equal(json.exitCode, 1, json.stdout + json.stderr);
+  assert.match(json.stdout, /"sta-6"/);
+  const missing = join(r.root, "missing");
+  const gone = await runCommandForTest(CONSOLE, ["ledger", "--repo", missing], options);
+  assert.equal(gone.exitCode, 1, gone.stdout + gone.stderr);
+  assert.match(gone.stdout, /nothing landed, released or shipped\nproblem: .*missing: missing/);
 });
 
-test("ledger: --since takes a day that exists", (t) => {
-  t.mock.method(console, "error", () => {});
-  assert.equal(run(["--since", "yesterday"]), 2);
-  assert.equal(run(["--since", "2026-02-30"]), 2);
-  assert.equal(run(["--since"]), 2);
+test("ledger: --since takes a day that exists", async () => {
+  assert.equal(refusal({}), undefined);
+  assert.equal(refusal({ since: "2026-02-28" }), undefined);
+  assert.match(refusal({ since: "yesterday" })?.message ?? "", /YYYY-MM-DD/);
+  assert.ok(refusal({ since: "2026-02-30" }));
+  assert.ok(refusal({ since: "" }));
+  const refused = await runCommandForTest(CONSOLE, ["ledger", "--since", "yesterday"]);
+  assert.equal(refused.exitCode, 2);
+  assert.match(refused.stdout + refused.stderr, /--since takes a day/);
 });
