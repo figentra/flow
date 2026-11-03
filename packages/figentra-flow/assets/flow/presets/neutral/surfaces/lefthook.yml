@@ -1,8 +1,8 @@
 # The neutral preset's git hooks, rendered into `lefthook.yml` with the repository's own
 # `lefthook` jobs from flow.config.json after these. Hooks are advisory; CI is the gate.
-# - oxfmt and oxlint run the mise-pinned binary, so a commit needs no workspace install; the installed one in
-#   node_modules/.bin is the fallback where mise is missing. `fflow sync` keeps mise.toml's pins at the catalog's
-#   versions.
+# - oxfmt and oxlint run the mise-pinned binary, named in `mise exec` so mise fetches only that tool, and a commit
+#   needs no workspace install; the installed one in node_modules/.bin, which installs nothing, is the fallback where
+#   mise is missing. `fflow sync` keeps mise.toml's pins at the catalog's versions.
 # - oxfmt exits 2 when every staged file is on its ignore list: that is not a finding.
 # - commitlint needs a workspace install; without one it is skipped with a note, and CI checks the commits.
 # - Every pre-push job passes on the registry's 401 alone (fflow adds the check); any other failure blocks.
@@ -15,12 +15,12 @@ pre-commit:
         - "*.{json,jsonc,json5,yaml,yml,toml,md,mdx}"
         - "*.{css,scss,less,html,graphql,vue}"
       run: |
-        sh -c 'if command -v mise >/dev/null 2>&1; then mise exec -- oxfmt --check "$@"; else node_modules/.bin/oxfmt --check "$@"; fi;
+        sh -c 'if command -v mise >/dev/null 2>&1; then mise exec npm:oxfmt -- oxfmt --check "$@"; else node_modules/.bin/oxfmt --check "$@"; fi;
         s=$?; [ $s -eq 2 ] && exit 0; exit $s' -- {staged_files}
     - name: oxlint
       glob: "*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"
       run: |
-        sh -c 'if command -v mise >/dev/null 2>&1; then exec mise exec -- oxlint "$@"; fi; exec node_modules/.bin/oxlint "$@"' -- {staged_files}
+        sh -c 'if command -v mise >/dev/null 2>&1; then exec mise exec npm:oxlint -- oxlint "$@"; fi; exec node_modules/.bin/oxlint "$@"' -- {staged_files}
 commit-msg:
   jobs:
     - name: commitlint

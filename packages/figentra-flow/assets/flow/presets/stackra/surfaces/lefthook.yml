@@ -1,7 +1,8 @@
 # The stackra preset's git hooks (STA-1945 FR-7, AC-8), rendered into `lefthook.yml` with the repository's own
 # `lefthook` jobs from flow.config.json after these. Hooks are advisory; CI is the gate.
-# - oxfmt and oxlint run the mise-pinned binary, so a commit needs no workspace install; `pnpm exec` is the fallback
-#   where mise is missing (Stackra STA-1865). `fflow sync` keeps mise.toml's pins at the catalog's versions.
+# - oxfmt and oxlint run the mise-pinned binary, named in `mise exec` so mise fetches only that tool, and a commit
+#   needs no workspace install; where mise is missing the job is skipped and CI checks (STA-2039; no pnpm fallback:
+#   pnpm 12's exec installs). `fflow sync` keeps mise.toml's pins at the catalog's versions.
 # - oxfmt exits 2 when every staged file is on its ignore list (pnpm-lock.yaml alone): that is not a finding.
 # - oxlint whose config extends @stackra/oxlint-config, and commitlint, need a workspace install; without one they
 #   are skipped with a note, and CI checks the commit (os#112).
@@ -15,8 +16,8 @@ pre-commit:
         - "*.{json,jsonc,json5,yaml,yml,toml,md,mdx}"
         - "*.{css,scss,less,html,graphql,vue}"
       run: |
-        sh -c 'if command -v mise >/dev/null 2>&1; then mise exec -- oxfmt --check "$@"; else pnpm exec oxfmt --check "$@"; fi;
-        s=$?; [ $s -eq 2 ] && exit 0; exit $s' -- {staged_files}
+        sh -c 'command -v mise >/dev/null 2>&1 || { echo "oxfmt skipped: mise not installed; CI checks"; exit 0; };
+        mise exec npm:oxfmt -- oxfmt --check "$@"; s=$?; [ $s -eq 2 ] && exit 0; exit $s' -- {staged_files}
     - name: oxlint
       glob: "*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"
       # Rendered and third-party skills and reference docs are not the repository's code.
@@ -28,7 +29,8 @@ pre-commit:
           echo "oxlint skipped: its config extends @stackra/oxlint-config and no workspace install has it; CI lints this commit"
           exit 0
         fi
-        sh -c 'if command -v mise >/dev/null 2>&1; then exec mise exec -- oxlint "$@"; fi; exec pnpm exec oxlint "$@"' -- {staged_files}
+        sh -c 'command -v mise >/dev/null 2>&1 || { echo "oxlint skipped: mise not installed; CI lints"; exit 0; };
+        exec mise exec npm:oxlint -- oxlint "$@"' -- {staged_files}
     - name: gitleaks
       run: |
         if command -v gitleaks >/dev/null 2>&1; then
