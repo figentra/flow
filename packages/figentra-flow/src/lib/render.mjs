@@ -12,8 +12,9 @@
  *   no spec-kit leftover. With a `.flow/readme.yml`, `README.md` is rendered too (STA-1879).
  * Boundary: `render` and `installProblems` read; `writeRendered` writes the rendered files and the lock and removes
  *   spec-kit's rendered `speckit-*` skills and commands, and the `flow-*` ones the lock lists, it no longer renders
- *   and nobody edited (`flow-tasks`, STA-1945 FR-15). Nothing here deletes `.specify/` (that is `migrate`), nor,
- *   yet, an agent a narrower profile no longer renders (STA-1945 T068).
+ *   and nobody edited (`flow-tasks`, STA-1945 FR-15, and those a narrower profile deselects, FR-6). Nothing here
+ *   deletes `.specify/` (that is `migrate`), nor, yet, another owned file (an agent, rule, surface or hook) a
+ *   narrower profile or preset no longer renders (STA-1945 T068).
  * Runtime: node
  * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-2, FR-3, FR-6).
  * Secrets: none.
@@ -300,7 +301,6 @@ export function leftovers(root) {
 }
 
 /**
-/**
  * The files `.flow/lock.json` lists, path to digest; none without a lock or with one this Flow cannot read.
  * @param {string} root
  * @returns {Record<string, string>}
@@ -375,8 +375,9 @@ export function writeRendered(root, files) {
 }
 
 /**
- * The `flow-*` skills and commands the lock lists that `files` no longer holds (`flow-tasks`, FR-15) and nobody
- * edited since: what `writeRendered` removes besides spec-kit's. Nothing else the lock lists goes.
+ * The `flow-*` skills and commands the lock lists that `files` no longer holds (`flow-tasks`, FR-15, or one a narrower
+ * profile deselects, FR-6) and nobody edited since: what `writeRendered` removes besides spec-kit's. Nothing else the
+ * lock lists goes.
  * @param {string} root
  * @param {Map<string, string>} files
  */
