@@ -1,8 +1,10 @@
 /**
  * Figentra Flow file contract:
  * Purpose: hold the queue lock to its contract: one holder at a time (a second session waits until the first
- *   releases), a lock older than 15 minutes is taken over with a notice, the lock is released when the work throws,
- *   a lock taken over while held is left to its new holder, and a bad queue name is refused.
+ *   releases), a lock 15 minutes old or more is taken over with a notice and only one of two takers wins, the lock is
+ *   released when the work throws, a lock taken over while held is left to its new holder, a create whose answer was
+ *   lost is this session's, and every refusal (a bad name, an unreadable base or holder, a lock commit, a create or a
+ *   takeover GitHub keeps refusing) ends in a QueueError instead of a wait.
  * Boundary: an in-memory GitHub (refs and commits) and an injected clock; no network.
  * Runtime: node
  * Governing contract: STA-1945 (FR-17, AC-15, P-023; plan C12).
@@ -156,4 +158,174 @@ test("withQueueLock: a bad queue name, or a base it cannot read, is refused befo
     /cannot read nope/,
   );
   assert.equal(refs.has(LOCK), false);
+});
+
+/** The fake's API with `method` on paths matching `re` refused with `err`. */
+const refusing =
+  (
+    /** @type {import("../lib/github.mjs").Api} */ api,
+    /** @type {string} */ method,
+    /** @type {RegExp} */ re,
+    err = "HTTP 403",
+  ) =>
+  /** @type {import("../lib/github.mjs").Api} */
+  (m, path, body) =>
+    m === method && re.test(path) ? { ok: false, json: { message: err }, err } : api(m, path, body);
+
+/** A lock at `sha`, `minutes` old. */
+const lockAt = (
+  /** @type {ReturnType<typeof fakeGitHub>} */ gh,
+  /** @type {{ t: number }} */ clock,
+  /** @type {string} */ sha,
+  /** @type {number} */ minutes,
+) => {
+  gh.commits.set(sha, {
+    tree: { sha: "t0" },
+    parents: ["m0"],
+    committer: { date: new Date(clock.t - minutes * 60_000).toISOString() },
+  });
+  gh.refs.set(LOCK, sha);
+};
+
+test("withQueueLock: a lock exactly 15 minutes old is stale", async () => {
+  const { clock, slept, sleep, now } = timing();
+  const gh = fakeGitHub(clock);
+  lockAt(gh, clock, "old", 15);
+  await withQueueLock(
+    { api: gh.api, repo: REPO, name: "adr", sleep, now, log: () => {} },
+    async () =>
+      assert.equal(gh.commits.get(/** @type {string} */ (gh.refs.get(LOCK)))?.parents[0], "old"),
+  );
+  assert.deepEqual(slept, []);
+});
+
+test("withQueueLock: a takeover GitHub refuses while the lock stays stale is a QueueError, not a loop", async () => {
+  const { clock, sleep, now } = timing();
+  const gh = fakeGitHub(clock);
+  lockAt(gh, clock, "old", 16);
+  let patches = 0;
+  const api = refusing(gh.api, "PATCH", /\/git\/refs\//);
+  await assert.rejects(
+    withQueueLock(
+      {
+        api: (m, path, body) => {
+          if (m === "PATCH") patches++;
+          return api(m, path, body);
+        },
+        repo: REPO,
+        name: "adr",
+        sleep,
+        now,
+        log: () => {},
+      },
+      async () => assert.fail("ran without the lock"),
+    ),
+    (error) =>
+      error instanceof QueueError &&
+      /cannot take over the stale flow\/queue\/adr lock: HTTP 403/.test(error.message),
+  );
+  assert.equal(patches, 1);
+  assert.equal(gh.refs.get(LOCK), "old");
+});
+
+test("withQueueLock: of two takers of one stale lock only one wins; the other waits for it", async () => {
+  const { clock, slept, sleep, now } = timing();
+  const gh = fakeGitHub(clock);
+  lockAt(gh, clock, "old", 16);
+  let rival = "";
+  /** @type {import("../lib/github.mjs").Api} */
+  const api = (m, path, body) => {
+    // The rival's fast-forward from the same stale commit lands just before this session's.
+    if (m === "PATCH" && !rival) {
+      rival = gh.api("POST", `/repos/${REPO}/git/commits`, { tree: "t0", parents: ["old"] }).json
+        .sha;
+      assert.equal(gh.api("PATCH", path, { sha: rival, force: false }).ok, true);
+    }
+    return gh.api(m, path, body);
+  };
+  /** @type {string[]} */
+  const logs = [];
+  const release = async (/** @type {number} */ ms) => {
+    assert.equal(gh.refs.get(LOCK), rival, "the rival holds the queue while this session waits");
+    await sleep(ms);
+    gh.refs.delete(LOCK);
+  };
+  await withQueueLock(
+    { api, repo: REPO, name: "adr", sleep: release, now, log: (s) => logs.push(s) },
+    async () => assert.notEqual(gh.refs.get(LOCK), rival),
+  );
+  assert.deepEqual(slept, [5000]);
+  assert.doesNotMatch(logs.join("\n"), /took the adr queue over/);
+  assert.match(logs.join("\n"), /the adr queue is held since .*; waiting/);
+  assert.equal(gh.refs.has(LOCK), false);
+});
+
+test("withQueueLock: a create whose answer was lost holds the lock, without waiting for itself", async () => {
+  const { clock, slept, sleep, now } = timing();
+  const gh = fakeGitHub(clock);
+  /** @type {import("../lib/github.mjs").Api} */
+  const api = (m, path, body) => {
+    const r = gh.api(m, path, body);
+    return m === "POST" && path.endsWith("/git/refs")
+      ? { ok: false, json: {}, err: "HTTP 502" }
+      : r;
+  };
+  let ran = false;
+  await withQueueLock({ api, repo: REPO, name: "adr", sleep, now, log: () => {} }, async () => {
+    ran = true;
+  });
+  assert.equal(ran, true);
+  assert.deepEqual(slept, []);
+  assert.equal(gh.refs.has(LOCK), false);
+});
+
+test("withQueueLock: a lock commit, a create or a holder GitHub keeps refusing is a QueueError", async () => {
+  const run = async () => assert.fail("ran without the lock");
+  const world = () => {
+    const t = timing();
+    return { ...t, gh: fakeGitHub(t.clock) };
+  };
+  const one = world();
+  await assert.rejects(
+    withQueueLock(
+      {
+        ...one,
+        api: refusing(one.gh.api, "POST", /\/git\/commits$/),
+        repo: REPO,
+        name: "adr",
+        log: () => {},
+      },
+      run,
+    ),
+    (error) =>
+      error instanceof QueueError &&
+      /cannot make the flow\/queue\/adr lock: HTTP 403/.test(error.message),
+  );
+  const two = world();
+  await assert.rejects(
+    withQueueLock(
+      {
+        ...two,
+        api: refusing(two.gh.api, "POST", /\/git\/refs$/),
+        repo: REPO,
+        name: "adr",
+        log: () => {},
+      },
+      run,
+    ),
+    (error) =>
+      error instanceof QueueError && /cannot create flow\/queue\/adr: HTTP 403/.test(error.message),
+  );
+  assert.equal(two.gh.refs.has(LOCK), false);
+  // A holder whose commit cannot be read: two waits, then the refusal.
+  const three = world();
+  three.gh.refs.set(LOCK, "ghost");
+  await assert.rejects(
+    withQueueLock({ ...three, api: three.gh.api, repo: REPO, name: "adr", log: () => {} }, run),
+    (error) =>
+      error instanceof QueueError &&
+      /cannot read the flow\/queue\/adr lock's commit ghost/.test(error.message),
+  );
+  assert.equal(three.slept.length, 2);
+  assert.equal(three.gh.refs.get(LOCK), "ghost");
 });

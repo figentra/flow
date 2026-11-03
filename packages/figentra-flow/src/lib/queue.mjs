@@ -2,7 +2,7 @@
  * Figentra Flow file contract:
  * Purpose: Flow's queue lock (STA-1945 FR-17): the branch ref `flow/queue/<name>`, created through the GitHub API on a
  *   commit made for it. Creating the ref fails while another session holds it, so one session holds a queue at a time.
- *   A lock whose commit is older than 15 minutes is stale: it is taken over by a fast-forward onto a child of that
+ *   A lock whose commit is 15 minutes old or more is stale: it is taken over by a fast-forward onto a child of that
  *   commit, which only one taker can win.
  * Boundary: GitHub refs and commits only; never the working tree or a local branch. The lock is released in `finally`,
  *   and only while it is still this session's.
@@ -12,7 +12,7 @@
  */
 import { NAME } from "./product.mjs";
 
-/** A lock older than this is stale and may be taken over. */
+/** A lock this old or older is stale and may be taken over. */
 export const STALE_MINUTES = 15;
 
 /** The branch folder the queue locks live in. */
@@ -66,6 +66,7 @@ export async function withQueueLock(options, fn) {
   let held;
   let wait = 5000;
   let missing = 0;
+  let unreadable = 0;
   let announced = false;
   while (!held) {
     const mine = lockCommit(baseSha);
@@ -81,13 +82,29 @@ export async function withQueueLock(options, fn) {
       continue;
     }
     missing = 0;
+    // The create went through and only its answer was lost.
+    if (at === mine) {
+      held = mine;
+      continue;
+    }
     const since = Date.parse(
       api("GET", `/repos/${repo}/git/commits/${at}`).json?.committer?.date ?? "",
     );
+    // A holder whose age cannot be read is never stale; reading it keeps failing is a refusal, not a wait.
+    if (!Number.isFinite(since) && ++unreadable >= 3)
+      throw new QueueError(`cannot read the ${branch} lock's commit ${at}`);
     if (Number.isFinite(since) && now() - since >= staleMinutes * 60_000) {
       // A fast-forward from the stale commit: if another taker moved or released it first, this one is refused.
       const take = lockCommit(at);
-      if (api("PATCH", `/repos/${repo}/git/refs/heads/${branch}`, { sha: take, force: false }).ok) {
+      const moved = api("PATCH", `/repos/${repo}/git/refs/heads/${branch}`, {
+        sha: take,
+        force: false,
+      });
+      const after = moved.ok ? take : api("GET", refUrl).json?.object?.sha;
+      // Refused while the ref still points at the stale commit: no access or a rule, not a lost race.
+      if (after === at)
+        throw new QueueError(`cannot take over the stale ${branch} lock: ${moved.err}`);
+      if (after === take) {
         log(
           `${NAME}: took the ${name} queue over from a stale lock of ${new Date(since).toISOString()}`,
         );

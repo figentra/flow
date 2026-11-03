@@ -7,7 +7,8 @@
  *   failed Linear call only warns; `--stack` lands bottom-up and stops at a red gate, the next PR updated by a merge
  *   commit and a normal push. STA-1856: an owner-only path refuses; a ruleset that requires a review gets the
  *   approval workflow dispatched and auto-merge turned on at the head instead of a merge, or a refusal when the
- *   workflow is not installed; `land` on a merged PR runs only the steps after the merge.
+ *   workflow is not installed; `land` on a merged PR runs only the steps after the merge. STA-1945: a branch that names
+ *   no issue takes the squash's `Refs:` from `refs`.
  * Boundary: temporary repositories with a local bare origin; GitHub, Linear and the gate injected; no network.
  * Runtime: node
  * Governing contract: ADR 0022; Stackra ADR 0503; STA-1729 phase 3.
@@ -16,6 +17,7 @@
 // @covers sta-1856:FR-1 sta-1856:FR-2 sta-1856:FR-3 sta-1856:FR-6
 // @covers sta-1856:AC-001 sta-1856:AC-003 sta-1856:AC-004 sta-1856:AC-005 sta-1856:AC-006 sta-1856:AC-007
 // @covers sta-1856:P-001 sta-1856:P-002 sta-1856:P-003
+// @covers sta-1945:FR-17
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -147,9 +149,9 @@ function world({
   /** @type {{ context: string, integration_id?: number }[]} */ required = [],
   moved = false,
   /** @type {{ filename: string, status: string }[]} */ files = [],
+  branch = "figentra/sta-5-land",
 } = {}) {
   const r = repo();
-  const branch = "figentra/sta-5-land";
   const path = join(r.root, ".claude", "worktrees", "sta-5-land");
   sh(r.root, "worktree", "add", "-q", "-b", branch, path, "main");
   commit(path, "a.txt");
@@ -242,6 +244,25 @@ test("land: a green PR squash-merges on its head, then Done, the record, the wor
       "POST /repos/figentra/flow/issues/7/comments",
     ],
   );
+});
+
+test("land: a branch that names no issue takes the squash's Refs from `refs` and moves nothing to Done", async (t) => {
+  const w = world({ branch: "adr/0008-queues" });
+  t.after(w.r.dispose);
+  /** @type {string[]} */
+  const done = [];
+  const result = await landOne({
+    root: w.r.root,
+    repo: "figentra/flow",
+    base: "main",
+    number: 7,
+    gateApp: GATE_APP,
+    refs: "sta-1945",
+    deps: { api: w.api, done: async (key) => void done.push(key), ...quiet },
+  });
+  assert.equal(result.code, 0, JSON.stringify(result));
+  assert.equal(w.calls.find((c) => c.method === "PUT")?.body.commit_message, "Refs: STA-1945");
+  assert.deepEqual(done, []);
 });
 
 test("land: a refused merge changes nothing after it; a failed Linear call only warns", async (t) => {
