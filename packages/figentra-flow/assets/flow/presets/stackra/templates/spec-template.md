@@ -45,6 +45,37 @@
 - **Lane**: [full / lite / bug / chore, from the ADR 0120 lane table (first match wins)]
 - **Change risk**: [R0 / R1 / R2 / R3 (ADR 0120), derived from the answers above; it can be raised, never lowered]
 
+## Discovery _(mandatory, before the requirements)_
+
+<!-- What is true today, read from the repository before writing a requirement, so the requirements describe a change
+     and not a wish. Each line names its source (SRC-###, listed under ### Sources). Worked example (a Flow spec):
+     - **Current behaviour**: `fflow sync` renders the `flow-*` skills and writes `.flow/lock.json` as
+       `{ version, preset, files }`; only `gate ci` catches a hand edit, through `installProblems` (SRC-001).
+     - **Topology**: one member, `packages/figentra-flow`: `bin/fflow.mjs` dispatches to `src/commands/<name>.mjs`;
+       shared code in `src/lib/`, tests in `src/__tests__/` (SRC-001).
+     - **Dependencies**: Node 24; git and the GitHub CLI on PATH; no runtime package (SRC-002).
+     - **Ownership**: Flow's maintainers own the package; the owner owns `.flow/overrides/` (SRC-003).
+     - **Constraints already decided**: ADR 0502 (tiers and approval stops), ADR 0510 (the lock) (SRC-004). -->
+
+- **Current behaviour**: [what happens today without this change: the commands, screens or jobs involved and what they do] (SRC-001)
+- **Topology**: [the members, folders and files this lands in, by path] (SRC-001)
+- **Dependencies**: [runtimes, services, tools and other specs this needs, or none]
+- **Ownership**: [who owns each touched area: team, role or CODEOWNERS entry]
+- **Constraints already decided**: [ADRs and rules this must follow, by number, or none]
+
+### Sources
+
+<!-- Every file, ADR, command output or issue the lines above and the requirements below rest on, one per line, each
+     with an id that requirements cite ("Sources: SRC-001"). The spec gate refuses Clarified without Sources, or with a
+     requirement that cites none (AC-28 of sta-1945). Worked example:
+     - **SRC-001**: `packages/figentra-flow/src/lib/render.mjs` on `origin/main` (64a0f4d): `writeRendered`, `installProblems`
+     - **SRC-002**: `packages/figentra-flow/package.json`: `dependencies` is empty
+     - **SRC-003**: `.github/CODEOWNERS` and `src/lib/owner-only.mjs` (STA-1856)
+     - **SRC-004**: ADR 0502 and ADR 0510 in `apps/docs/src/docs/adr/`
+     - **SRC-005**: STA-1945, the owner's request of 2026-11-02 -->
+
+- **SRC-001**: [a file path at a commit, an ADR number, a command and what it printed, or an issue key, and what it shows]
+
 ## Glossary _(full lane)_
 
 - **[Term]**: [meaning in this spec]
@@ -77,12 +108,32 @@
   EARS wording (guidance, ADR 0120 D18): "WHEN <trigger> THE <subject> SHALL <response>", "WHILE <state> …",
   "IF <unwanted condition> THEN THE <subject> SHALL …". IDs are permanent: an amendment strikes an ID
   (~~FR-007~~ (A-001)) or appends a new one; it never renumbers. Every FR is covered by a task (`covers:`) and, by
-  Done, by a test carrying `@covers sta-n:FR-###` (spec-trace).
+  Done, by a test carrying `@covers sta-n:FR-###` (spec-trace). Every requirement ends with the sources it rests on
+  ("Sources: SRC-001, SRC-004").
+
+  Quality words: the gate flags the preset's vague terms in requirements and acceptance criteria (a warning on small
+  and feature tiers, a failure on big). Write the number or the list, not the adjective. Worked examples:
+  - "fast" → "within 2 s at p95 for a 500-file repository"
+  - "secure" → "only a caller with the `flow.approve` permission"
+  - "user-friendly", "intuitive" → the steps, and how many
+  - "robust", "gracefully" → the failure, and the exact response to it
+  - "etc.", "and so on" → the whole list
+  - "as needed", "where appropriate" → the condition, as a WHEN or IF clause
 -->
 
 ### Functional Requirements
 
-- **FR-001**: WHEN [trigger] THE [subject] SHALL [response].
+- **FR-001**: WHEN [trigger] THE [subject] SHALL [response]. Sources: SRC-001
+
+### Non-functional Requirements
+
+<!-- Qualities as their own EARS lines, each with its number: time, size, rate, limit, or the platforms it runs on.
+     Worked examples:
+     - **NFR-001**: THE package SHALL add no runtime dependency. Sources: SRC-002
+     - **NFR-002**: WHEN `fflow check` runs on a 500-file repository THE command SHALL finish within 5 s on the
+       testbed. Sources: SRC-001 -->
+
+- **NFR-001**: THE [system] SHALL [a quality, with its number]. Sources: SRC-001
 
 ### Key Entities _(include if feature involves data)_
 
@@ -93,16 +144,21 @@
 <!-- EARS, one per line, each with an id that tasks (`covers: AC-001`) and tests (`@covers sta-n:AC-001`) trace to:
      WHEN <event> THE <system> SHALL <response> · IF <condition> THEN THE <system> SHALL <response>
      WHILE <state> THE <system> SHALL <response> · WHERE <feature> THE <system> SHALL <response> · THE <system> SHALL <response>
-     A small spec keeps a short form of the design in this file (`## Design` with the nine `###` sections of the plan
-     template, one line each) and its `## Tasks` checklist, instead of plan.md and tasks.md. -->
+     A small spec keeps a short form of the design in this file (`## Design` below) and its `## Tasks` checklist,
+     instead of plan.md and tasks.md. -->
 
 - **AC-001**: WHEN [event] THE [system] SHALL [response]
 
 ## Success Criteria _(mandatory)_
 
-<!-- Measurable and technology-agnostic. Each SC names how it is verified: unit, e2e, k6 or manual. -->
+<!-- Measurable and technology-agnostic: a number, a threshold and what is counted. Each SC names how it is verified:
+     unit, e2e, k6 or manual. Worked examples:
+     - **SC-001**: a new repository passes `fflow check` within 10 minutes of `fflow init`, on 3 of 3 trial
+       repositories — verified by: e2e
+     - **SC-002**: no hand-copied agent file remains in the 18 repositories of the census — verified by: manual
+     Not measurable: "setup is easier", "drift is reduced". -->
 
-- **SC-001**: [measurable outcome] — verified by: [unit / e2e / k6 / manual]
+- **SC-001**: [measurable outcome: a number, a threshold and what is counted] — verified by: [unit / e2e / k6 / manual]
 
 ## Out of scope
 
@@ -111,6 +167,57 @@
 ## Assumptions
 
 - [assumption, and why it is reasonable]
+
+## Design _(small tier only: delete it for feature and big, whose design is plan.md)_
+
+<!-- ADR 0502: a small spec's one-page design. The gate requires these nine `###` sections from Planned on (write
+     "none" under one that does not apply); one line each, except the folder tree and the interfaces, which stay
+     required at this tier. -->
+
+### Architecture overview
+
+[How the pieces fit, in one line]
+
+### Components and responsibilities
+
+[Each module this adds or changes, and what it owns]
+
+### Files and folders
+
+```text
+[member]/
+├── src/[path]/[file].ts                    (new)
+└── src/[path]/__tests__/[file].test.ts     (new)
+```
+
+### Data models and migrations
+
+[Models, tables and migrations, or none]
+
+### Contracts
+
+<!-- The real declarations, in the repository's language: names, parameters, returns and thrown errors. -->
+
+```ts
+/** [what it does] @throws [ErrorType] [when] */
+export function [name]([param]: [Type]): [ReturnType];
+```
+
+### Error handling
+
+[Refusals and their codes, and what a failure leaves behind]
+
+### Security and tenancy
+
+[Permissions, tenant isolation, personal data, secrets by name, or none]
+
+### Testing strategy
+
+[Which tests prove which acceptance criteria (AC-###)]
+
+### Rollout
+
+[Flags, migration order, release notes, or none]
 
 ## Amendments
 
