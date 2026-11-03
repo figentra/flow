@@ -23,6 +23,7 @@
  * Governing contract: ADR 0022; STA-1856; STA-1945 FR-22.
  */
 // @covers sta-1856:FR-4 sta-1856:FR-6 sta-1945:FR-22 sta-1945:AC-17
+// @covers sta-1856:AC-008 sta-1856:AC-009 sta-1856:AC-010 sta-1856:P-001 sta-1856:P-004
 import { test } from "node:test";
 import assert from "node:assert/strict";
 

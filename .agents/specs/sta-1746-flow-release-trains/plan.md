@@ -24,8 +24,8 @@ settings are a new `train` block in the configuration.
 `src/commands/train.mjs` holds the subcommands as functions over a context (`root`, `repo`, `base`, the `train`
 settings, the gate App, `--dry-run`) and injected dependencies (the GitHub `api`, `gate(dir, ref)`, `log`, `warn`),
 as `land.mjs` does. A train is a milestone titled `<label><version>` and a label of the same name. Its state (members
-in board order, ejections, waiting PRs, the cut-off) is one JSON line in the milestone's description, behind a
-`<!-- figentra-flow/train` marker.
+in board order, ejections, waiting PRs, the cut-off) is one JSON line in the milestone's description, inside an
+HTML comment that opens with the marker `<NAME>/train` (`fflow/train` since 0.2.2).
 
 `build` works in a detached worktree at `.claude/worktrees/train-<version>`, removed when the build ends. It merges
 each member's `refs/pull/<n>/head` with `--no-ff`. Every gate goes through `gate run --ref train/<version>` on the
@@ -60,16 +60,18 @@ merge commits of the build. `depart` fast-forwards the default branch through th
 
 - `packages/figentra-flow/src/commands/train.mjs` (new)
 - `packages/figentra-flow/src/commands/land.mjs` (`gateProblems`, `connect` exported)
-- `packages/figentra-flow/bin/figentra-flow.mjs` (`train` on the dispatcher)
-- `packages/figentra-flow/src/lib/config.mjs`, `packages/figentra-flow/schema/figentra-flow.config.schema.json`,
-  `figentra-flow.config.json` (the `train` block)
+- `packages/figentra-flow/bin/fflow.mjs` (`train` on the dispatcher; `bin/figentra-flow.mjs` until 0.2.2)
+- `packages/figentra-flow/src/lib/config.mjs`, `packages/figentra-flow/schema/flow.config.schema.json`,
+  `flow.config.json` (the `train` block; `figentra-flow.config*` until 0.2.2)
 - `packages/figentra-flow/src/__tests__/train.test.mjs` (new)
-- `packages/figentra-flow/README.md`, `AGENTS.md`, `.changeset/flow-release-trains.md`
+- `packages/figentra-flow/README.md`, `AGENTS.md`, the changeset (released into `packages/figentra-flow/CHANGELOG.md`
+  at 0.1.0)
 
 ## Data models and migrations
 
-The milestone description line: `<!-- figentra-flow/train {"members":[n…],"ejected":[{"pr":n,"reason":"…"}],"waiting":[n…],"closed":bool} -->`.
-A missing or unreadable line reads as an empty, boarding train. No migration.
+The milestone description line is an HTML comment holding the marker and one JSON object:
+`fflow/train {"members":[n…],"ejected":[{"pr":n,"reason":"…"}],"waiting":[n…],"closed":bool}` (the marker was
+`figentra-flow/train` before 0.2.2). A missing or unreadable line reads as an empty, boarding train. No migration.
 
 ## Contracts
 

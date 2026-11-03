@@ -14,6 +14,8 @@
  */
 // @covers sta-1729:FR-6 sta-1729:AC-010 sta-1729:AC-011 sta-1729:AC-017 sta-1729:AC-029 sta-1729:AC-030 sta-1729:P-006
 // @covers sta-1856:FR-1 sta-1856:FR-2 sta-1856:FR-3 sta-1856:FR-6
+// @covers sta-1856:AC-001 sta-1856:AC-003 sta-1856:AC-004 sta-1856:AC-005 sta-1856:AC-006 sta-1856:AC-007
+// @covers sta-1856:P-001 sta-1856:P-002 sta-1856:P-003
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
