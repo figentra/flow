@@ -1,5 +1,5 @@
 ---
-description: Plan the feature; refuses until the spec gate passes.
+description: Plan the feature and split it into PR-sized tasks; refuses until the spec gate passes.
 derived-from: github/spec-kit 1.0.10 (MIT)
 ---
 
@@ -107,7 +107,7 @@ Command ends after Phase 1 design. Report branch, IMPL_PLAN path, and generated 
 `plan.md` follows the Stackra plan template: every Constitution Check row is PASS or N/A with a reason, the three
 deploy modes have rows, and every FR is validated by a `P-###` property (or the FR says `example-only`). Then set
 `**Status**: Planned`, append the Status history line, and run `pnpm spec:gate check <folder>`.
-The next step is `/flow-tasks`.
+Then the approval stop (below), then the tasks: this command writes tasks.md too; there is no separate tasks command.
 
 ## Stackra: approval stop (ADR 0502)
 
@@ -116,3 +116,27 @@ the plan (before tasks). At a stop, ask the approver named in `**Approver**` wit
 with notes, Reject; to the owner, plan.md is "the design" (its nine sections, ADR 0502). On Approve, add `— Approved by <who> <YYYY-MM-DD>` to the `**Status**` line and to its Status
 history line. On Revise, apply the notes and ask again. On Reject, set `**Status**: Abandoned`. Never record an
 approval nobody gave; the gate and the plan-gate hook read it before tasks and code.
+
+## Stackra: tasks (the plan workflow, after the Planned approval)
+
+The plan stage splits the approved spec into PR-sized tasks and writes tasks.md. `fflow plan` hands the workflow
+its input and validates and records its output; never write tasks.md by hand.
+
+1. **Input**: run `fflow plan STA-n --input`. It prints the FRs and ACs to cover, the documents to read and the size
+   budget (the most files one task may name). If it refuses (the spec is not approved, or is small: a small spec keeps
+   its tasks in spec.md's `## Tasks`), STOP and report it.
+2. **Template**: run `fflow spec setup-tasks --json` and use TASKS_TEMPLATE_CONTENT as the structure.
+3. **Split**: read the documents and write the tasks, grouped into phases, one PR each, in stack order (a phase comes
+   after the phases it builds on). Each task names its files in backticks, at most the budget, and every line follows
+   `- [ ] T012 [P] [US1] <desc> in <path> — covers: FR-003, AC-004, P-002 — route: <task type> — deps: T010`.
+   Together the tasks cover every FR and AC; `[P]` tasks in one phase share no file.
+4. **Record**: write the result to a scratch file and run `fflow plan STA-n --record <file>`. It writes tasks.md
+   into the spec folder only when `gate tasks` passes, every FR and AC is covered and each task holds its budget;
+   otherwise it names each problem. Fix them and record again.
+5. **Tasked**: set `**Status**: Tasked`, append the Status history line and run `pnpm spec:gate check <folder>`.
+6. **Linear**: preview `pnpm spec:linear tasks <folder>/tasks.md --dry-run`, show the user the list, then run it
+   without `--dry-run`. Each `T###` line without a key becomes a sub-issue of the spec's issue, labelled `agent`; the
+   script appends ` [STA-m]`, and a re-run skips linked lines. A Linear failure never blocks a gate (ADR 0065 rule 7).
+   The token comes from Infisical through `pnpm spec:linear` only. Never print it.
+
+The next step is `fflow start STA-n` (the worktree), then `/flow-implement`.

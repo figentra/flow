@@ -6,6 +6,10 @@
  *   configuration, or `--box <host>` for one run). An `ssh` or `local` box posts `fflow/gate` after the
  *   check; for a `command` runner (the testbed) the box returns only the check's exit code and this side posts, inside
  *   `gate run` only (the owner's option C1 of 2026-11-01; the hook guard refuses a direct poster call).
+ *   `--shards <n>` (FR-15, a `command` runner only) fans the check out: the workspace's packages dealt into at most
+ *   n groups, one `run … --json` call per group with `gate.shard`'s `{filters}`, all at once, and one `fflow/gate`
+ *   status, green only when every shard exited 0 (AC-41); a shard with still no slot or healthy box (73, 75) posts
+ *   nothing, since that is never a test failure.
  * Boundary: runs no check on the caller's machine (FR-9). Refuses a dirty tree, a detached head without `--ref`, a
  *   head that is not the remote branch tip, and a missing runner, before any box is claimed; a runner program that
  *   is not installed is refused after. Removes its temporary
@@ -28,6 +32,17 @@ import { say } from "../lib/cli.mjs";
 import { loadConfig } from "../lib/config.mjs";
 import { defaultBranch, git, isClean, remoteTip } from "../lib/git.mjs";
 import {
+  combine,
+  MAX_SHARDS,
+  NO_BOX,
+  NO_SLOT,
+  reportOf,
+  shard,
+  shardCommand,
+  workspacePackages,
+} from "../lib/shards.mjs";
+import {
+  CONFIG_FILE,
   ENV_PREFIX,
   GATE_DIR,
   GATE_MARKER,
@@ -40,11 +55,12 @@ import {
 const POSTER = new URL("../lib/gate-post.mjs", import.meta.url);
 
 /**
- * The repository's check command: the configuration's `gate.check`, else `pnpm verify`, followed by the spec gate
- * where this package is installed.
+ * The repository's check command: `check` (a shard's), else the configuration's `gate.check`, else `pnpm verify`,
+ * followed by the spec gate where this package is installed.
  * @param {string} dir
+ * @param {string} [check]
  */
-export function checkCommand(dir) {
+export function checkCommand(dir, check = loadConfig(dir).config.gate?.check ?? "pnpm verify") {
   /** @type {any} */
   let pkg = {};
   try {
@@ -52,7 +68,6 @@ export function checkCommand(dir) {
   } catch {
     // no package.json: the default command, which will fail loudly on the box
   }
-  const check = loadConfig(dir).config.gate?.check ?? "pnpm verify";
   const installed = Boolean(pkg.devDependencies?.[PACKAGE] ?? pkg.dependencies?.[PACKAGE]);
   return `pnpm install --frozen-lockfile && ${check}${installed ? ` && pnpm exec ${NAME} gate ci` : ""}`;
 }
@@ -88,8 +103,33 @@ function postHere(dir, wrap) {
 export const slugOf = (url) => url.match(/github\.com[:/]+([^/]+\/[^/]+?)(?:\.git)?\/?$/)?.[1];
 
 /**
- * Runs the gate for the head of `cwd`.
- * @param {{ cwd: string, ref?: string, box?: string, flags?: string[],
+ * Runs every shard at once (the testbed picks region, box and slot, and a call over its cap waits inside `run`), each
+ * with `--json` for the testbed's one result line; a shard that found no free slot or healthy box is tried once more.
+ * @param {NonNullable<import("../adapters/runner/index.mjs").Runner["start"]>} start
+ * @param {string[][]} groups
+ * @param {import("../adapters/runner/index.mjs").Job} job
+ * @param {(group: string[]) => string} check
+ * @returns {Promise<import("../lib/shards.mjs").ShardResult[]>}
+ */
+export function runShards(start, groups, job, check) {
+  return Promise.all(
+    groups.map(async (packages, i) => {
+      const one = {
+        ...job,
+        label: `${job.label} shard ${i + 1}/${groups.length}`,
+        command: check(packages),
+        flags: [...job.flags, "--json"],
+      };
+      let r = await start(one);
+      if (r.code === NO_SLOT || r.code === NO_BOX) r = await start(one);
+      return { packages, code: r.code, report: reportOf(r.out) };
+    }),
+  );
+}
+
+/**
+ * Runs the gate for the head of `cwd`; with `shards`, the check fans out by package shard (FR-15).
+ * @param {{ cwd: string, ref?: string, box?: string, flags?: string[], shards?: number,
  *           runner?: import("../adapters/runner/index.mjs").Runner,
  *           tip?: (root: string, branch: string) => string | undefined, now?: () => Date,
  *           post?: (dir: string) => number }} options
@@ -131,6 +171,25 @@ export async function gateRun(options) {
   const artifacts = artifactProblems(root, `origin/${base}`, sha, loaded.config.artifacts);
   if (artifacts.length)
     return { code: 2, problem: `the change carries artifacts:\n  ${artifacts.join("\n  ")}` };
+  const template = loaded.config.gate?.shard ?? "";
+  /** @type {string[][] | undefined} */
+  let groups;
+  if (options.shards !== undefined) {
+    if (runner.posts !== "caller" || !runner.start)
+      return {
+        code: 2,
+        problem: `--shards needs a command runner (the testbed); ${runner.kind} is not one`,
+      };
+    if (!template.includes("{filters}"))
+      return {
+        code: 2,
+        problem: `--shards needs "gate.shard" in ${CONFIG_FILE}: the check command, with {filters} for the shard's packages`,
+      };
+    const packages = workspacePackages(root);
+    if (!packages?.length)
+      return { code: 2, problem: "--shards needs pnpm-workspace.yaml naming the packages" };
+    groups = shard(packages, Math.min(options.shards, MAX_SHARDS));
+  }
 
   const dir = mkdtempSync(join(tmpdir(), `${NAME}-gate-`));
   try {
@@ -162,7 +221,7 @@ export async function gateRun(options) {
     // A box-side poster runs under the secrets port's `gate` scope unless the runner brings its own.
     const wrap = runner.wraps ? (/** @type {string} */ c) => secrets.wrap(c, "gate") : undefined;
     const command = callerPosts ? checkCommand(dir) : boxCommand(checkCommand(dir), { wrap });
-    const code = runner.run({
+    const each = {
       dir,
       command,
       label: `${NAME} gate ${repository}@${sha.slice(0, 12)}`,
@@ -171,7 +230,19 @@ export async function gateRun(options) {
       branch,
       repository,
       base,
-    });
+    };
+    let code;
+    if (groups && runner.start) {
+      // AC-41: one status for every shard, green only when each passed; it goes to the poster as the check's log.
+      const results = await runShards(runner.start, groups, each, (g) =>
+        checkCommand(dir, shardCommand(template, g)),
+      );
+      const verdict = combine(results);
+      for (const line of verdict.lines) console.error(`${NAME} gate run: ${line}`);
+      code = results.some((r) => r.code === 127) ? 127 : verdict.code;
+      if (code !== 127 && verdict.infra) return { code, problem: verdict.infra, sha };
+      writeFileSync(join(dir, GATE_DIR, "log.txt"), `${verdict.lines.join("\n")}\n`);
+    } else code = runner.run(each);
     if (code === 127)
       return {
         code: 2,
@@ -195,7 +266,7 @@ export async function gateRun(options) {
   }
 }
 
-/** `fflow gate run [--ref <branch>] [--box <ssh host>] [-- <runner flags>]`. */
+/** `fflow gate run [--ref <branch>] [--box <ssh host>] [--shards <n>] [-- <runner flags>]`. */
 export async function run(/** @type {string[]} */ all) {
   // Everything after `--` is the runner's own (a command runner's `{flags}`, e.g. the testbed's `--no-wait`).
   const cut = all.indexOf("--");
@@ -203,6 +274,11 @@ export async function run(/** @type {string[]} */ all) {
   const flags = cut === -1 ? [] : all.slice(cut + 1);
   const opt = (/** @type {string} */ name) =>
     args.includes(`--${name}`) ? args[args.indexOf(`--${name}`) + 1] : undefined;
+  const shards = args.includes("--shards") ? Number(opt("shards")) : undefined;
+  if (shards !== undefined && !(Number.isInteger(shards) && shards >= 1 && shards <= MAX_SHARDS)) {
+    console.error(`${NAME} gate run: --shards takes 1 to ${MAX_SHARDS}`);
+    return 2;
+  }
   /** @type {{ code: number, problem?: string }} */
   let result;
   say("checking", `${NAME} gate run: checking ${opt("ref") ?? "HEAD"}`);
@@ -212,6 +288,7 @@ export async function run(/** @type {string[]} */ all) {
       ref: opt("ref"),
       box: opt("box"),
       flags,
+      shards,
     });
   } catch (error) {
     // a configuration the secrets or runner port refuses

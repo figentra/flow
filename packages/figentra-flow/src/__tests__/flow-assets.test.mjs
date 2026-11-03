@@ -1,8 +1,8 @@
 /**
  * Figentra Flow file contract:
  * Purpose: hold Flow's own spec assets (ADR 0510) to their shape: each preset ships `preset.yml`, the three templates
- *   and exactly the eight `flow-*` commands; every command and the checklist and constitution templates carry the
- *   spec-kit attribution line; no asset still names spec-kit's machinery (`.specify`, `SPECIFY_*`, `extensions.yml`,
+ *   and exactly the nine `flow-*` commands (STA-1945 FR-15: no `tasks`; `gate` and `review` are Flow's own); every
+ *   command derived from spec-kit's and the checklist and constitution templates carry the spec-kit attribution line; no asset still names spec-kit's machinery (`.specify`, `SPECIFY_*`, `extensions.yml`,
  *   `speckit`, the bash scripts, `{SCRIPT}`); and the package ships `THIRD_PARTY_NOTICES.md`.
  * Boundary: reads the package's files; no process, no network.
  * Runtime: node
@@ -16,7 +16,8 @@ import { join } from "node:path";
 
 const PKG = new URL("../..", import.meta.url).pathname;
 const FLOW = join(PKG, "assets", "flow");
-const VERBS = [
+/** The commands derived from spec-kit's; `plan` writes tasks.md, so there is no `tasks` (STA-1945 FR-15). */
+const DERIVED_VERBS = [
   "analyze",
   "checklist",
   "clarify",
@@ -24,8 +25,9 @@ const VERBS = [
   "implement",
   "plan",
   "specify",
-  "tasks",
 ];
+/** Flow's own stage workflows (FR-15). */
+const VERBS = [...DERIVED_VERBS, "gate", "review"].toSorted();
 const DERIVED = "derived-from: github/spec-kit 1.0.10 (MIT)";
 const LEFTOVERS = [
   ".specify",
@@ -37,7 +39,7 @@ const LEFTOVERS = [
   "{ARGS}",
 ];
 
-test("flow assets: each preset has its manifest, its templates and the eight flow-* commands", () => {
+test("flow assets: each preset has its manifest, its templates and the nine flow-* commands", () => {
   for (const preset of ["neutral", "stackra"]) {
     const dir = join(FLOW, "presets", preset);
     assert.match(
@@ -61,7 +63,7 @@ test("flow assets: each preset has its manifest, its templates and the eight flo
 test("flow assets: derived texts carry the attribution; nothing names spec-kit's machinery", () => {
   const derived = [
     ...["neutral", "stackra"].flatMap((p) =>
-      VERBS.map((v) => join(FLOW, "presets", p, "commands", `flow-${v}.md`)),
+      DERIVED_VERBS.map((v) => join(FLOW, "presets", p, "commands", `flow-${v}.md`)),
     ),
     join(FLOW, "templates", "checklist-template.md"),
     join(FLOW, "templates", "constitution-template.md"),

@@ -92,7 +92,21 @@
         "properties": {
           "sha": { "type": "string", "minLength": 1 },
           "verdict": { "type": "string", "minLength": 1 },
-          "findings": { "type": "integer", "minimum": 0 }
+          "findings": { "type": "integer", "minimum": 0 },
+          "pr": { "type": "integer", "minimum": 1 },
+          "blocking": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "file", "text"],
+              "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "file": { "type": "string", "minLength": 1 },
+                "text": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
         }
       }
     },

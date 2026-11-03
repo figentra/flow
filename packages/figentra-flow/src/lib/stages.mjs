@@ -3,7 +3,7 @@
  * Purpose: the lifecycle's stage table (FR-13): every task runs `start` → `spec` → `approval` → `plan` → `worktree`
  *   → `build` → `gate` → `review` → `land` → `release` → `ship`, and `nextStep` names, for any record, the one stage
  *   it is at and the command that moves it on (P-017).
- * Boundary: pure: reads nothing, writes nothing. Commands later PRs build (`plan`, `task wave`, `review`) are named
+ * Boundary: pure: reads nothing, writes nothing. A command a later PR builds (`task wave`) is named
  *   here already, since the chain is the contract.
  * Runtime: node
  * Governing contract: STA-1945 (FR-13, AC-13, P-017).

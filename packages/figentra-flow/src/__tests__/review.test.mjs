@@ -3,16 +3,28 @@
  * Purpose: hold the AI review reader to ADR 0230: a PASS counts only from the reviewer App (by App identity, not a
  *   login), unedited, naming the head and the PR's base; the change's own authors cannot review it; an edit voids
  *   earlier verdicts; a FAIL for the head (even a sloppy one) beats a PASS; a verdict for an older commit does not
- *   count; the owner's APPROVED review with `owner-approval` on the head counts.
- * Boundary: pure; REST-shaped comments and reviews built here.
+ *   count; the owner's APPROVED review with `owner-approval` on the head counts. And `fflow review` (STA-1945 FR-15):
+ *   `--input` hands the review workflow its input; `--record` refuses invalid findings and records the verdict and the
+ *   confirmed blocking findings that `land` refuses on.
+ * Boundary: the reader is pure, REST-shaped comments and reviews built here; the command runs in temporary
+ *   repositories with a local bare origin; no network.
  * Runtime: node
  * Governing contract: ADR 0022; Stackra ADR 0230; STA-1729 phase 3 (AC-031).
  */
 // @covers sta-1729:FR-6 sta-1729:AC-031
+// @covers sta-1945:FR-15 sta-1945:AC-40 sta-1945:P-021
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
+import { blockingFindings } from "../commands/land.mjs";
+import { findingProblems, recordReview, reviewInput, REVIEWERS } from "../commands/review.mjs";
+import { readRecord } from "../lib/record.mjs";
 import { actor, aiReview } from "../lib/review.mjs";
+import { commit, repo, sh } from "./__fixtures__/repo.mjs";
+
+const DIR = ".agents/specs/sta-7-x";
 
 const REVIEWER = "stackra-reviewer";
 const OWNER = "figentra-usr";
@@ -121,4 +133,99 @@ test("review: with no review App configured nothing counts, and with no owner no
     body: "owner-approval",
   };
   assert.equal(aiReview(PR, [], [approve], [], { reviewer: REVIEWER }).verdict, null);
+});
+
+/** A repository on the STA-7 branch with its spec and one change past main. */
+function task(t) {
+  const r = repo();
+  t.after(r.dispose);
+  sh(r.root, "checkout", "-q", "-b", "figentra/sta-7-x");
+  mkdirSync(join(r.root, DIR), { recursive: true });
+  writeFileSync(
+    join(r.root, DIR, "spec.md"),
+    "# x\n\n**Status**: Tasked\n\n- **FR-001**: WHEN a THE b SHALL c.\n- **AC-001**: WHEN a THE b SHALL c.\n",
+  );
+  sh(r.root, "add", "-A");
+  sh(r.root, "commit", "-q", "-m", "spec");
+  commit(r.root, "a.mjs");
+  return r.root;
+}
+
+/**
+ * A finding as the workflow writes it, `over` replacing fields (an invalid one too).
+ * @param {Record<string, unknown>} [over]
+ * @returns {any}
+ */
+const finding = (over = {}) => ({
+  id: "correctness-1",
+  reviewer: "correctness",
+  blocking: true,
+  confirmed: true,
+  file: "a.mjs:1",
+  text: "drops the error",
+  ...over,
+});
+
+test("review --input: the PR, its head and base, the changed files, the spec's FRs and ACs and the four reviewers", (t) => {
+  const root = task(t);
+  assert.deepEqual(reviewInput(root, 12), {
+    pr: 12,
+    key: "sta-7",
+    sha: sh(root, "rev-parse", "HEAD"),
+    base: "main",
+    changed: [`${DIR}/spec.md`, "a.mjs"].toSorted(),
+    frs: ["FR-001"],
+    acs: ["AC-001"],
+    files: [`${DIR}/spec.md`],
+    reviewers: REVIEWERS,
+  });
+});
+
+test("review --record: a confirmed blocking finding fails the review and is recorded for land; refuted or minor ones pass", (t) => {
+  const root = task(t);
+  const head = sh(root, "rev-parse", "HEAD");
+  const found = [
+    finding(),
+    finding({ id: "simplicity-1", reviewer: "simplicity", confirmed: false }),
+    finding({ id: "contracts-1", reviewer: "contracts", blocking: false }),
+  ];
+  const { blocking, problems } = recordReview(root, 12, found);
+  assert.deepEqual(problems, []);
+  assert.deepEqual(
+    blocking.map((f) => f.id),
+    ["correctness-1"],
+  );
+  const record = readRecord(root, "sta-7");
+  assert.equal(record?.stage, "review");
+  assert.equal(record?.state, "failed");
+  assert.deepEqual(record?.prs, [12]);
+  assert.deepEqual(record?.review, [
+    {
+      sha: head,
+      verdict: "FAIL",
+      findings: 3,
+      pr: 12,
+      blocking: [{ id: "correctness-1", file: "a.mjs:1", text: "drops the error" }],
+    },
+  ]);
+  assert.deepEqual(blockingFindings(record), ["correctness-1 in a.mjs:1: drops the error"]);
+  recordReview(root, 12, [finding({ confirmed: false })]);
+  const again = readRecord(root, "sta-7");
+  assert.equal(again?.review.at(-1)?.verdict, "PASS");
+  assert.deepEqual(again?.prs, [12]);
+  assert.deepEqual(blockingFindings(again), [], "the newest review counts");
+});
+
+test("review --record: output that is not a list of findings is refused, each problem named, and nothing written", (t) => {
+  const root = task(t);
+  assert.deepEqual(findingProblems({}), ["the findings are not a JSON list"]);
+  const { problems } = recordReview(root, 12, [
+    finding({ reviewer: "style", blocking: "yes", text: "" }),
+  ]);
+  assert.deepEqual(problems, [
+    "finding 1 (correctness-1) has no `text`",
+    "finding 1 (correctness-1): reviewer is not one of correctness, simplicity, security-tenancy, contracts",
+    "finding 1 (correctness-1): `blocking` is not true or false",
+  ]);
+  assert.equal(readRecord(root, "sta-7"), undefined);
 });

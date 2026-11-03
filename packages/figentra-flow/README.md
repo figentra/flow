@@ -20,7 +20,9 @@ pnpm exec fflow sync         # re-render the flow-* skills after a preset or Flo
 | `fflow migrate [--dry-run]`                                           | moves a spec-kit repository onto `.flow/` (constitution, `.specify/` and `.agents/speckit/` deleted, scripts, pins and skips), then syncs                                                        |
 | `fflow spec paths\|setup-plan\|setup-tasks\|template`                 | the spec folder, its documents and the resolved templates as JSON, for the `flow-*` commands                                                                                                     |
 | `fflow sync [--direct]`                                               | renders the `flow-*` skills (for the repository's projector, or Claude Code and OpenCode directly) and writes `.flow/lock.json`                                                                  |
-| `fflow gate run [--ref b] [--box host] [-- flags]`                    | the repository's checks through the configured runner (or on `--box`) at the pushed head; the box posts `fflow/gate` as the gate App                                                             |
+| `fflow gate run [--ref b] [--box host] [--shards n] [-- flags]`       | the repository's checks through the configured runner (or on `--box`) at the pushed head, fanned out by package shard with `--shards`; one `fflow/gate` is posted as the gate App               |
+| `fflow plan <key> --input \| --record <tasks.md>`                     | the plan workflow's input (FRs, ACs, documents, size budget), and its tasks.md written only when every FR and AC is covered within the budget and `gate tasks` passes                         |
+| `fflow review <pr> --input \| --record <findings.json>`               | the review workflow's input, and its verified findings recorded; `land` refuses a confirmed blocking one                                                                                         |
 | `fflow land [<pr>] [--stack] [--dry-run] [--manual-ok]`               | squash-merges a PR that is green on `fflow/gate` from the gate App on its head and has its approvals; Linear Done, worktree and branch removed                                                   |
 | `fflow train <open\|add\|close\|build\|eject\|depart\|status>`        | the release train: board green PRs, cut off, build `train/<version>` by merge commits with bisect ejection, depart by fast-forward (see [Release trains](#release-trains))                       |
 | `fflow ship <dev\|staging> [--workflow f] [--dry-run]`                | dispatches the product's Runway deploy workflow (`deploy.yml`, input `environment`) on main; production is refused: the owner promotes                                                           |
@@ -114,7 +116,9 @@ setting you have not made refuses and names it.
   (`"~/.local/bin/infisical"`) and `envFile` a file holding the two `INFISICAL_UNIVERSAL_AUTH_CLIENT_*` lines, read
   in a subshell for that one command and seen only by the login. There is no default for either. Figentra Flow wraps the command and never reads a
   value.
-- `gate.check` is the check command (default `pnpm verify`).
+- `gate.check` is the check command (default `pnpm verify`). `gate.shard` is the check one shard of
+  `gate run --shards <n>` runs, with `{filters}` for its packages as `--filter=./<folder>` flags, e.g.
+  `pnpm format:check && pnpm turbo run lint typecheck test build {filters}`.
 
 - `tracker` names the issue tracker:
   - `linear` with `team` and `branchPrefix`, and optionally `token`, the names of the environment variables holding

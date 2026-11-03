@@ -37,16 +37,17 @@ import {
 import { renderReadme } from "./readme.mjs";
 import { parseYaml, YamlError } from "./yaml.mjs";
 
-/** The eight commands, in workflow order. */
+/** The nine commands, in workflow order; `plan` writes tasks.md too, so there is no `tasks` (STA-1945 FR-15). */
 export const VERBS = [
   "specify",
   "clarify",
   "plan",
-  "tasks",
   "analyze",
   "checklist",
   "implement",
   "converge",
+  "gate",
+  "review",
 ];
 
 /** Where spec-kit left files; any of them after `migrate` is a finding. */
@@ -240,11 +241,18 @@ export function leftovers(root) {
 }
 
 /**
- * Writes the rendered files and `.flow/lock.json`, and removes the rendered `speckit-*` skills and commands.
+ * The files `.flow/lock.json` lists, path to hash; none when it is missing or not JSON.
  * @param {string} root
- * @param {Map<string, string>} files
- * @returns {string[]} the spec-kit files it removed
+ * @returns {Record<string, string>}
  */
+function lockedFiles(root) {
+  try {
+    return JSON.parse(readFileSync(join(root, LOCK), "utf8")).files ?? {};
+  } catch {
+    return {};
+  }
+}
+
 /**
  * The 0.2.2 rename (`figentra-flow` → `fflow`, owner 2026-11-02), once: the config file takes its new name (its
  * `$schema` with it) and the workflows rendered under the old name go. Both config files at once is an error.
@@ -279,9 +287,27 @@ export function migrateLegacy(root) {
   return { done };
 }
 
+/**
+ * Writes the rendered files and `.flow/lock.json`, and removes the rendered `speckit-*` skills and commands and the
+ * unedited `flow-*` ones it no longer renders.
+ * @param {string} root
+ * @param {Map<string, string>} files
+ * @returns {string[]} the files it removed
+ */
 export function writeRendered(root, files) {
   const removed = leftovers(root).filter((p) => !LEFTOVER_DIRS.includes(p));
   for (const p of removed) rmSync(join(root, p), { recursive: true, force: true });
+  // A `flow-*` skill or command the last sync rendered and this one does not (`flow-tasks`, FR-15) goes, unless it
+  // was edited since; nothing else the lock lists is removed.
+  for (const [p, hash] of Object.entries(lockedFiles(root))) {
+    const at = join(root, p);
+    if (files.has(p) || !SKILL_DIRS.some((d) => p.startsWith(`${d}/flow-`)) || p.includes(".."))
+      continue;
+    if (!existsSync(at) || sha(readFileSync(at, "utf8")) !== hash) continue;
+    rmSync(at);
+    removed.push(p);
+    if (!readdirSync(dirname(at)).length) rmSync(dirname(at), { recursive: true });
+  }
   for (const [path, text] of files) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), text);

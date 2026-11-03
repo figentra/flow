@@ -48,7 +48,7 @@ export function sync(root, { direct = false, log = console.log } = {}) {
   for (const line of migrated.done) log(`${NAME} sync: ${line} (the ${NAME} rename)`);
   const files = render(root, { direct });
   const removed = writeRendered(root, files);
-  for (const p of removed) log(`${NAME} sync: removed ${p} (spec-kit)`);
+  for (const p of removed) log(`${NAME} sync: removed ${p}`);
   log(`${NAME} sync: rendered ${files.size} file(s); .flow/lock.json written`);
   return { files: [...files.keys()], removed };
 }

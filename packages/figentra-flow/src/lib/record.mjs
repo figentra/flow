@@ -78,7 +78,17 @@ export const RECORD_SCHEMA = {
     commits: { type: "array", items: str },
     prs: { type: "array", items: { type: "integer", minimum: 1 } },
     gate: list({ sha: str, state: str, baseline: { type: "boolean" } }, ["sha", "state"]),
-    review: list({ sha: str, verdict: str, findings: { type: "integer", minimum: 0 } }),
+    // FR-15: `blocking` holds the review workflow's confirmed blocking findings, which `land` refuses on
+    review: list(
+      {
+        sha: str,
+        verdict: str,
+        findings: { type: "integer", minimum: 0 },
+        pr: { type: "integer", minimum: 1 },
+        blocking: list({ id: str, file: str, text: str }),
+      },
+      ["sha", "verdict", "findings"],
+    ),
     asks: list({ what: str, command: str }),
     tasks: {
       type: "object",
@@ -116,7 +126,8 @@ export const RECORD_SCHEMA = {
  *   sessions: { name: string, id?: string, kind: string, start: string | null, end?: string, pushed?: boolean }[],
  *   commits: string[],
  *   prs: number[], gate: { sha: string, state: string, baseline?: boolean }[],
- *   review: { sha: string, verdict: string, findings: number }[], asks: { what: string, command: string }[],
+ *   review: { sha: string, verdict: string, findings: number, pr?: number,
+ *     blocking?: { id: string, file: string, text: string }[] }[], asks: { what: string, command: string }[],
  *   tasks: Record<string, { command: string, exit: number, ms?: number, head: string, clean: boolean, digest: string, at: string, error?: string }[]>,
  *   started?: Record<string, { at: string, head: string, docs: string, session?: string }> }} FlowRecord
  */
