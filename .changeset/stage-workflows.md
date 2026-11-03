@@ -6,11 +6,13 @@ Stage workflows (STA-1945 FR-15). Three stages now run a Claude workflow that th
 whose output it validates and records in Flow's record.
 
 - **Plan.** `/flow-plan` also splits the approved spec into PR-sized tasks and writes tasks.md; `/flow-tasks` is gone,
-  and `sync` removes its rendered skill and command when they are unedited (`fflow diff` lists them as deletes).
+  and `sync` removes its rendered skill and command when they are unedited (`fflow diff` lists them as deletes). The
+  same goes for an unedited `flow-*` skill or command that a narrower profile no longer selects.
   `fflow plan <key> --input` prints the FRs and ACs to cover, the documents to read and the size budget (the most
-  files a task may name: the preset's `plan.maxFilesPerTask`, default 10). `fflow plan <key> --record <tasks.md>` writes tasks.md into the spec folder
-  only when `gate tasks` passes, every FR and AC is covered and each task holds its budget, and records the plan
-  stage; otherwise it names each problem and writes nothing. Readiness is the gate's own spec and approval checks: a
+  files a task may name: the preset's `plan.maxFilesPerTask`, default 10). `fflow plan <key> --record <tasks.md>`
+  writes tasks.md into the spec folder only when `gate tasks` passes (its task, role and folder-tree checks), every
+  FR and AC is covered and each task holds its budget, and records the plan stage; otherwise it names each problem
+  and writes nothing. Readiness is the gate's own spec and approval checks: a
   draft, an unclarified spec, an unapproved feature or big spec, or a small spec (its tasks stay in spec.md) is
   refused, and so is a tasks.md that already carries issue keys or progress markers. A brace path
   (`a/{b,c}.md`) counts as each file it names; dotted names that are not files (`gate.shard`, `0.3.0`) do not.

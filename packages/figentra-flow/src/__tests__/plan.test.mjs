@@ -128,6 +128,23 @@ test("plan --record: an uncovered AC, an unknown id, a task over budget or an un
   );
 });
 
+test("plan --record: a big spec's task naming a file outside plan.md's folder trees is refused, as at `gate tasks` (FR-30)", (t) => {
+  const history =
+    "\n## Status history\n\n- 2026-11-04 → Clarified. Approved by owner 2026-11-04\n" +
+    "- 2026-11-04 → Planned. Approved by owner 2026-11-04\n";
+  const root = setup(t, spec("Planned", `**Tier**: big\n**Approver**: owner\n${history}`));
+  writeFileSync(
+    join(root, DIR, "plan.md"),
+    "# plan\n\n## Files and folders\n\n```text\na.mjs\nb.mjs\n```\n",
+  );
+  assert.match(
+    recordPlan(root, "STA-7", TASKS.replace("in `b.mjs`", "in `c.mjs`")).join("\n"),
+    /T002 names `c\.mjs`, which no folder tree of plan\.md holds/,
+  );
+  assert.ok(!existsSync(join(root, DIR, "tasks.md")), "a refused plan writes no tasks.md");
+  assert.deepEqual(recordPlan(root, "STA-7", TASKS), [], "tasks inside the tree are recorded");
+});
+
 test("plan --record: a tasks.md that carries issue keys or progress is not replaced", (t) => {
   const root = setup(t, spec("Tasked"));
   for (const kept of [

@@ -15,13 +15,14 @@
  * Secrets: none.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { schemeFor } from "../adapters/tracker/index.mjs";
 import {
   checkApproval,
   checkSpec,
   checkTasks,
+  checkTaskTrees,
   presetId,
   presetOf,
   RULES,
@@ -35,7 +36,9 @@ import { presetDir } from "../lib/flow-dir.mjs";
 import { git } from "../lib/git.mjs";
 import { NAME } from "../lib/product.mjs";
 import { readRecord, RecordError, updateRecord } from "../lib/record.mjs";
+import { checkTaskRoles } from "../lib/roles.mjs";
 import { definedIds, parseTasks, routes } from "../lib/spec-parse.mjs";
+import { loadTeam } from "../lib/team.mjs";
 import { parseYaml, YamlError } from "../lib/yaml.mjs";
 
 /** A refusal: no such spec, or one not ready to plan. */
@@ -174,7 +177,13 @@ export function recordPlan(root, key, tasksText) {
     ];
   const routing = join(root, ".agents/routing.yaml");
   const known = routes(existsSync(routing) ? readFileSync(routing, "utf8") : "");
-  problems.push(...checkTasks(tasksText, { spec, plan, known, rules }));
+  // `gate tasks`' own checks: the tasks, the roster's roles (when there is a team) and the plan's folder trees (FR-30).
+  const team = loadTeam(root);
+  problems.push(
+    ...checkTasks(tasksText, { spec, plan, known, rules }),
+    ...(team ? checkTaskRoles(tasksText, team).problems : []),
+    ...checkTaskTrees(spec, plan, tasksText, basename(dir)).problems,
+  );
   const live = parseTasks(tasksText).filter((t) => !t.struck);
   const covered = new Set(live.flatMap((t) => t.covers));
   for (const ac of definedIds(spec, "AC").live)
