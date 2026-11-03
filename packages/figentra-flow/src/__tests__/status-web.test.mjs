@@ -30,17 +30,19 @@ async function serve(read) {
  * The status code of a hand-written HTTP/1.0 request, so the Host header can be anything or absent.
  * @param {string} url
  * @param {string[]} headers
+ * @param {string} [line]
  */
-function statusOf(url, headers) {
+function statusOf(url, headers, line = "GET /status.json HTTP/1.0") {
   const { hostname, port } = new URL(url);
   return new Promise((done, fail) => {
     let reply = "";
     const socket = connect(Number(port), hostname, () =>
-      socket.end(["GET /status.json HTTP/1.0", ...headers, "", ""].join("\r\n")),
+      socket.end([line, ...headers, "", ""].join("\r\n")),
     );
     socket.on("data", (chunk) => (reply += chunk));
     socket.on("end", () => done(Number(/^HTTP\/1\.\d (\d+)/.exec(reply)?.[1])));
     socket.on("error", fail);
+    socket.setTimeout(5000, () => socket.destroy(new Error("no reply")));
   });
 }
 
@@ -92,6 +94,9 @@ test("status --web: only its own Host and Origin are answered (DNS rebinding)", 
   const page = await fetch(`${url}/`);
   assert.equal(page.headers.get("x-content-type-options"), "nosniff");
   assert.equal(page.headers.get("cache-control"), "no-store");
+  const missing = await fetch(`${url}/nope`);
+  assert.equal(missing.headers.get("x-content-type-options"), "nosniff", "a refusal too");
+  assert.equal(missing.headers.get("cache-control"), "no-store");
   assert.equal(await statusOf(url, [`Host: 127.0.0.1:${port}`]), 200);
   assert.equal(await statusOf(url, [`Host: localhost:${port}`]), 200);
   assert.equal(
@@ -107,4 +112,13 @@ test("status --web: only its own Host and Origin are answered (DNS rebinding)", 
     "a foreign Origin",
   );
   assert.equal(await statusOf(url, [`Host: 127.0.0.1:${port}`, "Origin: null"]), 403);
+  assert.equal(
+    await statusOf(
+      url,
+      [`Host: 127.0.0.1:${port}`, `Origin: http://rebind.example:${port}`],
+      "POST /status.json HTTP/1.0",
+    ),
+    403,
+    "the Origin is checked before the method",
+  );
 });
