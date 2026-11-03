@@ -273,6 +273,8 @@ export function checkTasks(
     if (t.checkpoint !== undefined) {
       if (!t.checkpoint) problems.push(`${at} is a checkpoint with no command`);
       if (t.optional) problems.push(`${at} is a checkpoint, which cannot be optional`);
+      if (t.covers.length || t.route || t.role)
+        problems.push(`${at} is a checkpoint, which covers nothing and names no route or role`);
       if (live[i + 1]?.phase === t.phase)
         problems.push(`${at} is a checkpoint, but ${live[i + 1].id} follows it in its phase`);
       for (const d of t.deps)

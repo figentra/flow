@@ -122,8 +122,23 @@
             "head": { "type": "string", "minLength": 1 },
             "clean": { "type": "boolean" },
             "digest": { "type": "string", "minLength": 1 },
-            "at": { "type": "string", "minLength": 1 }
+            "at": { "type": "string", "minLength": 1 },
+            "error": { "type": "string", "minLength": 1 }
           }
+        }
+      }
+    },
+    "started": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["at", "head", "docs"],
+        "properties": {
+          "at": { "type": "string", "minLength": 1 },
+          "head": { "type": "string", "minLength": 1 },
+          "docs": { "type": "string", "minLength": 1 },
+          "session": { "type": "string", "minLength": 1 }
         }
       }
     }

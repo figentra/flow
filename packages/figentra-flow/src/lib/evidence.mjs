@@ -12,9 +12,16 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 
-import { git, isClean } from "./git.mjs";
+import { git } from "./git.mjs";
 
-/** @typedef {{ command: string, exit: number, ms: number, head: string, clean: boolean, digest: string, at: string }} TaskEvidence */
+/**
+ * `error` says why a run has no exit code of its own (a timeout, a signal, an output too large); `exit` is then 1.
+ * @typedef {{ command: string, exit: number, ms: number, head: string, clean: boolean, digest: string, at: string,
+ *   error?: string }} TaskEvidence
+ */
+
+/** How long a check may run before it is killed. */
+export const EVIDENCE_TIMEOUT_MS = 60 * 60 * 1000;
 
 /** Literal secrets and commands that print them. */
 const SECRET = [
@@ -31,10 +38,14 @@ const SECRET = [
   /\b[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|PRIVATE_KEY)[A-Z0-9_]*=(?!["']?\$)\S/,
   /--(?:password|token|secret|api-key)(?:=|\s+)(?!["']?\$)[^\s-]/i,
   /\bBearer\s+(?!\$)[A-Za-z0-9._~+/-]{8,}/,
-  // commands that print the environment or a vault's values
-  /(?:^|[;&|(]\s*)env\s*(?:$|[;&|)])/,
-  /(?:^|[;&|(]\s*)printenv\b/,
+  // commands that print the environment (bare `env`, `env -0 > x`, `/usr/bin/env`, `export`, `set`) or a vault's values
+  /(?:^|[;&|(`])\s*(?:\S*\/)?(?:env(?:\s+-\S+)*|export|set)\s*(?:$|[;&|)<>`])/,
+  /(?:^|[;&|(`])\s*(?:\S*\/)?printenv\b/,
   /\binfisical\s+(?:export|secrets)\b/,
+  // a `.env` file (`.env.example` is fine)
+  /(?:^|[\s<'"=/])\.env(?:\.(?!example\b)[\w.-]+)?(?=$|[\s;&|)'"])/,
+  // printing a secret-named variable; shortcut: other names (`echo $X`) are not caught, the guard's secret rules are
+  /\b(?:echo|printf)\b[^;&|]*\$\{?[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|PRIVATE_KEY)/,
 ];
 
 /** A long run mixing upper case, lower case and digits (a random key); hex such as a commit SHA is not one. */
@@ -54,32 +65,76 @@ export function secretLooking(command) {
 }
 
 /**
+ * Whether a task's recorded attempts include a passing one: exit 0 at a clean HEAD (P-028).
+ * @param {TaskEvidence[] | undefined} attempts
+ */
+export const passed = (attempts) => (attempts ?? []).some((e) => e.exit === 0 && e.clean);
+
+/**
+ * Whether `root` has no change outside the `ignore` paths (Flow's own bookkeeping: the record and the tasks file).
+ * @param {string} root
+ * @param {string[]} ignore
+ */
+const cleanOutside = (root, ignore) => {
+  // every untracked file by name, so an excluded one inside an untracked folder is not reported as the folder
+  const s = git(root, [
+    "status",
+    "--porcelain",
+    "--untracked-files=all",
+    "--",
+    ".",
+    ...ignore.map((p) => `:(exclude)${p}`),
+  ]);
+  return s.ok && s.out === "";
+};
+
+/**
  * Runs `command` in `root` and returns its evidence; `[x]` needs `exit` 0 and `clean`. `echo` prints the captured
- * output to stderr after the run (the digest is taken either way).
+ * output to stderr after the run (the digest is taken either way). `ignore` lists paths the clean check skips.
  * @param {string} root
  * @param {string} command
- * @param {{ echo?: boolean, now?: () => Date }} [options]
+ * @param {{ echo?: boolean, now?: () => Date, timeoutMs?: number, ignore?: string[] }} [options]
  * @returns {TaskEvidence}
  */
-export function runEvidence(root, command, { echo = false, now = () => new Date() } = {}) {
+export function runEvidence(
+  root,
+  command,
+  { echo = false, now = () => new Date(), timeoutMs = EVIDENCE_TIMEOUT_MS, ignore = [] } = {},
+) {
   if (secretLooking(command))
     throw new Error("the command looks like it carries or prints a secret");
   const head = git(root, ["rev-parse", "HEAD"]).out;
-  const cleanBefore = isClean(root);
+  const cleanBefore = cleanOutside(root, ignore);
   const at = now();
   const started = Date.now();
-  const r = spawnSync(command, { cwd: root, shell: true, encoding: "utf8", maxBuffer: 256 << 20 });
+  const r = spawnSync(command, {
+    cwd: root,
+    shell: true,
+    encoding: "utf8",
+    maxBuffer: 256 << 20,
+    timeout: timeoutMs,
+  });
   const ms = Date.now() - started;
   const output = `${r.stdout ?? ""}${r.stderr ?? ""}`;
   if (echo && output) process.stderr.write(output);
+  const error =
+    /** @type {NodeJS.ErrnoException | undefined} */ (r.error)?.code === "ETIMEDOUT"
+      ? `timed out after ${Math.round(timeoutMs / 1000)}s`
+      : r.error
+        ? r.error.message
+        : r.signal
+          ? `killed by ${r.signal}`
+          : undefined;
   return {
     command,
     exit: r.status ?? 1,
     ms,
     head,
-    // the tree the command saw, and one it left unchanged
-    clean: cleanBefore && isClean(root),
+    // the tree the command saw, one it left unchanged, and a HEAD it did not move (a commit or reset in the command)
+    clean:
+      cleanBefore && cleanOutside(root, ignore) && git(root, ["rev-parse", "HEAD"]).out === head,
     digest: `sha256:${createHash("sha256").update(output).digest("hex")}`,
     at: at.toISOString(),
+    ...(error ? { error } : {}),
   };
 }

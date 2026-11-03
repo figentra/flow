@@ -82,9 +82,20 @@ export const RECORD_SCHEMA = {
           clean: { type: "boolean" },
           digest: str,
           at: str,
+          error: str,
         },
         ["command", "exit", "head", "clean", "digest", "at"],
       ),
+    },
+    // FR-23: each task's start, with the digest of the documents it started on (absent in older records)
+    started: {
+      type: "object",
+      additionalProperties: {
+        type: "object",
+        additionalProperties: false,
+        required: ["at", "head", "docs"],
+        properties: { at: str, head: str, docs: str, session: str },
+      },
     },
   },
 };
@@ -96,7 +107,8 @@ export const RECORD_SCHEMA = {
  *   sessions: { name: string, kind: string, start: string, end?: string, pushed?: boolean }[], commits: string[],
  *   prs: number[], gate: { sha: string, state: string, baseline?: boolean }[],
  *   review: { sha: string, verdict: string, findings: number }[], asks: { what: string, command: string }[],
- *   tasks: Record<string, { command: string, exit: number, ms?: number, head: string, clean: boolean, digest: string, at: string }[]> }} FlowRecord
+ *   tasks: Record<string, { command: string, exit: number, ms?: number, head: string, clean: boolean, digest: string, at: string, error?: string }[]>,
+ *   started?: Record<string, { at: string, head: string, docs: string, session?: string }> }} FlowRecord
  */
 
 /** Raised for a key that is not one, or a record that is not valid JSON or fails its schema. */

@@ -82,7 +82,20 @@ test("secretLooking refuses literal secrets and secret-printing commands", () =>
     `echo ghp_${"a1".repeat(18)}`,
     `node x.mjs AKIA${"A".repeat(16)}`,
     "env",
+    "env > leak.txt",
+    "env>x",
+    "env >> x",
+    "/usr/bin/env",
+    "env -0 | tee x",
+    "pnpm test; export",
+    "x=$(env)",
+    "cat .env",
+    "cat ./apps/web/.env.local",
+    "echo $GITHUB_TOKEN",
+    'echo "$TOKEN"',
+    "printf %s ${NPM_TOKEN}",
     "pnpm test && printenv HOME",
+    "/usr/bin/printenv",
     "infisical export --env=dev",
     `node run.mjs ${"aB3".repeat(12)}`,
   ])
@@ -94,6 +107,13 @@ test("secretLooking refuses literal secrets and secret-printing commands", () =>
     "pnpm test --token $TOKEN",
     `git diff ${"a1b2c3d4".repeat(5)}`,
     "env NODE_ENV=test node --test",
+    "set -e; pnpm test",
+    "export CI=1 && pnpm test",
+    "cp .env.example x && pnpm test",
+    "node -e process.env.HOME",
+    "echo ok && pnpm test --token $TOKEN",
+    // shortcut: a reference whose name says nothing secret is out of scope (the guard's own rules cover it)
+    "echo $HOME",
     "STACKRA_ENVIRONMENT_NAME_FOR_THE_TEST_RUN=1 pnpm test",
   ])
     assert.equal(secretLooking(command), false, command);
@@ -103,5 +123,29 @@ test("runEvidence refuses a secret-looking command before it runs", (t) => {
   const { root } = repo();
   t.after(() => rmSync(root, { recursive: true, force: true }));
   assert.throws(() => runEvidence(root, "printenv > leak.txt"), /secret/);
+  assert.throws(() => runEvidence(root, "env > leak.txt"), /secret/);
+  assert.throws(() => runEvidence(root, "env>leak.txt"), /secret/);
   assert.equal(existsSync(join(root, "leak.txt")), false);
+});
+
+test("a command that moves HEAD is not clean evidence, and reports the HEAD it ran on", (t) => {
+  const { root, head } = repo();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const e = runEvidence(
+    root,
+    "git -c user.name=t -c user.email=t@t.test -c commit.gpgsign=false commit -q --allow-empty -m x",
+  );
+  assert.deepEqual([e.exit, e.head, e.clean], [0, head, false]);
+});
+
+test("a hung command times out with the reason, and ignored paths do not dirty the tree", (t) => {
+  const { root } = repo();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const hung = runEvidence(root, "sleep 5", { timeoutMs: 200 });
+  assert.equal(hung.exit, 1);
+  assert.match(hung.error ?? "", /timed out/);
+  assert.equal(runEvidence(root, "true").error, undefined);
+  writeFileSync(join(root, "tasks.md"), "- [x] T001\n");
+  assert.equal(runEvidence(root, "true", { ignore: ["tasks.md"] }).clean, true);
+  assert.equal(runEvidence(root, "true").clean, false);
 });

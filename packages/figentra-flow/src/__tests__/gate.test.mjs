@@ -198,6 +198,12 @@ test("optional and checkpoint tasks: the lint accepts them, Done skips an open o
     lint(`${fixture("tasks.md")}- [ ] T005 Checkpoint:\n`).join(),
     /T005 is a checkpoint with no command/,
   );
+  assert.match(
+    lint(
+      `${fixture("tasks.md")}- [ ] T005 Checkpoint: pnpm verify — covers: FR-001 — route: tests\n`,
+    ).join(),
+    /T005 is a checkpoint, which covers nothing and names no route or role/,
+  );
   // a tiered spec's tasks: a checkpoint needs no acceptance criterion and no file
   assert.deepEqual(
     checkTraceTasks(
