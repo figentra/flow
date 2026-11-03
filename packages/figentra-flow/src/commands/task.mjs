@@ -1,7 +1,7 @@
 /**
  * Figentra Flow file contract:
  * Purpose: `fflow task start|done <key> <task>` (STA-1945 FR-23): the only way a task's marker moves.
- *   start <key> <task>                    refuses unless the spec is Tasked or Implementing with its approvals
+ *   start <key> <task> [--session <name>] refuses unless the spec is Tasked or Implementing with its approvals
  *                                         (ADR 0502), then sets `[-]` and records the start (session, HEAD and the
  *                                         digest of spec, plan and tasks) in Flow's record
  *   done <key> <task> --command <cmd>     runs the check command (`runEvidence`), keeps the attempt in the record and
@@ -217,18 +217,21 @@ export function resetChanged(root, key) {
 /** @param {string[]} args */
 export function run(args = []) {
   const [mode, key, id] = args;
-  const at = args.indexOf("--command");
-  const command = at >= 0 ? args[at + 1] : undefined;
+  const opt = (/** @type {string} */ flag) =>
+    args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined;
+  const command = opt("--command");
   if (!key || !id || !/^T\d{3}$/.test(id) || !(mode === "start" || (mode === "done" && command))) {
     console.error(
-      `usage: ${NAME} task start <key> <T###> | done <key> <T###> --command <cmd> [--echo]`,
+      `usage: ${NAME} task start <key> <T###> [--session <name>] | done <key> <T###> --command <cmd> [--echo]`,
     );
     return 2;
   }
   const root = git(process.cwd(), ["rev-parse", "--show-toplevel"]).out || process.cwd();
   try {
     if (mode === "start") {
-      const problems = startTask(root, key, id, { session: process.env[`${ENV_PREFIX}SESSION`] });
+      // the same session name `session stop` records: the flag, then the environment
+      const session = opt("--session") ?? process.env[`${ENV_PREFIX}SESSION`];
+      const problems = startTask(root, key, id, { session });
       for (const p of problems) say("blocked", `${NAME} task start: ${id}: ${p}`);
       if (!problems.length) say("checking", `${id} is in progress`);
       return problems.length ? 1 : 0;
