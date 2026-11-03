@@ -40,6 +40,8 @@ test("help: fflow alone prints the banner, the version and every command under i
     "spec",
     "gate",
     "status",
+    "next",
+    "resume",
     "land",
     "release",
     "guard",
@@ -57,6 +59,21 @@ test("help: <command> --help prints its usage and runs nothing", async () => {
   assert.equal(status.exitCode, 0);
   assert.match(status.stdout, /--offline/);
   assert.match(status.stdout, /--since/);
+  // The record's commands declare their options too, under the words a hook types.
+  const stop = await runCommandForTest(CONSOLE, ["session", "stop", "--help"]);
+  assert.equal(stop.exitCode, 0);
+  assert.match(stop.stdout, /--save-only/);
+  const done = await runCommandForTest(CONSOLE, ["help", "task", "done"]);
+  assert.equal(done.exitCode, 0);
+  assert.match(done.stdout, /--command/);
+});
+
+test("help: task refuses an id that is not T###, and done a missing --command, running nothing", async () => {
+  const noCommand = await runCommandForTest(CONSOLE, ["task", "done", "STA-12", "T003"]);
+  assert.equal(noCommand.exitCode, 2);
+  assert.match(noCommand.stdout + noCommand.stderr, /--command/);
+  const badId = await runCommandForTest(CONSOLE, ["task", "start", "STA-12", "3"]);
+  assert.equal(badId.exitCode, 2);
 });
 
 // @covers sta-1945:FR-1 sta-1945:AC-3

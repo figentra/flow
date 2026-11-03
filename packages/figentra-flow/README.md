@@ -23,10 +23,10 @@ under `NO_COLOR` or in a pipe, and `doctor`, `status` and `status --metrics` tak
 `{ "schema": "fflow.doctor/1", "checks" }` (its check rows, each with `id`, `ok`, `status` and `group`, are `data`), and
 `status --json` and `status --metrics --json` put the snapshot and the metrics in `data`.
 
-`doctor`, `status` and the governance commands (`update`, `check`, `diff`, `validate`) are ported to the engine.
-Every other command is passthrough, keeping its own flags and output until it is ported: `app`, `clean`, `gate`,
-`guard`, `init`, `land`, `linear`, `mcp`, `migrate`, `parse`, `readme`, `release`, `ship`, `spec`, `start`, `sync`,
-`team`, `trace` and `train`.
+`doctor`, `status`, `next`, `resume`, `task start`, `task done`, `session stop` and the governance commands (`update`,
+`check`, `diff`, `validate`) are ported to the engine (`next` takes `--json` too). Every other command is passthrough,
+keeping its own flags and output until it is ported: `app`, `clean`, `gate`, `guard`, `init`, `land`, `linear`, `mcp`,
+`migrate`, `parse`, `readme`, `release`, `ship`, `spec`, `start`, `sync`, `team`, `trace` and `train`.
 
 `@stackra/console` and `@stackra/validation` (0.7.1) are runtime dependencies of Flow (ADR 0506 decision 8, owner
 2026-11-03; this replaces STA-1945 NFR-1's "no runtime dependency, an optional peer"). They come from the Stackra
@@ -64,6 +64,10 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow init --workspace <dir>…`                                       | writes the workspace list (`~/.config/fflow/workspace.yaml`) that `--all` acts on                                                                                                                |
 | `fflow status [--repo p] [--json] [--offline]`                        | specs by status, worktrees, open PRs with their gate and review, and sessions, for every repository of the workspace                                                                             |
 | `fflow mcp`                                                           | a read-only MCP server over stdio: status, spec, trace, worktrees and metrics                                                                                                                    |
+| `fflow next [<key>] [--json]`                                         | the task's stage and the command that moves it on, from Flow's record on the key's worktree or branch                                                                                            |
+| `fflow resume <key>`                                                  | re-enters the stage a stopped session left half done: the task's worktree, fast-forwarded to its pushed branch                                                                                   |
+| `fflow task start\|done <key> <T###> [--command c]`                   | moves a task's marker: `[-]` on start; `[x]` only when the check command exits 0 at a clean HEAD, recorded                                                                                       |
+| `fflow session stop [--save-only]`                                    | the SessionEnd hook: commits and pushes the tracked work with the record; `--save-only`, the Stop hook, writes the record                                                                        |
 | `fflow init --runner github-actions [--force]`                        | writes the gate workflow for the `github-actions` runner, and a starter config when there is none                                                                                                |
 | `fflow readme [--check]`                                              | renders `README.md` from `.flow/readme.yml` through the preset's `readme-template` (stackra); `--check` exits 1 when it differs                                                                  |
 

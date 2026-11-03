@@ -38,8 +38,20 @@ const field = (rest, name) =>
     .match(new RegExp(`\\b${name}:\\s*([^—\\[]*?)\\s*(?:—|\\[[A-Za-z][A-Za-z0-9]*-\\d|$)`))?.[1]
     ?.trim();
 
-/** Task lines of tasks.md, with their phase heading. */
+/**
+ * @typedef {{ line: number, id: string, marker: " " | "~" | "-" | "x", done: boolean, optional: boolean,
+ *   checkpoint: string | undefined, struck: boolean, parallel: boolean, covers: string[], route: string | undefined,
+ *   role: string | undefined, deps: string[], paths: string[], key: string | undefined, phase: string }} Task
+ */
+
+/**
+ * Task lines of tasks.md, with their phase heading. Markers: `[ ]` not started, `[~]` queued, `[-]` in progress,
+ * `[x]` done (FR-23); `T012*` is optional and `T012 Checkpoint: <command>` a phase's checkpoint (FR-25).
+ * @param {string} text
+ * @returns {Task[]}
+ */
 export function parseTasks(text) {
+  /** @type {Task[]} */
   const tasks = [];
   let phase = "";
   for (const [i, line] of strip(text).split("\n").entries()) {
@@ -48,20 +60,28 @@ export function parseTasks(text) {
       phase = h[1].trim();
       continue;
     }
-    const m = line.match(/^\s*[-*] \[([ xX])\] (~~)?(T\d{3})(~~)?(.*)$/);
+    const m = line.match(/^\s*[-*] \[([ xX~-])\] (~~)?(T\d{3})(\*)?(~~)?(.*)$/);
     if (!m) continue;
-    const rest = m[5];
+    const rest = m[6];
+    const marker = /** @type {Task["marker"]} */ (m[1].toLowerCase());
+    const checkpoint = rest
+      .match(/^\s*Checkpoint:\s*(.*?)\s*(?:—|\[[A-Za-z][A-Za-z0-9]*-\d+\]\s*$|$)/)?.[1]
+      ?.replace(/^`(.*)`$/, "$1");
     tasks.push({
       line: i + 1,
       id: m[3],
-      done: m[1] !== " ",
-      struck: Boolean(m[2] || m[4]),
+      marker,
+      done: marker === "x",
+      optional: Boolean(m[4]),
+      checkpoint,
+      struck: Boolean(m[2] || m[5]),
       parallel: /^\s*\[P\]/.test(rest),
       covers: list(field(rest, "covers")),
       route: field(rest, "route"),
       role: field(rest, "role"),
       deps: list(field(rest, "deps")),
-      paths: [...rest.matchAll(/`([^`]+)`/g)].map((p) => p[1]),
+      // a checkpoint's backticks hold its command, not a path
+      paths: checkpoint === undefined ? [...rest.matchAll(/`([^`]+)`/g)].map((p) => p[1]) : [],
       key: rest.match(/\[([A-Za-z][A-Za-z0-9]*-\d+)\]\s*$/)?.[1],
       phase,
     });
