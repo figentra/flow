@@ -14,6 +14,7 @@
 // @covers sta-1945:FR-19 sta-1945:FR-20 sta-1945:FR-14 sta-1945:FR-18 sta-1945:AC-18 sta-1945:P-019
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -22,6 +23,7 @@ import { ENV_PREFIX } from "../lib/product.mjs";
 import { readRecord } from "../lib/record.mjs";
 import { refuseCommits, repo, sh } from "./__fixtures__/repo.mjs";
 
+const BIN = new URL("../../bin/fflow.mjs", import.meta.url).pathname;
 const BRANCH = "figentra/sta-5-session";
 const NAME = "FLOW · stop (STA-5)";
 
@@ -216,6 +218,26 @@ test("session stop: the default branch and a branch with no key are left alone",
   assert.match(skipped(), /default branch/);
   sh(r.root, "switch", "-q", "-c", "scratch");
   assert.match(skipped(), /no issue key/);
+  assert.equal(sh(r.root, "rev-list", "--count", "HEAD"), "1");
+});
+
+test("session stop through the binary exits 0: the default branch, a cwd outside git, stdin that is not JSON", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  writeFileSync(join(r.root, "work.txt"), "x\n");
+  // the hook's own command line, so the engine's routing and the handler both run
+  const stop = (/** @type {string} */ input) =>
+    spawnSync(process.execPath, [BIN, "session", "stop"], {
+      cwd: r.root,
+      input,
+      encoding: "utf8",
+      env: { ...process.env, NO_COLOR: "1" },
+      timeout: 60_000,
+    });
+  for (const input of ["{}", JSON.stringify({ cwd: join(r.root, "missing") }), "not json"]) {
+    const run = stop(input);
+    assert.equal(run.status, 0, `${input}: ${run.stdout}${run.stderr}`);
+  }
   assert.equal(sh(r.root, "rev-list", "--count", "HEAD"), "1");
 });
 
