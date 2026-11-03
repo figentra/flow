@@ -5,7 +5,11 @@
  *     `<NONEXISTENT>`;
  *   - a PR passes when its failed set is a subset of main's; a new failure, a new task that fails, a task main ran
  *     but the PR dropped or skipped, a red must-pass task, or more failures than main has, blocks it; a fixed task
- *     is listed;
+ *     is a gain;
+ *   - STA-1945 FR-22: a gain (failed or never ran on main, passes now) is counted; a failure newly reached behind a
+ *     repaired upstream task of its own package is reported with that task and does not block; a plain regression
+ *     and a failure in an unrelated package still block, even beside a newly reached one; the `--json` shape, a
+ *     fail-closed one included;
  *   - the 0.2.2 rename: `sync` renames the old config file once (failing when both exist) and removes the old-named
  *     workflows; the old binary prints one notice;
  *   - the baseline search walks the ancestors, ignores an artifact a pull request run or another branch made, and
@@ -13,9 +17,9 @@
  *   - `sync` renders the workflow only with `baseline` configured, with the repository's setup steps verbatim.
  * Boundary: canned run summaries (trimmed from a real turbo 2.11.9 summary) and a stubbed GitHub; temporary folders.
  * Runtime: node
- * Governing contract: ADR 0022; STA-1942.
+ * Governing contract: ADR 0022; STA-1942; STA-1945 FR-22.
  */
-// @covers sta-1942:FR-1 sta-1942:FR-2 sta-1942:FR-3 sta-1942:FR-4 sta-1942:FR-5 sta-1942:FR-6 sta-1942:FR-7 sta-1942:FR-8
+// @covers sta-1942:FR-1 sta-1942:FR-2 sta-1942:FR-3 sta-1942:FR-4 sta-1942:FR-5 sta-1942:FR-6 sta-1942:FR-7 sta-1942:FR-8 sta-1945:FR-22
 // @covers sta-1942:AC-001 sta-1942:AC-002 sta-1942:AC-003 sta-1942:AC-004 sta-1942:AC-005 sta-1942:AC-006
 // @covers sta-1942:AC-007 sta-1942:AC-008 sta-1942:AC-010 sta-1942:AC-011
 // @covers sta-1942:P-001 sta-1942:P-002 sta-1942:P-003 sta-1942:P-005
@@ -29,7 +33,14 @@ import { fileURLToPath } from "node:url";
 
 import { run } from "../commands/gate-baseline.mjs";
 import { sync } from "../commands/sync.mjs";
-import { artifactName, compare, findBaseline, READERS, summaryTable } from "../lib/baseline.mjs";
+import {
+  artifactName,
+  compare,
+  findBaseline,
+  NEEDS,
+  READERS,
+  summaryTable,
+} from "../lib/baseline.mjs";
 import { loadConfig } from "../lib/config.mjs";
 import { BASELINE_WORKFLOW } from "../lib/product.mjs";
 import { parseYaml } from "../lib/yaml.mjs";
@@ -63,7 +74,8 @@ test("compare: the subset passes, a new failure and a new failing task fail, a f
       newFailures: [],
       missing: [],
       mustPassFailures: [],
-      fixed: [],
+      gains: [],
+      newlyReached: [],
       stillFailing: ["a#lint", "a#test"],
       debt: { base: 2, pr: 2 },
     },
@@ -81,8 +93,11 @@ test("compare: the subset passes, a new failure and a new failing task fail, a f
   // a fixed task passes
   const better = compare(main, READERS.turbo(summary({ "a#lint": 0, "a#test": 1, "b#build": 0 })));
   assert.equal(better.ok, true);
-  assert.deepEqual(better.fixed, ["a#lint"]);
-  assert.match(summaryTable(better, "abc"), /\| none \| none \| none \| `a#lint` \| `a#test` \|/);
+  assert.deepEqual(better.gains, ["a#lint"]);
+  assert.match(
+    summaryTable(better, "abc"),
+    /\| none \| none \| none \| `a#lint` \| none \| `a#test` \|/,
+  );
   assert.match(summaryTable(better, "abc"), /not a release certificate/);
 });
 
@@ -97,7 +112,7 @@ test("compare: a task main ran but the PR dropped or skipped blocks, even one re
     main,
     READERS.turbo(summary({ "a#lint": undefined, "a#test": 0, "b#build": 0 })),
   );
-  assert.deepEqual([skipped.ok, skipped.missing, skipped.fixed], [false, ["a#lint"], []]);
+  assert.deepEqual([skipped.ok, skipped.missing, skipped.gains], [false, ["a#lint"], []]);
 });
 
 test("compare: a must-pass task blocks when red, even when it is red on main", () => {
@@ -116,6 +131,105 @@ test("compare: the failure count may not grow, even through tasks main skipped",
   // b#test never ran on main: its failure here is new, and the debt grows from 1 to 2
   const r = compare(/** @type {any} */ (main), { "a#lint": "fail", "b#test": "fail" });
   assert.deepEqual([r.ok, r.newFailures, r.debt], [false, ["b#test"], { base: 1, pr: 2 }]);
+});
+
+test("compare: a gain is counted; a failure newly reached behind a repaired upstream task does not block", () => {
+  // main: a#build failed, so a#test never ran; b#test is red
+  const base = { "a#build": "fail", "a#test": "skip", "b#test": "fail" };
+  const needs = { "a#test": ["a#build", "b#build"] };
+  const pr = { "a#build": "pass", "a#test": "fail", "b#test": "fail" };
+  const r = compare(/** @type {any} */ (base), /** @type {any} */ (pr), { needs });
+  assert.deepEqual(
+    [r.ok, r.gains, r.newFailures, r.newlyReached, r.debt],
+    [true, ["a#build"], [], [{ task: "a#test", unblockedBy: "a#build" }], { base: 2, pr: 1 }],
+  );
+  assert.match(summaryTable(r, "abc"), /`a#test \(unblocked by a#build\)`/);
+  // the same failure with no upstream link, or an upstream in another package, is a regression
+  assert.deepEqual(compare(/** @type {any} */ (base), /** @type {any} */ (pr)).newFailures, [
+    "a#test",
+  ]);
+  const other = compare(/** @type {any} */ (base), /** @type {any} */ (pr), {
+    needs: { "a#test": ["b#build"] },
+  });
+  assert.deepEqual([other.ok, other.newFailures], [false, ["a#test"]]);
+  // a task newly reached that passes is a gain too
+  const fixedPr = { ...pr, "a#test": "pass" };
+  const green = compare(/** @type {any} */ (base), /** @type {any} */ (fixedPr), { needs });
+  assert.deepEqual([green.ok, green.gains, green.newlyReached], [true, ["a#build", "a#test"], []]);
+  // two deep: the upstream itself never ran on main, and its newly passing makes it a gain that unblocks
+  const chain = compare(
+    /** @type {any} */ ({ "a#gen": "fail", "a#build": "skip", "a#test": "skip" }),
+    /** @type {any} */ ({ "a#gen": "pass", "a#build": "pass", "a#test": "fail" }),
+    { needs: { "a#build": ["a#gen"], "a#test": ["a#build"] } },
+  );
+  assert.deepEqual(
+    [chain.ok, chain.gains, chain.newlyReached],
+    [true, ["a#build", "a#gen"], [{ task: "a#test", unblockedBy: "a#build" }]],
+  );
+});
+
+test("compare: a task that passed on main and fails now blocks, and so does a failure in an unrelated package", () => {
+  const needs = { "a#test": ["a#build"], "c#test": ["a#build"] };
+  const base = { "a#build": "fail", "a#test": "pass", "c#test": "skip" };
+  const pr = { "a#build": "pass", "a#test": "fail", "c#test": "fail" };
+  const r = compare(/** @type {any} */ (base), /** @type {any} */ (pr), { needs });
+  assert.deepEqual([r.ok, r.newFailures, r.newlyReached], [false, ["a#test", "c#test"], []]);
+  // a newly reached failure does not excuse a regression beside it in the same package
+  const mixed = compare(
+    /** @type {any} */ ({ "a#build": "fail", "a#test": "skip", "a#lint": "pass" }),
+    /** @type {any} */ ({ "a#build": "pass", "a#test": "fail", "a#lint": "fail" }),
+    { needs: { "a#test": ["a#build"] } },
+  );
+  assert.deepEqual(
+    [mixed.ok, mixed.newFailures, mixed.newlyReached, mixed.debt],
+    [false, ["a#lint"], [{ task: "a#test", unblockedBy: "a#build" }], { base: 1, pr: 1 }],
+  );
+});
+
+test("the turbo reader keeps each task's upstream tasks, and `check --json` prints the result", async (t) => {
+  const s = summary({ "a#build": 0, "a#test": 1 });
+  /** @type {any} */ (s.tasks[1]).dependencies = ["a#build", "^build"];
+  assert.deepEqual(NEEDS.turbo(s), { "a#test": ["a#build", "^build"] });
+  const root = mkdtempSync(join(tmpdir(), "flow-baseline-json-"));
+  t.after(() => rmSync(root, { recursive: true }));
+  const mainDir = join(root, "main");
+  mkdirSync(mainDir);
+  mkdirSync(join(root, ".fflow-gate"));
+  const write = (/** @type {string} */ f, /** @type {any} */ o) =>
+    writeFileSync(f, JSON.stringify(o));
+  write(join(mainDir, "baseline.json"), {
+    tasks: { "a#build": "fail", "a#test": "skip" },
+  });
+  write(join(root, ".fflow-gate/baseline.json"), {
+    tasks: { "a#build": "pass", "a#test": "fail" },
+    needs: { "a#test": ["a#build"] },
+  });
+  /** @type {string[]} */
+  const out = [];
+  const code = await run(["check", "--base", A, "--json"], {
+    root,
+    env: { GITHUB_REPOSITORY: "o/r", GITHUB_STEP_SUMMARY: join(root, "s.md") },
+    log: () => {},
+    out: (x) => out.push(x),
+    api: github({
+      ancestors: [A],
+      artifacts: { [artifactName(A)]: [artifact(A, 9)] },
+      events: { 9: "push" },
+    }),
+    download: () => mainDir,
+  });
+  assert.equal(code, 0);
+  assert.deepEqual(JSON.parse(out[0]), {
+    ok: true,
+    newFailures: [],
+    missing: [],
+    mustPassFailures: [],
+    gains: ["a#build"],
+    newlyReached: [{ task: "a#test", unblockedBy: "a#build" }],
+    stillFailing: [],
+    debt: { base: 1, pr: 0 },
+    baselineSha: A,
+  });
 });
 
 /** A stubbed GitHub: ancestors of `base`, and artifacts by name. */
@@ -212,6 +326,20 @@ test("gate baseline: save, then check passes on the subset, fails on a new failu
   const closed = { ...deps, api: github({ ancestors: [A], artifacts: {}, events: {} }) };
   assert.equal(await run(["check", "--base", A], closed), 1);
   assert.match(readFileSync(step, "utf8"), /no baseline[\s\S]*fails closed/);
+  // a fail-closed path still prints JSON for a consumer parsing stdout
+  /** @type {string[]} */
+  const out = [];
+  const asJson = { ...closed, out: (/** @type {string} */ x) => out.push(x) };
+  assert.equal(await run(["check", "--base", A, "--json"], asJson), 1);
+  const lost = { ...deps, out: asJson.out, download: () => undefined };
+  assert.equal(await run(["check", "--base", A, "--json"], lost), 1);
+  assert.deepEqual(
+    out.map((x) => JSON.parse(x)),
+    [
+      { ok: false, reason: "no_baseline" },
+      { ok: false, reason: "download_failed" },
+    ],
+  );
 });
 
 test("sync renders the baseline workflow only with `baseline`, with the setup steps verbatim", (t) => {
