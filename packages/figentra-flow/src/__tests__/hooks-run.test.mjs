@@ -2,12 +2,13 @@
  * Figentra Flow file contract:
  * Purpose: hold the hooks runner to C13: with the workspace install the jobs run here through lefthook (no
  *   `LEFTHOOK` or `LEFTHOOK_EXCLUDE` reaching them, the workspace's binaries first) and the proof is
- *   `Hooks-Run: local`; without it the runner gets a clone whose index is exactly the staged tree (also for a first
- *   commit), the job clears both variables itself, and the proof names the box run and that tree; a failure passes
- *   through and leaves no proof; a git step that fails partway leaves no ref or folder behind; a tree with artifacts
- *   never reaches the box; commit-msg appends the saved proof only when it is this tree's; no runner, or the
- *   github-actions runner, is refused naming `"runner"`; the trailer is read back from the message's trailer block
- *   only.
+ *   `Hooks-Run: local`; without it the runner gets a repository holding only the run's ref, whose index is exactly
+ *   the staged tree (also for a first commit), the job clears both variables and git's repository variables itself,
+ *   and the proof names the box run and that tree; in a linked worktree's hook (`GIT_DIR`, `GIT_INDEX_FILE` set) the
+ *   caller's branch and index stay as they were; a failure passes through and leaves no proof; a git step that fails
+ *   partway leaves no ref or folder behind; a tree with artifacts never reaches the box; commit-msg appends the saved
+ *   proof only when it is this tree's, and without one runs the pre-commit jobs too; no runner, or the github-actions
+ *   runner, is refused naming `"runner"`; the trailer is read back from the message's trailer block only.
  * Boundary: temporary repositories; lefthook, git and the runner faked where named; no box, no network.
  * Runtime: node
  * Governing contract: STA-1945 (C13, PR 13).
@@ -111,6 +112,14 @@ test("hooks run: with the workspace install, lefthook runs here without LEFTHOOK
   });
   assert.equal(lost.code, 2);
   assert.match(lost.problem ?? "", /the trailer was not added/);
+  // No saved proof (the failed run took it): the commit-msg run runs the pre-commit jobs first.
+  assert.deepEqual(
+    calls.slice(-2).map((c) => c.args),
+    [
+      ["run", "pre-commit"],
+      ["run", "commit-msg", ".git/NO_SUCH_MSG"],
+    ],
+  );
 
   /** @type {any} */
   const missing = () => ({ error: new Error("ENOENT"), status: null });
@@ -138,6 +147,7 @@ test("hooks run: without the install, the box gets the staged tree and the proof
       seen = {
         ...job,
         head: sh(job.dir, "rev-parse", "HEAD"),
+        refs: sh(job.dir, "for-each-ref", "--format=%(refname)"),
         staged: sh(job.dir, "diff", "--cached", "--name-only"),
         a: readFileSync(join(job.dir, "a.txt"), "utf8"),
       };
@@ -147,10 +157,12 @@ test("hooks run: without the install, the box gets the staged tree and the proof
   assert.equal(seen.head, head);
   assert.equal(seen.staged, "a.txt\nb.txt");
   assert.equal(seen.a, "staged\n");
+  const vars = sh(r.root, "rev-parse", "--local-env-vars").split("\n").join(" ");
   assert.equal(
     seen.command,
-    "pnpm install --frozen-lockfile && env -u LEFTHOOK -u LEFTHOOK_EXCLUDE pnpm exec lefthook run pre-commit",
+    `unset LEFTHOOK LEFTHOOK_EXCLUDE ${vars} && pnpm install --frozen-lockfile && pnpm exec lefthook run pre-commit`,
   );
+  assert.match(seen.refs, /^refs\/fflow-hooks\/\S+$/, "the box holds the run's ref only");
   const [, run] = seen.label.match(/^fflow hooks pre-commit (\S+)$/) ?? [];
   assert.ok(run, seen.label);
   assert.deepEqual(result, { code: 0, trailer: `${TRAILER}: box stackra ${run} ${tree}` });
@@ -176,7 +188,10 @@ test("hooks run: without the install, the box gets the staged tree and the proof
     args: [".git/COMMIT_EDITMSG"],
     runner: fake((job) => {
       boxed = readFileSync(join(job.dir, ".git", "COMMIT_EDITMSG"), "utf8");
-      assert.match(job.command, /lefthook run commit-msg \.git\/COMMIT_EDITMSG$/);
+      assert.match(
+        job.command,
+        /--frozen-lockfile && pnpm exec lefthook run commit-msg \.git\/COMMIT_EDITMSG$/,
+      );
       return 0;
     }),
   });
@@ -186,7 +201,7 @@ test("hooks run: without the install, the box gets the staged tree and the proof
   assert.equal(existsSync(savedOf(r.root)), false, "the saved proof is used once");
 });
 
-test("hooks run: a proof saved for another tree is not this commit's; the commit-msg run's own is", async (t) => {
+test("hooks run: a proof saved for another tree is not this commit's; the commit-msg run runs pre-commit too", async (t) => {
   const r = repo();
   t.after(r.dispose);
   writeFileSync(savedOf(r.root), `${TRAILER}: box old r0 ${"0".repeat(40)}\n`);
@@ -197,7 +212,13 @@ test("hooks run: a proof saved for another tree is not this commit's; the commit
     root: r.root,
     stage: "commit-msg",
     args: [".git/MERGE_MSG"],
-    runner: fake(() => 0),
+    runner: fake((job) => {
+      assert.match(
+        job.command,
+        /&& pnpm exec lefthook run pre-commit && pnpm exec lefthook run commit-msg \.git\/COMMIT_EDITMSG$/,
+      );
+      return 0;
+    }),
   });
   assert.equal(result.code, 0);
   assert.match(result.trailer, new RegExp(`^${TRAILER}: box stackra \\S+ ${tree}$`));
@@ -228,6 +249,45 @@ test("hooks run: the box job clears LEFTHOOK and LEFTHOOK_EXCLUDE even when the 
   });
   assert.equal(result.code, 0);
   assert.equal(readFileSync(out, "utf8"), "unset|unset|exec lefthook run pre-commit\n");
+});
+
+test("hooks run: in a linked worktree's hook, the box steps leave the caller's branch and index alone", async (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  const wt = join(r.root, "..", "wt");
+  sh(r.root, "worktree", "add", "-q", "-b", "feat", wt);
+  writeFileSync(join(wt, "b.txt"), "new\n");
+  sh(wt, "add", "b.txt");
+  const head = sh(wt, "rev-parse", "HEAD");
+  // What git sets for a hook in a linked worktree (sh() keeps the environment it was loaded with).
+  const gitDir = sh(wt, "rev-parse", "--absolute-git-dir");
+  withEnv(t, { GIT_DIR: gitDir, GIT_INDEX_FILE: join(gitDir, "index") });
+  /** @type {any} */
+  let seen;
+  const result = await runHooks({
+    root: wt,
+    stage: "pre-commit",
+    runner: fake((job) => {
+      seen = {
+        command: job.command,
+        refs: sh(job.dir, "for-each-ref", "--format=%(refname)"),
+        staged: sh(job.dir, "diff", "--cached", "--name-only"),
+      };
+      return 0;
+    }),
+  });
+  assert.equal(result.code, 0, result.problem);
+  assert.equal(seen.staged, "b.txt");
+  assert.match(seen.refs, /^refs\/fflow-hooks\/\S+$/);
+  assert.match(seen.command, /^unset LEFTHOOK LEFTHOOK_EXCLUDE .*\bGIT_DIR\b.*&& pnpm install/);
+  assert.match(seen.command, /^unset [^&]*\bGIT_INDEX_FILE\b/);
+  assert.equal(
+    sh(wt, "symbolic-ref", "--short", "HEAD"),
+    "feat",
+    "the worktree stays on its branch",
+  );
+  assert.equal(sh(wt, "rev-parse", "HEAD"), head);
+  assert.equal(sh(wt, "diff", "--cached", "--name-only"), "b.txt", "its index is untouched");
 });
 
 test("hooks run: a first commit's box has an unborn head and the staged files", async (t) => {
@@ -273,7 +333,7 @@ test("hooks run: a git step that fails partway leaves no ref and no folder", asy
   const real = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
   script(
     join(bin, "git"),
-    `case " $* " in *" clone "*) echo "clone refused" >&2; exit 1;; esac\nexec '${real}' "$@"`,
+    `case " $* " in *" fetch "*) echo "fetch refused" >&2; exit 1;; esac\nexec '${real}' "$@"`,
   );
   withEnv(t, { TMPDIR: tmp, PATH: `${bin}${delimiter}${process.env.PATH ?? ""}` });
   const result = await runHooks({
@@ -282,7 +342,7 @@ test("hooks run: a git step that fails partway leaves no ref and no folder", asy
     runner: fake(() => assert.fail("no job runs")),
   });
   assert.equal(result.code, 2);
-  assert.match(result.problem ?? "", /git clone .* failed: clone refused/);
+  assert.match(result.problem ?? "", /git -C .* fetch .* failed: fetch refused/);
   assert.equal(sh(r.root, "for-each-ref", "refs/fflow-hooks/"), "");
   assert.deepEqual(readdirSync(tmp), []);
 });
