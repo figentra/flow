@@ -64,8 +64,8 @@
 <!-- EARS: "WHEN <trigger> THE <subject> SHALL <response>". IDs are permanent: an amendment strikes an ID or appends
      a new one; it never renumbers. Every requirement ends with the sources it rests on ("Sources: SRC-001").
 
-     Quality words: never use the preset's vague terms in requirements and acceptance criteria (a warning on small
-     and feature tiers, a failure on big). Write the number or the list, not the adjective. Worked examples:
+     Quality words: never use the preset's vague terms in requirements and acceptance criteria. Write the number or
+     the list, not the adjective. Worked examples:
      - "fast" → "within 2 s at p95 for 10,000 rows"
      - "secure" → "only a caller with the export permission"
      - "user-friendly", "intuitive" → the steps, and how many

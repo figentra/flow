@@ -6,7 +6,7 @@
 
 **Status**: Draft <!-- Draft → Clarified → Planned → Tasked → Implementing → Done, or Abandoned / Superseded (OR12). spec-gate refuses a status ahead of its artifacts; append every change to Status history -->
 
-**Tier**: [small / feature / big] <!-- ADR 0502: trivial work has no spec; small is a lite spec with ## Plan and ## Tasks below; feature stops once after the spec and plan; big stops after the spec and after the plan. The lane check refuses a tier below what the diff needs (migrations, contracts, permissions, money, new members) -->
+**Tier**: [small / feature / big] <!-- ADR 0502: trivial work has no spec; small is a lite spec with ## Design and ## Tasks below; feature stops once after the spec and plan; big stops after the spec and after the plan. The lane check refuses a tier below what the diff needs (migrations, contracts, permissions, money, new members) -->
 
 **Approver**: [owner / leader] <!-- feature and big: the owner for product, money, legal, security, brand and pricing; the leader for technical-only stops under the owner's delegation. An approval is "Approved by <who> <YYYY-MM-DD>" on the Status line of the stage it approves -->
 
@@ -111,8 +111,8 @@
   Done, by a test carrying `@covers sta-n:FR-###` (spec-trace). Every requirement ends with the sources it rests on
   ("Sources: SRC-001, SRC-004").
 
-  Quality words: never use the preset's vague terms in requirements and acceptance criteria (a warning on small and
-  feature tiers, a failure on big). Write the number or the list, not the adjective. Worked examples:
+  Quality words: never use the preset's vague terms in requirements and acceptance criteria. Write the number or the
+  list, not the adjective. Worked examples:
   - "fast" → "within 2 s at p95 for a 500-file repository"
   - "secure" → "only a caller with the `flow.approve` permission"
   - "user-friendly", "intuitive" → the steps, and how many
