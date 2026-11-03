@@ -1,0 +1,20 @@
+# Model tiers. Agents in .agents/agents/*.md declare `tier:`, never a model; this file says which model each
+# assistant runs for that tier. `null` means the assistant default.
+# claude: aliases (haiku, sonnet, opus) or full ids. opencode: provider/model.
+# A tier an assistant has no row for is never projected to it: OpenCode runs only the steward and executor
+# tiers, on Kimi K3 (ADR 0121 D10, ADR 0193 D3). An agent narrows further with `assistants: [claude]` (ADR 0258).
+# Read by `figentra agents sync` (`pnpm agents:sync`). Owner: release-operations · Secrets: forbidden
+
+# Ordered cheapest → strongest: the order a failing output escalates in.
+tiers: [steward, executor, reviewer, guardian, lead]
+
+assistants:
+  claude:
+    steward: haiku
+    executor: sonnet
+    reviewer: sonnet
+    guardian: opus
+    lead: opus
+  opencode:
+    steward: amazon-bedrock/global.moonshotai.kimi-k3
+    executor: amazon-bedrock/global.moonshotai.kimi-k3
