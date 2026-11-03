@@ -42,9 +42,9 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow spec paths\|setup-plan\|setup-tasks\|template`                 | the spec folder, its documents and the resolved templates as JSON, for the `flow-*` commands                                                                                                     |
 | `fflow sync [--direct]`                                               | renders the `flow-*` skills (for the repository's projector, or Claude Code and OpenCode directly), each with its provenance header, and writes `.flow/lock.json`; refuses a preset that differs from the lock |
 | `fflow update [--preset <version>]`                                   | prints the diff, adopts the installed preset into the lock, then syncs; `--preset` refuses any version but the installed one |
-| `fflow check`                                                         | the CI check: fails, naming each cause, on an owned file that differs from the lock, a preset that differs from its locked digest, or an invalid config; writes nothing |
+| `fflow check`                                                         | the CI check: fails, naming each cause, on an owned file that differs from the lock, a preset that differs from its locked digest, an invalid config or override, a profile the preset lacks or the lock does not record, a mandatory policy off, an override changed without a `sync`, or an override past its review date (and warns 14 days before); writes nothing |
 | `fflow diff`                                                          | prints every file `sync` or `update` would add, change or delete, with the lines; writes nothing |
-| `fflow validate`                                                      | checks `flow.config.json` against its schema, naming each field that breaks it; writes nothing |
+| `fflow validate`                                                      | checks `flow.config.json` and `.flow/overrides/` against their schemas and the mandatory policies, naming each field, target or policy that breaks them and a `profile` the preset lacks; writes nothing |
 | `… --workspace <dir>`                                                 | runs `sync`, `update`, `check`, `diff` or `validate` in every repository under `<dir>` that has `flow.config.json`, one line each |
 | `fflow gate run [--ref b] [--box host] [-- flags]`                    | the repository's checks through the configured runner (or on `--box`) at the pushed head; the box posts `fflow/gate` as the gate App                                                             |
 | `fflow land [<pr>] [--stack] [--dry-run] [--manual-ok]`               | squash-merges a PR that is green on `fflow/gate` from the gate App on its head and has its approvals; Linear Done, worktree and branch removed                                                   |
@@ -212,8 +212,23 @@ setting you have not made refuses and names it.
     correctness properties, task routes and the path floors of the tier check.
   - a path to the repository's own preset folder, held to the neutral rules.
 
-  Without a config file the preset is `neutral`. A repository changes one template or command without forking a
-  preset in `.flow/overrides/` (`<name>.md`, or `commands/flow-<verb>.md`).
+  Without a config file the preset is `neutral`. A repository changes what `sync` renders without forking a preset
+  with overrides, owner-only files at `.flow/overrides/<surface>/<id>.yml` (schema: `schema/override.schema.json`):
+
+  ```yaml
+  kind: disable # or extend (items, or text with an optional section), configure (values), replace (file)
+  target: .agents/agents/ci-steward.md # a rendered output, a preset source (commands/flow-plan.md), or a policy
+  reason: we have no CI # replace and disable need reason, owner and review
+  owner: figentra-usr
+  review: 2027-01-31 # `fflow check` warns 14 days before and fails after
+  ```
+
+  The header of a file an override shaped names it. The mandatory policies (`guard.secrets`, `guard.tenancy`,
+  `owner-only`, `guard.wiring`) cannot be disabled, replaced or configured; an `extend` of one may only add `items`
+  (none starting with `!`), and an `extend` of `owner-only` reaches `land`, the approval workflow and CODEOWNERS.
+  `sync` names each override it skips. A replacement that links outside `.flow/overrides/` is refused.
+  A whole-file template (`<name>.md`) or command (`commands/flow-<verb>.md`) in `.flow/overrides/` still replaces
+  the preset's, and `validate` warns until it gets its `.yml`.
 
 - `profile` picks which of the preset's agents, skills and hooks `sync` renders, from the profiles its `preset.yml`
   declares (`profiles: { <name>: { agents, skills, hooks } }`, `"*"` for all); `.flow/lock.json` records it. Without

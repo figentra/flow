@@ -5,7 +5,8 @@
  *   head with `Refs:` and co-author trailers, then Linear Done, the merge commit recorded, the worktree removed though
  *   its squash has a new patch id, the branch deleted and a comment; a refused merge changes nothing after it; a
  *   failed Linear call only warns; `--stack` lands bottom-up and stops at a red gate, the next PR updated by a merge
- *   commit and a normal push. STA-1856: an owner-only path refuses; a ruleset that requires a review gets the
+ *   commit and a normal push. STA-1856: an owner-only path refuses, one an override's `extend` of `owner-only` adds
+ *   among them (STA-1945); a ruleset that requires a review gets the
  *   approval workflow dispatched and auto-merge turned on at the head instead of a merge, or a refusal when the
  *   workflow is not installed; `land` on a merged PR runs only the steps after the merge. STA-1945 FR-16: a three-PR
  *   stack lands with no human step; a conflict that is only the landed parent's change is resolved, any other stops
@@ -542,6 +543,31 @@ test("land: the branch's slash stays a path separator in both the read and the d
       "DELETE /repos/figentra/flow/git/refs/heads/figentra/sta-5-land",
     ],
   );
+});
+
+// @covers sta-1945:FR-5 sta-1945:AC-5 sta-1945:P-008
+test("land: a path an override's extend of owner-only adds is the owner's to land", async (t) => {
+  const w = world({ files: [{ filename: "deploy/run.sh", status: "added" }] });
+  t.after(w.r.dispose);
+  mkdirSync(join(w.r.root, ".flow/overrides/policies"), { recursive: true });
+  writeFileSync(
+    join(w.r.root, ".flow/overrides/policies/owner.yml"),
+    'kind: extend\ntarget: owner-only\nitems:\n  - "deploy/**"\n',
+  );
+  const result = await landOne({
+    root: w.r.root,
+    repo: "figentra/flow",
+    base: "main",
+    number: 7,
+    gateApp: GATE_APP,
+    deps: { api: w.api, done: async () => {}, ...quiet },
+  });
+  assert.equal(result.code, 1);
+  assert.match(
+    result.problems?.join() ?? "",
+    /owner-only paths, so the owner lands it: deploy\/run\.sh/,
+  );
+  assert.ok(!w.calls.some((c) => c.method === "PUT"), "nothing merges");
 });
 
 test("land: an unreadable package.json refuses, and so do 300 changed files", async (t) => {

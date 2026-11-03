@@ -35,8 +35,9 @@ const README = `# .flow
 This folder belongs to Figentra Flow (\`${NAME}\`, ADR 0510). Do not hand-edit what it generates.
 
 - \`constitution.md\`: the repository's principles; the \`flow-*\` commands read it.
-- \`overrides/\`: optional. A template (\`overrides/<name>.md\`) or a command (\`overrides/commands/flow-<verb>.md\`)
-  here wins over the preset.
+- \`overrides/\`: optional and owner-only. \`<surface>/<id>.yml\` overrides what \`${NAME} sync\` renders (\`extend\`,
+  \`configure\`, \`replace\` or \`disable\`; \`${NAME} validate\` checks them). A template (\`overrides/<name>.md\`) or a
+  command (\`overrides/commands/flow-<verb>.md\`) here still wins over the preset until it gets its \`.yml\`.
 - \`lock.json\`: what \`${NAME} sync\` rendered; \`${NAME} gate ci\` fails when a rendered file is edited by hand.
 - \`current.json\`: the spec folder \`${NAME} gate dir\` chose (git-ignored).
 `;

@@ -5,7 +5,8 @@
  *   `default` and a malformed profile; `selects` honours `"*"`; both presets declare their profiles (stackra per D3);
  *   `sync` renders only the selected profile's skills and agents, records the profile in the lock, and refuses, writing
  *   nothing, an unknown profile or an unreadable preset.yml; `validate` and `check` name an unknown profile, and
- *   `check` a profile changed without a sync.
+ *   `check` a profile changed without a sync; the overrides apply to what the profile selects, and one on an output
+ *   or a source it drops is refused (FR-4).
  * Boundary: temporary folders; no process, no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
@@ -13,7 +14,7 @@
 // @covers sta-1945:FR-6 sta-1945:AC-6 sta-1945:P-009
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { check } from "../commands/check.mjs";
@@ -190,4 +191,57 @@ test("check: a profile changed without a sync differs from the lock's", (t) => {
   const lock = /** @type {import("../lib/lock.mjs").Lock} */ (readLock(root));
   writeLock(root, { ...lock, profile: "*" });
   assert.deepEqual(check(root).problems, []);
+});
+
+/**
+ * Writes one override under the repository's `.flow/overrides/`.
+ * @param {string} root
+ * @param {string} path
+ * @param {string} text
+ */
+function override(root, path, text) {
+  mkdirSync(join(root, ".flow/overrides", path, ".."), { recursive: true });
+  writeFileSync(join(root, ".flow/overrides", path), text);
+}
+
+// @covers sta-1945:FR-4
+test("sync: the overrides apply to what the profile selects; validate refuses one on an output or a source it drops", (t) => {
+  const root = governed(t, { own: true, config: { profile: "lean" } });
+  writeFileSync(join(root, OWN_PRESET, "preset.yml"), LEAN);
+  override(
+    root,
+    "agents/git.yml",
+    "kind: extend\ntarget: .claude/agents/git-steward.md\ntext: Ours.\n",
+  );
+  sync(root, { direct: true, log: () => {} });
+  assert.match(readFileSync(join(root, ".claude/agents/git-steward.md"), "utf8"), /Ours\.\n$/);
+  const lock = readLock(root);
+  assert.equal(lock?.profile, "lean");
+  assert.notEqual(lock?.overrides, "");
+  assert.deepEqual(check(root).problems, []);
+  override(
+    root,
+    "agents/ci.yml",
+    "kind: extend\ntarget: .claude/agents/ci-steward.md\ntext: Ours.\n",
+  );
+  assert.deepEqual(validateRepo(root).problems, [
+    ".flow/overrides/agents/ci.yml: extend .claude/agents/ci-steward.md: fflow renders no such output (`fflow diff` lists them)",
+  ]);
+  // A replaced source the profile drops would change nothing, so it is refused too.
+  writeFileSync(join(root, ".flow/overrides/agents/ci.md"), "Ours.\n");
+  override(
+    root,
+    "agents/ci.yml",
+    "kind: replace\ntarget: agents/ci-steward.md\nfile: agents/ci.md\nreason: ours\nowner: o\nreview: 2027-01-31\n",
+  );
+  assert.deepEqual(validateRepo(root).problems, [
+    ".flow/overrides/agents/ci.yml: replace agents/ci-steward.md: the preset has no such source",
+  ]);
+  // An unknown profile is named once; the overrides' targets wait until it resolves.
+  const config = join(root, "flow.config.json");
+  writeFileSync(config, JSON.stringify({ version: 1, preset: OWN_PRESET, profile: "brand" }));
+  const found = validateRepo(root).problems;
+  assert.equal(found.length, 1);
+  assert.match(found[0], /profile "brand" is unknown/);
+  assert.match(check(root).problems.join(), /profile "brand" is unknown/);
 });

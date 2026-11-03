@@ -2,7 +2,8 @@
  * Figentra Flow file contract:
  * Purpose: `fflow land [<pr>] [--stack] [--dry-run] [--manual-ok]`, the lander's checklist as code: squash-merge a PR
  *   only when it is open, clean, based on the default branch, green on `fflow/gate` from the gate App on its exact
- *   head, conventionally titled, its spec's approvals are recorded and it changes no owner-only path; then set Linear
+ *   head, conventionally titled, its spec's approvals are recorded and it changes no owner-only path (with the globs
+ *   an `extend` of `owner-only` adds, STA-1945 FR-5); then set Linear
  *   Done, record the merge commit, remove the worktree through `clean`'s rules, delete the branch and comment. When the
  *   base's ruleset requires an approving review the head lacks, it dispatches the approval workflow and turns on
  *   auto-merge at the head instead, never an admin path; `land` on a merged PR runs the steps after the merge
@@ -35,6 +36,7 @@ import { artifactProblems } from "../lib/artifacts.mjs";
 import { say } from "../lib/cli.mjs";
 import { gateLogins, loadConfig } from "../lib/config.mjs";
 import { ownerOnlyPaths, packageFindings } from "../lib/owner-only.mjs";
+import { ownerOnlyExtra } from "../lib/render.mjs";
 import { requiredCheckState, requiredContexts } from "../lib/required-checks.mjs";
 import {
   APPROVE_WORKFLOW,
@@ -365,7 +367,7 @@ export async function landOne({
     review,
     artifacts,
     files,
-    ownerOnly: config.approve?.ownerOnly,
+    ownerOnly: ownerOnlyExtra(root),
     ownerFindings,
     gateApp,
     reviewer,
