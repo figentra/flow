@@ -256,7 +256,9 @@ function specAt(
  * Lands one PR.
  * @param {{ root: string, repo: string, base: string, number: number, dry?: boolean, manualOk?: boolean,
  *           gateApp?: string | string[], reviewer?: string, owner?: string, refs?: string, deps: LandDeps }} options
- *   `refs`: the issue the squash's `Refs:` names when the branch names none (it is not moved to Done).
+ *   `refs`: the issue the squash's `Refs:` names. Given, it is the PR's issue and the branch's key is not read, so a
+ *   slug that only looks like a key (`adr/0008-sta-12-x`) neither names the squash, picks a spec nor moves to Done;
+ *   `refs` is not moved to Done either.
  * @returns {Promise<{ code: number, problems?: string[], merged?: string, head?: string,
  *   queued?: boolean, waiting?: string[] }>}
  */
@@ -279,7 +281,7 @@ export async function landOne({
   const head = pr.json.head.sha;
   const branch = pr.json.head.ref;
   const scheme = deps.scheme ?? trackerFor(root, { warn: () => {} }).scheme;
-  const key = scheme.parse(branch);
+  const key = refs ? undefined : scheme.parse(branch);
   // STA-1856 FR-3: an auto-merged PR comes back here to finish.
   if (pr.json.merged && pr.json.merge_commit_sha) {
     if (pr.json.base?.ref !== base)
