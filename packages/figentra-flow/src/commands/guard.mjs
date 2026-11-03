@@ -6,7 +6,8 @@
  *   (naming `fflow land`), or sets `LEFTHOOK=0` (naming `fflow hooks run`). `--print-settings` prints the
  *   `.claude/settings.json` entry that wires it. The guard engine of STA-1945 PR 4 absorbs these rules.
  * Boundary: reads stdin, writes the hook's JSON answer on a denial and nothing otherwise. It follows `cd <dir> &&`,
- *   `git -C <dir>`, leading `NAME=value` words, wrapper scripts (`pnpm bot:git -- …`) and quoted words; input it
+ *   `git -C <dir>`, leading `NAME=value` words, `env`, `command` and `exec` prefixes, a git or gh named by its path,
+ *   wrapper scripts (`pnpm bot:git -- …`) and quoted words; input it
  *   cannot parse passes (a hook fails open), a side door it can read never does. Wiring it into a repository is guard
  *   configuration, which the owner applies.
  * Runtime: node
@@ -75,28 +76,51 @@ export function words(command) {
   return out.filter((w) => w.length);
 }
 
-/**
- * A simple command's words without its leading `NAME=value` assignments.
- * @param {string[]} w
- */
-const bare = (w) =>
-  w.slice(
-    Math.max(
-      0,
-      w.findIndex((x) => !/^[A-Za-z_]\w*=/.test(x)),
-    ),
-  );
+const ASSIGN = /^[A-Za-z_]\w*=/;
+/** A program's name without its folder (`/usr/bin/git` → `git`). */
+const program = (/** @type {string | undefined} */ x) => x?.split("/").at(-1);
+/** `env` options that take a value. */
+const ENV_VALUED = new Set(["-u", "--unset", "-C", "--chdir"]);
 
 /**
- * The arguments a simple command hands `tool` (`git` or `gh`): directly (`git …`), or through a wrapper script named
- * after it (`pnpm bot:git -- …`); undefined when it runs something else.
+ * A simple command split into the variables it sets (`NAME=value` words before the program, also after `env`, and
+ * `export`'s) and the command it runs, past `env`, `command` and `exec` prefixes.
+ * shortcut: `sh -c '…'`, `bash -c`, `eval`, `xargs`, `pnpm exec git`, `npx`, `env -S`, git aliases and scripts are not
+ *   read through; the default branch's ruleset and the gate still refuse what they would slip past.
+ * @param {string[]} w
+ * @returns {{ sets: string[], cmd: string[] }}
+ */
+function split(w) {
+  /** @type {string[]} */
+  const sets = [];
+  let i = 0;
+  for (;;) {
+    while (i < w.length && ASSIGN.test(w[i])) sets.push(w[i++]);
+    const p = program(w[i]);
+    if (p === "env") {
+      for (i += 1; i < w.length && (w[i].startsWith("-") || ASSIGN.test(w[i])); i += 1)
+        if (ENV_VALUED.has(w[i])) i += 1;
+        else if (ASSIGN.test(w[i])) sets.push(w[i]);
+    } else if (p === "command" || p === "exec") {
+      i += 1;
+      if (w[i] === "-p") i += 1;
+    } else break;
+  }
+  const cmd = w.slice(i);
+  if (cmd[0] === "export") sets.push(...cmd.filter((x) => ASSIGN.test(x)));
+  return { sets, cmd };
+}
+
+/**
+ * The arguments a simple command hands `tool` (`git` or `gh`): directly (`git …`, `/usr/bin/git …`), or through a
+ * wrapper script named after it (`pnpm bot:git -- …`); undefined when it runs something else.
  * @param {string[]} w
  * @param {"git" | "gh"} tool
  * @returns {string[] | undefined}
  */
 export function argsOf(w, tool) {
-  const b = bare(w);
-  if (b[0] === tool) return b.slice(1);
+  const b = split(w).cmd;
+  if (program(b[0]) === tool) return b.slice(1);
   const dash = b.indexOf("--");
   if (dash > 1 && new RegExp(`(^|[:/-])${tool}$`).test(b[1])) return b.slice(dash + 1);
   return undefined;
@@ -219,7 +243,7 @@ function existing(/** @type {string} */ dir) {
  * @returns {string | undefined}
  */
 export function decide(command, cwd) {
-  if (words(command).some((w) => w.some((x) => /^LEFTHOOK=(0|false|off)$/i.test(x))))
+  if (words(command).some((w) => split(w).sets.some((x) => /^LEFTHOOK=(0|false|off)$/i.test(x))))
     return `\`LEFTHOOK=0\` skips the hooks, and they are never an exception (FR-18): commit with them running; a checkout that cannot run them proves them on the testbed with \`${NAME} hooks run <stage>\`.`;
   for (const { w } of steps(command, cwd)) {
     const a = argsOf(w, "gh");
