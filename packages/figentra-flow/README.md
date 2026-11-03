@@ -1,7 +1,7 @@
 # Figentra Flow
 
 Figentra Flow is the spec CLI for Stackra repositories. It owns spec-driven development end to end (ADR 0510): the
-templates, the presets, the eight `flow-*` commands it renders for Claude Code and OpenCode, the `.flow/` folder, and
+templates, the presets, the nine `flow-*` commands it renders for Claude Code and OpenCode, the `.flow/` folder, and
 the gates that keep each spec, its plan, its tasks and its tests in step. Its command texts and two templates derive
 from [GitHub spec-kit](https://github.com/github/spec-kit) 1.0.10 (MIT; see `THIRD_PARTY_NOTICES.md`); nothing runs
 spec-kit's `specify`. It is one package, `fflow`, with two binaries, `fflow` and its alias `fflow`, published on the Figentra registry (npmjs later, as `fflow`).
@@ -23,10 +23,10 @@ under `NO_COLOR` or in a pipe, and `doctor`, `status` and `status --metrics` tak
 `{ "schema": "fflow.doctor/1", "checks" }` (its check rows, each with `id`, `ok`, `status` and `group`, are `data`), and
 `status --json` and `status --metrics --json` put the snapshot and the metrics in `data`.
 
-`doctor`, `status`, `next`, `resume`, `task start`, `task done`, `session stop` and the governance commands (`update`,
-`check`, `diff`, `validate`) are ported to the engine (`next` takes `--json` too). Every other command is passthrough,
-keeping its own flags and output until it is ported: `app`, `clean`, `gate`, `guard`, `init`, `land`, `linear`, `mcp`,
-`migrate`, `parse`, `readme`, `release`, `ship`, `spec`, `start`, `sync`, `team`, `trace` and `train`.
+`doctor`, `status`, `next`, `resume`, `task start`, `task done`, `task wave`, `session stop` and the governance commands
+(`update`, `check`, `diff`, `validate`) are ported to the engine (`next` takes `--json` too). Every other command is
+passthrough, keeping its own flags and output until it is ported: `app`, `clean`, `gate`, `guard`, `init`, `land`,
+`linear`, `mcp`, `migrate`, `parse`, `readme`, `release`, `ship`, `spec`, `start`, `sync`, `team`, `trace` and `train`.
 
 `@stackra/console` and `@stackra/validation` (0.7.1) are runtime dependencies of Flow (ADR 0506 decision 8, owner
 2026-11-03; this replaces STA-1945 NFR-1's "no runtime dependency, an optional peer"). They come from the Stackra
@@ -67,6 +67,7 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow next [<key>] [--json]`                                         | the task's stage and the command that moves it on, from Flow's record on the key's worktree or branch                                                                                            |
 | `fflow resume <key>`                                                  | re-enters the stage a stopped session left half done: the task's worktree, fast-forwarded to its pushed branch                                                                                   |
 | `fflow task start\|done <key> <T###> [--command c]`                   | moves a task's marker: `[-]` on start; `[x]` only when the check command exits 0 at a clean HEAD, recorded                                                                                       |
+| `fflow task wave <key> [--json]`                                      | queues the build's next wave (`[ ]` → `[~]`) and prints it; a wave with a failed or unfinished task is printed again                                                                              |
 | `fflow session stop [--save-only]`                                    | the SessionEnd hook: commits and pushes the tracked work with the record; `--save-only`, the Stop hook, writes the record                                                                        |
 | `fflow init --runner github-actions [--force]`                        | writes the gate workflow for the `github-actions` runner, and a starter config when there is none                                                                                                |
 | `fflow readme [--check]`                                              | renders `README.md` from `.flow/readme.yml` through the preset's `readme-template` (stackra); `--check` exits 1 when it differs                                                                  |
