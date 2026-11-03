@@ -2,12 +2,14 @@
  * Figentra Flow file contract:
  * Purpose: hold `fflow task start|done` to STA-1945 FR-23: a task starts only on a Tasked spec and records its start,
  *   `done` keeps every attempt and sets `[x]` only on exit 0 at a clean HEAD, a secret-looking command never runs, a
- *   changed document resets a started task with the reason, and a hand tick is named.
+ *   changed document resets a started task with the reason, a hand tick is named, and `task wave` queues the next wave
+ *   and holds it while one of its tasks failed.
  * Boundary: temporary repositories with a local bare origin; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945 FR-23, AC-22, AC-23, AC-24, P-028, NFR-5.
  */
 // @covers sta-1945:FR-23 sta-1945:AC-22 sta-1945:AC-23 sta-1945:AC-24 sta-1945:P-028
+// @covers sta-1945:FR-24 sta-1945:AC-25 sta-1945:P-029
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -17,6 +19,7 @@ import {
   docsDigest,
   doneTask,
   handTicks,
+  queueWave,
   resetChanged,
   setMarker,
   startTask,
@@ -132,4 +135,24 @@ test("a hand tick is named once the spec has a record", (t) => {
   doneTask(s.root, "STA-7", "T001", "true");
   const record = readRecord(s.root, "sta-7");
   assert.deepEqual(handTicks(ticked, record), ["T002"]);
+});
+
+test("task wave: queues the next wave, holds it while a task failed, then moves on (AC-25)", (t) => {
+  const s = setup(t);
+  const ids = (/** @type {ReturnType<typeof queueWave>} */ w) =>
+    w && [w.wave, w.of, w.tasks.map((x) => `${x.id}${x.marker}`)];
+  assert.deepEqual(ids(queueWave(s.root, "STA-7")), [1, 2, ["T001~", "T002~"]]);
+  assert.deepEqual([s.marker("T001"), s.marker("T002"), s.marker("T003")], ["~", "~", " "]);
+  assert.deepEqual(startTask(s.root, "STA-7", "T001"), []);
+  assert.equal(doneTask(s.root, "STA-7", "T001", "true").done, true);
+  startTask(s.root, "STA-7", "T002");
+  assert.equal(doneTask(s.root, "STA-7", "T002", "exit 1").done, false);
+  // the failed task holds its wave: the checkpoint is not queued
+  assert.deepEqual(ids(queueWave(s.root, "STA-7")), [1, 2, ["T002-"]]);
+  assert.equal(s.marker("T003"), " ");
+  assert.equal(doneTask(s.root, "STA-7", "T002", "true").done, true);
+  assert.deepEqual(ids(queueWave(s.root, "STA-7")), [2, 2, ["T003~"]]);
+  startTask(s.root, "STA-7", "T003");
+  doneTask(s.root, "STA-7", "T003", "true");
+  assert.equal(queueWave(s.root, "STA-7"), undefined);
 });

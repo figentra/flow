@@ -2,12 +2,13 @@
  * Figentra Flow file contract:
  * Purpose: hold the stage table to its contract (P-017): `nextStep` names one stage and one command for any record;
  *   an unfinished stage stays, a finished one moves on, a shipped task names `status`, an owner ask's command wins
- *   while waiting, and the spec's status never lets the stage fall behind it.
+ *   while waiting, the spec's status never lets the stage fall behind it, and the build continues from the markers.
  * Boundary: pure; no files.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
  */
 // @covers sta-1945:FR-13 sta-1945:AC-13 sta-1945:P-017
+// @covers sta-1945:FR-24 sta-1945:AC-26 sta-1945:P-029
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -63,4 +64,26 @@ test("stages: the spec's status moves an early stage up to what it proves", () =
     { stage: "spec", command: "fflow gate check .agents/specs/sta-9-x" },
   );
   assert.equal(nextStep(at("land", "active"), { specStatus: "done" }).stage, "land");
+});
+
+test("stages: the build names the wave its markers leave; with every wave done the gate is next (FR-24)", () => {
+  const wave = { wave: 2, ids: ["T003", "T004"] };
+  assert.deepEqual(nextStep(at("build", "active"), { wave }), {
+    stage: "build",
+    command: "fflow task wave STA-9",
+    wave,
+  });
+  assert.deepEqual(nextStep(at("build", "failed"), { built: true }), {
+    stage: "gate",
+    command: "fflow gate run",
+  });
+  assert.deepEqual(nextStep(at("worktree", "done"), { specStatus: "implementing", built: true }), {
+    stage: "gate",
+    command: "fflow gate run",
+  });
+  // the wave is only the build's
+  assert.deepEqual(nextStep(at("gate", "active"), { wave }), {
+    stage: "gate",
+    command: "fflow gate run",
+  });
 });

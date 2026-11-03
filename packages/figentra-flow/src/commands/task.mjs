@@ -1,17 +1,19 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `fflow task start|done <key> <task>` (STA-1945 FR-23): the only way a task's marker moves.
+ * Purpose: `fflow task start|done|wave` (STA-1945 FR-23, FR-24): the only way a task's marker moves.
  *   start <key> <task> [--session <name>] refuses unless the spec is Tasked or Implementing with its approvals
  *                                         (ADR 0502), then sets `[-]` and records the start (session, HEAD and the
  *                                         digest of spec, plan and tasks) in Flow's record
  *   done <key> <task> --command <cmd>     runs the check command (`runEvidence`), keeps the attempt in the record and
  *                                         sets `[x]` only on exit 0 at a clean HEAD; refuses a secret-looking command
+ *   wave <key> [--json]                   prints the build's next wave (`nextWave`), its `[ ]` tasks set to `[~]`; a
+ *                                         wave holding a failed task is printed again, so the next one never starts
  *   `resetChanged` is what `check` calls (T024): a task in progress whose documents changed since its start goes back
  *   to `[ ]` with the reason; `handTicks` names each `[x]` with no passing evidence (AC-22).
  * Boundary: writes the task's line in tasks.md and the record (`.flow/record/<key>.json`); runs the check command in
  *   the repository; commits and pushes nothing (the session's commits carry both files).
  * Runtime: node
- * Governing contract: STA-1945 FR-23, AC-23, AC-24, P-028, NFR-5.
+ * Governing contract: STA-1945 FR-23, FR-24, AC-23, AC-24, AC-25, P-028, P-029, NFR-5.
  * Secrets: none; the command's output is kept only as a digest, and a secret-looking command never runs.
  */
 import { createHash } from "node:crypto";
@@ -26,6 +28,7 @@ import { git } from "../lib/git.mjs";
 import { ENV_PREFIX, NAME } from "../lib/product.mjs";
 import { readRecord, recordPath, RecordError, updateRecord } from "../lib/record.mjs";
 import { parseTasks } from "../lib/spec-parse.mjs";
+import { nextWave, waves, WaveError } from "../lib/waves.mjs";
 
 /** A refusal: a task that cannot move, or a command that may not run. */
 export class TaskError extends Error {}
@@ -68,12 +71,11 @@ export function setMarker(text, id, marker) {
 }
 
 /**
- * The spec folder and task of `key` in `root`.
+ * The spec folder and tasks.md of `key` in `root`.
  * @param {string} root
  * @param {string} key
- * @param {string} id
  */
-function locate(root, key, id) {
+function tasksOf(root, key) {
   const keys = schemeFor(root);
   const k = keys.parse(key);
   if (!k) throw new TaskError(`${key} is not an issue key`);
@@ -82,9 +84,19 @@ function locate(root, key, id) {
     throw new TaskError(found.error ?? `${found.dir} has no tasks.md`);
   const dir = join(root, found.dir);
   const file = join(dir, "tasks.md");
-  const text = readFileSync(file, "utf8");
+  return { k, shown: found.dir, dir, file, text: readFileSync(file, "utf8") };
+}
+
+/**
+ * The spec folder and task of `key` in `root`.
+ * @param {string} root
+ * @param {string} key
+ * @param {string} id
+ */
+function locate(root, key, id) {
+  const { k, shown, dir, file, text } = tasksOf(root, key);
   const task = parseTasks(text).find((t) => t.id === id && !t.struck);
-  if (!task) throw new TaskError(`${found.dir}/tasks.md has no live ${id}`);
+  if (!task) throw new TaskError(`${shown}/tasks.md has no live ${id}`);
   return { k, dir, file, text, task, spec: readFileSync(join(dir, "spec.md"), "utf8") };
 }
 
@@ -214,20 +226,81 @@ export function resetChanged(root, key) {
   }));
 }
 
+/**
+ * The next wave of `key`'s build (FR-24), its `[ ]` tasks set to `[~]` (queued): the wave's number, how many waves
+ * there are, and its tasks still to run in document order; a task already `[-]` (a dead session's) is in it, to finish
+ * with `task done`. Undefined once every wave is done.
+ * @param {string} root
+ * @param {string} key
+ * @returns {{ wave: number, of: number, tasks: import("../lib/spec-parse.mjs").Task[] } | undefined}
+ * @throws {TaskError} when the spec has no tasks.md or its deps form a cycle
+ */
+export function queueWave(root, key) {
+  const { file, text } = tasksOf(root, key);
+  const tasks = parseTasks(text);
+  let next;
+  let of;
+  try {
+    next = nextWave(tasks);
+    of = waves(tasks).length;
+  } catch (error) {
+    if (!(error instanceof WaveError)) throw error;
+    throw new TaskError(error.message);
+  }
+  if (!next) return undefined;
+  const ids = next.ids;
+  const queued = tasks.filter((t) => !t.struck && ids.includes(t.id));
+  const out = queued
+    .filter((t) => t.marker === " ")
+    .reduce((acc, t) => setMarker(acc, t.id, "~"), text);
+  if (out !== text) writeFileSync(file, out);
+  return {
+    wave: next.wave,
+    of,
+    tasks: queued.map((t) => (t.marker === " " ? { ...t, marker: /** @type {const} */ ("~") } : t)),
+  };
+}
+
 /** @param {string[]} args */
 export function run(args = []) {
   const [mode, key, id] = args;
   const opt = (/** @type {string} */ flag) =>
     args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined;
   const command = opt("--command");
-  if (!key || !id || !/^T\d{3}$/.test(id) || !(mode === "start" || (mode === "done" && command))) {
+  const valid =
+    mode === "wave"
+      ? Boolean(key)
+      : key && id && /^T\d{3}$/.test(id) && (mode === "start" || (mode === "done" && command));
+  if (!valid) {
     console.error(
-      `usage: ${NAME} task start <key> <T###> [--session <name>] | done <key> <T###> --command <cmd> [--echo]`,
+      `usage: ${NAME} task start <key> <T###> [--session <name>] | done <key> <T###> --command <cmd> [--echo] | wave <key> [--json]`,
     );
     return 2;
   }
   const root = git(process.cwd(), ["rev-parse", "--show-toplevel"]).out || process.cwd();
   try {
+    if (mode === "wave") {
+      const next = queueWave(root, key);
+      if (args.includes("--json")) {
+        console.log(
+          JSON.stringify({ schema: `${NAME}.wave/1`, key, ...(next ?? { tasks: [] }) }, null, 2),
+        );
+        return 0;
+      }
+      if (!next) {
+        say("approved", `every wave of ${key.toUpperCase()} is done: \`${NAME} gate run\``);
+        return 0;
+      }
+      say(
+        "checking",
+        `${key.toUpperCase()}: wave ${next.wave} of ${next.of}, ${next.tasks.length} to run`,
+      );
+      for (const t of next.tasks)
+        console.log(
+          `${t.id} [${t.marker}]${t.optional ? " optional" : ""} ${t.checkpoint ?? t.paths.join(" ")}`,
+        );
+      return 0;
+    }
     if (mode === "start") {
       // the same session name `session stop` records: the flag, then the environment
       const session = opt("--session") ?? process.env[`${ENV_PREFIX}SESSION`];

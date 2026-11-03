@@ -4,11 +4,13 @@
  *   task's worktree (this checkout, a linked worktree, or a new one in `.claude/worktrees/` from the branch a stopped
  *   session pushed), reads Flow's record there and, when the recorded stage is active or failed, re-runs that
  *   stage's command if it is one Flow can repeat unattended (`RERUNNABLE`), records the outcome and pushes it. Any
- *   other half-done stage is the session's or the owner's: its command is printed.
+ *   other half-done stage is the session's or the owner's: its command is printed; the build's names the wave the
+ *   markers in tasks.md leave, restarting at its first unfinished task (FR-24, AC-26), and once every wave is done
+ *   it names the gate.
  * Boundary: may add one worktree (inside `.claude/worktrees/`), runs one `fflow` command, writes the record and commits
  *   and pushes it on the task's branch.
  * Runtime: node
- * Governing contract: STA-1945 (FR-13, AC-13, P-017).
+ * Governing contract: STA-1945 (FR-13, FR-24, AC-13, AC-26, P-017, P-029).
  * Secrets: none; network git goes through the configured credentials.
  */
 import { spawnSync } from "node:child_process";
@@ -92,7 +94,7 @@ function runStep(command, cwd) {
  * Resumes `key`.
  * @param {{ cwd: string, key: string, run?: (command: string, cwd: string) => number }} options
  * @returns {{ ok: true, path: string, made: boolean, stage: string, command: string, ran: boolean, exit?: number,
- *             pushed?: boolean, problem?: string } | { ok: false, problem: string }}
+ *             wave?: { wave: number, ids: string[] }, pushed?: boolean, problem?: string } | { ok: false, problem: string }}
  */
 export function resume({ cwd, key, run: runCommand = runStep }) {
   const root = mainCheckout(cwd);
@@ -142,7 +144,10 @@ export async function run(args = []) {
   }
   if (result.made) say("checking", `worktree ready at ${result.path}`);
   if (!result.ran) {
-    say("waiting", `${key.toUpperCase()}: ${result.stage}; continue with:`);
+    const from = result.wave
+      ? ` wave ${result.wave.wave} restarts at ${result.wave.ids[0]} (${result.wave.ids.join(", ")})`
+      : "";
+    say("waiting", `${key.toUpperCase()}: ${result.stage};${from} continue with:`);
     console.log(result.command);
     return 0;
   }

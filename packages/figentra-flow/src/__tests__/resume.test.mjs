@@ -3,15 +3,17 @@
  * Purpose: hold `fflow resume` to its contract (AC-13, P-017): after a session stopped mid-stage and its checkout is
  *   gone, resume rebuilds the worktree from the pushed branch with no work lost, re-runs a repeatable stage's command
  *   to its end state, records and pushes the outcome; a failing command leaves the stage failed; a stage that is not
- *   repeatable unattended, or a finished one, is only named.
+ *   repeatable unattended, or a finished one, is only named; a dead session's build restarts at its wave's first
+ *   unfinished task.
  * Boundary: temporary repositories with a local bare origin; the stage command injected; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
  */
 // @covers sta-1945:FR-13 sta-1945:AC-13 sta-1945:P-017
+// @covers sta-1945:FR-24 sta-1945:AC-26 sta-1945:P-029
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { resume } from "../commands/resume.mjs";
@@ -29,11 +31,13 @@ function stopped(
   /** @type {import("node:test").TestContext} */ t,
   /** @type {import("../lib/stages.mjs").Stage} */ stage,
   /** @type {"active" | "done" | "failed"} */ state,
+  /** @type {(path: string) => void} */ prepare = () => {},
 ) {
   const r = repo();
   t.after(r.dispose);
   const path = join(r.root, ".claude", "worktrees", "sta-3-resume");
   sh(r.root, "worktree", "add", "-q", "-b", BRANCH, path, "origin/main");
+  prepare(path);
   updateRecord(path, "sta-3", (rec) => ({ ...rec, stage, state }));
   writeFileSync(join(path, "work.txt"), "half done\n");
   const stop = stopSession({ cwd: path, name: "FLOW · resume (STA-3)" });
@@ -85,6 +89,36 @@ test("resume: a stage only a session or the owner can finish, or a finished one,
   const after = resume({ cwd: r.root, key: "STA-3", run: never });
   assert.ok(after.ok && !after.ran);
   assert.equal(after.stage, "gate");
+});
+
+test("resume: a dead session's build restarts at its wave's first unfinished task (AC-26)", (t) => {
+  const tasks = (/** @type {string} */ path, /** @type {string[]} */ marks) =>
+    writeFileSync(
+      join(path, ".agents", "specs", "sta-3-x", "tasks.md"),
+      [
+        "## Phase 1",
+        "",
+        ...["a", "b", "c", "a"].map((f, i) => `- [${marks[i]}] T00${i + 1} In \`${f}.mjs\``),
+      ].join("\n"),
+    );
+  const { r } = stopped(t, "build", "active", (path) => {
+    mkdirSync(join(path, ".agents", "specs", "sta-3-x"), { recursive: true });
+    writeFileSync(
+      join(path, ".agents", "specs", "sta-3-x", "spec.md"),
+      "# x\n\n**Status**: Implementing\n",
+    );
+    tasks(path, ["x", "-", "~", " "]);
+  });
+  const never = () => assert.fail("must not run");
+  const build = resume({ cwd: r.root, key: "STA-3", run: never });
+  assert.ok("path" in build && !build.ran, JSON.stringify(build));
+  assert.equal(build.command, "fflow task wave STA-3");
+  // T004 shares a.mjs with T001, so it waits for wave 2
+  assert.deepEqual(build.wave, { wave: 1, ids: ["T002", "T003"] });
+  tasks(build.path, ["x", "x", "x", "x"]);
+  const after = resume({ cwd: r.root, key: "STA-3", run: never });
+  assert.ok("path" in after && !after.ran, JSON.stringify(after));
+  assert.deepEqual([after.stage, after.command, after.wave], ["gate", "fflow gate run", undefined]);
 });
 
 test("resume: a key with no branch is refused", (t) => {
