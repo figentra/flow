@@ -35,7 +35,8 @@ export function requiredCheckState({ required, statuses, checkRuns, trusted = {}
   /** @type {{ passed: string[], pending: string[], failed: string[], untrusted: string[], succeeded: number }} */
   const out = { passed: [], pending: [], failed: [], untrusted: [], succeeded: 0 };
   for (const { context, integration_id: app } of required) {
-    const logins = [trusted[context] ?? []].flat();
+    // An empty login trusts no one (a deleted poster has no login either).
+    const logins = [trusted[context] ?? []].flat().filter(Boolean);
     if (app === undefined && !logins.length) {
       out.untrusted.push(`${context} is pinned to no App (set its integration_id in the ruleset)`);
       continue;

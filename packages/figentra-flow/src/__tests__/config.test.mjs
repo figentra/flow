@@ -110,6 +110,10 @@ test("config: a renamed gate App's aliases add logins; without them the login st
   assert.deepEqual(gateLogins(renamed.apps), ["figentra-gate[bot]", "figentra-flow[bot]"]);
   assert.equal(gateLogins(FIGENTRA.apps), "figentra-gate[bot]");
   assert.equal(gateLogins(undefined), undefined);
+  // Unvalidated config: a bare string or an empty alias widens nothing.
+  const raw = (/** @type {any} */ aliases) => gateLogins({ gate: { login: "a[bot]", aliases } });
+  assert.equal(raw("figentra-flow[bot]"), "a[bot]");
+  assert.deepEqual(raw(["", "b[bot]"]), ["a[bot]", "b[bot]"]);
   const bad = (/** @type {unknown} */ aliases) =>
     validate(SCHEMA, { version: 1, apps: { gate: { login: "a[bot]", aliases } } }).join("\n");
   assert.match(bad([]), /^apps\.gate\.aliases: must have at least 1 item/m);

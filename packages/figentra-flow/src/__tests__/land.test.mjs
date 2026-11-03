@@ -105,6 +105,12 @@ test("rules: a renamed gate App (ADR 0523) counts from either login the configur
     landRules({ ...ok, gateApp: [], statuses: by(GATE_APP) }).join("\n"),
     /no gate App is configured/,
   );
+  const ghost = [{ context: "fflow/gate", state: "success", creator: null }];
+  for (const gateApp of ["", [""]])
+    assert.match(
+      landRules({ ...ok, gateApp, statuses: ghost }).join("\n"),
+      /no gate App is configured/,
+    );
 });
 
 test("rules: a feature spec needs its approval and Tasked; a spec without a tier passes", () => {

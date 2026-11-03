@@ -137,7 +137,10 @@ function openPrs(api, slug, base, apps) {
             state: status.state,
             creator: status.creator?.login ?? null,
             trusted: apps.gateApp
-              ? [apps.gateApp].flat().includes(status.creator?.login ?? "")
+              ? [apps.gateApp]
+                  .flat()
+                  .filter(Boolean)
+                  .includes(status.creator?.login ?? "")
               : null,
           }
         : null,

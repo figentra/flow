@@ -155,7 +155,8 @@ setting you have not made refuses and names it.
 
 - `apps` names the GitHub Apps Flow trusts:
   - `gate.login`: the gate App whose status `land` trusts; `gate.aliases` lists its other logins while the App is
-    renamed, and its status counts from any of them;
+    renamed, and its status counts from any of them. Add the new login as an alias before the rename; in the same step
+    as the rename, make it the `login` and drop the alias, since GitHub frees the old name for another App;
   - `review.slug`: the review App whose verdict counts;
   - `owner`: the owner whose `owner-approval` review also counts.
 

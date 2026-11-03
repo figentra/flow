@@ -65,7 +65,8 @@ export function gateProblems(statuses, sha, gateApp) {
   const problems = [];
   // The trusted gate status creator comes only from the configuration (defence in depth; the ruleset is the
   // guarantee).
-  const logins = [gateApp ?? []].flat();
+  // An empty login trusts no one (a deleted poster has no login either).
+  const logins = [gateApp ?? []].flat().filter(Boolean);
   if (!logins.length)
     problems.push("no gate App is configured: set apps.gate.login in the configuration");
   const head = String(sha ?? "").slice(0, 12);

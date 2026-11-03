@@ -291,7 +291,10 @@ export function loadConfig(root) {
  * @returns {string | string[] | undefined}
  */
 export const gateLogins = (apps) =>
-  apps?.gate?.aliases ? [apps.gate.login, ...apps.gate.aliases] : apps?.gate?.login;
+  // Only a list counts: a bare string spread here would trust each of its characters.
+  Array.isArray(apps?.gate?.aliases) && apps.gate.aliases.length
+    ? [apps.gate.login, ...apps.gate.aliases].filter((x) => typeof x === "string" && x !== "")
+    : apps?.gate?.login;
 
 /** Raised when a command needs a setting the configuration does not hold, or the configuration is invalid. */
 export class ConfigError extends Error {}

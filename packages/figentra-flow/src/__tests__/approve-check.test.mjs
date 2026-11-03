@@ -392,6 +392,18 @@ test("required checks: a list of logins trusts a check run or status from any of
   assert.deepEqual(state([run("old-gate")], both).passed, ["gate"]);
   assert.deepEqual(state([run("other-gate")], both).pending, ["gate"]);
   assert.deepEqual(state([run("new-gate")], { gate: "old-gate[bot]" }).pending, ["gate"]);
+  // An empty login trusts no one, not even a status with no creator.
+  const ghost = [{ context: "gate", state: "success", creator: null }];
+  for (const login of ["", [""]])
+    assert.equal(
+      requiredCheckState({
+        required: [{ context: "gate" }],
+        statuses: ghost,
+        checkRuns: [],
+        trusted: { gate: login },
+      }).passed.length,
+      0,
+    );
 });
 
 /** The workflow's environment for `main`. */
