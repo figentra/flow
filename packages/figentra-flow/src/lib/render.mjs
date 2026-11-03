@@ -19,7 +19,7 @@ import { dirname, join } from "node:path";
 
 import { approveWorkflow } from "./approve-workflow.mjs";
 import { baselineWorkflow } from "./baseline-workflow.mjs";
-import { loadConfig } from "./config.mjs";
+import { gateLogins, loadConfig } from "./config.mjs";
 import { LOCK, OVERRIDES, presetDir } from "./flow-dir.mjs";
 import {
   digestOf,
@@ -140,6 +140,7 @@ export function render(root, { direct = false } = {}) {
   const ownerOnly = approve?.ownerOnly ?? [];
   // No owner, no approval path: GitHub must be able to ask someone for the owner-only paths (CODEOWNERS).
   if (!apps?.owner) return out;
+  const gate = gateLogins(apps);
   out.set(
     `.github/workflows/${APPROVE_WORKFLOW}`,
     approveWorkflow({
@@ -147,7 +148,7 @@ export function render(root, { direct = false } = {}) {
       integrity: lockedIntegrity(root, PACKAGE, VERSION),
       ...approveSecrets(root),
       // The gate's status counts only from the gate App; a repository adds its own sources in `approve.checks`.
-      trusted: { ...(apps?.gate ? { [STATUS_CONTEXT]: apps.gate.login } : {}), ...approve?.checks },
+      trusted: { ...(gate ? { [STATUS_CONTEXT]: gate } : {}), ...approve?.checks },
       ownerOnly,
     }),
   );

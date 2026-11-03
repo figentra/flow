@@ -160,7 +160,9 @@ setting you have not made refuses and names it.
   `maxBytes` defaults to 5 MB. A change that adds or changes such a file is refused, with each file named.
 
 - `apps` names the GitHub Apps Flow trusts:
-  - `gate.login`: the gate App whose status `land` trusts;
+  - `gate.login`: the gate App whose status `land` trusts; `gate.aliases` lists its other logins while the App is
+    renamed, and its status counts from any of them. Add the new login as an alias before the rename; in the same step
+    as the rename, make it the `login` and drop the alias, since GitHub frees the old name for another App;
   - `review.slug`: the review App whose verdict counts;
   - `owner`: the owner whose `owner-approval` review also counts.
 
@@ -230,7 +232,7 @@ check exited 0. Nothing secret reaches the comment or the log. Exit codes: 0 gre
 `fflow land` is the lander's checklist as code. The PR must be:
 
 - open, not a draft and not conflicting, and based on the default branch (`--stack` lands a stack bottom-up);
-- green on `fflow/gate` on its exact head, posted by the configuration's `apps.gate.login`;
+- green on `fflow/gate` on its exact head, posted by the configuration's `apps.gate.login` (or one of its `aliases`);
 - titled with a conventional commit header;
 - approved as its spec's tier requires (ADR 0502), and at Tasked or later for a feature or big spec.
 - for a change with a spec: reviewed. The `stackra-reviewer` App's unedited `AI-REVIEW: PASS <head> base=<base>`
