@@ -12,7 +12,7 @@ preset:
 # figentra), `product` (the products) and `starter` (the template) build the same kinds of members (apps, services,
 # packages, infra, store launches), so they get every skill and every agent but `compiler-engineer`, which builds
 # core's own `stackra gen`. `brand` writes no app or service code: the stewards, review, specs, ADRs and the design
-# side only.
+# side, plus the agents the trust routes and the secrets rule name (security, secrets, incidents).
 default: framework
 profiles:
   framework:
@@ -94,7 +94,10 @@ profiles:
       - design-brand-reviewer
       - docs-adr-steward
       - git-steward
+      - incident-commander
       - linear-steward
+      - secret-manager
+      - security-tenancy-reviewer
       - spec-writer
     skills:
       - accessibility

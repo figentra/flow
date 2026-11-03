@@ -5,8 +5,9 @@
  *   beside the `flow-*` ones and the reference, routing and models always under `.agents/`, as in the preset with
  *   the provenance header; each stackra profile renders its split (agents and skills, counted) and the lock records
  *   it; the neutral preset renders none of it; a preset skill named `flow-*` or a file that is not UTF-8 is refused;
- *   `renderReference` reads only the preset folder it is given; the profiles name only what the preset carries, and
- *   `validate` names each agent or skill a profile selects that its preset lacks.
+ *   `renderReference` reads only the preset folder it is given; the profiles name only what the preset carries, each
+ *   selects the agents routing's trust tasks go to, and `validate` names each agent or skill a profile selects that
+ *   its preset lacks.
  * Boundary: temporary folders; no network.
  * Runtime: node
  * Governing contract: STA-1945 (C6, D2).
@@ -92,7 +93,7 @@ test("each stackra profile renders its split of agents and skills, and the lock 
     framework: [30, 46],
     platform: [29, 46],
     product: [29, 46],
-    brand: [9, 17],
+    brand: [12, 17],
     starter: [29, 46],
   };
   for (const [profile, [agents, skills]] of Object.entries(expected)) {
@@ -171,6 +172,18 @@ test("the neutral preset renders none of core's content", (t) => {
 test("the stackra profiles name only what the preset carries, with the counts each selects", () => {
   const manifest = parseYaml(readFileSync(join(STACKRA, "preset.yml"), "utf8"));
   assert.equal(manifest.default, "framework");
+  const routing = parseYaml(readFileSync(join(STACKRA, "routing.yaml"), "utf8"));
+  const trust = [
+    "auth",
+    "tenancy",
+    "iam",
+    "money",
+    "pii",
+    "secrets",
+    "ci-permissions",
+    "secrets-import",
+    "incident",
+  ];
   const md = (/** @type {string} */ f) => f.replace(/\.md$/, "");
   /** @type {Record<"agents" | "skills", string[]>} */
   const all = {
@@ -192,13 +205,19 @@ test("the stackra profiles name only what the preset carries, with the counts ea
     const size = (/** @type {"agents" | "skills"} */ kind) =>
       profile[kind].includes("*") ? all[kind].length : profile[kind].length;
     counts[name] = [size("agents"), size("skills")];
+    // Every profile gets routing.yaml and the secrets rule, so each has the agents their trust work goes to.
+    for (const task of trust)
+      assert.ok(
+        profile.agents.includes("*") || profile.agents.includes(routing.tasks[task].agent),
+        `${name}: ${task} routes to ${routing.tasks[task].agent}, which the profile does not render`,
+      );
   }
   // [agents, skills]: everything for core; all but compiler-engineer where members are built; brand's design side.
   assert.deepEqual(counts, {
     framework: [30, 46],
     platform: [29, 46],
     product: [29, 46],
-    brand: [9, 17],
+    brand: [12, 17],
     starter: [29, 46],
   });
 });

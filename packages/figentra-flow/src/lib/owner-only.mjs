@@ -49,6 +49,7 @@ export const OWNER_ONLY = [
   "**/*.p12",
   ".agents/hooks/**",
   ".agents/rules/secrets.md",
+  ".claude/rules/secrets.md",
   ".claude/settings.json",
   ".claude/settings.local.json",
   "opencode.jsonc",

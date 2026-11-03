@@ -8,11 +8,11 @@
  *   preset's own skills (`skills/<name>/**`, beside the `flow-*` ones) and, with `renderReference`, its agent
  *   reference, routing and models under `.agents/` (STA-1945, C6); a preset skill folder named `flow-*` or a preset
  *   file that is not UTF-8 is refused. Only the skills and agents the config's profile selects are rendered, the lock
- *   records the profile, and `profileGaps` names what a profile selects that the preset lacks (STA-1945 FR-6). Each written file carries its provenance
- *   header and `.flow/lock.json` v2 records the Flow version, the preset with its digest, the profile and each
- *   written file's digest (STA-1945 FR-2, FR-3); `installProblems`, reading a v1 or v2 lock, is the check that
- *   replaces spec-kit's tripwire: no hand edit, no forgotten `sync`, and no spec-kit leftover. With a
- *   `.flow/readme.yml`, `README.md` is rendered too (STA-1879).
+ *   records the profile, and `profileGaps` names what a profile selects that the preset lacks (STA-1945 FR-6). Each
+ *   written file carries its provenance header and `.flow/lock.json` v2 records the Flow version, the preset with its
+ *   digest, the profile and each written file's digest (STA-1945 FR-2, FR-3); `installProblems`, reading a v1 or v2
+ *   lock, is the check that replaces spec-kit's tripwire: no hand edit, no forgotten `sync`, and no spec-kit leftover.
+ *   With a `.flow/readme.yml`, `README.md` is rendered too (STA-1879).
  * Boundary: `render` and `installProblems` read; `writeRendered` writes the rendered files and the lock and removes
  *   spec-kit's rendered `speckit-*` skills and commands. Nothing here deletes `.specify/` (that is `migrate`), nor,
  *   yet, an owned file a narrower profile no longer renders (STA-1945 T068).
