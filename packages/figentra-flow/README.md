@@ -144,6 +144,9 @@ setting you have not made refuses and names it.
   (`"~/.local/bin/infisical"`) and `envFile` a file holding the two `INFISICAL_UNIVERSAL_AUTH_CLIENT_*` lines, read
   in a subshell for that one command and seen only by the login. There is no default for either. Figentra Flow wraps the command and never reads a
   value.
+  `oidc` (`identityId`, the uuid of an Infisical OIDC machine identity, and `audience`, e.g. `"fflow-ci"`) names the
+  identity main's approval job logs in as with its own OIDC token, to mint a narrowed Figentra Flow App token in
+  process (`src/lib/app-token.mjs`); nothing uses it yet.
 - `gate.check` is the check command (default `pnpm verify`).
 
 - `tracker` names the issue tracker:

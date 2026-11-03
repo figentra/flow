@@ -130,6 +130,41 @@ test("config: a renamed gate App's aliases add logins; without them the login st
   assert.match(bad("b[bot]"), /^apps\.gate\.aliases: must be a array$/m);
 });
 
+test("schema: secrets.oidc names an identity by its uuid and an audience, nothing else", () => {
+  const oidc = (/** @type {unknown} */ value) =>
+    validate(SCHEMA, { ...FIGENTRA, secrets: { ...FIGENTRA.secrets, oidc: value } }).join("\n");
+  assert.equal(
+    oidc({ identityId: "0f4b2c1e-9a8d-4c3b-8e7f-6a5b4c3d2e1f", audience: "fflow-ci" }),
+    "",
+  );
+  assert.match(oidc({ audience: "fflow-ci" }), /^secrets\.oidc\.identityId: is required$/m);
+  assert.match(
+    oidc({ identityId: "0f4b2c1e-9a8d-4c3b-8e7f-6a5b4c3d2e1f" }),
+    /^secrets\.oidc\.audience: is required$/m,
+  );
+  assert.match(
+    oidc({ identityId: "not-a-uuid", audience: "fflow-ci" }),
+    /^secrets\.oidc\.identityId: must match/m,
+  );
+  assert.match(
+    oidc({ identityId: "0f4b2c1e-9a8d-4c3b-8e7f-6a5b4c3d2e1f", audience: "a b" }),
+    /^secrets\.oidc\.audience: must match/m,
+  );
+  assert.match(
+    oidc({
+      identityId: "0f4b2c1e-9a8d-4c3b-8e7f-6a5b4c3d2e1f",
+      audience: "fflow-ci",
+      subject: "x",
+    }),
+    /^secrets\.oidc\.subject: is not a known key$/m,
+  );
+  assert.match(oidc(["fflow-ci"]), /^secrets\.oidc: must be a object$/m);
+  assert.match(
+    validate(SCHEMA, { ...FIGENTRA, secrets: { kind: "env", oidc: {} } }).join("\n"),
+    /^secrets\.oidc: is not a known key$/m,
+  );
+});
+
 test("config: a file is loaded and validated; a missing port is refused naming its key", (t) => {
   const good = folder({
     [CONFIG_FILE]: JSON.stringify({ version: 1, credentials: { kind: "gh-user" } }),
