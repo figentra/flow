@@ -23,10 +23,11 @@ under `NO_COLOR` or in a pipe, and `doctor`, `status` and `status --metrics` tak
 `{ "schema": "fflow.doctor/1", "checks" }` (its check rows, each with `id`, `ok`, `status` and `group`, are `data`), and
 `status --json` and `status --metrics --json` put the snapshot and the metrics in `data`.
 
-`doctor`, `status`, `next`, `resume`, `task start`, `task done`, `task wave`, `session stop` and the governance commands
-(`update`, `check`, `diff`, `validate`) are ported to the engine (`next` takes `--json` too). Every other command is
-passthrough, keeping its own flags and output until it is ported: `app`, `clean`, `gate`, `guard`, `init`, `land`,
-`linear`, `mcp`, `migrate`, `parse`, `readme`, `release`, `ship`, `spec`, `start`, `sync`, `team`, `trace` and `train`.
+`doctor`, `status`, `next`, `resume`, `task start`, `task done`, `task wave`, `todo`, `ledger`, `session stop` and the
+governance commands (`update`, `check`, `diff`, `validate`) are ported to the engine (`next` takes `--json` too). Every
+other command is passthrough, keeping its own flags and output until it is ported: `adr`, `app`, `clean`, `gate`,
+`guard`, `hooks`, `init`, `land`, `linear`, `mcp`, `migrate`, `parse`, `readme`, `release`, `ship`, `spec`, `start`,
+`sync`, `team`, `trace` and `train`.
 
 `@stackra/console` and `@stackra/validation` (0.7.1) are runtime dependencies of Flow (ADR 0506 decision 8, owner
 2026-11-03; this replaces STA-1945 NFR-1's "no runtime dependency, an optional peer"). They come from the Stackra
