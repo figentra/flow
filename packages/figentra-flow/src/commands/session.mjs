@@ -1,8 +1,9 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `fflow session stop [--save-only] [--session <name>] [--kind <kind>]` (FR-19, AC-18). Run by the agent's
- *   SessionEnd hook, on a task's branch it writes the session's end into Flow's record, commits the tracked changes and
- *   the record as `wip(<session name>): …` and pushes the branch as the bot, so nothing is left only on one machine.
+ * Purpose: `fflow session stop [--save-only] [--session <name>] [--kind <kind>]` (FR-19, AC-18; declared in
+ *   src/lib/console.mjs). Run by the agent's SessionEnd hook, on a task's branch it writes the session's end into
+ *   Flow's record, commits the tracked changes and the record as `wip(<session name>): …` and pushes the branch as the
+ *   bot, so nothing is left only on one machine.
  *   Run by the Stop hook (every turn) with `--save-only`, it only writes the record: no commit, no push. Untracked
  *   files and files named like secrets are never committed, only listed. The hooks always run (FR-18): when they or
  *   git refuse the commit, that is reported (the hooks' output tail names the failing files) and the work stays
@@ -20,7 +21,6 @@
 import { readFileSync } from "node:fs";
 
 import { schemeFor } from "../adapters/tracker/index.mjs";
-import { say } from "../lib/cli.mjs";
 import { defaultBranch, git } from "../lib/git.mjs";
 import { ENV_PREFIX, NAME } from "../lib/product.mjs";
 import { commitRecord, RecordError, updateRecord } from "../lib/record.mjs";
@@ -108,18 +108,19 @@ export function stopSession({
 }
 
 /** @typedef {import("../lib/record.mjs").FlowRecord["sessions"][number]} Session */
+/** @typedef {keyof typeof import("../lib/cli.mjs").GLYPHS} State one of the CLI kit's states */
 
 /**
  * What `session stop` tells the owner, one `[state, line]` each.
  * @param {string} name
  * @param {ReturnType<typeof stopSession>} result
- * @returns {[Parameters<typeof say>[0], string][]}
+ * @returns {[State, string][]}
  */
 export function stopReport(name, result) {
   if ("skipped" in result) return [];
   const at = `${NAME} session stop:`;
   if ("local" in result) return result.problem ? [["blocked", `${at} ${result.problem}`]] : [];
-  /** @type {[Parameters<typeof say>[0], string][]} */
+  /** @type {[State, string][]} */
   const lines = [
     result.hooks !== undefined
       ? [
@@ -188,15 +189,14 @@ export function sessionTitle(path) {
 
 /**
  * The session's name: `--session`, else `<ENV_PREFIX>SESSION`, else its transcript's title, else its id.
- * @param {string[]} args
+ * @param {string | undefined} session the `--session` option
  * @param {Record<string, string | undefined>} env
  * @param {{ transcript_path?: unknown, session_id?: unknown }} event the hook's JSON
  * @returns {string}
  */
-export function sessionName(args, env, event) {
-  const at = args.indexOf("--session");
+export function sessionName(session, env, event) {
   return (
-    (at < 0 ? undefined : args[at + 1]) ??
+    session ??
     env[`${ENV_PREFIX}SESSION`] ??
     sessionTitle(event.transcript_path) ??
     (typeof event.session_id === "string" && event.session_id ? event.session_id : "session")
@@ -211,14 +211,24 @@ async function stdin() {
   return text;
 }
 
-/** @param {string[]} args */
-export async function run(args = []) {
-  if (args[0] !== "stop") {
-    console.error(`usage: ${NAME} session stop [--save-only] [--session <name>] [--kind <kind>]`);
-    return 2;
-  }
-  const opt = (/** @type {string} */ flag) =>
-    args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined;
+/** The console's tone for each of `stopReport`'s states. */
+const TONE = /** @type {const} */ ({
+  waiting: "warn",
+  checking: "info",
+  approved: "success",
+  blocked: "error",
+  shipped: "success",
+});
+
+/**
+ * `fflow session stop`, run by the hooks: reads the hook's JSON on stdin, stops the session and reports it. Always
+ * returns 0: a hook that fails must not trap the session (only a malformed hook line, refused by the engine before
+ * this runs, exits 2).
+ * @param {import("../lib/console.mjs").Io} io
+ * @param {{ saveOnly: boolean, session?: string, kind?: string }} options
+ * @returns {Promise<number>}
+ */
+export async function handle(io, { saveOnly, session, kind }) {
   /** @type {any} */
   let event = {};
   try {
@@ -226,18 +236,18 @@ export async function run(args = []) {
   } catch {
     // not a hook's JSON: run from the shell
   }
-  const name = sessionName(args, process.env, event);
+  const name = sessionName(session, process.env, event);
   try {
     const result = stopSession({
-      cwd: typeof event.cwd === "string" ? event.cwd : process.cwd(),
+      cwd: typeof event.cwd === "string" ? event.cwd : io.cwd,
       name,
       id: typeof event.session_id === "string" && event.session_id ? event.session_id : undefined,
-      kind: opt("--kind"),
-      saveOnly: args.includes("--save-only"),
+      kind,
+      saveOnly,
     });
-    for (const [state, line] of stopReport(name, result)) say(state, line);
+    for (const [state, line] of stopReport(name, result)) io.output[TONE[state]](line);
   } catch (error) {
-    say("blocked", `${NAME} session stop: ${/** @type {Error} */ (error).message}`);
+    io.output.error(`${NAME} session stop: ${/** @type {Error} */ (error).message}`);
   }
   return 0;
 }

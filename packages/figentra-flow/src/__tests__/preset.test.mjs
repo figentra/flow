@@ -12,7 +12,6 @@
 // @covers sta-1729:FR-11 sta-1729:AC-041 sta-1945:FR-15
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -37,6 +36,7 @@ import {
 import { keyScheme } from "../adapters/tracker/index.mjs";
 import { sync } from "../commands/sync.mjs";
 import { FLOW_ASSETS, presetDir } from "../lib/flow-dir.mjs";
+import { digestOf } from "../lib/lock.mjs";
 import { installProblems, VERBS } from "../lib/render.mjs";
 import { CONFIG_FILE } from "../lib/product.mjs";
 
@@ -119,7 +119,6 @@ test("sync: an unedited flow-* skill the last sync rendered and this one does no
   const root = mkdtempSync(join(tmpdir(), "flow-stale-"));
   t.after(() => rmSync(root, { recursive: true }));
   sync(root, { direct: true, log: () => {} });
-  const sha = (/** @type {string} */ s) => createHash("sha256").update(s).digest("hex");
   const files = {
     ".claude/skills/flow-tasks/SKILL.md": "rendered\n",
     ".opencode/commands/flow-tasks.md": "edited since\n",
@@ -130,7 +129,7 @@ test("sync: an unedited flow-* skill the last sync rendered and this one does no
     writeFileSync(join(root, p), text);
   }
   const lock = JSON.parse(readFileSync(join(root, ".flow/lock.json"), "utf8"));
-  const old = Object.fromEntries(Object.keys(files).map((p) => [p, sha("rendered\n")]));
+  const old = Object.fromEntries(Object.keys(files).map((p) => [p, digestOf("rendered\n")]));
   writeFileSync(
     join(root, ".flow/lock.json"),
     JSON.stringify({ ...lock, files: { ...lock.files, ...old } }),

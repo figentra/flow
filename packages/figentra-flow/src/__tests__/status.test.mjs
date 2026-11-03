@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { render } from "../commands/status.mjs";
+import { tablesOf } from "../commands/status.mjs";
 import { CONFIG_FILE, STATUS_CONTEXT } from "../lib/product.mjs";
 import { snapshot } from "../lib/snapshot.mjs";
 import { CONFIG, repo, sh } from "./__fixtures__/repo.mjs";
@@ -151,12 +151,6 @@ test("status: specs, worktrees, PRs with gate and review, sessions with their ga
     building: true,
   });
   assert.match(snap.warnings.join(), /3 sessions are building .*the cap is 2: 1 over/);
-  const text = render(snap);
-  assert.match(text, /#7 alpha — fflow\/gate success, review PASS/);
-  assert.match(text, /#8 on top .*stacked on figentra\/sta-1-alpha/);
-  assert.match(text, /os-services-b \(building\): sta-1; worktree .*sta-1-alpha; gate success/);
-  assert.match(text, /skipped: missing/);
-  assert.match(text, /warning: 3 sessions are building/);
 });
 
 test("status --offline: no GitHub call; the cap is the owner's", (t) => {
@@ -196,5 +190,39 @@ test("status lists a Done spec's skipped optional tasks", (t) => {
     snap.repos[0].specs.map((/** @type {any} */ s) => [s.folder, s.skipped]),
   );
   assert.deepEqual(skipped, { "sta-5-done": ["T002"], "sta-6-open": [] });
-  assert.match(render(snap), /done sta-5-done .*skipped optional T002/);
+  const [specs] = tablesOf(snap.repos[0], false);
+  assert.equal(specs.rows.find((row) => row.folder === "sta-5-done")?.skipped, "T002");
+});
+
+// @covers sta-1945:FR-31 sta-1945:AC-37 sta-1945:P-035
+test("status tables: specs, worktrees, PRs and sessions; each problem counted, and listed under --verbose", (t) => {
+  const w = world();
+  t.after(w.r.dispose);
+  const { api } = github(w.head);
+  const snap = snapshot({
+    repos: [{ path: w.r.root, github: "acme/app" }],
+    api: () => api,
+    busy: [],
+  });
+  const [repo] = snap.repos;
+  const before = repo.specs[0].problems.length;
+  repo.specs[0].problems.push("**Tier** is missing");
+  const tables = tablesOf(repo, false);
+  assert.deepEqual(
+    tables.map((x) => x.title),
+    ["Specs", "Worktrees", "PRs", "Sessions"],
+  );
+  const [specs, trees, prs, sessions] = tables;
+  assert.equal(specs.rows.length, 3);
+  assert.equal(specs.problems, undefined, "problems are listed only under --verbose");
+  assert.equal(specs.rows.find((r) => r.folder === repo.specs[0].folder)?.problems, before + 1);
+  assert.match(String(tablesOf(repo, true)[0].problems), /\*\*Tier\*\* is missing/);
+  assert.equal(trees.rows.length, repo.worktrees.length);
+  assert.equal(prs.rows.length, 2);
+  assert.deepEqual(
+    [prs.rows[0].gate, prs.rows[0].number, prs.rows[0].review],
+    ["ok", "#7", "PASS"],
+  );
+  assert.match(String(prs.rows[1].notes), /stacked on figentra\/sta-1-alpha/);
+  assert.ok(sessions.rows.some((r) => r.name === "os-services-b (building)"));
 });

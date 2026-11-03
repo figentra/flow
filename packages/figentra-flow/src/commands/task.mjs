@@ -1,6 +1,7 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `fflow task start|done <key> <task>` (STA-1945 FR-23): the only way a task's marker moves.
+ * Purpose: `fflow task start|done <key> <task>` (STA-1945 FR-23; declared in src/lib/console.mjs, which turns a
+ *   `TaskError` into a usage error): the only way a task's marker moves.
  *   start <key> <task> [--session <name>] refuses unless the spec is Tasked or Implementing with its approvals
  *                                         (ADR 0502), then sets `[-]` and records the start (session, HEAD and the
  *                                         digest of spec, plan and tasks) in Flow's record
@@ -20,11 +21,10 @@ import { join, relative } from "node:path";
 
 import { schemeFor } from "../adapters/tracker/index.mjs";
 import { checkApproval, specDir, statusOf } from "./gate.mjs";
-import { say } from "../lib/cli.mjs";
 import { passed, runEvidence } from "../lib/evidence.mjs";
 import { git } from "../lib/git.mjs";
 import { ENV_PREFIX, NAME } from "../lib/product.mjs";
-import { readRecord, recordPath, RecordError, updateRecord } from "../lib/record.mjs";
+import { readRecord, recordPath, updateRecord } from "../lib/record.mjs";
 import { parseTasks } from "../lib/spec-parse.mjs";
 
 /** A refusal: a task that cannot move, or a command that may not run. */
@@ -214,42 +214,39 @@ export function resetChanged(root, key) {
   }));
 }
 
-/** @param {string[]} args */
-export function run(args = []) {
-  const [mode, key, id] = args;
-  const opt = (/** @type {string} */ flag) =>
-    args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined;
-  const command = opt("--command");
-  if (!key || !id || !/^T\d{3}$/.test(id) || !(mode === "start" || (mode === "done" && command))) {
-    console.error(
-      `usage: ${NAME} task start <key> <T###> [--session <name>] | done <key> <T###> --command <cmd> [--echo]`,
-    );
-    return 2;
+/**
+ * `fflow task start`: each problem that refuses the start, or that the task is in progress.
+ * @param {import("../lib/console.mjs").Io} io
+ * @param {{ key: string, id: string, session?: string }} options
+ * @returns {number}
+ */
+export function start(io, { key, id, session }) {
+  const root = git(io.cwd, ["rev-parse", "--show-toplevel"]).out || io.cwd;
+  // the same session name `session stop` records: the option, then the environment
+  const problems = startTask(root, key, id, {
+    session: session ?? process.env[`${ENV_PREFIX}SESSION`],
+  });
+  for (const p of problems) io.output.error(`${NAME} task start: ${id}: ${p}`);
+  if (!problems.length) io.output.info(`${id} is in progress`);
+  return problems.length ? 1 : 0;
+}
+
+/**
+ * `fflow task done`: runs the check and says whether the task is done or why it stays in progress.
+ * @param {import("../lib/console.mjs").Io} io
+ * @param {{ key: string, id: string, command: string, echo: boolean }} options
+ * @returns {number}
+ */
+export function done(io, { key, id, command, echo }) {
+  const root = git(io.cwd, ["rev-parse", "--show-toplevel"]).out || io.cwd;
+  const { done: finished, evidence } = doneTask(root, key, id, command, { echo });
+  if (finished) {
+    io.output.success(`${id} is done`);
+    return 0;
   }
-  const root = git(process.cwd(), ["rev-parse", "--show-toplevel"]).out || process.cwd();
-  try {
-    if (mode === "start") {
-      // the same session name `session stop` records: the flag, then the environment
-      const session = opt("--session") ?? process.env[`${ENV_PREFIX}SESSION`];
-      const problems = startTask(root, key, id, { session });
-      for (const p of problems) say("blocked", `${NAME} task start: ${id}: ${p}`);
-      if (!problems.length) say("checking", `${id} is in progress`);
-      return problems.length ? 1 : 0;
-    }
-    const { done, evidence } = doneTask(root, key, id, /** @type {string} */ (command), {
-      echo: args.includes("--echo"),
-    });
-    const why =
-      evidence.error ??
-      (evidence.exit ? `exit ${evidence.exit}` : "the tree is not clean or HEAD moved");
-    say(
-      done ? "approved" : "blocked",
-      done ? `${id} is done` : `${id} stays in progress: ${why} (the attempt is recorded)`,
-    );
-    return done ? 0 : 1;
-  } catch (error) {
-    if (!(error instanceof TaskError || error instanceof RecordError)) throw error;
-    say("blocked", `${NAME} task ${mode}: ${error.message}`);
-    return error instanceof TaskError ? 2 : 1;
-  }
+  const why =
+    evidence.error ??
+    (evidence.exit ? `exit ${evidence.exit}` : "the tree is not clean or HEAD moved");
+  io.output.error(`${id} stays in progress: ${why} (the attempt is recorded)`);
+  return 1;
 }

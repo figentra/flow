@@ -14,6 +14,7 @@
 // @covers sta-1729:FR-2 sta-1729:AC-003 sta-1729:P-002 sta-1945:FR-13 sta-1945:AC-38 sta-1945:P-018
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -111,6 +112,22 @@ test("guard: --no-verify, commit -n and a core.hooksPath override are denied: th
     "git config --unset core.hooksPath",
   ])
     assert.equal(decide(command, r.root), undefined, command);
+});
+
+// @covers sta-1945:FR-31
+test("guard: dispatches before the console engine loads, so the hook path never imports @stackra/*", () => {
+  const bin = new URL("../../bin/fflow.mjs", import.meta.url).pathname;
+  const hooks = `import { registerHooks } from "node:module";
+registerHooks({ resolve(s, c, next) { if (s.startsWith("@stackra/")) throw new Error("engine loaded: " + s); return next(s, c); } });`;
+  const refuse = ["--import", `data:text/javascript,${encodeURIComponent(hooks)}`, bin];
+  const guard = spawnSync(process.execPath, [...refuse, "guard", "--print-settings"], {
+    encoding: "utf8",
+  });
+  assert.equal(guard.status, 0, guard.stderr);
+  assert.deepEqual(JSON.parse(guard.stdout), SETTINGS);
+  // The same hook does stop the engine, so the pass above is real.
+  const doctor = spawnSync(process.execPath, [...refuse, "doctor", "--help"], { encoding: "utf8" });
+  assert.match(doctor.stderr, /engine loaded: @stackra\/console/);
 });
 
 test("words: splits simple commands and honours quotes", () => {
