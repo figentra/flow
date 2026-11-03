@@ -3,20 +3,22 @@
  * Purpose: `fflow status [--repo <path>] [--json] [--offline] [--metrics [--since <n>d]] [--by role [--role <id>]]`
  *   (FR-7, FR-12, AC-012, AC-024, AC-026, AC-032, AC-050): one block per
  *   repository of the workspace (or the one named, or the current one) with its specs, worktrees, open PRs and
- *   sessions as four tables (FR-31), each problem counted and, under `--verbose`, every one listed; `--json` writes
- *   the snapshot as the console's data. Exit 0, or 1 when a warning (more building sessions than the cap) is present,
- *   so a script can alert. The options are declared in src/lib/console.mjs; `refusal` names a combination they
- *   refuse, and `status` runs them.
+ *   sessions as four tables (FR-31), and a fifth of the live agent sessions by title, state, worktree and stage
+ *   (STA-1945 FR-20, AC-19), each problem counted and, under `--verbose`, every one listed; `--json` writes the
+ *   snapshot as the console's data. Exit 0, or 1 when a warning (more building sessions than the cap, a session title
+ *   off ADR 0001's pattern or at odds with its record) is present, so a script can alert. The options are declared
+ *   in src/lib/console.mjs; `refusal` names a combination they refuse, and `status` runs them.
  * Boundary: read-only; GitHub through each repository's credentials, none with `--offline`.
  * Runtime: node
  * Governing contract: STA-1729 phase 4 (the leader's plan stop of 2026-10-31); STA-1945 FR-31 (AC-37).
  * Secrets: none.
  */
 import { slugOf } from "./gate-run.mjs";
-import { busyFolders, git } from "../lib/git.mjs";
+import { git } from "../lib/git.mjs";
 import { github } from "../lib/github.mjs";
 import { NAME, STATUS_CONTEXT } from "../lib/product.mjs";
 import { metrics } from "../lib/metrics.mjs";
+import { systemSessions } from "../lib/sessions.mjs";
 import { snapshot } from "../lib/snapshot.mjs";
 import { statusServer } from "../lib/status-web.mjs";
 import { readSessionCap, readWorkspace } from "../lib/workspace.mjs";
@@ -85,7 +87,8 @@ export function renderMetrics(m) {
 const GATE_CELL = { success: "ok", pending: "warn", failure: "fail", error: "fail" };
 
 /**
- * One repository's four tables (FR-31): specs, worktrees, PRs and sessions; every problem under `verbose`.
+ * One repository's tables (FR-31): specs, worktrees, PRs and sessions, and the live sessions when the snapshot read
+ * them (FR-20); every problem under `verbose`.
  * @param {any} repo
  * @param {boolean} verbose
  * @returns {{ title: string, columns: { header: string, key: string, kind?: "status" | "count" }[], rows: Record<string, unknown>[], problems?: string[] }[]}
@@ -177,6 +180,29 @@ export function tablesOf(repo, verbose) {
         gates: s.gates.map((/** @type {any} */ g) => g ?? "none").join(", ") || "none",
       })),
     },
+    ...(repo.live
+      ? [
+          {
+            title: "Live sessions",
+            columns: [
+              { header: "Session", key: "name" },
+              { header: "State", key: "state" },
+              { header: "Worktree", key: "worktree" },
+              { header: "Stage", key: "stage" },
+              { header: "Pid", key: "pid" },
+              { header: "Notes", key: "notes" },
+            ],
+            rows: repo.live.map((/** @type {import("../lib/sessions.mjs").LiveSession} */ s) => ({
+              name: s.name || "(untitled)",
+              state: s.state,
+              worktree: s.worktree,
+              stage: s.stage ?? "none",
+              pid: s.pid ?? "",
+              notes: [s.note, s.problem].filter(Boolean).join("; "),
+            })),
+          },
+        ]
+      : []),
   ];
 }
 
@@ -215,14 +241,20 @@ export function refusal({ offline, metrics: wanted, since, by, role, port }) {
  */
 export async function status(io, { repo, offline, metrics: wanted, since, by, role, web, port }) {
   const repos = () => reposFor(repo, io.cwd);
-  const read = () =>
-    snapshot({
+  const read = () => {
+    const live = systemSessions();
+    // One process listing and one read of the session files serve every repository's `in use` and live sessions.
+    const running = live.processes();
+    const files = live.sessionFiles();
+    return snapshot({
       repos: repos(),
       cap: readSessionCap(),
       offline,
-      busy: busyFolders(),
+      busy: running?.map((p) => p.cwd),
+      live: { processes: () => running, sessionFiles: () => files },
       api: offline ? undefined : (root) => github(root),
     });
+  };
   if (web) {
     const server = statusServer(read);
     // Never resolves: the page is served until the process is stopped (Ctrl-C).

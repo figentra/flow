@@ -3,7 +3,8 @@
  * Purpose: hold `fflow status` and its snapshot to FR-7, AC-012, AC-024 and AC-026: specs by status (a
  *   worktree's copy wins for its own key), worktrees (dirty, idle, no key), open PRs with the head's gate, the counted
  *   review and stacking, sessions with their spec, worktree and gate, the cap's warning naming the excess, a missing
- *   repository reported and skipped, and `--offline` making no GitHub call.
+ *   repository reported and skipped, `--offline` making no GitHub call, and the live agent sessions by title, state,
+ *   worktree and stage with a warning for a title off ADR 0001's pattern (STA-1945 FR-20).
  * Boundary: temporary repositories with a local bare origin; GitHub injected; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1729 phase 4.
@@ -17,6 +18,7 @@ import { join } from "node:path";
 
 import { tablesOf } from "../commands/status.mjs";
 import { CONFIG_FILE, STATUS_CONTEXT } from "../lib/product.mjs";
+import { updateRecord } from "../lib/record.mjs";
 import { snapshot } from "../lib/snapshot.mjs";
 import { CONFIG, repo, sh } from "./__fixtures__/repo.mjs";
 
@@ -225,4 +227,68 @@ test("status tables: specs, worktrees, PRs and sessions; each problem counted, a
   );
   assert.match(String(prs.rows[1].notes), /stacked on figentra\/sta-1-alpha/);
   assert.ok(sessions.rows.some((r) => r.name === "os-services-b (building)"));
+});
+
+// @covers sta-1945:FR-20 sta-1945:AC-19 sta-1945:P-025
+test("status shows the live sessions by title, state, worktree and stage, and warns on a bad title", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  const path = join(r.root, ".claude/worktrees/sta-5-live");
+  sh(r.root, "worktree", "add", "-q", "-b", "figentra/sta-5-live", path, "main");
+  updateRecord(path, "sta-5", (rec) => ({ ...rec, stage: "gate" }));
+  const snap = snapshot({
+    repos: [{ path: r.root, github: "acme/app" }],
+    offline: true,
+    live: {
+      processes: () => [
+        { pid: 31, cwd: path, args: ["claude"] },
+        { pid: 32, cwd: path, args: ["claude"] },
+        // OpenCode's title is not readable: a note, never a warning.
+        { pid: 33, cwd: path, args: ["opencode"] },
+      ],
+      sessionFiles: () => [
+        { path: "/s/31.json", name: "FLOW · live sessions (STA-5)", pid: 31 },
+        { path: "/s/32.json", name: "projects-2e", pid: 32 },
+      ],
+    },
+  });
+  assert.deepEqual(
+    snap.repos[0].live?.map((s) => [s.name, s.state, s.worktree, s.stage, s.problem]),
+    [
+      ["FLOW · live sessions (STA-5)", "active", path, "gate", undefined],
+      ["projects-2e", "active", path, "gate", "not `TRACK · job (key)` (ADR 0001)"],
+      ["", "active", path, "gate", undefined],
+    ],
+  );
+  assert.deepEqual(snap.warnings, [
+    `session "projects-2e" in ${path}: not \`TRACK · job (key)\` (ADR 0001)`,
+  ]);
+  const live = tablesOf(snap.repos[0], false).find((table) => table.title === "Live sessions");
+  assert.deepEqual(live?.rows, [
+    {
+      name: "FLOW · live sessions (STA-5)",
+      state: "active",
+      worktree: path,
+      stage: "gate",
+      pid: 31,
+      notes: "",
+    },
+    {
+      name: "projects-2e",
+      state: "active",
+      worktree: path,
+      stage: "gate",
+      pid: 32,
+      notes: "not `TRACK · job (key)` (ADR 0001)",
+    },
+    {
+      name: "(untitled)",
+      state: "active",
+      worktree: path,
+      stage: "gate",
+      pid: 33,
+      notes: "title not readable for opencode",
+    },
+  ]);
+  assert.equal(snapshot({ repos: [{ path: r.root }], offline: true }).repos[0].live, undefined);
 });

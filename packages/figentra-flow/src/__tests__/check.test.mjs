@@ -3,7 +3,8 @@
  * Purpose: hold `fflow check` to STA-1945 FR-1 and FR-3: it writes nothing; a synced repository passes; it fails,
  *   naming each cause, on any byte changed in an owned file (in the header, in the body, the header removed, or a
  *   strict JSON file with no header), a missing owned file, a preset that differs from the locked digest, an
- *   unreadable lock and an invalid config.
+ *   unreadable lock and an invalid config; it warns from 14 days before an override's review date, fails after it,
+ *   fails on a mandatory policy that is off, and on an override changed without a sync (FR-2, FR-4, FR-5).
  * Boundary: temporary folders; no process, no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
@@ -11,8 +12,8 @@
 // @covers sta-1945:FR-1 sta-1945:FR-3 sta-1945:AC-1 sta-1945:P-001 sta-1945:P-005
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import { check, report } from "../commands/check.mjs";
 import { sync } from "../commands/sync.mjs";
@@ -45,6 +46,21 @@ test("check: a synced repository passes and exits 0", (t) => {
     line: "ok",
   });
   assert.deepEqual(lines, ["fflow check: ok"]);
+});
+
+// @covers sta-1945:FR-2 sta-1945:FR-4
+test("check: an override added or changed without a sync fails until the next sync", (t) => {
+  const root = governed(t);
+  sync(root, { ...quiet, direct: true });
+  const owner = join(root, ".flow/overrides/policies/owner.yml");
+  mkdirSync(dirname(owner), { recursive: true });
+  writeFileSync(owner, 'kind: extend\ntarget: owner-only\nitems:\n  - "deploy/**"\n');
+  assert.equal(
+    problems(root),
+    ".flow/overrides/ differs from what .flow/lock.json records (run `fflow sync`)",
+  );
+  sync(root, { ...quiet, direct: true });
+  assert.equal(problems(root), "");
 });
 
 test("check: any byte changed in an owned file fails, header or no header", (t) => {
@@ -104,5 +120,35 @@ test("check: names a lock it cannot read and a missing preset folder, without a 
   assert.match(
     problems(root),
     /the preset flow\.config\.json names has no folder at .*presets\/ours/,
+  );
+});
+
+// @covers sta-1945:FR-4 sta-1945:FR-5 sta-1945:AC-1 sta-1945:AC-4 sta-1945:P-007
+test("check: warns from 14 days before an override's review date, fails after it, and fails on a policy that is off", (t) => {
+  const root = governed(t);
+  const off = join(root, ".flow/overrides/agents/ci.yml");
+  mkdirSync(dirname(off), { recursive: true });
+  writeFileSync(
+    off,
+    "kind: disable\ntarget: .claude/agents/ci-steward.md\nreason: r\nowner: o\nreview: 2027-01-31\n",
+  );
+  sync(root, { ...quiet, direct: true });
+  const before = snapshot(root);
+  assert.deepEqual(check(root, new Date("2027-01-16T00:00:00Z")), { problems: [], warnings: [] });
+  assert.deepEqual(check(root, new Date("2027-01-17T00:00:00Z")), {
+    problems: [],
+    warnings: [".flow/overrides/agents/ci.yml: its review date 2027-01-31 is within 14 days"],
+  });
+  assert.deepEqual(check(root, new Date("2027-02-01T00:00:00Z")).problems, [
+    ".flow/overrides/agents/ci.yml: its review date 2027-01-31 has passed (review it, then move `review` on or remove the override)",
+  ]);
+  assert.deepEqual(snapshot(root), before, "check writes nothing");
+  writeFileSync(
+    join(root, ".flow/overrides/agents/less.yml"),
+    'kind: extend\ntarget: owner-only\nitems:\n  - "!.gitleaks.toml"\n',
+  );
+  assert.match(
+    problems(root),
+    /agents\/less\.yml: extend owner-only is refused: the mandatory policy owner-only cannot drop a rule \(!\.gitleaks\.toml\)/,
   );
 });
