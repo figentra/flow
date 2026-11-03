@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-01
 
-**Status**: Planned
+**Status**: Done
 
 **Tier**: feature
 
@@ -88,7 +88,7 @@ shipped by Flow"): presets now ship agent definitions. The roster (`team`) stays
   `.claude/agents/<id>.md` with `--direct`; `.flow/overrides/agents/` overrides them. Neutral ships `git-steward`,
   `ci-steward` and `tracker-steward`. Stackra ships `git-steward`, `ci-steward` and `linear-steward`, in core's
   agent format.
-- **FR-6** Tests cover:
+- **FR-6** (example-only: this FR is the list of tests itself) Tests cover:
   - the owner-only list and the package findings;
   - CODEOWNERS and the rendered workflow;
   - the approval check against a stubbed GitHub: a check still running, only skipped checks, a spoofed status, an
@@ -99,9 +99,37 @@ shipped by Flow"): presets now ship agent definitions. The roster (`team`) stays
   owner with no catch-all. GitHub then asks the owner for those paths itself (`require_code_owner_review`), and the
   workflow's checks are defence in depth.
 
+## Acceptance criteria
+
+- **AC-001**: IF a PR changes an owner-only path (in any letter case), the root package.json's scripts, or moves a dependency off its `catalog:` entry THEN THE `land` command SHALL refuse it and name each finding
+- **AC-002**: THE owner-only globs of `src/lib/owner-only.mjs`, with the repository's `approve.ownerOnly` added, SHALL be the one list that `land`, the approval check and CODEOWNERS read
+- **AC-003**: WHILE a required check on the head is still running THE `land` command SHALL wait without dispatching the approval workflow
+- **AC-004**: IF a required check on the head is pinned to no trusted source THEN THE `land` command SHALL refuse to land
+- **AC-005**: WHEN the base's ruleset requires an approving review the head lacks and every required check is green THE `land` command SHALL dispatch the approval workflow with `pr` and `head` and turn on squash auto-merge pinned to that head, never merging itself
+- **AC-006**: IF the approval workflow is not installed THEN THE `land` command SHALL refuse and say so
+- **AC-007**: WHEN `land` runs on a PR that has merged into the default branch THE CLI SHALL only finish it (tracker Done, the worktree removed by `clean`'s rules, a comment) and SHALL delete the branch only while it still points at the landed head
+- **AC-008**: WHEN the approval workflow runs THE approval check SHALL approve only at the checked head, and only when the run is on the default branch, its environment allows that branch alone, the PR's head equals `head`, the author is not the approving App, nothing between the merge base and the head is owner-only (a rename's old path included), the base requires the code owner's review and holds `.github/CODEOWNERS`, and every required check is green from its trusted source with at least one success
+- **AC-009**: IF the approval check refuses THEN THE approval check SHALL post one comment with the reasons and no review
+- **AC-010**: IF the head moves after the approval THEN THE approval check SHALL dismiss its own review
+- **AC-011**: WHERE `apps.owner` is configured THE `sync` command SHALL render `.github/workflows/fflow-approve.yml`, which runs the pinned package's check in the `fflow-approve` environment under the approver's own secret names and holds no value, and SHALL refuse a secret name that is not one
+- **AC-012**: WHEN `sync` runs THE CLI SHALL render each preset's agents (neutral: `git-steward`, `ci-steward`, `tracker-steward`; stackra: `git-steward`, `ci-steward`, `linear-steward`) to `.agents/agents/<id>.md`, or `.claude/agents/<id>.md` with `--direct`, a repository's `.flow/overrides/agents/<id>.md` replacing one
+- **AC-013**: WHERE `apps.owner` is configured THE `sync` command SHALL render `.github/CODEOWNERS` mapping every owner-only glob to the owner with no catch-all, and without an owner SHALL render no CODEOWNERS
+
+## Amendments
+
+- A-001 · 2026-11-03 · recorded after shipping (STA-2039), no scope change: the approval workflow, like CODEOWNERS,
+  is rendered only when `apps.owner` is configured (no owner, no approval path; FR-4 said `sync` renders it); the
+  check also refuses unless the base's ruleset requires the code owner's review and the base holds
+  `.github/CODEOWNERS`, and the workflow refuses a package tarball whose sha512 is not the lockfile's; the approver's
+  secrets default to `FFLOW_APPROVER_APP_ID` and `FFLOW_APPROVER_PRIVATE_KEY` (`<PREFIX>APPROVER_*`), and neither
+  preset's `preset.yml` names others · added: none · struck: none
+
 ## Status history
 
 - 2026-11-01: Draft → Clarified (owner decision relayed by the leader session; core PR #191 is the first draft)
 - 2026-11-01: Clarified → Planned — Approved by owner 2026-11-01 (relayed by the leader session)
 - 2026-11-01: revised after the independent review (security BLOCK, code notes): checks and files pinned to the head,
   trusted check sources, CODEOWNERS, the wider owner-only list, distinct approver secrets, a protected environment
+- 2026-11-03 · Planned → Done · Claude (FLOW session) · brought to the ADR 0502 standard after shipping in 0.2.0
+  (STA-2039): the acceptance criteria, the design sections, the correctness properties, tasks.md and A-001 record
+  what shipped; nothing was struck
