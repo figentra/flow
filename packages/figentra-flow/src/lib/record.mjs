@@ -61,11 +61,10 @@ export const RECORD_SCHEMA = {
     stage: { enum: STAGES },
     state: { enum: ["active", "waiting", "done", "failed"] },
     approvals: list({ who: str, when: str, stage: str, digest: str }),
-    sessions: list({ name: str, kind: str, start: str, end: str, pushed: { type: "boolean" } }, [
-      "name",
-      "kind",
-      "start",
-    ]),
+    sessions: list(
+      { name: str, id: str, kind: str, start: str, end: str, pushed: { type: "boolean" } },
+      ["name", "kind", "start"],
+    ),
     commits: { type: "array", items: str },
     prs: { type: "array", items: { type: "integer", minimum: 1 } },
     gate: list({ sha: str, state: str, baseline: { type: "boolean" } }, ["sha", "state"]),
@@ -93,7 +92,8 @@ export const RECORD_SCHEMA = {
 /**
  * @typedef {{ recordVersion: 1, key: string, stage: Stage, state: "active" | "waiting" | "done" | "failed",
  *   approvals: { who: string, when: string, stage: string, digest: string }[],
- *   sessions: { name: string, kind: string, start: string, end?: string, pushed?: boolean }[], commits: string[],
+ *   sessions: { name: string, id?: string, kind: string, start: string, end?: string, pushed?: boolean }[],
+ *   commits: string[],
  *   prs: number[], gate: { sha: string, state: string, baseline?: boolean }[],
  *   review: { sha: string, verdict: string, findings: number }[], asks: { what: string, command: string }[],
  *   tasks: Record<string, { command: string, exit: number, ms?: number, head: string, clean: boolean, digest: string, at: string }[]> }} FlowRecord

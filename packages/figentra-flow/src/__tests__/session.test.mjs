@@ -13,7 +13,8 @@ import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { sessionTitle, stopSession } from "../commands/session.mjs";
+import { sessionName, sessionTitle, stopSession } from "../commands/session.mjs";
+import { ENV_PREFIX } from "../lib/product.mjs";
 import { readRecord } from "../lib/record.mjs";
 import { repo, sh } from "./__fixtures__/repo.mjs";
 
@@ -58,10 +59,45 @@ test("session stop: the name is the transcript's last title, not the session's i
     ].join("\n"),
   );
   assert.equal(sessionTitle(transcript), NAME);
+  // The hook's JSON carries both: the title wins over the id, and --session and the environment win over both.
+  const event = { transcript_path: transcript, session_id: "abc" };
+  assert.equal(sessionName(["stop"], {}, event), NAME);
+  assert.equal(sessionName(["stop", "--session", "mine"], {}, event), "mine");
+  assert.equal(sessionName(["stop"], { [`${ENV_PREFIX}SESSION`]: "env" }, event), "env");
+  assert.equal(sessionName(["stop"], {}, { session_id: "abc" }), "abc");
+  assert.equal(sessionName(["stop"], {}, {}), "session");
   writeFileSync(transcript, `${JSON.stringify({ type: "user", sessionId: "abc" })}\n`);
+  assert.equal(sessionName(["stop"], {}, event), "abc");
   assert.equal(sessionTitle(transcript), undefined);
   assert.equal(sessionTitle(join(r.root, "..", "missing.jsonl")), undefined);
   assert.equal(sessionTitle(undefined), undefined);
+});
+
+test("session stop: a renamed session keeps one entry; another session with its name gets its own", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  sh(r.root, "switch", "-q", "-c", BRANCH);
+  const old = "FLOW · stop (STA-5)";
+  const renamed = "hold · stop (STA-5)";
+  stopSession({ cwd: r.root, name: old, id: "abc", now: "2026-11-03T10:00:00Z" });
+  stopSession({ cwd: r.root, name: renamed, id: "abc", now: "2026-11-03T11:00:00Z" });
+  stopSession({ cwd: r.root, name: renamed, id: "def", now: "2026-11-03T12:00:00Z" });
+  assert.deepEqual(readRecord(r.root, "sta-5")?.sessions, [
+    {
+      name: renamed,
+      id: "abc",
+      kind: "claude-code",
+      start: "2026-11-03T10:00:00Z",
+      end: "2026-11-03T11:00:00Z",
+    },
+    {
+      name: renamed,
+      id: "def",
+      kind: "claude-code",
+      start: "2026-11-03T12:00:00Z",
+      end: "2026-11-03T12:00:00Z",
+    },
+  ]);
 });
 
 test("session stop: the default branch and a branch with no key are left alone", (t) => {

@@ -5,9 +5,9 @@
  *   and pushes the branch as the bot, so nothing is left only on one machine. A push that still fails after one
  *   merge is recorded as `pushed: false` (committed locally) and the fix printed.
  * Boundary: reads the hook's JSON on stdin (its `cwd`, `transcript_path` and `session_id`); the session's name is
- *   `--session`, else the title its transcript last records (ADR 0001, set with `/rename`), else its id. Writes the
- *   record and one or two commits on the task's branch and pushes it. Does nothing on the default branch, a detached
- *   HEAD or a branch with no issue key. Always exits 0: a Stop hook that fails must not trap the session.
+ *   `--session`, else the title its transcript last records (ADR 0001, set with `/rename`), else its id; its entry in
+ *   the record is found by `session_id`, so a rename keeps one entry. Writes the record and one or two commits on the
+ *   task's branch and pushes it. Does nothing on the default branch, a detached HEAD or a branch with no issue key. Always exits 0: a Stop hook that fails must not trap the session.
  * Runtime: node
  * Governing contract: STA-1945 (FR-19, FR-14, AC-18, P-019).
  * Secrets: none; the push goes through the configured credentials.
@@ -21,11 +21,19 @@ import { ENV_PREFIX, NAME } from "../lib/product.mjs";
 import { commitRecord, RecordError, updateRecord } from "../lib/record.mjs";
 
 /**
- * Records a session's stop and pushes its work.
- * @param {{ cwd: string, name: string, kind?: string, now?: string }} options
+ * Records a session's stop and pushes its work. With `id` (the hook's `session_id`) the session's entry is found by
+ * it, so a renamed session (ADR 0001 names change with its state) keeps one entry under its latest name; without
+ * one, by name.
+ * @param {{ cwd: string, name: string, id?: string, kind?: string, now?: string }} options
  * @returns {{ skipped: string } | { key: string, sha: string, pushed: boolean, problem?: string }}
  */
-export function stopSession({ cwd, name, kind = "claude-code", now = new Date().toISOString() }) {
+export function stopSession({
+  cwd,
+  name,
+  id,
+  kind = "claude-code",
+  now = new Date().toISOString(),
+}) {
   const top = git(cwd, ["rev-parse", "--show-toplevel"]);
   if (!top.ok) return { skipped: `${cwd} is not in a git repository` };
   const root = top.out;
@@ -35,13 +43,13 @@ export function stopSession({ cwd, name, kind = "claude-code", now = new Date().
   const key = schemeFor(root).keys(branch)[0];
   if (!key) return { skipped: `branch ${branch} names no issue key` };
   const shown = key.toUpperCase();
-  /** @param {(s: { name: string, kind: string, start: string, end?: string, pushed?: boolean }) => object} change */
+  /** @param {() => object} change */
   const touch = (change) =>
     updateRecord(root, key, (r) => {
       const sessions = [...r.sessions];
-      const at = sessions.findLastIndex((s) => s.name === name);
-      if (at < 0) sessions.push({ name, kind, start: now, end: now });
-      else sessions[at] = { ...sessions[at], ...change(sessions[at]) };
+      const at = sessions.findLastIndex((s) => (id ? s.id === id : s.name === name));
+      if (at < 0) sessions.push({ name, ...(id ? { id } : {}), kind, start: now, end: now });
+      else sessions[at] = { ...sessions[at], name, ...change() };
       return { ...r, sessions };
     });
   let recordProblem;
@@ -104,6 +112,23 @@ export function sessionTitle(path) {
   return title;
 }
 
+/**
+ * The session's name: `--session`, else `<ENV_PREFIX>SESSION`, else its transcript's title, else its id.
+ * @param {string[]} args
+ * @param {Record<string, string | undefined>} env
+ * @param {{ transcript_path?: unknown, session_id?: unknown }} event the hook's JSON
+ * @returns {string}
+ */
+export function sessionName(args, env, event) {
+  const at = args.indexOf("--session");
+  return (
+    (at < 0 ? undefined : args[at + 1]) ??
+    env[`${ENV_PREFIX}SESSION`] ??
+    sessionTitle(event.transcript_path) ??
+    (typeof event.session_id === "string" && event.session_id ? event.session_id : "session")
+  );
+}
+
 /** Reads all of stdin unless it is a terminal. */
 async function stdin() {
   if (process.stdin.isTTY) return "";
@@ -127,16 +152,12 @@ export async function run(args = []) {
   } catch {
     // not a hook's JSON: run from the shell
   }
-  const name =
-    opt("--session") ??
-    process.env[`${ENV_PREFIX}SESSION`] ??
-    sessionTitle(event.transcript_path) ??
-    event.session_id ??
-    "session";
+  const name = sessionName(args, process.env, event);
   try {
     const result = stopSession({
       cwd: typeof event.cwd === "string" ? event.cwd : process.cwd(),
       name,
+      id: typeof event.session_id === "string" && event.session_id ? event.session_id : undefined,
       kind: opt("--kind"),
     });
     if ("skipped" in result) return 0;
