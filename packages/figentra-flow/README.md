@@ -42,12 +42,14 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow spec paths\|setup-plan\|setup-tasks\|template`                 | the spec folder, its documents and the resolved templates as JSON, for the `flow-*` commands                                                                                                     |
 | `fflow sync [--direct]`                                               | renders the `flow-*` skills (for the repository's projector, or Claude Code and OpenCode directly), each with its provenance header, and writes `.flow/lock.json`; refuses a preset that differs from the lock |
 | `fflow update [--preset <version>]`                                   | prints the diff, adopts the installed preset into the lock, then syncs; `--preset` refuses any version but the installed one |
-| `fflow check`                                                         | the CI check: fails, naming each cause, on an owned file that differs from the lock, a preset that differs from its locked digest, or an invalid config; writes nothing |
+| `fflow check`                                                         | the CI check: fails, naming each cause, on an owned file that differs from the lock, a preset that differs from its locked digest, an invalid config or override, a profile the preset lacks or the lock does not record, a mandatory policy off, an override changed without a `sync`, or an override past its review date (and warns 14 days before); writes nothing |
 | `fflow diff`                                                          | prints every file `sync` or `update` would add, change or delete, with the lines; writes nothing |
-| `fflow validate`                                                      | checks `flow.config.json` against its schema, naming each field that breaks it; writes nothing |
+| `fflow validate`                                                      | checks `flow.config.json` and `.flow/overrides/` against their schemas and the mandatory policies, naming each field, target or policy that breaks them and a `profile` the preset lacks; writes nothing |
 | `… --workspace <dir>`                                                 | runs `sync`, `update`, `check`, `diff` or `validate` in every repository under `<dir>` that has `flow.config.json`, one line each |
 | `fflow gate run [--ref b] [--box host] [-- flags]`                    | the repository's checks through the configured runner (or on `--box`) at the pushed head; the box posts `fflow/gate` as the gate App                                                             |
+| `fflow hooks run <pre-commit\|commit-msg\|pre-push>`                  | the stage's lefthook jobs here with the workspace install, else on the runner's box for the staged tree; the commit gets a `Hooks-Run:` trailer                                                  |
 | `fflow land [<pr>] [--stack] [--dry-run] [--manual-ok]`               | squash-merges a PR that is green on `fflow/gate` from the gate App on its head and has its approvals; Linear Done, worktree and branch removed                                                   |
+| `fflow adr reserve <slug> --issue <key> [--owner <who>]`              | under the `adr` queue lock (`flow/queue/adr`, stale after 15 minutes), lands the next number of the preset's `queues.adr` file on the default branch, then prints only it on stdout; a reservation that does not land is withdrawn |
 | `fflow train <open\|add\|close\|build\|eject\|depart\|status>`        | the release train: board green PRs, cut off, build `train/<version>` by merge commits with bisect ejection, depart by fast-forward (see [Release trains](#release-trains))                       |
 | `fflow ship <dev\|staging> [--workflow f] [--dry-run]`                | dispatches the product's Runway deploy workflow (`deploy.yml`, input `environment`) on main; production is refused: the owner promotes                                                           |
 | `fflow release [--json] [--offline]`                                  | what the next release would publish: pending changesets and next versions, the version PR, the Release workflow's last run and its notices, the registry's versions; it publishes nothing        |
@@ -60,7 +62,7 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow linear issue <spec.md>` / `tasks <tasks.md>`                   | the spec's Linear issue and one sub-issue per task; `--dry-run` needs no token                                                                                                                   |
 | `fflow start <STA-n> [--slug s] [--install]`                          | branch `figentra/sta-n-<slug>` from `origin/<default>` into `.claude/worktrees/sta-n-<slug>`; issue In Progress                                                                                  |
 | `fflow clean [--dry-run] [--adopt] [--fix-ignore] [--budget] [--all]` | removes finished worktrees (clean, saved, issue Done or idle 2 h), reports what it kept and the space freed; warns over `clean.budget`, and `--budget` sweeps idle merged or pushed trees safely |
-| `fflow guard [--print-settings]`                                      | the PreToolUse hook that denies `git worktree add` outside `.claude/worktrees/`                                                                                                                  |
+| `fflow guard [--print-settings]`                                      | the guard engine on the hook event on stdin: the preset's rules, the side doors and the secret files; `--print-settings` prints the hooks that wire `bin/fflow-guard.mjs` for four events        |
 | `fflow init --workspace <dir>…`                                       | writes the workspace list (`~/.config/fflow/workspace.yaml`) that `--all` acts on                                                                                                                |
 | `fflow status [--repo p] [--json] [--offline]`                        | specs by status, worktrees, open PRs with their gate and review, and sessions, for every repository of the workspace                                                                             |
 | `fflow mcp`                                                           | a read-only MCP server over stdio: status, spec, trace, worktrees and metrics                                                                                                                    |
@@ -142,8 +144,11 @@ setting you have not made refuses and names it.
   command, and `projectId`, `env` and `domain` name the project, environment and instance. The token goes only into the run
   process's environment, never onto a command line. When the box's ssh shell lacks the CLI or the identity, `bin` names the CLI
   (`"~/.local/bin/infisical"`) and `envFile` a file holding the two `INFISICAL_UNIVERSAL_AUTH_CLIENT_*` lines, read
-  in a subshell for that one command and seen only by the login. There is no default for either. Figentra Flow wraps the command and never reads a
+  in a subshell for that one command and seen only by the login. There is no default for either. On a box, Figentra Flow wraps the command and never reads a
   value.
+  `oidc` (`identityId`, the uuid of an Infisical OIDC machine identity, and `audience`, e.g. `"fflow-ci"`) names the
+  identity main's approval job logs in as with its own OIDC token, to mint a narrowed Figentra Flow App token in
+  process (`src/lib/app-token.mjs`); that path reads the App's key, in memory only. Nothing uses it yet.
 - `gate.check` is the check command (default `pnpm verify`).
 
 - `tracker` names the issue tracker:
@@ -212,8 +217,23 @@ setting you have not made refuses and names it.
     correctness properties, task routes and the path floors of the tier check.
   - a path to the repository's own preset folder, held to the neutral rules.
 
-  Without a config file the preset is `neutral`. A repository changes one template or command without forking a
-  preset in `.flow/overrides/` (`<name>.md`, or `commands/flow-<verb>.md`).
+  Without a config file the preset is `neutral`. A repository changes what `sync` renders without forking a preset
+  with overrides, owner-only files at `.flow/overrides/<surface>/<id>.yml` (schema: `schema/override.schema.json`):
+
+  ```yaml
+  kind: disable # or extend (items, or text with an optional section), configure (values), replace (file)
+  target: .agents/agents/ci-steward.md # a rendered output, a preset source (commands/flow-plan.md), or a policy
+  reason: we have no CI # replace and disable need reason, owner and review
+  owner: figentra-usr
+  review: 2027-01-31 # `fflow check` warns 14 days before and fails after
+  ```
+
+  The header of a file an override shaped names it. The mandatory policies (`guard.secrets`, `guard.tenancy`,
+  `owner-only`, `guard.wiring`) cannot be disabled, replaced or configured; an `extend` of one may only add `items`
+  (none starting with `!`), and an `extend` of `owner-only` reaches `land`, the approval workflow and CODEOWNERS.
+  `sync` names each override it skips. A replacement that links outside `.flow/overrides/` is refused.
+  A whole-file template (`<name>.md`) or command (`commands/flow-<verb>.md`) in `.flow/overrides/` still replaces
+  the preset's, and `validate` warns until it gets its `.yml`.
 
 - `profile` picks which of the preset's agents, skills and hooks `sync` renders, from the profiles its `preset.yml`
   declares (`profiles: { <name>: { agents, skills, hooks } }`, `"*"` for all); `.flow/lock.json` records it. Without

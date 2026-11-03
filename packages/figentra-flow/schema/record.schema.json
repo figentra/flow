@@ -142,6 +142,33 @@
           "session": { "type": "string", "minLength": 1 }
         }
       }
+    },
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["stage", "state", "at"],
+        "properties": {
+          "stage": {
+            "enum": [
+              "start",
+              "spec",
+              "approval",
+              "plan",
+              "worktree",
+              "build",
+              "gate",
+              "review",
+              "land",
+              "release",
+              "ship"
+            ]
+          },
+          "state": { "enum": ["active", "waiting", "done", "failed"] },
+          "at": { "type": "string", "minLength": 1 }
+        }
+      }
     }
   }
 }

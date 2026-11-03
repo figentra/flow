@@ -8,11 +8,12 @@
  *   spec-kit's `specify`. It renders only the locked preset: when the installed preset's name or digest differs from
  *   the lock's, it refuses and names `fflow update` (STA-1945 FR-1, FR-2). It installs the preset's third-party skills
  *   the profile selects (FR-6) into `.agents/skills/.vendor/`, pinned in the lock, and refuses one it may not or
- *   cannot install (FR-8).
+ *   cannot install (FR-8). It applies the repository's overrides and names each one it skips: an invalid one, or one
+ *   that breaks a mandatory policy (FR-4, FR-5).
  * Boundary: writes only the rendered files, `.agents/skills/.vendor/`, `.flow/lock.json`, and what the repository's
  *   own `agents:sync` writes; fetches third-party skills from their public sources.
  * Runtime: node
- * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-1, FR-2, FR-6, FR-8, P-002).
+ * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-1, FR-2, FR-4, FR-5, FR-6, FR-8, P-002).
  * Secrets: none.
  */
 import { spawnSync } from "node:child_process";
@@ -24,6 +25,7 @@ import { NAME } from "../lib/product.mjs";
 import { ConfigError } from "../lib/config.mjs";
 import { LockError, NewerLockError, readLock } from "../lib/lock.mjs";
 import {
+  appliedOverrides,
   legacyConflict,
   migrateLegacy,
   presetDrift,
@@ -89,8 +91,11 @@ export function sync(root, { direct = false, log = console.log, adopt = false, f
   const migrated = migrateLegacy(root);
   if (migrated.error) throw new ConfigError(migrated.error);
   for (const line of migrated.done) log(`${NAME} sync: ${line} (the ${NAME} rename)`);
-  const files = render(root, { direct });
-  const removed = writeRendered(root, files);
+  const { overrides, skipped } = appliedOverrides(root);
+  for (const p of skipped)
+    log(`${NAME} sync: skipped ${p} (\`${NAME} validate\` names every problem)`);
+  const files = render(root, { direct, overrides });
+  const removed = writeRendered(root, files, overrides);
   for (const p of removed) log(`${NAME} sync: removed ${p} (spec-kit)`);
   log(`${NAME} sync: rendered ${files.size} file(s); .flow/lock.json written`);
   return { files: [...files.keys()], removed };

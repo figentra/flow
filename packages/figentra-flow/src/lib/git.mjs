@@ -2,16 +2,23 @@
  * Figentra Flow file contract:
  * Purpose: the git facts the worktree commands need: the repository's main checkout, its default branch, its
  *   worktrees, whether a worktree is clean, saved (its head on a remote ref, or every commit landed by patch), how long
- *   it has been idle, which ignored files it holds outside the usual caches, its size, and which folders running
- *   processes work in.
- * Boundary: runs `git` (and `du`, `lsof` or `/proc`) synchronously in the folder it is given; never writes. Network git
- *   goes through `remote`, with the configuration's credentials (phase A).
+ *   it has been idle, which ignored files it holds outside the usual caches, its size, and the running processes with
+ *   the folders they work in.
+ * Boundary: runs `git` (and `du`, `lsof` and `ps`, or `/proc`) synchronously in the folder it is given; never writes.
+ *   Network git goes through `remote`, with the configuration's credentials (phase A).
  * Runtime: node
  * Governing contract: Stackra ADR 0503 (worktrees live inside their repository); STA-1729.
  * Secrets: none.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readlinkSync, realpathSync, statSync } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 
 import { credentialsPort } from "../adapters/credentials.mjs";
@@ -193,30 +200,58 @@ export function sizeKb(path) {
   return Number.parseInt(r.stdout ?? "", 10) || 0;
 }
 
+/** @typedef {{ pid: number, cwd: string, args: string[] }} Process */
+
 /**
- * The working folders of every running process: `lsof -a -d cwd -Fn`, else Linux's `/proc/<pid>/cwd`; undefined when
- * neither can be read, so a caller keeps every worktree rather than guess.
+ * Every running process with its working folder and arguments: `lsof -a -d cwd -Fpn` and `ps`, else Linux's
+ * `/proc/<pid>/{cwd,cmdline}`; undefined when neither can be read, so a caller keeps every worktree rather than guess.
+ * `ps` splits the arguments at spaces, so a path holding one spans two of them.
+ * @returns {Process[] | undefined}
+ */
+export function processes() {
+  const r = spawnSync("lsof", ["-a", "-d", "cwd", "-Fpn"], { encoding: "utf8" });
+  if (r.status === 0 || (r.stdout ?? "").includes("\nn")) {
+    /** @type {Map<number, string[]>} */
+    const args = new Map();
+    const ps = spawnSync("ps", ["-axo", "pid=,args="], { encoding: "utf8", maxBuffer: 64 << 20 });
+    for (const line of (ps.stdout ?? "").split("\n")) {
+      const m = line.match(/^\s*(\d+)\s+(.*)$/);
+      if (m) args.set(Number(m[1]), m[2].split(/\s+/));
+    }
+    /** @type {Process[]} */
+    const list = [];
+    let pid = 0;
+    for (const l of r.stdout.split("\n"))
+      if (l.startsWith("p")) pid = Number(l.slice(1));
+      else if (l.startsWith("n")) list.push({ pid, cwd: l.slice(1), args: args.get(pid) ?? [] });
+    return list;
+  }
+  if (!existsSync("/proc")) return undefined;
+  /** @type {Process[]} */
+  const list = [];
+  for (const pid of readdirSync("/proc").filter((d) => /^\d+$/.test(d))) {
+    let cwd;
+    try {
+      cwd = readlinkSync(`/proc/${pid}/cwd`);
+    } catch {
+      continue; // a process that ended, or one we may not read
+    }
+    let cmdline = "";
+    try {
+      cmdline = readFileSync(`/proc/${pid}/cmdline`, "utf8");
+    } catch {
+      // its folder is still known
+    }
+    list.push({ pid: Number(pid), cwd, args: cmdline.split("\0").filter(Boolean) });
+  }
+  return list;
+}
+
+/**
+ * The working folders of every running process (`processes`); undefined when they cannot be read.
  * @returns {string[] | undefined}
  */
-export function busyFolders() {
-  const r = spawnSync("lsof", ["-a", "-d", "cwd", "-Fn"], { encoding: "utf8" });
-  if (r.status === 0 || (r.stdout ?? "").includes("\nn"))
-    return r.stdout
-      .split("\n")
-      .filter((l) => l.startsWith("n"))
-      .map((l) => l.slice(1));
-  if (!existsSync("/proc")) return undefined;
-  /** @type {string[]} */
-  const cwds = [];
-  for (const pid of readdirSync("/proc").filter((d) => /^\d+$/.test(d))) {
-    try {
-      cwds.push(readlinkSync(`/proc/${pid}/cwd`));
-    } catch {
-      // a process that ended, or one we may not read
-    }
-  }
-  return cwds;
-}
+export const busyFolders = () => processes()?.map((p) => p.cwd);
 
 /**
  * Whether a running process works inside `path` (a session's working folder, a dev server, a shell).
