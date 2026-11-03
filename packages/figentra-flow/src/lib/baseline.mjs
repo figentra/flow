@@ -57,19 +57,22 @@ const glob = (/** @type {string} */ p) =>
 /**
  * The PR's results against main's (STA-1942 FR-3). It blocks on any of:
  * - a new failure: a task that passed on main, or a new task, fails;
- * - a missing task: one main ran is absent from the PR or never ran there (the inventory may not shrink);
+ * - a missing task: one main ran is absent from the PR or never ran there (the inventory may not shrink), unless
+ *   its name (after `#`) was dropped: in main's configured `baseline.tasks` (`configured.base`, saved with main's
+ *   baseline) but not in the PR's (`configured.pr`). A dependency task turbo ran but nobody configured (`gen`) is
+ *   never dropped, and a main baseline saved without its configured tasks drops nothing (STA-1945);
  * - a must-pass task (`mustPass` patterns: tenancy, authz, secrets, licence tests) that is not green, even if main's
  *   is red;
  * - more failures than main has (the debt may not grow).
  * A task that failed or never ran on main and passes now is a gain. A failure that main never reached (it was `skip`
  * there) is newly reached, not new, when an upstream task of the same package (per `needs`, the PR's) is a gain: it
  * is reported with that task, and is no debt. Anything else, a task that passed on main included, is a new failure.
- * With `tasks` (the PR's `baseline.tasks`), a task main ran whose name (after `#`) the PR no longer runs is not missing.
  * @param {Results} base
  * @param {Results} pr
- * @param {{ mustPass?: string[], needs?: Record<string, string[]>, tasks?: string[] }} [options]
+ * @param {{ mustPass?: string[], needs?: Record<string, string[]>,
+ *           configured?: { base?: string[], pr?: string[] } }} [options]
  */
-export function compare(base, pr, { mustPass = [], needs = {}, tasks } = {}) {
+export function compare(base, pr, { mustPass = [], needs = {}, configured = {} } = {}) {
   const sorted = (/** @type {Results} */ r, /** @type {string} */ state) =>
     Object.keys(r)
       .filter((t) => r[t] === state)
@@ -86,9 +89,11 @@ export function compare(base, pr, { mustPass = [], needs = {}, tasks } = {}) {
   const newlyReached = reached.map((task) => ({ task, unblockedBy: String(unblocker(task)) }));
   const newFailures = sorted(pr, "fail").filter((t) => base[t] !== "fail" && !reached.includes(t));
   const stillFailing = sorted(pr, "fail").filter((t) => base[t] === "fail");
+  const { base: was = [], pr: now } = configured;
+  const dropped = now ? was.filter((n) => !now.includes(n)) : [];
   const missing = Object.keys(base)
     .filter((t) => base[t] !== "skip" && (pr[t] === undefined || pr[t] === "skip"))
-    .filter((t) => !tasks || tasks.includes(t.split("#")[1]))
+    .filter((t) => !dropped.includes(t.split("#")[1]))
     .toSorted();
   const must = mustPass.map(glob);
   const mustPassFailures = [...new Set([...Object.keys(pr), ...Object.keys(base)])]

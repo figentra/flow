@@ -1,10 +1,13 @@
 /**
  * Figentra Flow file contract:
  * Purpose: `fflow gate baseline` (STA-1942), run by the baseline workflow `sync` renders:
- *   save [--summary f] [--reader turbo]   the newest run summary's per-task results → .fflow-gate/baseline.json
+ *   save [--summary f] [--reader turbo]   the newest run summary's per-task results, with the configured
+ *                                         `baseline.tasks`, → .fflow-gate/baseline.json
  *   check --base <sha> [--json]           those results against main's baseline for the base SHA or its nearest
  *                                         ancestor; fails on a new failure and, closed, when no baseline exists
- *                                         (`--json` then prints `{ ok: false, reason }`)
+ *                                         (`--json` then prints `{ ok: false, reason }`); a task whose name main
+ *                                         configured and the PR's `baseline.tasks` (default BASELINE_DEFAULTS.tasks)
+ *                                         dropped is not missing (STA-1945)
  * Boundary: reads the run summary and, for `check`, GitHub (artifacts and runs) with the job's GITHUB_TOKEN and
  *   `gh run download`; writes baseline.json and the job summary.
  * Runtime: node (GitHub Actions)
@@ -70,10 +73,9 @@ export async function run([mode, ...args], deps = {}) {
       return (log(`${NAME} gate baseline: the run summary holds no task`), 1);
     mkdirSync(join(root, GATE_DIR), { recursive: true });
     const needs = NEEDS[reader]?.(JSON.parse(readFileSync(file, "utf8"))) ?? {};
-    writeFileSync(
-      own,
-      `${JSON.stringify({ version: 1, sha: env.GITHUB_SHA ?? "", reader, tasks, needs }, null, 2)}\n`,
-    );
+    const configured = loadConfig(root).config.baseline?.tasks ?? BASELINE_DEFAULTS.tasks;
+    const saved = { version: 1, sha: env.GITHUB_SHA ?? "", reader, tasks, needs, configured };
+    writeFileSync(own, `${JSON.stringify(saved, null, 2)}\n`);
     log(`${NAME} gate baseline: ${Object.keys(tasks).length} task(s) saved to ${GATE_DIR}/${FILE}`);
     return 0;
   }
@@ -110,11 +112,12 @@ export async function run([mode, ...args], deps = {}) {
         closed("download_failed")
       );
     const mine = JSON.parse(readFileSync(own, "utf8"));
-    const configured = loadConfig(root).config.baseline;
-    const result = compare(JSON.parse(readFileSync(file, "utf8")).tasks ?? {}, mine.tasks, {
-      mustPass: configured?.mustPass,
+    const main = JSON.parse(readFileSync(file, "utf8"));
+    const config = loadConfig(root).config.baseline;
+    const result = compare(main.tasks ?? {}, mine.tasks, {
+      mustPass: config?.mustPass,
       needs: mine.needs,
-      tasks: configured?.tasks ?? BASELINE_DEFAULTS.tasks,
+      configured: { base: main.configured, pr: config?.tasks ?? BASELINE_DEFAULTS.tasks },
     });
     json({ ...result, baselineSha: found.sha });
     summary(summaryTable(result, found.sha));
