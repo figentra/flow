@@ -111,6 +111,7 @@ test("help: the commands not yet ported are passthrough, and only these", () => 
     "clean",
     "gate",
     "guard",
+    "hooks",
     "init",
     "land",
     "linear",

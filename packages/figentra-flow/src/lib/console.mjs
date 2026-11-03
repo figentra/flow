@@ -616,6 +616,13 @@ export const COMMANDS = [
     examples: [`${NAME} clean --dry-run`, `${NAME} clean --budget`, `${NAME} clean --all`],
   }),
   passthrough({
+    name: "hooks",
+    description:
+      "Run a stage's lefthook jobs here, else on the runner's box, and stamp the Hooks-Run trailer",
+    group: GROUPS.work,
+    examples: [`${NAME} hooks run pre-commit`, `${NAME} hooks run commit-msg .git/COMMIT_EDITMSG`],
+  }),
+  passthrough({
     name: "land",
     description: "Squash-merge a PR that is green on the gate and approved",
     group: GROUPS.land,
