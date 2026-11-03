@@ -12,8 +12,6 @@
  * Secrets: none.
  */
 
-import { GATE_MARKER } from "./product.mjs";
-
 // Optional `role=<id> session=<name>` (a quoted name may hold spaces) name the reviewer for a roster (AC-051).
 const VERDICT_LINE =
   /^AI-REVIEW:\s*(PASS|FAIL)\s+([0-9a-f]{40})(?:\s+base=(\S+))?(?:\s+patch=([0-9a-f]{40}))?(?:\s+role=([\w.-]+))?(?:\s+session=("[^"]*"|\S+))?\s*$/i;
@@ -58,8 +56,8 @@ export const ownerApproves = (
  * @param {any[]} reviews
  * @param {(string | undefined)[]} authors
  * @param {{ reviewer: string | (string | undefined)[] | undefined, owner?: string }} identities the reviewer App
- *   slugs (`apps.review.slug`, `apps.gate.slug`) and `apps.owner`; with no reviewer nothing counts, with no owner no
- *   owner review counts
+ *   slugs (today only `apps.review.slug`; the Flow App's slug joins only once its key is reachable solely from main's
+ *   OIDC workflow, ADR 0523) and `apps.owner`; with no reviewer nothing counts, with no owner no owner review counts
  * @returns {{ verdict: "PASS" | "FAIL" | null, ignored: string[],
  *            passes: { role: string | null, session: string | null }[] }} `passes`: who signed each counted reviewer PASS
  */
@@ -77,16 +75,11 @@ export function aiReview(pr, comments, reviews, authors, { reviewer: listed, own
   const self = new Set(authors.filter(Boolean).map((a) => actor(a)));
   /** @type {string[]} */
   const ignored = [];
-  // An edit to any reviewer comment voids every reviewer verdict posted before it, except the gate's own comment,
-  // which it rewrites in place and which never holds a verdict line.
+  // An edit to any reviewer comment voids every reviewer verdict posted before it. No body exempts an edit: the
+  // body is what the editor controls, so an edited FAIL could otherwise pose as an exempt comment.
   const voidBefore =
     comments
-      .filter(
-        (c) =>
-          byReviewerApp(c, reviewer) &&
-          c.updated_at !== c.created_at &&
-          !String(c.body ?? "").startsWith(GATE_MARKER),
-      )
+      .filter((c) => byReviewerApp(c, reviewer) && c.updated_at !== c.created_at)
       .map((c) => String(c.updated_at))
       .toSorted()
       .at(-1) ?? "";

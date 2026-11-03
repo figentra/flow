@@ -155,7 +155,7 @@ export function landRules({
     review?.verdict !== "PASS"
   )
     problems.push(
-      `no AI review PASS for ${pr.head?.sha} (counted verdict: ${review?.verdict ?? "none"}): a different agent posts "AI-REVIEW: PASS ${pr.head?.sha} base=${pr.base?.ref}" as the ${[reviewer ?? []].flat().join(" or ") || "(unconfigured, apps.review.slug)"} app${review?.ignored.length ? `; ignored: ${[...new Set(review.ignored)].join("; ")}` : ""}`,
+      `no AI review PASS for ${pr.head?.sha} (counted verdict: ${review?.verdict ?? "none"}): a different agent posts "AI-REVIEW: PASS ${pr.head?.sha} base=${pr.base?.ref}" as the ${[reviewer ?? []].flat().filter(Boolean).join(" or ") || "(unconfigured, apps.review.slug)"} app${review?.ignored.length ? `; ignored: ${[...new Set(review.ignored)].join("; ")}` : ""}`,
     );
   if (spec !== undefined) {
     problems.push(...checkApproval(spec).map((p) => `spec: ${p}`));
@@ -255,7 +255,8 @@ function specAt(
 /**
  * Lands one PR.
  * @param {{ root: string, repo: string, base: string, number: number, dry?: boolean, manualOk?: boolean,
- *           gateApp?: string | string[], reviewer?: string | string[], owner?: string, refs?: string, deps: LandDeps }} options
+ *           gateApp?: string | string[], reviewer?: string | string[], owner?: string, refs?: string,
+ *           deps: LandDeps }} options
  *   `refs`: the issue the squash's `Refs:` names when the branch names none (it is not moved to Done).
  * @returns {Promise<{ code: number, problems?: string[], merged?: string, head?: string,
  *   queued?: boolean, waiting?: string[] }>}

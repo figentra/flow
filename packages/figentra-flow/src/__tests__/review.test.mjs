@@ -4,7 +4,7 @@
  *   login), unedited, naming the head and the PR's base; the change's own authors cannot review it; an edit voids
  *   earlier verdicts; a FAIL for the head (even a sloppy one) beats a PASS; a verdict for an older commit does not
  *   count; the owner's APPROVED review with `owner-approval` on the head counts; a verdict counts from any listed
- *   reviewer App, and only the gate's marker comment may be edited without voiding.
+ *   reviewer App, and an edit to any listed App's comment, the gate's marker comment included, voids earlier verdicts.
  * Boundary: pure; REST-shaped comments and reviews built here.
  * Runtime: node
  * Governing contract: ADR 0022; Stackra ADR 0230; STA-1729 phase 3 (AC-031).
@@ -161,21 +161,26 @@ test("review: an unlisted App, a User and a verdict below the first line are ign
   });
 });
 
-test("review: an edited verdict is void, and an edit voids earlier verdicts unless it is the gate's marker comment", () => {
+test("review: an edit to any listed App's comment voids earlier verdicts, the gate's marker comment too", () => {
   const pass = byFlow(`AI-REVIEW: PASS ${SHA} base=main`);
   const later = { created_at: "2026-10-31T10:01:00Z", updated_at: "2026-10-31T10:02:00Z" };
-  const marker = byFlow(`${GATE_MARKER}\n**fflow/gate** passed`, later);
-  assert.equal(aiReview(PR, [pass, marker], [], [], LISTED).verdict, "PASS");
-  const note = aiReview(PR, [pass, byFlow("note", later)], [], [], LISTED);
-  assert.equal(note.verdict, null);
-  assert.match(note.ignored.join(), /edited after this verdict/);
-  // The marker must open the body: one quoted further down does not exempt the edit.
-  assert.equal(
-    aiReview(PR, [pass, byFlow(`note ${GATE_MARKER}`, later)], [], [], LISTED).verdict,
-    null,
-  );
+  for (const body of ["note", `${GATE_MARKER}\n**fflow/gate** passed`]) {
+    const result = aiReview(PR, [pass, byFlow(body, later)], [], [], LISTED);
+    assert.equal(result.verdict, null);
+    assert.match(result.ignored.join(), /edited after this verdict/);
+  }
   const edited = byFlow(`AI-REVIEW: PASS ${SHA} base=main`, { updated_at: "2026-10-31T10:05:00Z" });
-  assert.match(aiReview(PR, [edited, marker], [], [], LISTED).ignored.join(), /was edited/);
+  assert.match(aiReview(PR, [edited], [], [], LISTED).ignored.join(), /was edited/);
+});
+
+test("review: a FAIL edited to open with the gate marker does not bring back an earlier PASS", () => {
+  const pass = comment(`AI-REVIEW: PASS ${SHA} base=main`);
+  const fail = comment(`${GATE_MARKER}\nok`, {
+    created_at: "2026-10-31T10:01:00Z",
+    updated_at: "2026-10-31T10:02:00Z",
+  });
+  assert.notEqual(aiReview(PR, [pass, fail], [], [], LISTED).verdict, "PASS");
+  assert.notEqual(review([pass, fail], []).verdict, "PASS");
 });
 
 test("review: a marker comment never parses as a verdict", () => {
