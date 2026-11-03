@@ -3,7 +3,8 @@
 # - oxfmt and oxlint run the mise-pinned binary, named in `mise exec` so mise fetches only that tool, and a commit
 #   needs no workspace install; where mise is missing the job is skipped and CI checks (STA-2039; no pnpm fallback:
 #   pnpm 12's exec installs). `fflow sync` keeps mise.toml's pins at the catalog's versions.
-# - oxfmt exits 2 when every staged file is on its ignore list (pnpm-lock.yaml alone): that is not a finding.
+# - --no-error-on-unmatched-pattern passes staged files that are all on oxfmt's ignore list (pnpm-lock.yaml
+#   alone); exit 2 is not swallowed, because oxfmt also exits 2 on a file it cannot parse.
 # - oxlint whose config extends @stackra/oxlint-config, and commitlint, need a workspace install; without one they
 #   are skipped with a note, and CI checks the commit (os#112).
 # - Every pre-push job passes on the registry's 401 alone (fflow adds the check); any other failure blocks.
@@ -17,7 +18,7 @@ pre-commit:
         - "*.{css,scss,less,html,graphql,vue}"
       run: |
         sh -c 'command -v mise >/dev/null 2>&1 || { echo "oxfmt skipped: mise not installed; CI checks"; exit 0; };
-        mise exec npm:oxfmt -- oxfmt --check "$@"; s=$?; [ $s -eq 2 ] && exit 0; exit $s' -- {staged_files}
+        exec mise exec npm:oxfmt -- oxfmt --check --no-error-on-unmatched-pattern "$@"' -- {staged_files}
     - name: oxlint
       glob: "*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"
       # Rendered and third-party skills and reference docs are not the repository's code.
