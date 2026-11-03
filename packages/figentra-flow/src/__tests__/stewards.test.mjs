@@ -8,6 +8,8 @@
  *     no value;
  *   - `sync` renders each preset's stewards (neutral: git, ci, tracker; stackra: git, ci, linear), CODEOWNERS only
  *     with an owner, and refuses a secret name that is not one;
+ *   - the gate status's trusted source is the gate App's login as a string, or with its aliases (a rename, ADR 0523)
+ *     the list of logins;
  *   - a repository override wins.
  * Boundary: temporary folders; no network, no GitHub.
  * Runtime: node
@@ -203,6 +205,28 @@ test("sync renders each preset's stewards, the workflow with the approver's name
     assert.equal(existsSync(workflow), Boolean(owner));
     assert.equal(existsSync(join(root, ".github/CODEOWNERS")), Boolean(owner));
     if (owner) assert.match(readFileSync(workflow, "utf8"), /secrets\.FFLOW_APPROVER_APP_ID /);
+  }
+});
+
+test("sync trusts the gate status from the gate App's login, or from each of its logins after a rename", (t) => {
+  /** @type {[object, string][]} the gate block and the TRUSTED value it renders */
+  const cases = [
+    [{ login: "figentra-gate[bot]" }, `'{"fflow/gate":"figentra-gate[bot]"}'`],
+    [
+      { login: "figentra-gate[bot]", aliases: ["figentra-flow[bot]"] },
+      `'{"fflow/gate":["figentra-gate[bot]","figentra-flow[bot]"]}'`,
+    ],
+  ];
+  for (const [gate, trusted] of cases) {
+    const root = mkdtempSync(join(tmpdir(), "flow-trusted-"));
+    t.after(() => rmSync(root, { recursive: true }));
+    writeFileSync(
+      join(root, "flow.config.json"),
+      JSON.stringify({ version: 1, preset: "neutral", apps: { gate, owner: "figentra-usr" } }),
+    );
+    sync(root, { direct: true, log: () => {} });
+    const text = readFileSync(join(root, ".github/workflows/fflow-approve.yml"), "utf8");
+    assert.ok(text.includes(`          TRUSTED: ${trusted}\n`), JSON.stringify(gate));
   }
 });
 

@@ -68,6 +68,8 @@
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
+    "@stackra/console": "catalog:",
+    "@stackra/validation": "catalog:",
     "undici": "catalog:"
   },
   "devDependencies": {

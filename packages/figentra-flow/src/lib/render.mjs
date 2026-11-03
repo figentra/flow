@@ -33,7 +33,7 @@ import { dirname, join, sep } from "node:path";
 
 import { approveWorkflow } from "./approve-workflow.mjs";
 import { baselineWorkflow } from "./baseline-workflow.mjs";
-import { ConfigError, loadConfig } from "./config.mjs";
+import { ConfigError, gateLogins, loadConfig } from "./config.mjs";
 import { LOCK, OVERRIDES, presetDir } from "./flow-dir.mjs";
 import {
   digestOf,
@@ -62,6 +62,12 @@ import {
 import { withHeader } from "./provenance.mjs";
 import { renderReadme } from "./readme.mjs";
 import { parseYaml, YamlError } from "./yaml.mjs";
+
+/**
+ * What a surface renderer (`render-*.mjs`) reads: the repository, its configuration and its preset's folder. Each one
+ * returns its files, path to text, and nothing when the preset has no such surface (STA-1945 C5).
+ * @typedef {{ root: string, config: Record<string, any>, presetDir: string }} RenderContext
+ */
 
 /** The eight commands, in workflow order. */
 export const VERBS = [
@@ -172,6 +178,7 @@ export function render(root, { direct = false } = {}) {
   const ownerOnly = approve?.ownerOnly ?? [];
   // No owner, no approval path: GitHub must be able to ask someone for the owner-only paths (CODEOWNERS).
   if (!apps?.owner) return out;
+  const gate = gateLogins(apps);
   out.set(
     `.github/workflows/${APPROVE_WORKFLOW}`,
     approveWorkflow({
@@ -179,7 +186,7 @@ export function render(root, { direct = false } = {}) {
       integrity: lockedIntegrity(root, PACKAGE, VERSION),
       ...approveSecrets(root),
       // The gate's status counts only from the gate App; a repository adds its own sources in `approve.checks`.
-      trusted: { ...(apps?.gate ? { [STATUS_CONTEXT]: apps.gate.login } : {}), ...approve?.checks },
+      trusted: { ...(gate ? { [STATUS_CONTEXT]: gate } : {}), ...approve?.checks },
       ownerOnly,
     }),
   );
