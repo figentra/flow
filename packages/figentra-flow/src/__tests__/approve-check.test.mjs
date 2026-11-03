@@ -371,8 +371,8 @@ test("approve: a list naming Baseline or fflow/gate, or a malformed TOLERATE, fa
     );
   // Even with every check green, a broken list refuses.
   assert.match(await refusals({}, { tolerate: ["Baseline"] }), /lists Baseline/);
-  // Past that refusal, a listed fflow/gate red on the head and the baseline is still not excused; a listed Baseline
-  // cannot be, as only a green Baseline excuses anything.
+  // A listed fflow/gate, red on the head and the baseline, is refused before any comparison: nothing is tolerated. (A
+  // listed Baseline cannot be excused either, as only a green Baseline excuses anything.)
   const redGate = await decide({
     api: github({
       ...RED_MAIN,
@@ -388,8 +388,11 @@ test("approve: a list naming Baseline or fflow/gate, or a malformed TOLERATE, fa
     trusted: TRUSTED,
     tolerate: [...TOLERATE, "fflow/gate"],
   });
-  assert.deepEqual(redGate.baseline, { sha: MAIN, tolerated: ["verify"] });
-  assert.match(redGate.refuse.join("\n"), new RegExp(`${NOT_EXCUSED}: fflow/gate$`));
+  assert.equal(redGate.baseline, undefined);
+  assert.match(
+    redGate.refuse.join("\n"),
+    /`approve\.tolerate` lists fflow\/gate, which a red main never excuses/,
+  );
   for (const bad of ["{not json", '"verify"', "null", "[1]", '[""]', '{"verify":true}']) {
     const gh = github(RED_MAIN);
     const code = await main(env({ TOLERATE: bad }), {
