@@ -197,8 +197,10 @@ export function validate(schema, value, path = "") {
     return [`${at}: must be one of ${schema.enum.join(", ")}`];
   if (schema.type) {
     const t = typeOf(value);
-    if (!(t === schema.type || (schema.type === "number" && t === "integer")))
-      return [`${at}: must be ${schema.type === "integer" ? "an" : "a"} ${schema.type}`];
+    /** @type {string[]} */
+    const types = [schema.type].flat();
+    if (!(types.includes(t) || (types.includes("number") && t === "integer")))
+      return [`${at}: must be ${types[0] === "integer" ? "an" : "a"} ${types.join(" or ")}`];
   }
   if (typeof value === "string" && schema.minLength && value.length < schema.minLength)
     return [`${at}: must not be empty`];

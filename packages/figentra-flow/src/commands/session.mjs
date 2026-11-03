@@ -1,9 +1,11 @@
 /**
  * Figentra Flow file contract:
  * Purpose: `fflow session stop [--session <name>] [--kind <kind>]` (FR-19, AC-18): the agent's Stop hook. On a task's
- *   branch it writes the session's end into Flow's record, commits the whole worktree as `wip(<session name>): …`
- *   and pushes the branch as the bot, so nothing is left only on one machine. A push that still fails after one
- *   merge is recorded as `pushed: false` (committed locally) and the fix printed.
+ *   branch it writes the session's end into Flow's record, commits the tracked changes and the record as
+ *   `wip(<session name>): …` and pushes the branch as the bot, so nothing is left only on one machine. Untracked files
+ *   and files named like secrets are never committed, only listed. The hooks always run (FR-18): when they refuse the
+ *   commit, that is reported and the work stays uncommitted. A push that still fails after one merge is recorded as
+ *   `pushed: false` (committed locally) and the fix printed; a later pushed stop clears it.
  * Boundary: reads the hook's JSON on stdin (its `cwd`, `transcript_path` and `session_id`); the session's name is
  *   `--session`, else the title its transcript last records (ADR 0001, set with `/rename`), else its id; its entry in
  *   the record is found by `session_id`, so a rename keeps one entry. Writes the record and one or two commits on the
@@ -25,7 +27,8 @@ import { commitRecord, RecordError, updateRecord } from "../lib/record.mjs";
  * it, so a renamed session (ADR 0001 names change with its state) keeps one entry under its latest name; without
  * one, by name.
  * @param {{ cwd: string, name: string, id?: string, kind?: string, now?: string }} options
- * @returns {{ skipped: string } | { key: string, sha: string, pushed: boolean, problem?: string }}
+ * @returns {{ skipped: string } | { key: string, sha: string, pushed: boolean, problem?: string, hooks?: string,
+ *             secrets?: string[], untracked?: string[] }}
  */
 export function stopSession({
   cwd,
@@ -43,18 +46,24 @@ export function stopSession({
   const key = schemeFor(root).keys(branch)[0];
   if (!key) return { skipped: `branch ${branch} names no issue key` };
   const shown = key.toUpperCase();
-  /** @param {() => object} change */
+  /** @param {(s: Session) => Session} change */
   const touch = (change) =>
     updateRecord(root, key, (r) => {
       const sessions = [...r.sessions];
       const at = sessions.findLastIndex((s) => (id ? s.id === id : s.name === name));
-      if (at < 0) sessions.push({ name, ...(id ? { id } : {}), kind, start: now, end: now });
-      else sessions[at] = { ...sessions[at], name, ...change() };
+      // First seen at its stop: when it started is unknown, never the stop's time.
+      const was = at < 0 ? { name, ...(id ? { id } : {}), kind, start: null } : sessions[at];
+      sessions.splice(at < 0 ? sessions.length : at, 1, change({ ...was, name }));
       return { ...r, sessions };
     });
   let recordProblem;
   try {
-    touch(() => ({ end: now }));
+    // The stop is pushed with this commit, so an earlier stop's `pushed: false` no longer holds.
+    touch((s) => {
+      const ended = { ...s, end: now };
+      delete ended.pushed;
+      return ended;
+    });
   } catch (error) {
     // A broken record still lets the work be saved; the problem is reported with it.
     if (!(error instanceof RecordError)) throw error;
@@ -64,8 +73,9 @@ export function stopSession({
     message: `wip(${name}): session stopped\n\nRefs: ${shown}`,
     wip: true,
   });
-  if (!saved.pushed && !recordProblem) {
-    touch(() => ({ pushed: false }));
+  // When the hooks refused the commit nothing was committed, and a second commit would be refused too.
+  if (!saved.pushed && saved.hooks === undefined && !recordProblem) {
+    touch((s) => ({ ...s, pushed: false }));
     commitRecord(root, key, {
       message: `wip(${name}): the stop was not pushed\n\nRefs: ${shown}`,
       push: false,
@@ -73,11 +83,52 @@ export function stopSession({
   }
   const problem = [saved.problem, recordProblem].filter(Boolean).join("; ") || undefined;
   return {
+    ...saved,
     key,
     sha: git(root, ["rev-parse", "HEAD"]).out,
-    pushed: saved.pushed,
     ...(problem ? { problem } : {}),
   };
+}
+
+/** @typedef {import("../lib/record.mjs").FlowRecord["sessions"][number]} Session */
+
+/**
+ * What `session stop` tells the owner, one `[state, line]` each.
+ * @param {string} name
+ * @param {ReturnType<typeof stopSession>} result
+ * @returns {[Parameters<typeof say>[0], string][]}
+ */
+export function stopReport(name, result) {
+  if ("skipped" in result) return [];
+  const at = `${NAME} session stop:`;
+  /** @type {[Parameters<typeof say>[0], string][]} */
+  const lines = [
+    result.hooks !== undefined
+      ? [
+          "blocked",
+          `${at} the hooks refused the WIP commit: ${result.hooks}; the work stays in the worktree, uncommitted`,
+        ]
+      : result.pushed
+        ? [
+            result.problem ? "blocked" : "approved",
+            `${at} ${name} saved and pushed (${result.sha.slice(0, 12)})${result.problem ? `; ${result.problem}` : ""}`,
+          ]
+        : [
+            "blocked",
+            `${at} ${name} is committed (${result.sha.slice(0, 12)}) but not pushed: ${result.problem}; fix it and run \`${NAME} session stop\` again`,
+          ],
+  ];
+  if (result.secrets)
+    lines.push([
+      "blocked",
+      `${at} not committed, as their names look like secrets: ${result.secrets.join(", ")}`,
+    ]);
+  if (result.untracked)
+    lines.push([
+      "waiting",
+      `${at} untracked, so not committed (\`git add\` what belongs to the task): ${result.untracked.join(", ")}`,
+    ]);
+  return lines;
 }
 
 /**
@@ -160,17 +211,7 @@ export async function run(args = []) {
       id: typeof event.session_id === "string" && event.session_id ? event.session_id : undefined,
       kind: opt("--kind"),
     });
-    if ("skipped" in result) return 0;
-    if (result.pushed)
-      say(
-        "approved",
-        `${NAME} session stop: ${name} saved and pushed (${result.sha.slice(0, 12)})`,
-      );
-    else
-      say(
-        "blocked",
-        `${NAME} session stop: ${name} is committed (${result.sha.slice(0, 12)}) but not pushed: ${result.problem}; fix it and run \`${NAME} session stop\` again`,
-      );
+    for (const [state, line] of stopReport(name, result)) say(state, line);
   } catch (error) {
     say("blocked", `${NAME} session stop: ${/** @type {Error} */ (error).message}`);
   }

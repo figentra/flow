@@ -3,17 +3,18 @@
  * Purpose: Flow's record (FR-14): `.flow/record/<key>.json` on the task's branch, holding the task's stage and state,
  *   approvals, sessions, commits, PRs, gate and review results, open owner asks and task evidence. `readRecord` and
  *   `updateRecord` read and write it against `RECORD_SCHEMA` (shipped as `schema/record.schema.json`);
- *   `commitRecord` commits it (with the whole worktree for a session's stop) and pushes the branch through the
- *   credentials port (FR-19).
+ *   `readRecordAt` reads it from a branch with no checkout; `commitRecord` commits it (with the tracked changes for a
+ *   session's stop) and pushes the branch through the credentials port (FR-19).
  * Boundary: writes only the record file, one commit on the task's branch and a push of that branch. Never commits on
  *   or pushes to the default branch, never rebases or force-pushes: a rejected push is merged once and retried, then
- *   reported as `pushed: false`.
+ *   reported as `pushed: false`. Never stages an untracked file but the record, or a file named like a secret; the
+ *   hooks always run (FR-18).
  * Runtime: node
  * Governing contract: STA-1945 (FR-14, FR-19, AC-13, AC-18, P-019).
  * Secrets: none; network git goes through `remote` and the configured credentials.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 
 import { validate } from "./config.mjs";
 import { FLOW_DIR } from "./flow-dir.mjs";
@@ -62,7 +63,15 @@ export const RECORD_SCHEMA = {
     state: { enum: ["active", "waiting", "done", "failed"] },
     approvals: list({ who: str, when: str, stage: str, digest: str }),
     sessions: list(
-      { name: str, id: str, kind: str, start: str, end: str, pushed: { type: "boolean" } },
+      {
+        name: str,
+        id: str,
+        kind: str,
+        // null: the session was first seen at its stop, so when it started is unknown.
+        start: { type: ["string", "null"], minLength: 1 },
+        end: str,
+        pushed: { type: "boolean" },
+      },
       ["name", "kind", "start"],
     ),
     commits: { type: "array", items: str },
@@ -92,7 +101,7 @@ export const RECORD_SCHEMA = {
 /**
  * @typedef {{ recordVersion: 1, key: string, stage: Stage, state: "active" | "waiting" | "done" | "failed",
  *   approvals: { who: string, when: string, stage: string, digest: string }[],
- *   sessions: { name: string, id?: string, kind: string, start: string, end?: string, pushed?: boolean }[],
+ *   sessions: { name: string, id?: string, kind: string, start: string | null, end?: string, pushed?: boolean }[],
  *   commits: string[],
  *   prs: number[], gate: { sha: string, state: string, baseline?: boolean }[],
  *   review: { sha: string, verdict: string, findings: number }[], asks: { what: string, command: string }[],
@@ -150,15 +159,39 @@ export const recordProblems = (record) => validate(RECORD_SCHEMA, record);
  */
 export function readRecord(root, key) {
   const file = recordPath(root, key);
-  if (!existsSync(file)) return undefined;
+  return existsSync(file) ? parseRecord(readFileSync(file, "utf8"), file) : undefined;
+}
+
+/**
+ * The record of `key` as the commit `ref` holds it (a branch the task has no checkout of), or undefined when there is
+ * none.
+ * @param {string} root
+ * @param {string} ref
+ * @param {string} key
+ * @returns {FlowRecord | undefined}
+ * @throws {RecordError} when the file is not JSON or fails the schema
+ */
+export function readRecordAt(root, ref, key) {
+  recordPath(root, key);
+  const at = `${ref}:${RECORD_DIR}/${key.toLowerCase()}.json`;
+  const shown = git(root, ["show", at]);
+  return shown.ok ? parseRecord(shown.out, at) : undefined;
+}
+
+/**
+ * @param {string} text
+ * @param {string} where
+ * @returns {FlowRecord}
+ */
+function parseRecord(text, where) {
   let record;
   try {
-    record = JSON.parse(readFileSync(file, "utf8"));
+    record = JSON.parse(text);
   } catch (error) {
-    throw new RecordError(`${file}: not valid JSON (${/** @type {Error} */ (error).message})`);
+    throw new RecordError(`${where}: not valid JSON (${/** @type {Error} */ (error).message})`);
   }
   const problems = recordProblems(record);
-  if (problems.length) throw new RecordError(`${file}: ${problems.join("; ")}`);
+  if (problems.length) throw new RecordError(`${where}: ${problems.join("; ")}`);
   return record;
 }
 
@@ -206,12 +239,22 @@ function push(root, branch) {
   }
 }
 
+/** File names that look like secrets: a stop never stages them, tracked or not. */
+const SECRET = /^(\.env|\.secrets|id_rsa)|\.(pem|key|p12)$/;
+
+/** The paths of a `-z` git listing. */
+const paths = (/** @type {string} */ out) => out.split("\0").filter(Boolean);
+
 /**
- * Commits the record of `key` (with `wip`, every change in the worktree) on the current branch and pushes it.
+ * Commits the record of `key` on the current branch and pushes it. With `wip` (a session's stop) the commit also
+ * takes every tracked change (`git add -u`), never an untracked file but the record, and never a file whose name looks
+ * like a secret: those are reported as `secrets` and `untracked`, left in the worktree. The hooks always run; when
+ * they refuse the commit, `hooks` is their output's tail and nothing is committed or pushed.
  * @param {string} root the task's worktree
  * @param {string} key
  * @param {{ message: string, wip?: boolean, push?: boolean }} options `push: false` commits only
- * @returns {{ sha: string, pushed: boolean, problem?: string }}
+ * @returns {{ sha: string, pushed: boolean, problem?: string, hooks?: string, secrets?: string[],
+ *             untracked?: string[] }}
  */
 export function commitRecord(root, key, { message, wip = false, push: send = true }) {
   const head = () => git(root, ["rev-parse", "HEAD"]).out;
@@ -223,29 +266,63 @@ export function commitRecord(root, key, { message, wip = false, push: send = tru
       pushed: false,
       problem: `${branch} is the default branch: the record lives on the task's branch`,
     };
-  const added = git(root, wip ? ["add", "-A"] : ["add", "--", recordPath(root, key)]);
-  if (!added.ok) return { sha: head(), pushed: false, problem: `git add failed: ${added.err}` };
-  if (!git(root, ["diff", "--cached", "--quiet"]).ok) {
-    const committed = git(root, ["commit", "-q", "-m", message]);
-    if (!committed.ok)
+  const file = recordPath(root, key);
+  /** @type {{ secrets?: string[], untracked?: string[] }} */
+  const left = {};
+  if (wip) {
+    const record = relative(root, file);
+    const untracked = paths(git(root, ["ls-files", "-z", "--others", "--exclude-standard"]).out);
+    const changed = paths(git(root, ["diff", "-z", "--name-only", "--no-renames", "HEAD"]).out);
+    const secret = (/** @type {string} */ p) => SECRET.test(basename(p));
+    const secrets = [...changed, ...untracked].filter(secret);
+    const others = untracked.filter((p) => p !== record && !secret(p));
+    if (secrets.length) left.secrets = secrets;
+    if (others.length) left.untracked = others;
+    const staged = git(root, ["add", "-u"]);
+    if (!staged.ok)
+      return { sha: head(), pushed: false, problem: `git add -u failed: ${staged.err}`, ...left };
+    // `add -u` stages a changed secret like any tracked change: take it back out before anything commits.
+    const kept = changed.filter(secret);
+    const unstaged = kept.length
+      ? git(root, ["--literal-pathspecs", "reset", "-q", "--", ...kept])
+      : staged;
+    if (!unstaged.ok)
+      return { sha: head(), pushed: false, problem: `git reset failed: ${unstaged.err}`, ...left };
+  }
+  const added = git(root, ["add", "--", file]);
+  if (!added.ok)
+    return { sha: head(), pushed: false, problem: `git add failed: ${added.err}`, ...left };
+  // Only a stop commits more than the record.
+  const only = wip ? [] : ["--", file];
+  if (!git(root, ["diff", "--cached", "--quiet", ...only]).ok) {
+    const committed = git(root, ["commit", "-q", "-m", message, ...only]);
+    if (!committed.ok) {
+      const hooks = `${committed.out}\n${committed.err}`.trim().split("\n").slice(-12).join("\n");
       return {
         sha: head(),
         pushed: false,
-        problem: `commit failed: ${committed.err || committed.out}`,
+        problem: `the hooks refused the commit: ${hooks}`,
+        hooks,
+        ...left,
       };
+    }
   }
-  if (!send) return { sha: head(), pushed: false };
+  if (!send) return { sha: head(), pushed: false, ...left };
   const problem = push(root, branch);
-  return problem ? { sha: head(), pushed: false, problem } : { sha: head(), pushed: true };
+  return { sha: head(), pushed: !problem, ...(problem ? { problem } : {}), ...left };
 }
 
 /**
- * Whether the current branch has commits origin does not (by the last fetched `origin/<branch>`).
+ * Whether `branch` (the current one by default) has commits origin does not (by the last fetched `origin/<branch>`).
  * @param {string} root
+ * @param {string} [branch]
  */
-export function unpushed(root) {
-  const branch = git(root, ["branch", "--show-current"]).out;
+export function unpushed(root, branch = git(root, ["branch", "--show-current"]).out) {
   if (!branch) return false;
-  const ahead = git(root, ["rev-list", "--count", `origin/${branch}..HEAD`]);
+  const ahead = git(root, [
+    "rev-list",
+    "--count",
+    `refs/remotes/origin/${branch}..refs/heads/${branch}`,
+  ]);
   return !ahead.ok || ahead.out !== "0";
 }

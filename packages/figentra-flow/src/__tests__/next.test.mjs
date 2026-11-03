@@ -1,8 +1,9 @@
 /**
  * Figentra Flow file contract:
  * Purpose: hold `fflow next` to its contract: the key comes from the branch or the argument; with no record the task
- *   is at the stage its spec proves (else `start`); a record names its stage and command; an unpushed record is
- *   flagged; a record that fails its schema is refused by its field.
+ *   is at the stage its spec proves (else `start`); a record names its stage and command, read from the key's worktree
+ *   or branch rather than this checkout; an unpushed record is flagged; a record that fails its schema is refused by
+ *   its field; with no key and none on the branch, it asks for one.
  * Boundary: temporary repositories with a local bare origin; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
@@ -64,4 +65,33 @@ test("next: a record that fails its schema is refused by its field", (t) => {
   const step = next({ cwd: r.root, key: "STA-8" });
   assert.equal(step.ok, false);
   assert.match(!step.ok ? step.problem : "", /stage: is required/);
+});
+
+test("next <key> reads the record on the key's worktree or branch, not this checkout", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  const path = join(r.root, ".claude", "worktrees", "sta-9-elsewhere");
+  sh(r.root, "worktree", "add", "-q", "-b", "figentra/sta-9-elsewhere", path, "origin/main");
+  updateRecord(path, "sta-9", (rec) => ({ ...rec, stage: "review", state: "active" }));
+  const open = next({ cwd: r.root, key: "STA-9" });
+  assert.equal(open.ok && open.stage, "review", JSON.stringify(open));
+  assert.equal(open.ok && open.recorded, true);
+
+  // The worktree is gone; only the branch, local or pushed, holds the record.
+  commitRecord(path, "sta-9", { message: "chore(flow): record" });
+  sh(r.root, "worktree", "remove", "--force", path);
+  const local = next({ cwd: r.root, key: "STA-9" });
+  assert.equal(local.ok && local.stage, "review", JSON.stringify(local));
+  assert.equal(local.ok && local.unpushed, false);
+  sh(r.root, "branch", "-D", "figentra/sta-9-elsewhere");
+  const pushed = next({ cwd: r.root, key: "STA-9" });
+  assert.equal(pushed.ok && pushed.stage, "review", JSON.stringify(pushed));
+});
+
+test("next: with no key on a branch that names none, it asks for one", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  const step = next({ cwd: r.root });
+  assert.equal(step.ok, false);
+  assert.match(!step.ok ? step.problem : "", /no issue key: pass one/);
 });
