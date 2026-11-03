@@ -3,8 +3,9 @@
  * Purpose: `fflow status [--repo <path>] [--json] [--offline] [--metrics [--since <n>d]] [--by role [--role <id>]]`
  *   (FR-7, FR-12, AC-012, AC-024, AC-026, AC-032, AC-050): one block per
  *   repository of the workspace (or the one named, or the current one) with its specs by status, worktrees, open PRs
- *   and sessions; `--json` prints the snapshot itself. Exit 0, or 1 when a warning (more building sessions than the
- *   cap) is present, so a script can alert.
+ *   and sessions, and the live agent sessions by title, state, worktree and stage (STA-1945 FR-20, AC-19); `--json`
+ *   prints the snapshot itself. Exit 0, or 1 when a warning (more building sessions than the cap, a session title off
+ *   ADR 0001's pattern or at odds with its record) is present, so a script can alert.
  * Boundary: read-only; GitHub through each repository's credentials, none with `--offline`.
  * Runtime: node
  * Governing contract: STA-1729 phase 4 (the leader's plan stop of 2026-10-31).
@@ -16,6 +17,7 @@ import { busyFolders, git } from "../lib/git.mjs";
 import { github } from "../lib/github.mjs";
 import { NAME, STATUS_CONTEXT } from "../lib/product.mjs";
 import { metrics } from "../lib/metrics.mjs";
+import { systemSessions } from "../lib/sessions.mjs";
 import { snapshot } from "../lib/snapshot.mjs";
 import { statusServer } from "../lib/status-web.mjs";
 import { readSessionCap, readWorkspace } from "../lib/workspace.mjs";
@@ -82,6 +84,14 @@ export function render(snap, color = false) {
       out.push(
         `    ${s.name}${s.building ? " (building)" : ""}: ${s.specs.join(", ")}; worktree ${s.worktrees.join(", ") || "none"}; gate ${s.gates.map((/** @type {any} */ g) => g ?? "none").join(", ") || "none"}`,
       );
+    if (repo.live) {
+      out.push("  live sessions:");
+      if (!repo.live.length) out.push("    none");
+      for (const s of repo.live)
+        out.push(
+          `    ${s.name || "(untitled)"} — ${s.state}, ${s.worktree}, stage ${s.stage ?? "none"}${s.pid ? `, pid ${s.pid}` : ""}${s.note ? ` (${s.note})` : ""}${s.problem ? ` — ${s.problem}` : ""}`,
+        );
+    }
     out.push("");
   }
   for (const w of snap.warnings) out.push(`warning: ${w}`);
@@ -179,11 +189,15 @@ export function run(/** @type {string[]} */ args) {
     console.log(args.includes("--json") ? JSON.stringify(m, null, 2) : renderMetrics(m));
     return 0;
   }
+  const live = systemSessions();
+  const running = live.processes();
   const snap = snapshot({
     repos: reposFor(opt("repo"), process.cwd()),
     cap: readSessionCap(),
     offline,
-    busy: busyFolders(),
+    busy: running?.map((p) => p.cwd),
+    // One process listing serves both the worktrees' `in use` and the live sessions.
+    live: { ...live, processes: () => running },
     api: offline ? undefined : (root) => github(root),
   });
   const byRole = opt("by") === "role";

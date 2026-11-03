@@ -35,6 +35,8 @@ const COMMANDS = [
   "resume",
   "session",
   "task",
+  "todo",
+  "ledger",
 ];
 const [command, ...args] = process.argv.slice(2);
 if (!COMMANDS.includes(command)) {

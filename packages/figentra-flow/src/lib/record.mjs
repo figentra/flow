@@ -1,7 +1,8 @@
 /**
  * Figentra Flow file contract:
  * Purpose: Flow's record (FR-14): `.flow/record/<key>.json` on the task's branch, holding the task's stage and state,
- *   approvals, sessions, commits, PRs, gate and review results, open owner asks and task evidence. `readRecord` and
+ *   approvals, sessions, commits, PRs, gate and review results, open owner asks, task evidence and its dated stage
+ *   history. `readRecord` and
  *   `updateRecord` read and write it against `RECORD_SCHEMA` (shipped as `schema/record.schema.json`);
  *   `readRecordAt` reads it from a branch with no checkout; `commitRecord` commits it (with the tracked changes for a
  *   session's stop) and pushes the branch through the credentials port (FR-19).
@@ -106,6 +107,12 @@ export const RECORD_SCHEMA = {
         properties: { at: str, head: str, docs: str, session: str },
       },
     },
+    // FR-21: each stage's state change with its time, which the ledger reads (absent in older records)
+    history: list({
+      stage: { enum: STAGES },
+      state: { enum: ["active", "waiting", "done", "failed"] },
+      at: str,
+    }),
   },
 };
 
@@ -118,7 +125,8 @@ export const RECORD_SCHEMA = {
  *   prs: number[], gate: { sha: string, state: string, baseline?: boolean }[],
  *   review: { sha: string, verdict: string, findings: number }[], asks: { what: string, command: string }[],
  *   tasks: Record<string, { command: string, exit: number, ms?: number, head: string, clean: boolean, digest: string, at: string, error?: string }[]>,
- *   started?: Record<string, { at: string, head: string, docs: string, session?: string }> }} FlowRecord
+ *   started?: Record<string, { at: string, head: string, docs: string, session?: string }>,
+ *   history?: { stage: Stage, state: "active" | "waiting" | "done" | "failed", at: string }[] }} FlowRecord
  */
 
 /** Raised for a key that is not one, or a record that is not valid JSON or fails its schema. */
