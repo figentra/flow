@@ -26,11 +26,12 @@ import {
   statusOf,
   tierOf,
 } from "../commands/gate.mjs";
-import { loadConfig } from "./config.mjs";
+import { gateLogins, loadConfig } from "./config.mjs";
 import { defaultBranch, git, idleHours, inUse, isClean, worktrees } from "./git.mjs";
 import { STATUS_CONTEXT } from "./product.mjs";
 import { aiReview } from "./review.mjs";
 import { ownerStopsOf, roleOf } from "./roles.mjs";
+import { parseTasks } from "./spec-parse.mjs";
 import { loadTeam } from "./team.mjs";
 
 /** The snapshot's schema; a breaking change raises it. */
@@ -61,6 +62,7 @@ function specsIn(checkout, { keys, rules, team }) {
     .map((folder) => {
       const dir = join(base, folder);
       const text = readIf(join(dir, "spec.md"));
+      const tasks = readIf(join(dir, "tasks.md"));
       return {
         key: keys.folderKey(folder) ?? null,
         folder,
@@ -71,9 +73,16 @@ function specsIn(checkout, { keys, rules, team }) {
         ownerStops: ownerStopsOf(text) ?? null,
         // An owner-kept spec with a stage approval missing waits on the owner.
         ownerWaiting: Boolean(ownerStopsOf(text)?.length) && checkApproval(text).length > 0,
+        // FR-25: optional tasks a Done spec left open
+        skipped:
+          statusOf(text) === "done"
+            ? parseTasks(tasks)
+                .filter((t) => t.optional && !t.done && !t.struck)
+                .map((t) => t.id)
+            : [],
         problems: checkStage(folder, text, {
           files: readdirSync(dir),
-          tasks: readIf(join(dir, "tasks.md")),
+          tasks,
           plan: readIf(join(dir, "plan.md")),
           keys,
           rules,
@@ -101,7 +110,7 @@ function aheadBehind(path, branch) {
  * @param {import("./github.mjs").Api} api
  * @param {string} slug
  * @param {string} base the default branch
- * @param {{ reviewer?: string, owner?: string, gateApp?: string }} apps
+ * @param {{ reviewer?: string, owner?: string, gateApp?: string | string[] }} apps
  */
 function openPrs(api, slug, base, apps) {
   const listed = api("GET", `/repos/${slug}/pulls?state=open&per_page=100`);
@@ -136,7 +145,12 @@ function openPrs(api, slug, base, apps) {
         ? {
             state: status.state,
             creator: status.creator?.login ?? null,
-            trusted: apps.gateApp ? status.creator?.login === apps.gateApp : null,
+            trusted: apps.gateApp
+              ? [apps.gateApp]
+                  .flat()
+                  .filter(Boolean)
+                  .includes(status.creator?.login ?? "")
+              : null,
           }
         : null,
       review: review.verdict,
@@ -202,7 +216,7 @@ export function repoSnapshot(repo, { api, offline = false, now = Date.now(), bus
       prs = openPrs(api(root), slug, base, {
         reviewer: apps.review?.slug,
         owner: apps.owner,
-        gateApp: apps.gate?.login,
+        gateApp: gateLogins(apps),
       });
     } catch (error) {
       prsProblem = `unknown (${/** @type {Error} */ (error).message})`;

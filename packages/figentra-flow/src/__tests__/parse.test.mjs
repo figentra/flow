@@ -12,7 +12,10 @@ test("parse picks the parser from the file name", () => {
   assert.deepEqual(parse("tasks.md", "## Phase 1\n- [x] T001 Do — covers: FR-001\n")[0], {
     line: 2,
     id: "T001",
+    marker: "x",
     done: true,
+    optional: false,
+    checkpoint: undefined,
     struck: false,
     parallel: false,
     covers: ["FR-001"],
