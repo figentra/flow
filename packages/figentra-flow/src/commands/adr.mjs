@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import { connect, landOne } from "./land.mjs";
 import { trackerFor } from "../adapters/tracker/index.mjs";
 import { say } from "../lib/cli.mjs";
-import { loadConfig } from "../lib/config.mjs";
+import { gateLogins, loadConfig } from "../lib/config.mjs";
 import { presetDir } from "../lib/flow-dir.mjs";
 import { defaultBranch, fetch, git, mainCheckout } from "../lib/git.mjs";
 import { NAME } from "../lib/product.mjs";
@@ -251,7 +251,7 @@ export async function run(
             repo,
             base,
             number,
-            gateApp: apps.gate?.login,
+            gateApp: gateLogins(apps),
             reviewer: apps.review?.slug,
             owner: apps.owner,
             // The branch `adr/<n>-<slug>` names no issue; the squash names this one, which landing does not close.

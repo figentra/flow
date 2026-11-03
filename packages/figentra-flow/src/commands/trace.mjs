@@ -2,7 +2,8 @@
  * Figentra Flow file contract:
  * Purpose: `fflow trace` (core's `spec-trace`, moved unchanged) — FR/SC/P → task → `@covers` test traceability and spec-vs-diff drift for specs in
  *   `.agents/specs/sta-<n>-<slug>/` (owner decision OR12; the plan's §3.6).
- *   trace <dir> [--json]    the matrix: each live FR and P with its tasks and covering tests, each SC with its method
+ *   trace <dir> [--json]    the matrix: each live FR and P with its tasks and covering tests, each SC with its method,
+ *                           and the tasks done (with Flow's record, only those with passing evidence: STA-1945 FR-23)
  *   drift <dir> [--base=r]  members changed in the diff that Impact does not name (in `ci`, that no changed spec's
  *                           Impact names); ticked tasks whose paths are gone;
  *                           for a Done spec, Impact "Docs to update" pages the diff does not touch
@@ -29,14 +30,27 @@ import {
   properties,
   strip,
 } from "../lib/spec-parse.mjs";
+import { passed } from "../lib/evidence.mjs";
 import { NAME } from "../lib/product.mjs";
+import { readRecord } from "../lib/record.mjs";
 
 /** The repository the command runs in: the working directory. */
 const ROOT = process.cwd();
 const readIf = (p) => (existsSync(p) ? readFileSync(p, "utf8") : "");
 
-/** The trace matrix for one spec folder's texts; `tests` is the concatenated text of the test files. */
-export function trace({ folder, spec, plan = "", tasks = "", tests = "", keys = repoScheme() }) {
+/**
+ * The trace matrix for one spec folder's texts; `tests` is the concatenated text of the test files. With Flow's
+ * `record`, a task counts as done only with passing evidence (FR-23); without one (a spec before FR-23), its `[x]`.
+ */
+export function trace({
+  folder,
+  spec,
+  plan = "",
+  tasks = "",
+  tests = "",
+  keys = repoScheme(),
+  record = undefined,
+}) {
   const key = keys.folderKey(folder);
   const covered = new Set(coversTags(tests, key));
   const live = parseTasks(tasks).filter((t) => !t.struck);
@@ -60,7 +74,12 @@ export function trace({ folder, spec, plan = "", tasks = "", tests = "", keys = 
     tasks: tasksFor(id),
     tested: covered.has(id),
   }));
-  return { key, frs, ps, scs, acs };
+  const done = live.map((t) => ({
+    id: t.id,
+    ticked: t.done,
+    done: t.done && (!record || passed(record.tasks[t.id])),
+  }));
+  return { key, frs, ps, scs, acs, tasks: done };
 }
 
 /** Done rules over a trace: every live FR and P tested, every SC with a method. */
@@ -79,6 +98,11 @@ export function traceProblems(t) {
   for (const sc of t.scs)
     if (!sc.method)
       problems.push(`${sc.id} names no verification method ("— verified by: unit|e2e|k6|manual")`);
+  for (const task of t.tasks ?? [])
+    if (task.ticked && !task.done)
+      problems.push(
+        `${task.id} is ticked without passing evidence in the record (\`${NAME} task done\`; FR-23)`,
+      );
   return problems;
 }
 
@@ -121,11 +145,14 @@ const git = (...a) => {
 };
 
 function load(dir) {
+  const key = repoScheme().folderKey(basename(dir));
   return {
     folder: basename(dir),
     spec: readIf(join(dir, "spec.md")),
     plan: readIf(join(dir, "plan.md")),
     tasks: readIf(join(dir, "tasks.md")),
+    // a record that fails its schema throws: trace fails closed
+    record: key ? readRecord(ROOT, key) : undefined,
   };
 }
 
@@ -141,7 +168,8 @@ export function run([mode, ...args]) {
     return (out ?? "").split("\n").filter(Boolean);
   };
   if (mode === "trace" && dir) {
-    const t = trace({ ...load(resolve(dir)), tests: testsText() });
+    const loaded = load(resolve(dir));
+    const t = trace({ ...loaded, tests: testsText() });
     if (args.includes("--json")) return (console.log(JSON.stringify(t, null, 2)), 0);
     for (const r of /** @type {{ id: string, tasks: string[], tested: boolean, via?: string[] }[]} */ ([
       ...t.frs,
@@ -151,6 +179,9 @@ export function run([mode, ...args]) {
         `${r.id.padEnd(7)} tasks: ${r.tasks.join(", ") || "—"}  tests: ${r.tested ? "yes" : r.via?.length ? `via ${r.via.join(", ")}` : "no"}`,
       );
     for (const sc of t.scs) console.log(`${sc.id.padEnd(7)} verified by: ${sc.method ?? "—"}`);
+    console.log(
+      `tasks done: ${t.tasks.filter((x) => x.done).length} of ${t.tasks.length}${loaded.record ? "" : " (no record: by marker)"}`,
+    );
     return 0;
   }
   if (mode === "drift" && dir) {

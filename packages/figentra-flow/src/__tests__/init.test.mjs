@@ -17,10 +17,18 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { init } from "../commands/init.mjs";
+import { spawnSync } from "node:child_process";
+
+import { checks, rowsOf } from "../commands/doctor.mjs";
+import { specDir } from "../commands/gate.mjs";
+import { init, STARTER_CONFIG } from "../commands/init.mjs";
+import { locate } from "../commands/spec.mjs";
 import { hasProjector, sync } from "../commands/sync.mjs";
+import { loadConfig } from "../lib/config.mjs";
 import { FLOW_ASSETS } from "../lib/flow-dir.mjs";
+import { CONFIG_FILE } from "../lib/product.mjs";
 import { VERBS } from "../lib/render.mjs";
+import { repo, sh } from "./__fixtures__/repo.mjs";
 
 const quiet = { log: () => {} };
 
@@ -81,7 +89,7 @@ test("with a projector, sync writes neutral .agents/skills documents; it removes
     ]);
     const lock = JSON.parse(readFileSync(join(root, ".flow/lock.json"), "utf8"));
     assert.deepEqual(Object.keys(lock.files), files);
-    assert.equal(lock.preset, "neutral");
+    assert.equal(lock.preset.name, "neutral");
     assert.deepEqual(sync(root, quiet).files, files, "a second sync is the same");
   } finally {
     rmSync(root, { recursive: true });
@@ -103,4 +111,64 @@ test("a repository override wins over the preset's command", () => {
   } finally {
     rmSync(root, { recursive: true });
   }
+});
+
+// @covers sta-1945:FR-31 sta-1945:AC-37 sta-1945:P-035
+test("init writes a starter config, says so, and keeps one; doctor then reports no error", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "flow-init-config-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  spawnSync("git", ["init", "-q"], { cwd: root });
+  /** @type {string[]} */
+  const said = [];
+  assert.equal(init(root, { config: true, log: (line) => said.push(line) }), true);
+  assert.deepEqual(JSON.parse(readFileSync(join(root, CONFIG_FILE), "utf8")), STARTER_CONFIG);
+  assert.deepEqual(loadConfig(root).errors, []);
+  assert.match(said.join("\n"), /wrote flow\.config\.json/);
+  assert.match(said.join("\n"), /rendered \d+ file/);
+  const rows = rowsOf(checks(root, { disk: () => ({ free: 1024 ** 4, total: 2 * 1024 ** 4 }) }));
+  assert.deepEqual(
+    rows.filter((r) => r.status === "fail"),
+    [],
+  );
+  writeFileSync(join(root, CONFIG_FILE), '{ "version": 1, "preset": "neutral" }\n');
+  init(root, { force: true, config: true, log: () => {} });
+  assert.match(
+    readFileSync(join(root, CONFIG_FILE), "utf8"),
+    /neutral/,
+    "an existing config is kept",
+  );
+});
+
+// @covers sta-1945:FR-31 sta-1945:AC-37
+test("spec paths and gate dir fall back to the branch slug's folder; neither sends the other back", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  mkdirSync(join(r.root, ".agents/specs/sta-9-cancel-order"), { recursive: true });
+  sh(r.root, "checkout", "-q", "-b", "feature/cancel-order");
+  assert.deepEqual(specDir({ root: r.root, branch: "feature/cancel-order" }), {
+    dir: ".agents/specs/sta-9-cancel-order",
+  });
+  assert.equal(locate(r.root).featureDir, join(r.root, ".agents/specs/sta-9-cancel-order"));
+  const none = specDir({ root: r.root, branch: "feature/other" });
+  assert.equal(none.fix, "--key <key>");
+  assert.doesNotMatch(none.error ?? "", /gate dir/);
+  sh(r.root, "checkout", "-q", "-b", "feature/other");
+  assert.throws(() => locate(r.root), /gate dir --key <key>/);
+});
+
+// @covers sta-1945:FR-31 sta-1945:AC-37
+test("gate dir's slug fallback matches the whole slug, and refuses several folders with it", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  mkdirSync(join(r.root, ".agents/specs/sta-9-cancel-order"), { recursive: true });
+  // `order` is only the last word of `cancel-order`: never that spec's folder.
+  const tail = specDir({ root: r.root, branch: "feature/order" });
+  assert.equal(tail.dir, undefined);
+  assert.match(tail.error ?? "", /no spec folder named for its slug/);
+  mkdirSync(join(r.root, ".agents/specs/sta-10-cancel-order"), { recursive: true });
+  const several = specDir({ root: r.root, branch: "feature/cancel-order" });
+  assert.equal(several.dir, undefined);
+  assert.match(several.error ?? "", /several spec folders named for it: .*sta-9-cancel-order/);
+  assert.match(several.error ?? "", /sta-10-cancel-order/);
+  assert.equal(several.fix, "--key <key>");
 });

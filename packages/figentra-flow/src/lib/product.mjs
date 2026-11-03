@@ -24,6 +24,9 @@ export const VERSION = MANIFEST.version;
 /** The Node range Flow needs, from `package.json`'s `engines`. */
 export const NODE_RANGE = MANIFEST.engines?.node ?? ">=0";
 
+/** The docs link every command's help and error block give, from `package.json`'s `homepage`. */
+export const HOMEPAGE = MANIFEST.homepage;
+
 /** The registry the package is published to (`publishConfig.registry`), or undefined for npm's default. */
 export const REGISTRY = MANIFEST.publishConfig?.registry;
 
@@ -62,6 +65,9 @@ export const USER_DIR = [".config", NAME];
 
 /** The branch config key `land` records its squash commit under (`branch.<b>.<key>`, AC-029). */
 export const LANDED_KEY = `${NAME.replace(/-(\w)/g, (_, c) => c.toUpperCase())}Landed`;
+
+/** The branch config key `land --stack` records a child's squashed parent head under, for a re-run after a stop. */
+export const STACK_PARENT_KEY = `${NAME.replace(/-(\w)/g, (_, c) => c.toUpperCase())}StackParent`;
 
 /** The key before 0.2.2; `clean` still reads it, so a branch landed by 0.2.1 is still known as landed. */
 export const LEGACY_LANDED_KEY = `${LEGACY_NAME.replace(/-(\w)/g, (_, c) => c.toUpperCase())}Landed`;

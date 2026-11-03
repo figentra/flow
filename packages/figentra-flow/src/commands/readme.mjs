@@ -13,17 +13,21 @@ import { join } from "node:path";
 
 import { git } from "../lib/git.mjs";
 import { NAME } from "../lib/product.mjs";
+import { withHeader } from "../lib/provenance.mjs";
 import { README_DATA, renderReadme } from "../lib/readme.mjs";
+import { provenanceOf } from "../lib/render.mjs";
 
 /** `fflow readme [--check]`. */
 export function run(/** @type {string[]} */ args = []) {
   const top = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
   const root = top.ok ? top.out : process.cwd();
-  const text = renderReadme(root);
-  if (text === undefined) {
+  const rendered = renderReadme(root);
+  if (rendered === undefined) {
     console.error(`${NAME} readme: no ${README_DATA} in ${root}`);
     return 2;
   }
+  // The same text `sync` writes, provenance header included (STA-1945 FR-3).
+  const text = withHeader("README.md", rendered, provenanceOf(root));
   const file = join(root, "README.md");
   if (args.includes("--check")) {
     if (existsSync(file) && readFileSync(file, "utf8") === text) return 0;
