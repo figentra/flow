@@ -8,7 +8,8 @@
  */
 // @covers sta-1729:AC-028 sta-163:FR-001 sta-163:FR-002 sta-163:FR-003 sta-163:FR-004 sta-163:FR-005 sta-163:FR-008
 // @covers sta-163:P-001 sta-163:P-002 sta-163:P-003 sta-163:P-005 sta-163:P-006 sta-163:P-007
-// FR-30 and P-034 are not claimed: contract drift (T047) and edited approvals (T048) are not built yet.
+// FR-30 and P-034 are not claimed: its scope clause (scope drift, task trees) is built, but contract drift (T047)
+// and edited approvals (T048) are not yet.
 // @covers sta-1945:FR-26 sta-1945:FR-27 sta-1945:FR-28 sta-1945:FR-29
 // @covers sta-1945:AC-28 sta-1945:AC-29 sta-1945:AC-30 sta-1945:AC-31 sta-1945:AC-32
 // @covers sta-1945:P-032 sta-1945:P-033
@@ -36,14 +37,17 @@ import {
   checkPlaceholders,
   checkScope,
   checkSources,
+  checkSmallDesign,
   checkSpec,
   checkStage,
+  checkTaskTrees,
   checkTasks,
   checkTier,
   checkVague,
   computedTier,
   isOwnSpec,
   qualityWords,
+  TREE_GATES_SINCE,
   refsKeys,
   specDir,
   tierOf,
@@ -907,4 +911,120 @@ test("scope: a changed file no task names is drift, failing on big and warning o
   const none = { problems: [], warnings: [] };
   assert.deepEqual(checkScope("**Status**: Tasked\n", tasks, changed), none);
   assert.deepEqual(checkScope(big, "", changed), none);
+});
+
+// @covers sta-1945:FR-27 sta-1945:AC-29 sta-1945:P-032
+test("small design: a small spec's one-page design keeps the folder tree and the interfaces from Planned (FR-27)", () => {
+  const over = { team: null, words: [] };
+  const tree = "### Files and folders\n\n```text\nsrc/wallet.ts (new)\n```\n";
+  const code = "### Contracts\n\n```ts\nexport function show(pass: Pass): void;\n```\n";
+  const noTree =
+    "spec.md ## Design: the design has no folder tree (a ```text block of every file it adds) (FR-27)";
+  const noInterface =
+    "spec.md ## Design: the design has no interface declarations (a fenced block in the repository's language) (FR-27)";
+  const small = (/** @type {string} */ design, history = "- d · Draft → Planned") =>
+    checkStage(
+      "sta-12-x",
+      `${documented("small", "Planned", SOURCES).replace("- d · Draft → Planned", history)}\n${design}`,
+      over,
+    ).filter((p) => p.endsWith("(FR-27)"));
+  assert.deepEqual(small(DESIGN("###")), [noTree, noInterface]);
+  const full = DESIGN("###")
+    .replace("### Files and folders\n\nnone\n", tree)
+    .replace("### Contracts\n\nnone\n", code);
+  assert.deepEqual(small(full), []);
+  // a mermaid diagram declares no interface, as in a plan's component
+  assert.deepEqual(
+    small(full.replace("```ts\nexport function show(pass: Pass): void;", "```mermaid\ngraph LR")),
+    [noInterface],
+  );
+  // a spec last clarified before the document gates keeps its old rules
+  assert.deepEqual(
+    small(DESIGN("###"), "- 2026-11-01 · Draft → Clarified\n- d · Clarified → Planned"),
+    [],
+  );
+  assert.deepEqual(checkSmallDesign(full), []);
+  assert.deepEqual(checkSmallDesign(""), [noTree, noInterface]);
+});
+
+// FR-30's task-tree part only (see scope-drift.test.mjs), so FR-30 itself is not claimed.
+// @covers sta-1945:AC-32
+test("task trees: each task names only files of the plan's folder trees, failing big and warning otherwise (FR-30)", () => {
+  const plan = [
+    "## Components and responsibilities",
+    "",
+    "### C1 Wallet",
+    "",
+    "```text",
+    "packages/wallet/",
+    "├── src/",
+    "│   ├── pass.ts          (new)",
+    "│   └── {show,hide}.ts   (changed)",
+    "└── docs/",
+    "```",
+    "",
+    "## Files and folders",
+    "",
+    "```text",
+    "README.md",
+    "```",
+    "",
+    "## Data models and migrations",
+    "",
+    "```text",
+    "src/elsewhere.ts",
+    "```",
+    "",
+  ].join("\n");
+  const tasks = [
+    "- [ ] T001 Pass in `packages/wallet/src/pass.ts` and `packages/wallet/src/show.ts` — covers: AC-001",
+    "- [ ] T002 Guide in `packages/wallet/docs/guide.md`, `packages/wallet/docs/`, `README.md` and `packages/wallet/src/__tests__/pass.test.ts` — covers: AC-001",
+    "- [ ] T003 Record in `.agents/specs/sta-12-x/tasks.md` through `gate ci`, `checkScope` and `/flow-tasks` — covers: AC-001",
+    "- [ ] T004 Stray `src/elsewhere.ts`, `packages/wallet/src/pass.js` and `packages/wallet/src/` — covers: AC-001",
+    "- [ ] ~~T005~~ Was `src/gone.ts` — covers: AC-001",
+  ].join("\n");
+  const outside = (/** @type {string} */ path) =>
+    `tasks.md:4: T004 names \`${path}\`, which no folder tree of plan.md holds (add it to the tree, or amend the task) (FR-30)`;
+  const found = [
+    outside("src/elsewhere.ts"),
+    outside("packages/wallet/src/pass.js"),
+    outside("packages/wallet/src/"),
+  ];
+  assert.deepEqual(checkTaskTrees("**Tier**: big\n", plan, tasks, "sta-12-x"), {
+    problems: found,
+    warnings: [],
+  });
+  assert.deepEqual(checkTaskTrees("**Tier**: feature\n", plan, tasks, "sta-12-x"), {
+    problems: [],
+    warnings: found,
+  });
+  // a small spec's tasks and trees are both in spec.md
+  const small = checkTaskTrees(
+    "**Tier**: small\n\n## Design\n\n### Files and folders\n\n```text\nsrc/pass.ts (new)\n```\n\n## Tasks\n\n- [ ] T001 In `src/pass.ts` and `src/hide.ts` — covers: AC-001\n",
+    "",
+    "",
+    "sta-12-x",
+  );
+  assert.deepEqual(small.problems, []);
+  assert.equal(small.warnings.length, 1);
+  assert.match(
+    small.warnings[0],
+    /T001 names `src\/hide\.ts`, which no folder tree of spec\.md ## Design holds/,
+  );
+  const none = { problems: [], warnings: [] };
+  assert.deepEqual(checkTaskTrees("**Status**: Tasked\n", plan, tasks, "sta-12-x"), none);
+  // a spec last clarified before the cut-over was tasked without the rule
+  const dated = (/** @type {string} */ day) =>
+    `**Tier**: big\n\n## Status history\n\n- ${day}: Draft → Clarified\n`;
+  assert.deepEqual(checkTaskTrees(dated("2026-11-03"), plan, tasks, "sta-12-x"), none);
+  assert.deepEqual(
+    checkTaskTrees(dated(TREE_GATES_SINCE), plan, tasks, "sta-12-x").problems,
+    found,
+  );
+  // another spec's folder is not exempt, and a big spec without a plan is left to the stage gate
+  assert.deepEqual(checkTaskTrees("**Tier**: big\n", plan, tasks, "sta-13-y").problems, [
+    "tasks.md:3: T003 names `.agents/specs/sta-12-x/tasks.md`, which no folder tree of plan.md holds (add it to the tree, or amend the task) (FR-30)",
+    ...found,
+  ]);
+  assert.deepEqual(checkTaskTrees("**Tier**: big\n", "", tasks, "sta-12-x"), none);
 });

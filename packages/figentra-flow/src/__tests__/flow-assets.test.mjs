@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { checkDesign, DESIGN_SECTIONS } from "../commands/gate.mjs";
+import { checkDesign, checkSmallDesign, DESIGN_SECTIONS } from "../commands/gate.mjs";
 import { sync } from "../commands/sync.mjs";
 import { LOCK } from "../lib/flow-dir.mjs";
 import { digestOf, readLock, treeDigest } from "../lib/lock.mjs";
@@ -167,7 +167,7 @@ test("installProblems reads a v1 lock; the next sync rewrites it as v2", (t) => 
 
 // STA-1945 A-3: the spec and plan templates carry the sections FR-26 and FR-27 name, per tier; worked examples sit in
 // comments, which the gate strips.
-// @covers sta-1945:FR-26 sta-1945:FR-27 sta-1945:P-031
+// @covers sta-1945:FR-26 sta-1945:FR-27 sta-1945:P-031 sta-1945:AC-43
 const template = (/** @type {string} */ preset, /** @type {string} */ name) =>
   readFileSync(join(FLOW, "presets", preset, "templates", `${name}-template.md`), "utf8");
 /** The offsets of DESIGN_SECTIONS as `level` headings in `body`, which must rise. */
@@ -211,6 +211,7 @@ test("templates: a spec states Discovery and Sources before its requirements, NF
     // Small tier: the one-page design in spec.md, with its folder tree and interfaces.
     const design = body.match(/^## Design\b[^\n]*\n([\s\S]*?)(?=^## )/m)?.[1] ?? "";
     assert.deepEqual(checkDesign(design, "spec.md ## Design", "###"), [], preset);
+    assert.deepEqual(checkSmallDesign(design), [], `${preset}: the gate's tree and interfaces`);
     const order = designOrder(design, "###");
     assert.deepEqual(
       order,
