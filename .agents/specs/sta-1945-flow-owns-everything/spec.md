@@ -133,12 +133,14 @@ detectable hand edits, reviewed overrides and policies no repository can switch 
     guard plugin);
   - `.mcp.yaml`: the preset's servers plus the config's additions, secrets by name;
   - `lefthook.yml`: the preset's hook steps plus the config's, including `fflow gate branch`;
-    the oxfmt and oxlint jobs follow core's STA-1865 pattern in every repository: they run the mise-pinned binary
-    first (`mise exec -- oxfmt …`), fall back to `pnpm exec` only where mise is missing, and keep the exit-2 "all
-    ignored" handling. `pnpm exec` runs pnpm 12's lockfile trust-policy check first, which fetches registry metadata,
-    so a Mac with no @figentra read token fails pre-commit with a 401 in any repository whose lockfile holds an
-    @figentra package (os, STA-1936). `sync` makes sure `mise.toml` pins `npm:oxfmt` and `npm:oxlint` at the
-    versions the catalog pins, which `repo-checks/tool-pins` requires;
+    the oxfmt and oxlint jobs follow core's hook rule (STA-1865, as STA-2039 amended it) in every repository: they
+    run the mise-pinned binary, named in `mise exec` (`mise exec npm:oxfmt -- oxfmt …`), keep the exit-2 "all
+    ignored" handling, and never fall back to `pnpm exec`: where mise is missing the stackra preset skips them with a
+    note and CI checks, and the neutral preset runs the installed `node_modules/.bin` binary. `pnpm exec` runs pnpm
+    12's lockfile trust-policy check first, which fetches registry metadata (a 401 on a Mac with no @figentra read
+    token, os STA-1936), and pnpm 12's exec installs whole workspaces from a hook (STA-2039). `sync` makes sure
+    `mise.toml` pins `npm:oxfmt` and `npm:oxlint` at the versions the catalog pins, which `repo-checks/tool-pins`
+    requires;
   - AGENTS.md and CLAUDE.md: the preset's shared blocks plus the repository's facts from the config and
     `.flow/readme.yml`.
 
@@ -380,11 +382,11 @@ None adds a decision.
   including core's 48 from the preset itself, rules, agent reference, routing, models, `.claude/settings.json`, the
   OpenCode projection, `.mcp.yaml`, `lefthook.yml`, AGENTS.md, CLAUDE.md); an owned file the preset no longer renders
   SHALL be deleted, and `.agents/specs/` SHALL be unchanged.
-- **AC-8**: WHEN `sync` renders `lefthook.yml` THE oxfmt and oxlint jobs SHALL run the mise-pinned binary first, use
-  `pnpm exec` only where mise is missing and count exit 2 ("all ignored") as a pass; `mise.toml` SHALL pin
-  `npm:oxfmt` and `npm:oxlint` at the catalog's versions with no other line changed; commit-msg SHALL skip commitlint
-  without `node_modules/.bin/commitlint`, pre-push SHALL skip only on the registry's 401, and oxlint SHALL skip
-  without `node_modules/@stackra/oxlint-config`, each with its note.
+- **AC-8**: WHEN `sync` renders `lefthook.yml` THE oxfmt and oxlint jobs SHALL run the mise-pinned binary named in
+  `mise exec`, never `pnpm exec`, skip with a note where mise is missing (stackra) and count exit 2 ("all ignored")
+  as a pass; `mise.toml` SHALL pin `npm:oxfmt` and `npm:oxlint` at the catalog's versions with no other line changed;
+  commit-msg SHALL skip commitlint without `node_modules/.bin/commitlint`, pre-push SHALL skip only on the registry's
+  401, and oxlint SHALL skip without `node_modules/@stackra/oxlint-config`, each with its note.
 - **AC-9**: WHEN core's guard tests, ported, run against `fflow guard` with the stackra tables THE engine SHALL give
   every case the decision core's tests expect, the exact `figentra bot|linear|secrets` matches included.
 - **AC-10**: IF a third-party skill's licence is not allowed THEN THE `sync` command SHALL refuse to install it
