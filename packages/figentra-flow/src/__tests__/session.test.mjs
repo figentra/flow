@@ -7,13 +7,13 @@
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
  */
-// @covers sta-1945:FR-19 sta-1945:FR-14 sta-1945:AC-18 sta-1945:P-019
+// @covers sta-1945:FR-19 sta-1945:FR-20 sta-1945:FR-14 sta-1945:AC-18 sta-1945:P-019
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { stopSession } from "../commands/session.mjs";
+import { sessionTitle, stopSession } from "../commands/session.mjs";
 import { readRecord } from "../lib/record.mjs";
 import { repo, sh } from "./__fixtures__/repo.mjs";
 
@@ -38,6 +38,30 @@ test("session stop: the work and the record are on the remote (AC-18)", (t) => {
     { name: NAME, kind: "claude-code", start: "2026-11-03T10:00:00Z", end: "2026-11-03T11:00:00Z" },
   ]);
   assert.equal(sh(r.origin, "show", `${BRANCH}:work.txt`), "more");
+});
+
+test("session stop: the name is the transcript's last title, not the session's id (FR-20)", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  const transcript = join(r.root, "..", "session.jsonl");
+  writeFileSync(
+    transcript,
+    [
+      JSON.stringify({ type: "user", sessionId: "abc", message: { content: "custom-title" } }),
+      JSON.stringify({
+        type: "custom-title",
+        customTitle: "FLOW · old job (STA-5)",
+        sessionId: "abc",
+      }),
+      JSON.stringify({ type: "custom-title", customTitle: ` ${NAME} `, sessionId: "abc" }),
+      '{"type":"custom-title","customTi',
+    ].join("\n"),
+  );
+  assert.equal(sessionTitle(transcript), NAME);
+  writeFileSync(transcript, `${JSON.stringify({ type: "user", sessionId: "abc" })}\n`);
+  assert.equal(sessionTitle(transcript), undefined);
+  assert.equal(sessionTitle(join(r.root, "..", "missing.jsonl")), undefined);
+  assert.equal(sessionTitle(undefined), undefined);
 });
 
 test("session stop: the default branch and a branch with no key are left alone", (t) => {

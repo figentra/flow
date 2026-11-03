@@ -4,13 +4,16 @@
  *   branch it writes the session's end into Flow's record, commits the whole worktree as `wip(<session name>): …`
  *   and pushes the branch as the bot, so nothing is left only on one machine. A push that still fails after one
  *   merge is recorded as `pushed: false` (committed locally) and the fix printed.
- * Boundary: reads the hook's JSON on stdin (its `cwd` and `session_id`); writes the record and one or two commits on
- *   the task's branch and pushes it. Does nothing on the default branch, a detached HEAD or a branch with no issue
- *   key. Always exits 0: a Stop hook that fails must not trap the session.
+ * Boundary: reads the hook's JSON on stdin (its `cwd`, `transcript_path` and `session_id`); the session's name is
+ *   `--session`, else the title its transcript last records (ADR 0001, set with `/rename`), else its id. Writes the
+ *   record and one or two commits on the task's branch and pushes it. Does nothing on the default branch, a detached
+ *   HEAD or a branch with no issue key. Always exits 0: a Stop hook that fails must not trap the session.
  * Runtime: node
  * Governing contract: STA-1945 (FR-19, FR-14, AC-18, P-019).
  * Secrets: none; the push goes through the configured credentials.
  */
+import { readFileSync } from "node:fs";
+
 import { schemeFor } from "../adapters/tracker/index.mjs";
 import { say } from "../lib/cli.mjs";
 import { defaultBranch, git } from "../lib/git.mjs";
@@ -69,6 +72,38 @@ export function stopSession({ cwd, name, kind = "claude-code", now = new Date().
   };
 }
 
+/**
+ * The session's title as its Claude Code transcript last records it (`/rename` appends a `custom-title` line), so the
+ * record and the WIP commit carry the name the owner sees (ADR 0001) rather than the session's id.
+ * @param {unknown} path the hook's `transcript_path`
+ * @returns {string | undefined}
+ */
+export function sessionTitle(path) {
+  if (typeof path !== "string" || !path) return undefined;
+  let text;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return undefined;
+  }
+  let title;
+  for (const line of text.split("\n")) {
+    if (!line.includes('"custom-title"')) continue;
+    try {
+      const entry = JSON.parse(line);
+      if (
+        entry?.type === "custom-title" &&
+        typeof entry.customTitle === "string" &&
+        entry.customTitle.trim()
+      )
+        title = entry.customTitle.trim();
+    } catch {
+      // a line still being written
+    }
+  }
+  return title;
+}
+
 /** Reads all of stdin unless it is a terminal. */
 async function stdin() {
   if (process.stdin.isTTY) return "";
@@ -93,7 +128,11 @@ export async function run(args = []) {
     // not a hook's JSON: run from the shell
   }
   const name =
-    opt("--session") ?? process.env[`${ENV_PREFIX}SESSION`] ?? event.session_id ?? "session";
+    opt("--session") ??
+    process.env[`${ENV_PREFIX}SESSION`] ??
+    sessionTitle(event.transcript_path) ??
+    event.session_id ??
+    "session";
   try {
     const result = stopSession({
       cwd: typeof event.cwd === "string" ? event.cwd : process.cwd(),
