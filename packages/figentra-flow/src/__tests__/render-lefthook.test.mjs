@@ -18,6 +18,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { ConfigError } from "../lib/config.mjs";
 import { FLOW_ASSETS } from "../lib/flow-dir.mjs";
 import {
   catalogPins,
@@ -111,7 +112,13 @@ test("oxfmt runs the mise-pinned binary first, pnpm exec only without mise, and 
 
 test("oxlint runs mise first, and skips only when its config extends @stackra/oxlint-config with no install", (t) => {
   const { root, withMise, noMise } = fixture(t);
-  const run = runOf(hooks(), "pre-commit", "oxlint");
+  const parsed = hooks();
+  const run = runOf(parsed, "pre-commit", "oxlint");
+  assert.deepEqual(
+    parsed["pre-commit"].jobs.find((/** @type {{ name: string }} */ j) => j.name === "oxlint")
+      .exclude,
+    [".agents/skills/**", ".agents/reference/**"],
+  );
   assert.equal(runJob(run, root, withMise).stdout.trim(), "mise exec -- oxlint a.mjs");
   assert.equal(runJob(run, root, noMise).stdout.trim(), "pnpm exec oxlint a.mjs");
   assert.equal(runJob(run, root, withMise, { STUB_EXIT: "1" }).status, 1);
@@ -126,6 +133,11 @@ test("oxlint runs mise first, and skips only when its config extends @stackra/ox
 test("commitlint skips without node_modules/.bin/commitlint and fails on its finding with it", (t) => {
   const { root, withMise } = fixture(t);
   const run = runOf(hooks(), "commit-msg", "commitlint");
+  // The workspace preset resolves to its src only under this condition; a commit builds no dist (ADR 0025).
+  assert.match(
+    run,
+    /NODE_OPTIONS=--conditions=@stackra\/source node_modules\/\.bin\/commitlint --edit \{1\}/,
+  );
   const skipped = runJob(run, root, withMise);
   assert.equal(skipped.status, 0);
   assert.match(skipped.stdout, /commitlint not installed/);
@@ -173,11 +185,42 @@ test("the config's jobs follow the preset's; every pre-push job passes on the re
   });
   assert.equal(r.status, 1, "a non-401 fetch failure blocks");
   r = runJob(run, root, withMise, {
+    STUB_EXIT: "1",
+    STUB_OUT:
+      "ERR_PNPM_META_FETCH_FAIL GET https://registry.test/x-1.4010.0.tgz: Internal Server Error - 500",
+  });
+  assert.equal(r.status, 1, "a 500 with 401 inside a number blocks");
+  r = runJob(run, root, withMise, {
+    STUB_EXIT: "1",
+    STUB_OUT: "ERR_PNPM_META_FETCH_FAIL GET https://registry.test/x: 500\nretried 401 times",
+  });
+  assert.equal(r.status, 1, "a 401 on another line than the error blocks");
+  r = runJob(run, root, withMise, {
+    STUB_EXIT: "1",
+    STUB_OUT: "ERR_PNPM_FETCH_401 GET https://registry.test/@x%2Fy: Unauthorized",
+  });
+  assert.equal(r.status, 0, "pnpm's own 401 code passes");
+  r = runJob(run, root, withMise, {
     STUB_EXIT: "2",
     STUB_OUT: "src/a.ts(1,1): error TS2322 (401)",
   });
   assert.equal(r.status, 2, "a type error blocks, whatever it prints");
   assert.equal(runJob(runOf(parsed, "pre-push", "spec-branch"), root, withMise).status, 0);
+});
+
+test("the config's lefthook: a hook that is not a list, or a pre-push job without run, is a ConfigError", () => {
+  assert.throws(
+    () => hooks({ lefthook: { "pre-commit": { jobs: [{ name: "x", run: "x" }] } } }),
+    (error) =>
+      error instanceof ConfigError &&
+      error.message === "flow.config.json: lefthook.pre-commit must be a list of jobs",
+  );
+  assert.throws(
+    () => hooks({ lefthook: { "pre-push": [{ name: "e2e", script: "e2e.sh", runner: "bash" }] } }),
+    (error) =>
+      error instanceof ConfigError && /pre-push job "e2e" needs a `run`/.test(error.message),
+  );
+  assert.doesNotThrow(() => hooks({ lefthook: { "pre-commit": [{ name: "s", script: "s.sh" }] } }));
 });
 
 test("the neutral preset: mise first, the installed binary without mise, no stackra skip", (t) => {

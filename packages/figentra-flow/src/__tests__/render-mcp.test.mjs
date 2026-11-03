@@ -10,6 +10,8 @@
 // @covers sta-1945:FR-7 sta-1945:AC-7 sta-1945:P-010
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { ConfigError } from "../lib/config.mjs";
@@ -63,6 +65,43 @@ test("renderMcp: an env value that is not a secret's name is refused, naming the
       ),
   );
   assert.throws(() => renderMcp(ctx({ mcp: { x: { env: { A: "$A and more" } } } })), ConfigError);
+});
+
+/**
+ * A preset folder whose `surfaces/mcp.yaml` is `text`.
+ * @param {{ after: (fn: () => void) => void }} t
+ * @param {string} text
+ */
+function preset(t, text) {
+  const dir = mkdtempSync(join(tmpdir(), "flow-mcp-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "surfaces"));
+  writeFileSync(join(dir, "surfaces/mcp.yaml"), text);
+  return dir;
+}
+
+test("renderMcp: a preset's env value that is not a secret's name is refused, naming the preset's file", (t) => {
+  const dir = preset(
+    t,
+    "mcpServers:\n  tracker:\n    command: x\n    env:\n      TOKEN: not-a-reference\n",
+  );
+  assert.throws(
+    () => renderMcp(ctx({}, dir)),
+    (error) =>
+      error instanceof ConfigError &&
+      error.message ===
+        'the preset\'s surfaces/mcp.yaml: mcp server "tracker" sets env TOKEN to a value; name the secret instead ("$TOKEN")',
+  );
+});
+
+test("renderMcp: invalid YAML in the preset's surface is a ConfigError naming the file", (t) => {
+  const dir = preset(t, "mcpServers:\n  a: 1\n  a: 2\n");
+  assert.throws(
+    () => renderMcp(ctx({}, dir)),
+    (error) =>
+      error instanceof ConfigError &&
+      error.message === `${join(dir, "surfaces/mcp.yaml")}: line 3: \`a\` appears twice`,
+  );
 });
 
 test("renderMcp: a preset without surfaces/mcp.yaml renders nothing", () => {

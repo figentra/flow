@@ -19,6 +19,10 @@ pre-commit:
         s=$?; [ $s -eq 2 ] && exit 0; exit $s' -- {staged_files}
     - name: oxlint
       glob: "*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"
+      # Rendered and third-party skills and reference docs are not the repository's code.
+      exclude:
+        - ".agents/skills/**"
+        - ".agents/reference/**"
       run: |
         if [ ! -d node_modules/@stackra/oxlint-config ] && grep -qs @stackra/oxlint-config .oxlintrc.json .oxlintrc.jsonc; then
           echo "oxlint skipped: its config extends @stackra/oxlint-config and no workspace install has it; CI lints this commit"
@@ -34,10 +38,11 @@ pre-commit:
         fi
 commit-msg:
   jobs:
+    # @stackra/commitlint-config exports its src under this condition; a commit builds no dist (ADR 0025).
     - name: commitlint
       run: |
         if [ -x node_modules/.bin/commitlint ]; then
-          node_modules/.bin/commitlint --edit {1}
+          NODE_OPTIONS=--conditions=@stackra/source node_modules/.bin/commitlint --edit {1}
         else
           echo "commitlint not installed (pnpm install); the Quality Gate checks the pull request's commits"
         fi

@@ -15,6 +15,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
+import { ConfigError } from "../lib/config.mjs";
 import { FLOW_ASSETS } from "../lib/flow-dir.mjs";
 import { renderAgentsMd } from "../lib/render-agents-md.mjs";
 
@@ -59,8 +60,23 @@ test("renderAgentsMd: without readme data, tracker or facts, their blocks go and
   const root = temp(t);
   const text = renderAgentsMd({ root, config: {}, presetDir: STACKRA }).get("AGENTS.md") ?? "";
   assert.match(text, new RegExp(`^# ${basename(root)}\n\n## How work flows\n`));
-  assert.match(text, /the neutral preset\)\. Specs live in `\.agents\/specs\/`\./);
+  // The preset named is the one rendered, whatever the configuration omits.
+  assert.match(text, /the stackra preset\)\. Specs live in `\.agents\/specs\/`\./);
   assert.doesNotMatch(text, /## What it is|## Architecture|## This repository|branches are/);
+});
+
+test("renderAgentsMd: agentsMd.facts that is not one string is a ConfigError", (t) => {
+  assert.throws(
+    () =>
+      renderAgentsMd({
+        root: temp(t),
+        config: { agentsMd: { facts: ["a fact", "b fact"] } },
+        presetDir: STACKRA,
+      }),
+    (error) =>
+      error instanceof ConfigError &&
+      error.message === "flow.config.json: agentsMd.facts must be one Markdown string",
+  );
 });
 
 test("renderAgentsMd: a preset without surfaces/agents-md renders nothing", (t) => {

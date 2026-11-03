@@ -2,8 +2,9 @@
  * Figentra Flow file contract:
  * Purpose: `.mcp.yaml` (STA-1945 FR-7): the preset's MCP servers (`surfaces/mcp.yaml`) plus the configuration's `mcp`
  *   servers, by name; a configured server replaces the preset's of the same name. Secrets are named, never written:
- *   every `env` value is a `$NAME` reference, which the repository's MCP launcher expands, and anything else is
- *   refused before it reaches a committed file.
+ *   every `env` value must be a `$NAME` reference, which the repository's MCP launcher expands, and anything else is
+ *   refused before it reaches a committed file. `args` and `headers` are written as given, unchecked: a token
+ *   belongs in `env`, never there.
  * Boundary: reads the preset's file; returns text, writes nothing (`sync` writes).
  * Runtime: node
  * Governing contract: STA-1945 (FR-7, AC-7, P-010).
