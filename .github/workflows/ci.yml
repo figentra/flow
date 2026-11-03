@@ -1,5 +1,7 @@
 # Figentra Flow file contract:
-# Purpose: the Quality Gate: install, format check, lint, typecheck, test and build on every PR and push to main.
+# Purpose: the Quality Gate: install, format check, lint, typecheck and build on every PR and push to main. No tests:
+#          they run on the box (owner decision 2026-11-03, STA-2064; AGENTS.md). On a pull request typecheck and build
+#          run for the members the change affects, against the base commit. The job id `verify` is the required check.
 # Owner: release-operations
 # Secrets: none; the @stackra scope's registry is read-only and public for this job.
 name: Quality Gate
@@ -29,4 +31,9 @@ jobs:
         with:
           install_args: node pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm verify
+      - run: pnpm format:check
+      - run: pnpm lint
+      - env:
+          AFFECTED: ${{ github.event_name == 'pull_request' && '1' || '' }}
+          TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha }}
+        run: pnpm exec turbo run typecheck build ${AFFECTED:+--affected}
