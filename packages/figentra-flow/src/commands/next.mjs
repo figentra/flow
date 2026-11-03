@@ -1,10 +1,10 @@
 /**
  * Figentra Flow file contract:
  * Purpose: `fflow next [<key>] [--json]` (FR-13; declared in src/lib/console.mjs, which refuses a failed `next`
- *   and has `show` print the rest): the task's current stage and the command that moves it on, read
- *   from Flow's record and the spec's `**Status**`; the key defaults to the branch's. The record is read where the
- *   task lives: its checkout, else its branch (the newer of the local and the last fetched pushed one). It warns when
- *   the record has commits origin does not.
+ *   and has `show` print the rest): the task's current stage and the command that moves it on, read from Flow's
+ *   record and the spec's `**Status**`; the key defaults to the branch's. The record is read where the task lives:
+ *   its checkout, else its branch (the newer of the local and the last fetched pushed one). It warns when the record
+ *   has commits origin does not.
  * Boundary: reads the record, the spec and git; writes nothing and never fetches.
  * Runtime: node
  * Governing contract: STA-1945 (FR-13, AC-13, P-017).
@@ -125,13 +125,13 @@ export function next({ cwd, key }) {
 
 /**
  * `fflow next`'s output, once `next` found the step: the stage and the command that moves it on; `--json` writes
- * them as the console's data.
+ * them as the console's data, tagged `fflow.next/1`.
  * @param {import("../lib/console.mjs").Io} io
  * @param {Extract<ReturnType<typeof next>, { ok: true }>} result
  */
 export function show(io, result) {
   if (io.json) {
-    io.output.json({ ...result, ok: undefined });
+    io.output.json({ schema: `${NAME}.next/1`, ...result, ok: undefined });
     return;
   }
   io.output.line(

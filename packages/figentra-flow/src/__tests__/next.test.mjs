@@ -14,7 +14,11 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { runCommandForTest } from "@stackra/console/testing";
+
 import { next } from "../commands/next.mjs";
+import { CONSOLE } from "../lib/console.mjs";
+import { NAME } from "../lib/product.mjs";
 import { commitRecord, updateRecord } from "../lib/record.mjs";
 import { repo, sh } from "./__fixtures__/repo.mjs";
 
@@ -65,6 +69,28 @@ test("next: a record that fails its schema is refused by its field", (t) => {
   const step = next({ cwd: r.root, key: "STA-8" });
   assert.equal(step.ok, false);
   assert.match(!step.ok ? step.problem : "", /stage: is required/);
+});
+
+test("next through the console: --json is tagged with its schema; a refused next exits 1", async (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  mkdirSync(join(r.root, ".flow", "record"), { recursive: true });
+  writeFileSync(
+    join(r.root, ".flow", "record", "sta-8.json"),
+    JSON.stringify({ recordVersion: 1, key: "sta-8" }),
+  );
+  const refused = await runCommandForTest(CONSOLE, ["next", "STA-8"], {
+    cwd: r.root,
+    columns: 400,
+  });
+  assert.equal(refused.exitCode, 1, refused.stdout + refused.stderr);
+  assert.match(refused.stdout + refused.stderr, /stage: is required/);
+  sh(r.root, "switch", "-q", "-c", "figentra/sta-7-next");
+  const json = await runCommandForTest(CONSOLE, ["next", "--json"], { cwd: r.root });
+  assert.equal(json.exitCode, 0, json.stdout + json.stderr);
+  const doc = /** @type {{ data: { schema: string, key: string } }} */ (json.json);
+  assert.equal(doc.data.schema, `${NAME}.next/1`);
+  assert.equal(doc.data.key, "sta-7");
 });
 
 test("next <key> reads the record on the key's worktree or branch, not this checkout", (t) => {
