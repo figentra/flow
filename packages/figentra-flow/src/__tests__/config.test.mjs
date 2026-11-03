@@ -3,7 +3,8 @@
  * Purpose: hold the configuration to AC-035, AC-036 and AC-042: the shipped schema file equals `SCHEMA`; Figentra's
  *   configuration and a minimal outside one are valid; an unknown key, a wrong kind, a wrong type and a missing field
  *   are refused by their path; a missing port is refused naming its key; the older `package.json` keys still work with
- *   a warning; and the product's name-bearing literals live only in `product.mjs`.
+ *   a warning; the gate App's `aliases` (a rename, ADR 0523) add logins and the bare login keeps its string form; and
+ *   the product's name-bearing literals live only in `product.mjs`.
  * Boundary: temporary folders and the package's own source files; nothing runs.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1729 phase A (A1).
@@ -16,7 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { ConfigError, loadConfig, need, SCHEMA, validate } from "../lib/config.mjs";
+import { ConfigError, gateLogins, loadConfig, need, SCHEMA, validate } from "../lib/config.mjs";
 import { CONFIG_FILE, ENV_PREFIX, GATE_DIR, GATE_MARKER, STATUS_CONTEXT } from "../lib/product.mjs";
 
 const PACKAGE_DIR = fileURLToPath(new URL("../..", import.meta.url));
@@ -98,6 +99,22 @@ test("schema: unknown keys, wrong kinds, wrong types and missing fields are refu
     /^artifacts\.maxBytes: must be at least 1$/m,
   );
   assert.match(problems({ version: 2 }), /^version: must be 1$/m);
+});
+
+test("config: a renamed gate App's aliases add logins; without them the login stays a string", () => {
+  const renamed = {
+    ...FIGENTRA,
+    apps: { ...FIGENTRA.apps, gate: { ...FIGENTRA.apps.gate, aliases: ["figentra-flow[bot]"] } },
+  };
+  assert.deepEqual(validate(SCHEMA, renamed), []);
+  assert.deepEqual(gateLogins(renamed.apps), ["figentra-gate[bot]", "figentra-flow[bot]"]);
+  assert.equal(gateLogins(FIGENTRA.apps), "figentra-gate[bot]");
+  assert.equal(gateLogins(undefined), undefined);
+  const bad = (/** @type {unknown} */ aliases) =>
+    validate(SCHEMA, { version: 1, apps: { gate: { login: "a[bot]", aliases } } }).join("\n");
+  assert.match(bad([]), /^apps\.gate\.aliases: must have at least 1 item/m);
+  assert.match(bad([""]), /^apps\.gate\.aliases\[0\]: must not be empty$/m);
+  assert.match(bad("b[bot]"), /^apps\.gate\.aliases: must be a array$/m);
 });
 
 test("config: a file is loaded and validated; a missing port is refused naming its key", (t) => {

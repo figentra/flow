@@ -33,7 +33,7 @@ import { pathProblems, reviewerProblems, roleOf } from "../lib/roles.mjs";
 import { loadTeam } from "../lib/team.mjs";
 import { artifactProblems } from "../lib/artifacts.mjs";
 import { say } from "../lib/cli.mjs";
-import { loadConfig } from "../lib/config.mjs";
+import { gateLogins, loadConfig } from "../lib/config.mjs";
 import { ownerOnlyPaths, packageFindings } from "../lib/owner-only.mjs";
 import { requiredCheckState, requiredContexts } from "../lib/required-checks.mjs";
 import {
@@ -55,17 +55,18 @@ export const CONVENTIONAL =
 
 /**
  * Why `statuses` (a commit's, newest first) do not make that commit green: `fflow/gate` must be `success`,
- * posted by the configured gate App. Shared by `land` and `train`.
+ * posted by the configured gate App (any of its logins, `gateLogins`). Shared by `land` and `train`.
  * @param {any[]} statuses
  * @param {string | undefined} sha  the commit, for the message
- * @param {string | undefined} gateApp
+ * @param {string | string[] | undefined} gateApp
  * @returns {string[]}
  */
 export function gateProblems(statuses, sha, gateApp) {
   const problems = [];
   // The trusted gate status creator comes only from the configuration (defence in depth; the ruleset is the
   // guarantee).
-  if (!gateApp)
+  const logins = [gateApp ?? []].flat();
+  if (!logins.length)
     problems.push("no gate App is configured: set apps.gate.login in the configuration");
   const head = String(sha ?? "").slice(0, 12);
   // GitHub lists a commit's statuses newest first; the newest of the context counts.
@@ -76,9 +77,9 @@ export function gateProblems(statuses, sha, gateApp) {
     );
   else if (gate.state !== "success")
     problems.push(`${STATUS_CONTEXT} is ${gate.state} on the head ${head}`);
-  else if (gate.creator?.login !== gateApp)
+  else if (!logins.includes(gate.creator?.login ?? ""))
     problems.push(
-      `${STATUS_CONTEXT} on the head was posted by ${gate.creator?.login ?? "nobody"}, not ${gateApp}`,
+      `${STATUS_CONTEXT} on the head was posted by ${gate.creator?.login ?? "nobody"}, not ${logins.join(" or ")}`,
     );
   return problems;
 }
@@ -102,8 +103,8 @@ export function connect(root) {
 
 /**
  * Every reason the PR may not land; empty means it may.
- * @param {{ pr: any, statuses: any[], base: string, spec?: string, gateApp?: string, reviewer?: string,
- *           required: boolean, files?: string[],
+ * @param {{ pr: any, statuses: any[], base: string, spec?: string, gateApp?: string | string[],
+ *           reviewer?: string, required: boolean, files?: string[],
  *           manualOk?: boolean, stack?: boolean, review?: { verdict: string | null, ignored: string[] },
  *           artifacts?: string[], reviewTiers?: string[], ownerOnly?: string[],
  *           ownerFindings?: string[] }} input
@@ -251,7 +252,7 @@ function specAt(
 /**
  * Lands one PR.
  * @param {{ root: string, repo: string, base: string, number: number, dry?: boolean, manualOk?: boolean,
- *           gateApp?: string, reviewer?: string, owner?: string, deps: LandDeps }} options
+ *           gateApp?: string | string[], reviewer?: string, owner?: string, deps: LandDeps }} options
  * @returns {Promise<{ code: number, problems?: string[], merged?: string, head?: string,
  *   queued?: boolean, waiting?: string[] }>}
  */
@@ -563,7 +564,8 @@ function stackOf(api, repo, base, number) {
 /**
  * Brings a stacked PR onto `base` in its worktree: the merge-up, a normal push when the head moved, the retarget when
  * GitHub has not made it, and the gate when the head has no green one (an earlier run's counts).
- * @param {{ root: string, repo: string, base: string, pr: any, parent?: string, gateApp?: string, dry: boolean,
+ * @param {{ root: string, repo: string, base: string, pr: any, parent?: string,
+ *           gateApp?: string | string[], dry: boolean,
  *           deps: LandDeps & { gate: (cwd: string) => Promise<number> } }} options
  * @returns {Promise<string[]>} why the stack stops here; empty when the PR is ready to land
  */
@@ -618,7 +620,7 @@ async function bringUp({ root, repo, base, pr, parent, gateApp, dry, deps }) {
  * (`bringUp`), then landed in turn. Stops at the first that cannot go, naming it; run again, it resumes there. With
  * `dry`, prints the plan and checks only the bottom PR's rules, since the others change on the way.
  * @param {{ root: string, repo: string, base: string, number: number, dry?: boolean, manualOk?: boolean,
- *           gateApp?: string, reviewer?: string, owner?: string,
+ *           gateApp?: string | string[], reviewer?: string, owner?: string,
  *           deps: LandDeps & { gate: (cwd: string) => Promise<number> } }} options
  * @returns {Promise<{ code: number, problems?: string[], waiting?: string[] }>}
  */
@@ -733,7 +735,7 @@ export async function run(/** @type {string[]} */ args) {
     base: defaultBranch(root),
     number,
     manualOk: args.includes("--manual-ok"),
-    gateApp: apps.gate?.login,
+    gateApp: gateLogins(apps),
     reviewer: apps.review?.slug,
     owner: apps.owner,
     deps,

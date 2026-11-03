@@ -12,6 +12,7 @@
  *   the stack with the file named; a PR GitHub did not retarget is retargeted, and a refused retarget stops; a re-run
  *   after a stop resumes from the record, also after a run that died right after a merge; a missing worktree, a
  *   refused push, a red gate and a branch with no PR below each stop; `--dry-run` prints the plan and changes nothing.
+ *   A renamed gate App (ADR 0523) counts from either configured login, never a third.
  * Boundary: temporary repositories with a local bare origin; GitHub, Linear and the gate injected; no network.
  * Runtime: node
  * Governing contract: ADR 0022; Stackra ADR 0503; STA-1729 phase 3.
@@ -82,6 +83,28 @@ test("rules: a green, approved, conventional PR on main may land; each rule name
     );
   assert.deepEqual(landRules({ ...ok, required: false, manualOk: true }), []);
   assert.deepEqual(landRules({ ...ok, pr: pr({ base: { ref: "x" } }), stack: true }), []);
+});
+
+test("rules: a renamed gate App (ADR 0523) counts from either login the configuration names, not from a third", () => {
+  const by = (/** @type {string} */ login) => [
+    { context: "fflow/gate", state: "success", creator: { login } },
+  ];
+  const ok = {
+    pr: pr(),
+    base: "main",
+    required: true,
+    gateApp: [GATE_APP, "figentra-flow[bot]"],
+  };
+  assert.deepEqual(landRules({ ...ok, statuses: by(GATE_APP) }), []);
+  assert.deepEqual(landRules({ ...ok, statuses: by("figentra-flow[bot]") }), []);
+  assert.match(
+    landRules({ ...ok, statuses: by("figentra-other[bot]") }).join("\n"),
+    /posted by figentra-other\[bot\], not figentra-gate\[bot\] or figentra-flow\[bot\]/,
+  );
+  assert.match(
+    landRules({ ...ok, gateApp: [], statuses: by(GATE_APP) }).join("\n"),
+    /no gate App is configured/,
+  );
 });
 
 test("rules: a feature spec needs its approval and Tasked; a spec without a tier passes", () => {
