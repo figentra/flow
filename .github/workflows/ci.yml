@@ -35,5 +35,5 @@ jobs:
       - run: pnpm lint
       - env:
           AFFECTED: ${{ github.event_name == 'pull_request' && '1' || '' }}
-          TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha }}
+          TURBO_SCM_BASE: HEAD~1 # a PR checks out its merge into main, so HEAD~1 is main and the diff is the PR's own
         run: pnpm exec turbo run typecheck build ${AFFECTED:+--affected}
