@@ -3,21 +3,23 @@
  * Purpose: hold STA-1945's C6 to its contract: the stackra preset carries core's content (27 role agents beside the
  *   three stewards, 15 rules, 38 skills, 29 reference files, routing and models) and `sync` renders all of it, the
  *   skills beside the `flow-*` ones and the reference, routing and models always under `.agents/`, byte for byte; the
- *   neutral preset renders none of it; `renderReference` reads only the preset folder it is given.
+ *   neutral preset renders none of it; `renderReference` reads only the preset folder it is given; the stackra
+ *   profiles' splits name only what the preset carries, with the counts each profile selects.
  * Boundary: temporary folders; no network.
  * Runtime: node
  * Governing contract: STA-1945 (C6, D2).
  */
-// @covers sta-1945:FR-7 sta-1945:FR-12 sta-1945:AC-7 sta-1945:P-010
+// @covers sta-1945:FR-6 sta-1945:FR-7 sta-1945:FR-11 sta-1945:FR-12 sta-1945:AC-7 sta-1945:P-009 sta-1945:P-010 sta-1945:P-016
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { sync } from "../commands/sync.mjs";
 import { FLOW_ASSETS } from "../lib/flow-dir.mjs";
 import { installProblems, renderReference } from "../lib/render.mjs";
+import { parseYaml } from "../lib/yaml.mjs";
 
 const STACKRA = join(FLOW_ASSETS, "presets", "stackra");
 const quiet = { log: () => {} };
@@ -86,6 +88,41 @@ test("the neutral preset renders none of core's content", (t) => {
   assert.deepEqual(under(files, ".agents/reference/"), []);
   assert.equal(files.includes(".agents/routing.yaml"), false);
   assert.equal(files.includes(".agents/models.yaml"), false);
+});
+
+test("the stackra profiles split core's content: every name is in the preset, with the expected counts", () => {
+  const manifest = parseYaml(readFileSync(join(STACKRA, "preset.yml"), "utf8"));
+  assert.equal(manifest.default, "framework");
+  const md = (/** @type {string} */ f) => f.replace(/\.md$/, "");
+  /** @type {Record<"agents" | "skills", string[]>} */
+  const all = {
+    agents: readdirSync(join(STACKRA, "agents")).map(md),
+    // A profile's skills also select the eight `flow-*` skills rendered from the commands.
+    skills: [
+      ...readdirSync(join(STACKRA, "skills")),
+      ...readdirSync(join(STACKRA, "commands")).map(md),
+    ],
+  };
+  /** @type {Record<string, number[]>} */
+  const counts = {};
+  for (const [name, profile] of Object.entries(manifest.profiles)) {
+    for (const kind of /** @type {const} */ (["agents", "skills"]))
+      for (const id of profile[kind])
+        if (id !== "*")
+          assert.ok(all[kind].includes(id), `${name}: ${kind} ${id} is not in the preset`);
+    assert.deepEqual(profile.hooks, ["*"], `${name}: the preset ships no hooks yet`);
+    const size = (/** @type {"agents" | "skills"} */ kind) =>
+      profile[kind].includes("*") ? all[kind].length : profile[kind].length;
+    counts[name] = [size("agents"), size("skills")];
+  }
+  // [agents, skills]: everything for core; all but compiler-engineer where members are built; brand's design side.
+  assert.deepEqual(counts, {
+    framework: [30, 46],
+    platform: [29, 46],
+    product: [29, 46],
+    brand: [9, 17],
+    starter: [29, 46],
+  });
 });
 
 test("renderReference reads only its preset folder; a missing file or folder renders nothing", (t) => {

@@ -8,4 +8,7 @@ more rules beside the worktree rule, 38 skills, the agent reference (`reference/
 to `.agents/skills/<name>/` (`.claude/skills/<name>/` with `--direct`), and the reference, routing and models to
 `.agents/reference/`, `.agents/routing.yaml` and `.agents/models.yaml`, all recorded in `.flow/lock.json`. A stackra
 repository that keeps its own copies of these files gets them owned by Flow on its next sync. The neutral preset is
-unchanged. The package grows from about 0.3 MB to about 2.2 MB packed, most of it the `archify` skill.
+unchanged. The stackra `preset.yml` splits this content by profile (FR-6, D3): `framework` (the default) gets all of
+it; `platform`, `product` and `starter` all but the `compiler-engineer` agent; `brand` nine agents (the stewards,
+review, specs, ADRs, dependencies, design and accessibility) and seventeen skills (the eight `flow-*`, specs, ADRs,
+diagrams, pnpm and the design ones). The package grows from about 0.3 MB to about 2.2 MB packed, most of it the `archify` skill.
