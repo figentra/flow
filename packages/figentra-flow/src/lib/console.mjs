@@ -591,6 +591,13 @@ export const COMMANDS = [
     examples: [`${NAME} linear tasks .agents/specs/sta-12-x/tasks.md --dry-run`],
   }),
   passthrough({
+    name: "adr",
+    description:
+      "Reserve the next ADR number under the queue lock; prints it once it is on the default branch",
+    group: GROUPS.specs,
+    examples: [`${NAME} adr reserve cancel-order --issue STA-12`],
+  }),
+  passthrough({
     name: "start",
     description: "Make the issue's worktree and branch from the default branch",
     group: GROUPS.work,

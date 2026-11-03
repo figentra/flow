@@ -106,6 +106,7 @@ test("help: an unknown command names the closest match and exits 2", async () =>
 
 test("help: the commands not yet ported are passthrough, and only these", () => {
   assert.deepEqual(passthroughCommands(COMMANDS), [
+    "adr",
     "app",
     "clean",
     "gate",

@@ -13,7 +13,8 @@
  *   the stack with the file named; a PR GitHub did not retarget is retargeted, and a refused retarget stops; a re-run
  *   after a stop resumes from the record, also after a run that died right after a merge; a missing worktree, a
  *   refused push, a red gate and a branch with no PR below each stop; `--dry-run` prints the plan and changes nothing.
- *   A renamed gate App (ADR 0523) counts from either configured login, never a third.
+ *   A renamed gate App (ADR 0523) counts from either configured login, never a third. STA-1945 FR-17: a branch that
+ *   names no issue takes the squash's `Refs:` from `refs`.
  * Boundary: temporary repositories with a local bare origin; GitHub, Linear and the gate injected; no network.
  * Runtime: node
  * Governing contract: ADR 0022; Stackra ADR 0503; STA-1729 phase 3.
@@ -22,7 +23,7 @@
 // @covers sta-1856:FR-1 sta-1856:FR-2 sta-1856:FR-3 sta-1856:FR-6
 // @covers sta-1856:AC-001 sta-1856:AC-003 sta-1856:AC-004 sta-1856:AC-005 sta-1856:AC-006 sta-1856:AC-007
 // @covers sta-1856:P-001 sta-1856:P-002 sta-1856:P-003
-// @covers sta-1945:FR-16 sta-1945:AC-14 sta-1945:P-022
+// @covers sta-1945:FR-16 sta-1945:AC-14 sta-1945:P-022 sta-1945:FR-17
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -182,9 +183,9 @@ function world({
   /** @type {{ context: string, integration_id?: number }[]} */ required = [],
   moved = false,
   /** @type {{ filename: string, status: string }[]} */ files = [],
+  branch = "figentra/sta-5-land",
 } = {}) {
   const r = repo();
-  const branch = "figentra/sta-5-land";
   const path = join(r.root, ".claude", "worktrees", "sta-5-land");
   sh(r.root, "worktree", "add", "-q", "-b", branch, path, "main");
   commit(path, "a.txt");
@@ -277,6 +278,25 @@ test("land: a green PR squash-merges on its head, then Done, the record, the wor
       "POST /repos/figentra/flow/issues/7/comments",
     ],
   );
+});
+
+test("land: a branch that names no issue takes the squash's Refs from `refs` and moves nothing to Done", async (t) => {
+  const w = world({ branch: "adr/0008-queues" });
+  t.after(w.r.dispose);
+  /** @type {string[]} */
+  const done = [];
+  const result = await landOne({
+    root: w.r.root,
+    repo: "figentra/flow",
+    base: "main",
+    number: 7,
+    gateApp: GATE_APP,
+    refs: "sta-1945",
+    deps: { api: w.api, done: async (key) => void done.push(key), ...quiet },
+  });
+  assert.equal(result.code, 0, JSON.stringify(result));
+  assert.equal(w.calls.find((c) => c.method === "PUT")?.body.commit_message, "Refs: STA-1945");
+  assert.deepEqual(done, []);
 });
 
 test("land: a refused merge changes nothing after it; a failed Linear call only warns", async (t) => {

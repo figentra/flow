@@ -5,6 +5,9 @@ preset:
   description: "Specs in .agents/specs/sta-<n>-<slug>, mandatory Impact questionnaire, clarifications marker, Linear link, and a plan gate"
   author: "stackra"
   license: "MIT"
+# STA-1945 FR-17: `fflow adr reserve` takes the next number of this file under the `adr` queue lock.
+queues:
+  adr: "apps/docs/adr/numbers.yaml"
 
 # What each repository gets (STA-1945 FR-6, D3): the config's `profile` names one, else `default`; `"*"` selects
 # all. Every profile selects all until core's content arrives and splits them (STA-1945 PR 6); stackra-pro uses

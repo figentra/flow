@@ -255,7 +255,8 @@ function specAt(
 /**
  * Lands one PR.
  * @param {{ root: string, repo: string, base: string, number: number, dry?: boolean, manualOk?: boolean,
- *           gateApp?: string | string[], reviewer?: string, owner?: string, deps: LandDeps }} options
+ *           gateApp?: string | string[], reviewer?: string, owner?: string, refs?: string, deps: LandDeps }} options
+ *   `refs`: the issue the squash's `Refs:` names when the branch names none (it is not moved to Done).
  * @returns {Promise<{ code: number, problems?: string[], merged?: string, head?: string,
  *   queued?: boolean, waiting?: string[] }>}
  */
@@ -269,6 +270,7 @@ export async function landOne({
   gateApp,
   reviewer,
   owner,
+  refs,
   deps,
 }) {
   const { api, log } = deps;
@@ -431,7 +433,7 @@ export async function landOne({
         id: pr.json.node_id,
         head,
         title: `${pr.json.title} (#${number})`,
-        body: squashMessage(key, commits),
+        body: squashMessage(key ?? refs, commits),
       },
     });
     const error = auto.json?.errors?.[0]?.message;
@@ -446,7 +448,7 @@ export async function landOne({
     merge_method: "squash",
     sha: head,
     commit_title: `${pr.json.title} (#${number})`,
-    commit_message: squashMessage(key, commits),
+    commit_message: squashMessage(key ?? refs, commits),
   });
   if (!merge.ok) return { code: 1, problems: [`GitHub refused the merge: ${merge.err}`] };
   const sha = merge.json.sha;
