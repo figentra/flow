@@ -578,7 +578,8 @@ export const COMMANDS = [
   }),
   passthrough({
     name: "guard",
-    description: "The agent hook that keeps worktrees inside .claude/worktrees/",
+    description:
+      "The guard engine on the hook event: the preset's rules, the side doors and the secret files",
     group: GROUPS.agents,
     examples: [`${NAME} guard --print-settings`],
   }),
