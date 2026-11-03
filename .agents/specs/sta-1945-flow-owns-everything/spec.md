@@ -381,10 +381,11 @@ None adds a decision.
   OpenCode projection, `.mcp.yaml`, `lefthook.yml`, AGENTS.md, CLAUDE.md); an owned file the preset no longer renders
   SHALL be deleted, and `.agents/specs/` SHALL be unchanged.
 - **AC-8**: WHEN `sync` renders `lefthook.yml` THE oxfmt and oxlint jobs SHALL run the mise-pinned binary first, use
-  `pnpm exec` only where mise is missing and count exit 2 ("all ignored") as a pass; `mise.toml` SHALL pin
-  `npm:oxfmt` and `npm:oxlint` at the catalog's versions with no other line changed; commit-msg SHALL skip commitlint
-  without `node_modules/.bin/commitlint`, pre-push SHALL skip only on the registry's 401, and oxlint SHALL skip
-  without `node_modules/@stackra/oxlint-config`, each with its note.
+  `pnpm exec` only where mise is missing, and pass staged files that are all on oxfmt's ignore list through
+  `--no-error-on-unmatched-pattern` while every other non-zero exit fails (oxfmt also exits 2 on a file it cannot
+  parse); `mise.toml` SHALL pin `npm:oxfmt` and `npm:oxlint` at the catalog's versions with no other line changed;
+  commit-msg SHALL skip commitlint without `node_modules/.bin/commitlint`, pre-push SHALL skip only on the registry's
+  401, and oxlint SHALL skip without `node_modules/@stackra/oxlint-config`, each with its note.
 - **AC-9**: WHEN core's guard tests, ported, run against `fflow guard` with the stackra tables THE engine SHALL give
   every case the decision core's tests expect, the exact `figentra bot|linear|secrets` matches included.
 - **AC-10**: IF a third-party skill's licence is not allowed THEN THE `sync` command SHALL refuse to install it
