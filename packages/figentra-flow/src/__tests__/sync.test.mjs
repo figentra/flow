@@ -2,7 +2,7 @@
  * Figentra Flow file contract:
  * Purpose: hold `sync` to STA-1945 FR-1 and FR-2: it renders only the locked preset. When the installed preset's
  *   digest or name differs from the lock's it refuses, naming `fflow update`, and writes nothing; a v1 lock (no digest)
- *   and an unreadable lock are rewritten as v2.
+ *   and an unreadable lock are rewritten as v2; a lock a newer Flow wrote and a missing preset folder are refused.
  * Boundary: temporary folders; no process, no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
@@ -14,6 +14,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { report, sync, SyncRefusal } from "../commands/sync.mjs";
+import { ConfigError } from "../lib/config.mjs";
 import { LOCK } from "../lib/flow-dir.mjs";
 import { readLock, treeDigest } from "../lib/lock.mjs";
 import { changePreset, governed, OWN_PRESET, snapshot } from "./__fixtures__/governed.mjs";
@@ -67,4 +68,29 @@ test("sync rewrites a v1 lock and an unreadable lock as v2", (t) => {
   writeFileSync(join(root, LOCK), "{ broken");
   sync(root, quiet);
   assert.equal(JSON.parse(readFileSync(join(root, LOCK), "utf8")).lockVersion, 2);
+});
+
+test("sync and update refuse a lock a newer Flow wrote, and write nothing", (t) => {
+  const root = governed(t);
+  sync(root, quiet);
+  writeFileSync(join(root, LOCK), JSON.stringify({ lockVersion: 3 }));
+  const before = snapshot(root);
+  for (const adopt of [false, true])
+    assert.throws(
+      () => sync(root, { ...quiet, adopt }),
+      (e) => {
+        return (
+          e instanceof ConfigError && /lockVersion 3; this fflow reads 1 and 2/.test(e.message)
+        );
+      },
+    );
+  assert.deepEqual(snapshot(root), before);
+});
+
+test("sync refuses a preset whose folder is missing, naming it", (t) => {
+  const root = governed(t, { config: { preset: "presets/gone" } });
+  assert.throws(
+    () => sync(root, quiet),
+    /the preset flow\.config\.json names has no folder at .*presets\/gone/,
+  );
 });

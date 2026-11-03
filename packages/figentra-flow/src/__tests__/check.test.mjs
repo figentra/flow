@@ -18,7 +18,7 @@ import { check, report } from "../commands/check.mjs";
 import { sync } from "../commands/sync.mjs";
 import { LOCK } from "../lib/flow-dir.mjs";
 import { digestOf, readLock, writeLock } from "../lib/lock.mjs";
-import { changePreset, governed, snapshot } from "./__fixtures__/governed.mjs";
+import { changePreset, governed, OWN_PRESET, snapshot } from "./__fixtures__/governed.mjs";
 
 const quiet = { log: () => {} };
 const SKILL = ".claude/skills/flow-plan/SKILL.md";
@@ -89,4 +89,20 @@ test("check: names a preset that differs from the lock, an unreadable lock and a
   assert.match(problems(root), /\.flow\/lock\.json is not valid JSON \(run `fflow sync`\)/);
   writeFileSync(join(root, "flow.config.json"), JSON.stringify({ version: 1, nope: true }));
   assert.match(problems(root), /flow\.config\.json: nope: is not a known key/);
+});
+
+test("check: names a lock it cannot read and a missing preset folder, without a stack trace", (t) => {
+  const root = governed(t, { own: true });
+  sync(root, quiet);
+  writeFileSync(join(root, LOCK), JSON.stringify({ lockVersion: 2 }));
+  assert.match(problems(root), /\.flow\/lock\.json is not a valid v2 lock: flow is not a string/);
+  writeFileSync(join(root, LOCK), JSON.stringify({ lockVersion: 3 }));
+  assert.match(problems(root), /lockVersion 3; this fflow reads 1 and 2/);
+  rmSync(join(root, LOCK));
+  sync(root, quiet);
+  rmSync(join(root, OWN_PRESET), { recursive: true });
+  assert.match(
+    problems(root),
+    /the preset flow\.config\.json names has no folder at .*presets\/ours/,
+  );
 });

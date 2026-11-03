@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 
 import { NAME } from "../lib/product.mjs";
 import { ConfigError } from "../lib/config.mjs";
-import { LockError, readLock } from "../lib/lock.mjs";
+import { LockError, NewerLockError, readLock } from "../lib/lock.mjs";
 import { migrateLegacy, presetDrift, render, writeRendered } from "../lib/render.mjs";
 import { runIn } from "../lib/workspace-run.mjs";
 
@@ -45,11 +45,13 @@ export function hasProjector(root) {
 /**
  * The lock of `root`, or undefined when it has none or it is unreadable (`sync` rewrites it).
  * @param {string} root
+ * @throws {ConfigError} when a newer Flow wrote the lock, which this one must not rewrite
  */
 export function lockOrNone(root) {
   try {
     return readLock(root);
   } catch (error) {
+    if (error instanceof NewerLockError) throw new ConfigError(error.message);
     if (error instanceof LockError) return undefined;
     throw error;
   }
@@ -61,9 +63,11 @@ export function lockOrNone(root) {
  * @param {{ direct?: boolean, log?: (s: string) => void, adopt?: boolean }} [options] `adopt` takes the installed
  *   preset even when the lock records another (only `update` passes it)
  * @throws {SyncRefusal} when the installed preset differs from the lock's and `adopt` is not set
+ * @throws {ConfigError} when a newer Flow wrote the lock
  */
 export function sync(root, { direct = false, log = console.log, adopt = false } = {}) {
-  const drift = adopt ? undefined : presetDrift(root, lockOrNone(root));
+  const lock = lockOrNone(root);
+  const drift = adopt ? undefined : presetDrift(root, lock);
   if (drift) throw new SyncRefusal(drift);
   const migrated = migrateLegacy(root);
   if (migrated.error) throw new ConfigError(migrated.error);

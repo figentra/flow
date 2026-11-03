@@ -25,6 +25,7 @@ import {
   digestOf,
   driftOf,
   LockError,
+  NewerLockError,
   overridesDigest,
   readLock,
   treeDigest,
@@ -351,17 +352,20 @@ export function lockOf(root, written) {
 }
 
 /**
- * Why `sync` must not adopt the installed preset: its name or digest differs from the lock's. Undefined without a
- * lock, or with a v1 lock (it recorded no digest; the next `sync` records one).
+ * Why `sync` must not adopt the installed preset: its folder is missing, or its name or digest differs from the
+ * lock's. Only a missing folder counts without a lock or with a v1 lock (it recorded no digest; the next `sync`
+ * records one).
  * @param {string} root
  * @param {import("./lock.mjs").Lock | undefined} lock
  * @returns {string | undefined}
  */
 export function presetDrift(root, lock) {
+  const dir = presetDir(root);
+  if (!existsSync(dir))
+    return `the preset ${CONFIG_FILE} names has no folder at ${dir} (fix \`preset\` in ${CONFIG_FILE})`;
   if (!lock?.preset.digest) return undefined;
   const { preset, version } = provenanceOf(root);
-  if (lock.preset.name === preset && lock.preset.digest === treeDigest(presetDir(root)))
-    return undefined;
+  if (lock.preset.name === preset && lock.preset.digest === treeDigest(dir)) return undefined;
   return `the installed ${preset} preset ${version} differs from the ${lock.preset.name} preset ${lock.preset.version} ${LOCK} records (run \`${NAME} update\` to adopt it)`;
 }
 
@@ -390,7 +394,9 @@ export function installProblems(root, version = VERSION) {
     lock = readLock(root);
   } catch (error) {
     if (!(error instanceof LockError)) throw error;
-    return [...problems, `${error.message} (run \`${NAME} sync\`)`];
+    // A newer Flow's lock already names the fix; `sync` would refuse it.
+    const fix = error instanceof NewerLockError ? "" : ` (run \`${NAME} sync\`)`;
+    return [...problems, `${error.message}${fix}`];
   }
   if (!lock) return problems;
   if (lock.flow !== version)

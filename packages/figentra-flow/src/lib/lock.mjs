@@ -15,6 +15,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { dirname, join } from "node:path";
 
 import { LOCK, OVERRIDES } from "./flow-dir.mjs";
+import { NAME } from "./product.mjs";
 
 /** @typedef {{ source: string, version: string, licence: string, digest: string }} SkillPin */
 /**
@@ -22,8 +23,11 @@ import { LOCK, OVERRIDES } from "./flow-dir.mjs";
  *   profile: string, overrides: string, files: Record<string, string>, skills: Record<string, SkillPin> }} Lock
  */
 
-/** Raised when `.flow/lock.json` is not valid JSON. */
+/** Raised when `.flow/lock.json` is not valid JSON, has an unknown `lockVersion`, or is not a valid v2 lock. */
 export class LockError extends Error {}
+
+/** Raised when a newer Flow wrote `.flow/lock.json` (an unknown `lockVersion`): nothing may rewrite it. */
+export class NewerLockError extends LockError {}
 
 /** The digest of one text, as the lock writes it. */
 export const digestOf = (/** @type {string} */ text) =>
@@ -33,7 +37,7 @@ export const digestOf = (/** @type {string} */ text) =>
  * The lock of `root`: undefined without one; a v1 lock comes back upgraded.
  * @param {string} root
  * @returns {Lock | undefined}
- * @throws {LockError} on invalid JSON
+ * @throws {LockError} on invalid JSON, an unknown `lockVersion` or a v2 lock of the wrong shape
  */
 export function readLock(root) {
   const file = join(root, LOCK);
@@ -44,9 +48,64 @@ export function readLock(root) {
   } catch {
     throw new LockError(`${LOCK} is not valid JSON`);
   }
-  if (parsed === null || typeof parsed !== "object")
-    throw new LockError(`${LOCK} is not an object`);
-  return parsed.lockVersion === 2 ? parsed : upgradeLock(parsed);
+  if (!isRecord(parsed)) throw new LockError(`${LOCK} is not an object`);
+  // v1 had no lockVersion; any other version is a newer Flow's, which this one must not read or overwrite.
+  const v1 = parsed.lockVersion === undefined;
+  if (!v1 && parsed.lockVersion !== 2)
+    throw new NewerLockError(
+      `${LOCK} has lockVersion ${JSON.stringify(parsed.lockVersion)}; this ${NAME} reads 1 and 2 (run a newer ${NAME})`,
+    );
+  const bad = v1 ? v1Problem(parsed) : v2Problem(parsed);
+  if (bad) throw new LockError(`${LOCK} is not a valid v${v1 ? 1 : 2} lock: ${bad}`);
+  return v1
+    ? upgradeLock(/** @type {Parameters<typeof upgradeLock>[0]} */ (parsed))
+    : /** @type {Lock} */ (/** @type {unknown} */ (parsed));
+}
+
+/**
+ * @param {unknown} v
+ * @returns {v is Record<string, unknown>}
+ */
+function isRecord(v) {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+
+/**
+ * Why `map` is not an object of strings, or undefined.
+ * @param {string} name
+ * @param {unknown} map
+ */
+function stringsProblem(name, map) {
+  if (!isRecord(map)) return `${name} is not an object`;
+  const key = Object.keys(map).find((k) => typeof map[k] !== "string");
+  return key === undefined ? undefined : `${name}["${key}"] is not a string`;
+}
+
+/**
+ * The first way a v1 lock falls short of its shape, or undefined.
+ * @param {Record<string, unknown>} lock
+ */
+function v1Problem(lock) {
+  for (const key of ["version", "preset"])
+    if (lock[key] !== undefined && typeof lock[key] !== "string") return `${key} is not a string`;
+  return lock.files === undefined ? undefined : stringsProblem("files", lock.files);
+}
+
+/**
+ * The first way a v2 lock falls short of its shape, or undefined.
+ * @param {Record<string, unknown>} lock
+ */
+function v2Problem(lock) {
+  for (const key of ["flow", "profile", "overrides"])
+    if (typeof lock[key] !== "string") return `${key} is not a string`;
+  return (
+    stringsProblem("preset", lock.preset) ??
+    (["name", "version", "digest"].every((k) => k in /** @type {object} */ (lock.preset))
+      ? undefined
+      : "preset needs name, version and digest") ??
+    stringsProblem("files", lock.files) ??
+    (isRecord(lock.skills) ? undefined : "skills is not an object")
+  );
 }
 
 /** The lock's text, as `writeLock` writes it. */

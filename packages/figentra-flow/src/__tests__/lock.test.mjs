@@ -103,6 +103,37 @@ test("readLock: none without a lock, a LockError on bad JSON, v1 upgraded, v2 re
   assert.deepEqual(readLock(root), written);
 });
 
+test("readLock: a LockError for a newer lockVersion and for a v1 or v2 lock of the wrong shape", (t) => {
+  const root = temp(t);
+  const refused = (/** @type {unknown} */ lock, /** @type {RegExp} */ message) => {
+    fill(root, [[".flow/lock.json", JSON.stringify(lock)]]);
+    assert.throws(
+      () => readLock(root),
+      (e) => e instanceof LockError && message.test(e.message),
+    );
+  };
+  const v2 = {
+    lockVersion: 2,
+    flow: "1.0.0",
+    preset: { name: "neutral", version: "1.0.0", digest: "" },
+    profile: "*",
+    overrides: "",
+    files: {},
+    skills: {},
+  };
+  refused({ ...v2, lockVersion: 3 }, /lockVersion 3; this fflow reads 1 and 2/);
+  refused({ ...v2, lockVersion: "2" }, /lockVersion "2"/);
+  refused({ lockVersion: 2 }, /not a valid v2 lock: flow is not a string/);
+  refused({ ...v2, preset: undefined }, /not a valid v2 lock: preset is not an object/);
+  refused({ ...v2, preset: { name: "neutral" } }, /preset needs name, version and digest/);
+  refused({ ...v2, files: undefined }, /not a valid v2 lock: files is not an object/);
+  refused({ ...v2, files: { "a.md": 1 } }, /files\["a\.md"\] is not a string/);
+  refused({ ...v2, skills: [] }, /skills is not an object/);
+  refused([], /is not an object/);
+  refused({ files: { "a.md": 1 } }, /not a valid v1 lock: files\["a\.md"\] is not a string/);
+  refused({ preset: 1 }, /not a valid v1 lock: preset is not a string/);
+});
+
 test("driftOf: each owned file that changed by a byte or is missing", (t) => {
   const root = temp(t);
   fill(root, [
