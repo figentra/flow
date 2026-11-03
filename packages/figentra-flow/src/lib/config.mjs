@@ -202,6 +202,8 @@ export function validate(schema, value, path = "") {
   }
   if (typeof value === "string" && schema.minLength && value.length < schema.minLength)
     return [`${at}: must not be empty`];
+  if (typeof value === "string" && schema.pattern && !new RegExp(schema.pattern).test(value))
+    return [`${at}: must match ${schema.pattern}`];
   if (typeof value === "number" && schema.minimum !== undefined && value < schema.minimum)
     return [`${at}: must be at least ${schema.minimum}`];
   /** @type {string[]} */
