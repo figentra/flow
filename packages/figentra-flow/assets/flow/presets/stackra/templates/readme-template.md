@@ -1,4 +1,4 @@
-<!-- Rendered by fflow from .flow/readme.yml (stackra preset, STA-1879). Edit the data file, then run `fflow readme`. -->
+<!-- Rendered by fflow from .flow/readme.yml (stackra preset, STA-1879). Edit the data file, then run `fflow readme`.{{#bannerSource}} Banner: {{bannerSource}}.{{/bannerSource}} -->
 
 {{#banner}}
 <p align="center">

@@ -55,15 +55,22 @@ Licence, and the footer. `fflow readme` writes it, `readme --check` fails when i
 `sync` renders it too and records it in `.flow/lock.json`. A repository can override the layout with
 `.flow/overrides/readme-template.md`.
 
+A banner names a released brand kit. `figentra/brand` is private, so a README cannot link its files; `fflow readme`
+pulls the kit with the brand CLI at an exact version (`pnpm dlx @figentra/brand-cli@1.0.0 pull`, from the Stackra
+registry with its integrity check; the README's header comment names it) and writes the light and dark image and `banner.json` (the kit's product name, the alt text) into
+`.github/assets/brand/`, which the README points at. `readme --check` fails when they differ from the kit. The pull
+needs `STACKRA_REGISTRY_TOKEN` (a ci-box, or CI after the registry login); without it `fflow readme` stops with a
+boxed problem. `sync` and the README text need no token. A banner may still give `light` and `dark` paths instead.
+
 ```yaml
 name: Figentra Pay # required: the product's name
 repo: figentra/pay # required: owner/name, for the badges and links
 tagline: Payments, wallet and payouts for every Figentra product. # required: one line, same as the GitHub description
 status: In progress # required: Live | In progress | Planned
 statusNote: dev pilot (pay#18) # optional: after the status, 80 characters at most
-banner: # optional: the brand kit's images at a pinned figentra/brand ref (pulled, never copied)
-  light: https://github.com/figentra/brand/raw/brand-pay@1.0.3/brands/pay/3d/stills/pay-3d-og-light-en.png
-  dark: https://github.com/figentra/brand/raw/brand-pay@1.0.3/brands/pay/3d/stills/pay-3d-og-dark-en.png
+banner: # optional: a released brand kit's image (pulled, never copied)
+  kit: pay@1.0.3 # the kit, as `figentra-brand pull` takes it
+  image: og-still # og-still (the 3D Open Graph still, PNG) or logo-horizontal (SVG)
 package: "@figentra/pay" # optional: the release badge's text (default "latest")
 licence: Commercial # optional: overrides what LICENSE says (MIT, else Proprietary)
 ci: ci.yml # optional: the CI workflow for the badge (default ci.yml)

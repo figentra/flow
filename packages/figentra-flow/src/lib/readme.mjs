@@ -4,7 +4,10 @@
  *   `readme-template` (STA-1879): one layout for every repository, the content its own. The badges, the licence (read
  *   from `LICENSE` unless the data names one) and the status colour are computed here so the template holds layout
  *   only; `fill` is the small Mustache subset the template uses (`{{name}}`, `{{#name}}…{{/name}}`, `{{^name}}…{{/name}}`).
- * Boundary: reads the data file, the template and `LICENSE`; never writes (`readme` and `sync` write).
+ *   A banner names a brand kit (`banner: { kit, image }`): the README points at the files `fflow readme` pulls into
+ *   `.github/assets/brand/`, with the kit's product name (`banner.json`) as the alt text.
+ * Boundary: reads the data file, the template, `LICENSE` and the committed `banner.json`; never writes and never
+ *   reaches the network (`readme` pulls and writes; `sync` writes).
  * Runtime: node
  * Governing contract: STA-1879.
  * Secrets: none.
@@ -12,6 +15,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { BANNER_IMAGES, BANNER_KIT, BRAND_CLI, bannerPaths } from "./brand-banner.mjs";
 import { ConfigError, loadConfig } from "./config.mjs";
 import { FLOW_DIR, OVERRIDES, resolveTemplate } from "./flow-dir.mjs";
 import { NAME } from "./product.mjs";
@@ -108,11 +112,19 @@ export function readmeProblems(data) {
   if (typeof data.status === "string" && !(data.status in STATUSES))
     problems.push(`${README_DATA}: "status" is one of ${Object.keys(STATUSES).join(", ")}`);
   const banner = /** @type {Record<string, unknown> | undefined} */ (data.banner);
-  if (
+  const images = Object.keys(BANNER_IMAGES).join(" or ");
+  if (banner !== undefined && "kit" in (banner ?? {})) {
+    if (typeof banner?.kit !== "string" || !BANNER_KIT.test(banner.kit))
+      problems.push(`${README_DATA}: "banner.kit" is a released brand kit, "<id>@<x.y.z>"`);
+    if (typeof banner?.image !== "string" || !(banner.image in BANNER_IMAGES))
+      problems.push(`${README_DATA}: "banner.image" is ${images}`);
+  } else if (
     banner !== undefined &&
     (typeof banner?.light !== "string" || typeof banner?.dark !== "string")
   )
-    problems.push(`${README_DATA}: "banner" has "light" and "dark" image paths`);
+    problems.push(
+      `${README_DATA}: "banner" names a brand kit ("kit" and "image": ${images}) or has "light" and "dark" image paths`,
+    );
   return problems;
 }
 
@@ -126,6 +138,23 @@ export function detectLicence(root) {
   return {
     licence: readFileSync(file, "utf8").startsWith("MIT License") ? "MIT" : "Proprietary",
     file: true,
+  };
+}
+
+/**
+ * A kit banner as the template sees it: the committed light and dark files, and the kit's product name (from
+ * `banner.json`, which `fflow readme` writes) for the alt text; the README's `name` until it has been pulled.
+ * @param {string} root
+ * @param {{ kit: string, image: keyof typeof BANNER_IMAGES }} banner
+ */
+function kitBanner(root, banner) {
+  const paths = bannerPaths(banner);
+  const manifest = join(root, paths.manifest);
+  const pulled = existsSync(manifest) ? JSON.parse(readFileSync(manifest, "utf8")) : undefined;
+  return {
+    light: paths.light,
+    dark: paths.dark,
+    ...(pulled?.kit === banner.kit && typeof pulled.name === "string" ? { name: pulled.name } : {}),
   };
 }
 
@@ -176,6 +205,12 @@ export function readmeView(root, data) {
   ];
   return {
     ...data,
+    ...(data.banner?.kit
+      ? {
+          banner: kitBanner(root, data.banner),
+          bannerSource: `brand kit ${data.banner.kit}, pulled with ${BRAND_CLI}`,
+        }
+      : {}),
     github,
     badges,
     links,
@@ -186,17 +221,28 @@ export function readmeView(root, data) {
 }
 
 /**
+ * The checked README data of `root`, or undefined when it has no `.flow/readme.yml`; an invalid file is a `ConfigError`.
+ * @param {string} root
+ * @returns {Record<string, any> | undefined}
+ */
+export function readmeData(root) {
+  const file = join(root, README_DATA);
+  if (!existsSync(file)) return undefined;
+  const data = /** @type {Record<string, any>} */ (parseYaml(readFileSync(file, "utf8")) ?? {});
+  const problems = readmeProblems(data);
+  if (problems.length > 0) throw new ConfigError(problems.join("; "));
+  return data;
+}
+
+/**
  * The README rendered for `root`, or undefined when it has no `.flow/readme.yml`. An invalid data file, or a preset
  * without a `readme-template`, is a `ConfigError` naming the problem.
  * @param {string} root
  * @returns {string | undefined}
  */
 export function renderReadme(root) {
-  const file = join(root, README_DATA);
-  if (!existsSync(file)) return undefined;
-  const data = /** @type {Record<string, any>} */ (parseYaml(readFileSync(file, "utf8")) ?? {});
-  const problems = readmeProblems(data);
-  if (problems.length > 0) throw new ConfigError(problems.join("; "));
+  const data = readmeData(root);
+  if (data === undefined) return undefined;
   const template = resolveTemplate(root, "readme-template");
   if (!template)
     throw new ConfigError(
