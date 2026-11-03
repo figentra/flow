@@ -192,10 +192,10 @@ export async function gateRun(options) {
         code: 2,
         problem: `--shards needs "gate.shard" in ${CONFIG_FILE}: the check command, with {filters} for the shard's packages`,
       };
-    const workspace = workspacePackages(root);
-    if (workspace && "problem" in workspace)
-      return { code: 2, problem: `--shards: ${workspace.problem}` };
-    if (!workspace?.packages.length)
+    // No workspace file reads as no packages, so `"problem" in` narrows to one of the two shapes.
+    const workspace = workspacePackages(root) ?? { packages: [] };
+    if ("problem" in workspace) return { code: 2, problem: `--shards: ${workspace.problem}` };
+    if (!workspace.packages.length)
       return { code: 2, problem: "--shards needs pnpm-workspace.yaml naming the packages" };
     groups = shard(workspace.packages, Math.min(options.shards, MAX_SHARDS));
   }
