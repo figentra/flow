@@ -17,6 +17,7 @@ import { lockText } from "../lib/lock.mjs";
 import { NAME } from "../lib/product.mjs";
 import {
   dropped,
+  appliedOverrides,
   lockOf,
   presetDrift,
   removable,
@@ -66,9 +67,11 @@ export function linePatch(before, after) {
  * @returns {Change[]}
  */
 export function diff(root, { direct } = {}) {
+  const { overrides } = appliedOverrides(root);
   const written = withHeaders(
     root,
-    render(root, { direct: direct ?? syncedDirect(lockOrNone(root)) }),
+    render(root, { direct: direct ?? syncedDirect(lockOrNone(root)), overrides }),
+    overrides,
   );
   written.set(LOCK, lockText(lockOf(root, written)));
   /** @type {Change[]} */

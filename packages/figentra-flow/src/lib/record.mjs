@@ -1,8 +1,9 @@
 /**
  * Figentra Flow file contract:
  * Purpose: Flow's record (FR-14): `.flow/record/<key>.json` on the task's branch, holding the task's stage and state,
- *   approvals, sessions, commits, PRs, gate and review results, open owner asks and task evidence. `readRecord` and
- *   `updateRecord` read and write it against `RECORD_SCHEMA` (shipped as `schema/record.schema.json`);
+ *   approvals, sessions, commits, PRs, gate and review results, open owner asks, task evidence and its dated stage
+ *   history. `readRecord` and `updateRecord` read and write it against `RECORD_SCHEMA` (shipped as
+ *   `schema/record.schema.json`), `updateRecord` dating each change of stage or state in `history` (FR-21);
  *   `readRecordAt` reads it from a branch with no checkout; `commitRecord` commits it (with the tracked changes for a
  *   session's stop) and pushes the branch through the credentials port (FR-19).
  * Boundary: writes only the record file, one commit on the task's branch and a push of that branch. Never commits on
@@ -116,6 +117,12 @@ export const RECORD_SCHEMA = {
         properties: { at: str, head: str, docs: str, session: str },
       },
     },
+    // FR-21: each stage's state change with its time, which the ledger reads (absent in older records)
+    history: list({
+      stage: { enum: STAGES },
+      state: { enum: ["active", "waiting", "done", "failed"] },
+      at: str,
+    }),
   },
 };
 
@@ -129,7 +136,8 @@ export const RECORD_SCHEMA = {
  *   review: { sha: string, verdict: string, findings: number, pr?: number,
  *     blocking?: { id: string, file: string, text: string }[] }[], asks: { what: string, command: string }[],
  *   tasks: Record<string, { command: string, exit: number, ms?: number, head: string, clean: boolean, digest: string, at: string, error?: string }[]>,
- *   started?: Record<string, { at: string, head: string, docs: string, session?: string }> }} FlowRecord
+ *   started?: Record<string, { at: string, head: string, docs: string, session?: string }>,
+ *   history?: { stage: Stage, state: "active" | "waiting" | "done" | "failed", at: string }[] }} FlowRecord
  */
 
 /** Raised for a key that is not one, or a record that is not valid JSON or fails its schema. */
@@ -220,8 +228,9 @@ function parseRecord(text, where) {
 }
 
 /**
- * Applies `change` to the record of `key` (a new one when there is none) and writes it; nothing is written when the
- * result fails the schema.
+ * Applies `change` to the record of `key` (a new one when there is none) and writes it, with a dated `history` entry
+ * when the stage or state is new (the ledger's by-day source, FR-21); nothing is written when the result fails the
+ * schema.
  * @param {string} root
  * @param {string} key
  * @param {(r: FlowRecord) => FlowRecord} change
@@ -230,7 +239,16 @@ function parseRecord(text, where) {
  */
 export function updateRecord(root, key, change) {
   const file = recordPath(root, key);
-  const next = change(readRecord(root, key) ?? emptyRecord(key));
+  const was = readRecord(root, key);
+  const changed = change(was ?? emptyRecord(key));
+  const { stage, state } = changed;
+  const next =
+    was?.stage === stage && was?.state === state
+      ? changed
+      : {
+          ...changed,
+          history: [...(changed.history ?? []), { stage, state, at: new Date().toISOString() }],
+        };
   const problems = recordProblems(next);
   if (problems.length) throw new RecordError(`${file}: ${problems.join("; ")}`);
   mkdirSync(dirname(file), { recursive: true });

@@ -3,7 +3,8 @@
  * Purpose: `fflow land [<pr>] [--stack] [--dry-run] [--manual-ok]`, the lander's checklist as code: squash-merge a PR
  *   only when it is open, clean, based on the default branch, green on `fflow/gate` from the gate App on its exact
  *   head, conventionally titled, its spec's approvals are recorded, its recorded review confirmed no blocking finding
- *   (STA-1945 AC-40) and it changes no owner-only path; then set Linear
+ *   (STA-1945 AC-40) and it changes no owner-only path (with the globs an `extend` of `owner-only` adds, STA-1945
+ *   FR-5); then set Linear
  *   Done, record the merge commit, remove the worktree through `clean`'s rules, delete the branch and comment. When the
  *   base's ruleset requires an approving review the head lacks, it dispatches the approval workflow and turns on
  *   auto-merge at the head instead, never an admin path; `land` on a merged PR runs the steps after the merge
@@ -37,6 +38,7 @@ import { artifactProblems } from "../lib/artifacts.mjs";
 import { say } from "../lib/cli.mjs";
 import { gateLogins, loadConfig } from "../lib/config.mjs";
 import { ownerOnlyPaths, packageFindings } from "../lib/owner-only.mjs";
+import { ownerOnlyExtra } from "../lib/render.mjs";
 import { requiredCheckState, requiredContexts } from "../lib/required-checks.mjs";
 import {
   APPROVE_WORKFLOW,
@@ -277,7 +279,8 @@ function specAt(
 /**
  * Lands one PR.
  * @param {{ root: string, repo: string, base: string, number: number, dry?: boolean, manualOk?: boolean,
- *           gateApp?: string | string[], reviewer?: string, owner?: string, deps: LandDeps }} options
+ *           gateApp?: string | string[], reviewer?: string, owner?: string, refs?: string, deps: LandDeps }} options
+ *   `refs`: the issue the squash's `Refs:` names when the branch names none (it is not moved to Done).
  * @returns {Promise<{ code: number, problems?: string[], merged?: string, head?: string,
  *   queued?: boolean, waiting?: string[] }>}
  */
@@ -291,6 +294,7 @@ export async function landOne({
   gateApp,
   reviewer,
   owner,
+  refs,
   deps,
 }) {
   const { api, log } = deps;
@@ -400,7 +404,7 @@ export async function landOne({
     blocking,
     artifacts,
     files,
-    ownerOnly: config.approve?.ownerOnly,
+    ownerOnly: ownerOnlyExtra(root),
     ownerFindings,
     gateApp,
     reviewer,
@@ -464,7 +468,7 @@ export async function landOne({
         id: pr.json.node_id,
         head,
         title: `${pr.json.title} (#${number})`,
-        body: squashMessage(key, commits),
+        body: squashMessage(key ?? refs, commits),
       },
     });
     const error = auto.json?.errors?.[0]?.message;
@@ -479,7 +483,7 @@ export async function landOne({
     merge_method: "squash",
     sha: head,
     commit_title: `${pr.json.title} (#${number})`,
-    commit_message: squashMessage(key, commits),
+    commit_message: squashMessage(key ?? refs, commits),
   });
   if (!merge.ok) return { code: 1, problems: [`GitHub refused the merge: ${merge.err}`] };
   const sha = merge.json.sha;

@@ -26,8 +26,8 @@ import { githubActionsRunner } from "./github-actions.mjs";
 /**
  * @typedef {{ dir: string, command: string, label: string, flags: string[], sha?: string, branch?: string,
  *             repository?: string, base?: string }} Job
- * @typedef {{ kind: string, wraps: boolean, program: string, posts?: "box" | "caller", run: (job: Job) => number,
- *             start?: (job: Job) => Promise<{ code: number, out: string }> }} Runner
+ * @typedef {{ kind: string, wraps: boolean, program: string, host?: string, posts?: "box" | "caller",
+ *             run: (job: Job) => number, start?: (job: Job) => Promise<{ code: number, out: string }> }} Runner
  */
 
 /** An ssh destination safe to put on a command line: `[user@]host`. */
@@ -51,6 +51,7 @@ export function runnerPort(block, { spawn = spawnSync, root } = {}) {
       kind: "ssh",
       wraps: true,
       program: "rsync",
+      host: block.host,
       run({ dir, command }) {
         const remote = `/tmp/${NAME}-gate/${basename(dir)}`;
         const copied = spawn(

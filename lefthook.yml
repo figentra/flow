@@ -9,13 +9,13 @@ pre-commit:
   jobs:
     - name: oxfmt
       glob: "*.{js,mjs,ts,json,jsonc,yaml,yml,md}"
-      # oxfmt exits 2 when every staged file is ignored: that is not a finding.
-      # The mise-pinned oxfmt runs without a workspace install, so a commit never installs; where mise is missing the
+      # --no-error-on-unmatched-pattern: staged files that are all on .oxfmtrc.jsonc's ignorePatterns pass.
+      # Exit 2 is not swallowed, because oxfmt also exits 2 on a file it cannot parse.
+      # The mise-pinned oxfmt runs without a workspace install, so a commit never runs one; where mise is missing the
       # job is skipped and CI checks (STA-2039; no pnpm fallback: pnpm 12's exec installs).
       run: >-
         sh -c 'command -v mise >/dev/null 2>&1 || { echo "oxfmt skipped: mise not installed; CI checks"; exit 0; };
-        mise exec npm:oxfmt -- oxfmt --check "$@";
-        s=$?; [ $s -eq 2 ] && exit 0; exit $s' -- {staged_files}
+        exec mise exec npm:oxfmt -- oxfmt --check --no-error-on-unmatched-pattern "$@"' -- {staged_files}
     - name: oxlint
       glob: "*.{js,mjs,ts}"
       run: >-

@@ -42,6 +42,8 @@ test("help: fflow alone prints the banner, the version and every command under i
     "status",
     "next",
     "resume",
+    "todo",
+    "ledger",
     "land",
     "release",
     "guard",
@@ -66,6 +68,12 @@ test("help: <command> --help prints its usage and runs nothing", async () => {
   const done = await runCommandForTest(CONSOLE, ["help", "task", "done"]);
   assert.equal(done.exitCode, 0);
   assert.match(done.stdout, /--command/);
+  const ledger = await runCommandForTest(CONSOLE, ["ledger", "--help"]);
+  assert.equal(ledger.exitCode, 0);
+  assert.match(ledger.stdout, /--since/);
+  const todo = await runCommandForTest(CONSOLE, ["todo", "--help"]);
+  assert.equal(todo.exitCode, 0);
+  assert.match(todo.stdout, /--repo/);
 });
 
 test("help: task refuses an id that is not T###, and done a missing --command, running nothing", async () => {
@@ -108,10 +116,12 @@ test("help: an unknown command names the closest match and exits 2", async () =>
 
 test("help: the commands not yet ported are passthrough, and only these", () => {
   assert.deepEqual(passthroughCommands(COMMANDS), [
+    "adr",
     "app",
     "clean",
     "gate",
     "guard",
+    "hooks",
     "init",
     "land",
     "linear",
