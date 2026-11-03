@@ -737,8 +737,8 @@ export async function run(/** @type {string[]} */ args) {
     number,
     manualOk: args.includes("--manual-ok"),
     gateApp: gateLogins(apps),
-    // The Flow App may post the verdict too (ADR 0523); an empty list means no reviewer is configured.
-    reviewer: /** @type {string[]} */ ([apps.review?.slug, apps.gate?.slug].filter(Boolean)),
+    // Not apps.gate.slug yet: its key is reachable outside main's OIDC job until ADR 0523's migration (L2 PR B/D/F).
+    reviewer: apps.review?.slug,
     owner: apps.owner,
     deps,
   };

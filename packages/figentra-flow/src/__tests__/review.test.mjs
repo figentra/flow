@@ -178,6 +178,13 @@ test("review: an edited verdict is void, and an edit voids earlier verdicts unle
   assert.match(aiReview(PR, [edited, marker], [], [], LISTED).ignored.join(), /was edited/);
 });
 
+test("review: a marker comment never parses as a verdict", () => {
+  const none = { verdict: null, ignored: [], passes: [] };
+  for (const verdict of [`AI-REVIEW: PASS ${SHA} base=main`, `AI-REVIEW: FAIL ${SHA}`])
+    for (const body of [`${GATE_MARKER} ${verdict}`, `${GATE_MARKER}\n${verdict}`])
+      assert.deepEqual(aiReview(PR, [byFlow(body)], [], [], LISTED), none);
+});
+
 test("review: an empty list of reviewer Apps means none is configured", () => {
   const pass = comment(`AI-REVIEW: PASS ${SHA} base=main`);
   for (const reviewer of [[], [undefined, ""]]) {

@@ -2,8 +2,9 @@
 "@figentra-oss/flow": patch
 ---
 
-`land` now accepts the AI-REVIEW verdict from the Flow App as well as the reviewer App: it reads verdicts from the
-App slugs `apps.review.slug` and `apps.gate.slug`, still matched by App identity (a Bot comment posted through a
-listed App), from the first line only. An unlisted App or a User still never counts, and with neither slug set no
-review App is configured, as before. An edit to a listed App's comment still voids every verdict before it, except an
-edit to the gate's own comment, which starts with the gate marker and is rewritten in place (STA-1945).
+The AI review reader now accepts one reviewer App slug or a list of them: a verdict counts only from the first line of
+a Bot comment posted through a listed App, an unlisted App or a User still never counts, and an empty list (or one
+holding only unset slugs) means no review App is configured, as before. An edit to a listed App's comment still voids
+every verdict before it, except an edit to the gate's own comment, which starts with the gate marker and is rewritten
+in place. `land` still reads only `apps.review.slug`; the Flow App's slug joins the list once its key is reachable
+only from main's OIDC workflow (STA-1945).
