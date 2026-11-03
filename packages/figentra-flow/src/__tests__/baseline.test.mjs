@@ -9,7 +9,9 @@
  *   - STA-1945 FR-22: a gain (failed or never ran on main, passes now) is counted; a failure newly reached behind a
  *     repaired upstream task of its own package is reported with that task and does not block; a plain regression
  *     and a failure in an unrelated package still block, even beside a newly reached one; the `--json` shape, a
- *     fail-closed one included;
+ *     fail-closed one included; a task whose name main configured and the PR's `baseline.tasks` dropped is not
+ *     missing, while a configured task the PR did not run, an unconfigured dependency task (`gen`) the PR no longer
+ *     runs, and anything against a baseline saved without its configured tasks, still are;
  *   - the 0.2.2 rename: `sync` renames the old config file once (failing when both exist) and removes the old-named
  *     workflows; the old binary prints one notice;
  *   - the baseline search walks the ancestors, ignores an artifact a pull request run or another branch made, and
@@ -113,6 +115,99 @@ test("compare: a task main ran but the PR dropped or skipped blocks, even one re
     READERS.turbo(summary({ "a#lint": undefined, "a#test": 0, "b#build": 0 })),
   );
   assert.deepEqual([skipped.ok, skipped.missing, skipped.gains], [false, ["a#lint"], []]);
+});
+
+test("compare: a task whose name main configured and the PR dropped is not missing", () => {
+  const main = READERS.turbo(
+    summary({
+      "pkg#test": 0,
+      "pkg#typecheck": 0,
+      "pkg#lint": 0,
+      "pkg#gen": 0,
+      "//#gen:workspace": 0,
+    }),
+  );
+  const configured = {
+    base: ["lint", "typecheck", "test", "build"],
+    pr: ["lint", "typecheck", "build"],
+  };
+  const pr = { "pkg#gen": 0, "//#gen:workspace": 0 };
+  const dropped = compare(
+    main,
+    READERS.turbo(summary({ ...pr, "pkg#typecheck": 0, "pkg#lint": 0 })),
+    { configured },
+  );
+  assert.deepEqual([dropped.ok, dropped.missing], [true, []]);
+  // a configured task the PR did not run is still missing
+  const gone = compare(main, READERS.turbo(summary({ ...pr, "pkg#lint": 0 })), { configured });
+  assert.deepEqual([gone.ok, gone.missing], [false, ["pkg#typecheck"]]);
+  // a dependency task nobody configured (turbo ran it for typecheck) is never dropped
+  const gen = compare(
+    main,
+    READERS.turbo(summary({ "//#gen:workspace": 0, "pkg#typecheck": 0, "pkg#lint": 0 })),
+    { configured },
+  );
+  assert.deepEqual([gen.ok, gen.missing], [false, ["pkg#gen"]]);
+  // a main baseline saved without its configured tasks drops nothing
+  const legacy = compare(
+    main,
+    READERS.turbo(summary({ ...pr, "pkg#typecheck": 0, "pkg#lint": 0 })),
+    { configured: { pr: configured.pr } },
+  );
+  assert.deepEqual([legacy.ok, legacy.missing], [false, ["pkg#test"]]);
+  // a malformed `configured` in main's artifact drops nothing instead of throwing
+  const malformed = compare(
+    main,
+    READERS.turbo(summary({ ...pr, "pkg#typecheck": 0, "pkg#lint": 0 })),
+    { configured: { base: /** @type {any} */ ("test"), pr: configured.pr } },
+  );
+  assert.deepEqual([malformed.ok, malformed.missing], [false, ["pkg#test"]]);
+});
+
+test("gate baseline: save keeps the configured tasks, check drops only what main configured", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "flow-baseline-tasks-"));
+  t.after(() => rmSync(root, { recursive: true }));
+  const mainDir = join(root, "main");
+  mkdirSync(mainDir);
+  const env = { GITHUB_REPOSITORY: "o/r", GITHUB_STEP_SUMMARY: join(root, "s.md") };
+  const log = () => {};
+  const at = (/** @type {string} */ name, /** @type {Record<string, number>} */ exit) => {
+    writeFileSync(join(root, name), JSON.stringify(summary(exit)));
+    return join(root, name);
+  };
+  const config = (/** @type {string[]} */ tasks) =>
+    writeFileSync(
+      join(root, "flow.config.json"),
+      JSON.stringify({ version: 1, preset: "neutral", baseline: { tasks } }),
+    );
+  // main, on the default tasks, saves them beside its results
+  const mainRun = at("main.json", { "pkg#test": 0, "pkg#lint": 0, "pkg#gen": 0 });
+  assert.equal(await run(["save", "--summary", mainRun], { root, env, log }), 0);
+  const saved = readFileSync(join(root, ".fflow-gate/baseline.json"), "utf8");
+  assert.deepEqual(JSON.parse(saved).configured, ["lint", "typecheck", "test", "build"]);
+  writeFileSync(join(mainDir, "baseline.json"), saved);
+  const deps = {
+    root,
+    env,
+    log,
+    api: github({
+      ancestors: [A],
+      artifacts: { [artifactName(A)]: [artifact(A, 9)] },
+      events: { 9: "push" },
+    }),
+    download: () => mainDir,
+  };
+  const check = async (/** @type {Record<string, number>} */ exit) => {
+    assert.equal(await run(["save", "--summary", at("pr.json", exit)], { root, env, log }), 0);
+    return run(["check", "--base", A], deps);
+  };
+  // the PR still runs `test`: dropping its result is missing
+  assert.equal(await check({ "pkg#lint": 0, "pkg#gen": 0 }), 1);
+  // the PR drops `test` from baseline.tasks
+  config(["lint", "typecheck", "build"]);
+  assert.equal(await check({ "pkg#lint": 0, "pkg#gen": 0 }), 0);
+  // `gen` was never configured, so losing it is still missing
+  assert.equal(await check({ "pkg#lint": 0 }), 1);
 });
 
 test("compare: a must-pass task blocks when red, even when it is red on main", () => {
@@ -404,5 +499,5 @@ test("the old binary prints one notice, then runs fflow", () => {
   const r = spawnSync(process.execPath, [bin, "--help"], { encoding: "utf8" });
   assert.equal(r.status, 0);
   assert.equal(r.stderr.match(/is now `fflow`/g)?.length, 1);
-  assert.match(r.stderr, /usage: fflow </);
+  assert.match(r.stdout, /Usage:\n\s+fflow <command>/);
 });
