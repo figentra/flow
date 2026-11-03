@@ -115,7 +115,7 @@ test("writeRendered: every comment-capable file starts with its header, and the 
         version: VERSION,
         digest: treeDigest(join(FLOW, "presets", "neutral")),
       },
-      profile: "*",
+      profile: "default",
       overrides: "",
       files: undefined,
       skills: {},
