@@ -14,7 +14,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { checkDesign, DESIGN_SECTIONS } from "../commands/gate.mjs";
+import { checkDesign, checkSmallDesign, DESIGN_SECTIONS } from "../commands/gate.mjs";
 import { strip } from "../lib/spec-parse.mjs";
 
 const PKG = new URL("../..", import.meta.url).pathname;
@@ -134,6 +134,7 @@ test("templates: a spec states Discovery and Sources before its requirements, NF
     // Small tier: the one-page design in spec.md, with its folder tree and interfaces.
     const design = body.match(/^## Design\b[^\n]*\n([\s\S]*?)(?=^## )/m)?.[1] ?? "";
     assert.deepEqual(checkDesign(design, "spec.md ## Design", "###"), [], preset);
+    assert.deepEqual(checkSmallDesign(design), [], `${preset}: the gate's tree and interfaces`);
     const order = designOrder(design, "###");
     assert.deepEqual(
       order,
