@@ -247,10 +247,15 @@ trusted source is the App the ruleset pins (`integration_id`), or the login `app
 The author must not be the approving App.
 
 On a red main the check compares failures with main's recorded baseline (STA-1945). A required check that fails on
-the head and, from its trusted source, on the commit that left the base's nearest baseline too is tolerated, but only
-while the ruleset requires the `Baseline` check and it is green on the head, since that check compares each task. A
-check that passed or never ran there still refuses, and with no baseline every required check must be green. The
-approval names the baseline's commit and the checks it tolerated.
+the head and, from its trusted source, concluded `failure` on the commit that left the base's nearest baseline too is
+tolerated, but only while the ruleset requires the `Baseline` check and it is green on the head, since that check
+compares each task. A check that passed, never ran, or was only cancelled or timed out there still refuses, and with
+no baseline every required check must be green. The approval names the baseline's commit and the checks it tolerated.
+
+The tolerance is per check, not per task: a check red on main for one reason and on the PR for another passes. So a
+red-main repository's ruleset may require, beside `Baseline`, only checks that run no more than the `baseline.tasks`
+Baseline compares, and any other required check must be green on main. `fflow/gate` runs the whole check command, so
+it is never tolerated: such a repository requires `Baseline` instead of it.
 
 The workflow then either approves at that head or comments the reasons. After approving, it re-reads the PR and
 dismisses its own review if the head moved. The App's id and key are secrets of that environment, under names of

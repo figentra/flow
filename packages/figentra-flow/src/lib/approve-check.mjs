@@ -12,9 +12,11 @@
  *     dependency moved off its catalog);
  *   - every required check on that head is green from its trusted source, with one success, or it adds no new failure
  *     against the default branch's recorded baseline (STA-1945 FR-22): a required check that fails on the head and,
- *     from its trusted source, on the baseline's commit too is not new, while the `Baseline` check, which the ruleset
- *     must then require, is green on the head and never tolerated itself (it compares each task with the baseline,
- *     a newly reached failure excepted). Without a baseline every required check must be green, as before;
+ *     from its trusted source, concluded `failure` on the baseline's commit too is not new, while the `Baseline`
+ *     check, which the ruleset must then require, is green on the head and never tolerated itself (it compares each
+ *     task with the baseline, a newly reached failure excepted). The tolerance is per check, so it is sound only for
+ *     a check that runs no more than Baseline's tasks; `fflow/gate`, which runs the whole check command, is never
+ *     tolerated. Without a baseline every required check must be green, as before;
  *   - the base's ruleset requires the code owner's review and the base holds `.github/CODEOWNERS`, so GitHub itself
  *     asks the owner for owner-only paths.
  *   Everything is read at that SHA, so a later push cannot change what was checked. After approving it re-reads the
@@ -31,7 +33,7 @@ import { pathToFileURL } from "node:url";
 
 import { findBaseline } from "./baseline.mjs";
 import { ownerOnlyPaths, packageFindings } from "./owner-only.mjs";
-import { BASELINE_CHECK } from "./product.mjs";
+import { BASELINE_CHECK, STATUS_CONTEXT } from "./product.mjs";
 import { requiredCheckState, requiredContexts } from "./required-checks.mjs";
 
 /** GitHub lists at most this many files in a comparison; at the limit the owner reviews it. */
@@ -190,10 +192,16 @@ export async function decide({
           `a failure is tolerated only beside a green \`${BASELINE_CHECK}\` check, which ${p.base.ref}'s ruleset must require`,
         );
       else {
-        // Baseline itself is green here, so a red Baseline run on main never excuses one on the head.
-        const before = (await at(found.sha)).failed;
-        const tolerated = failed.filter((c) => before.includes(c));
-        failed = failed.filter((c) => !tolerated.includes(c));
+        // Baseline itself is green here, so a red Baseline run on main never excuses one on the head. Only a run that
+        // concluded `failure` on main is a recorded failure: a cancelled or timed-out one shows nothing.
+        const before = (await at(found.sha)).outright;
+        // Flow's gate runs the whole check command, not only the tasks Baseline compares, so it is never excused.
+        if (failed.includes(STATUS_CONTEXT))
+          refuse.push(
+            `\`${STATUS_CONTEXT}\` failed; it runs more than the tasks \`${BASELINE_CHECK}\` compares, so a red main never excuses it`,
+          );
+        const tolerated = failed.filter((c) => c !== STATUS_CONTEXT && before.includes(c));
+        failed = failed.filter((c) => c !== STATUS_CONTEXT && !tolerated.includes(c));
         baseline = { sha: found.sha, tolerated };
       }
     }

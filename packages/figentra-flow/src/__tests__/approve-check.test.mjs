@@ -14,8 +14,8 @@
  *   A refusal is one comment and no review; a head that moves after the approval gets the review dismissed.
  *   On a red main (STA-1945 FR-22) a required check failing on the head and on main's recorded baseline too is
  *   tolerated beside a green, required `Baseline` check, and the approval names the baseline and what it tolerated.
- *   A check that passed (or never ran) on the baseline, a missing or planted baseline, a red, skipped or unrequired
- *   `Baseline`, and every guard above still refuse.
+ *   A check that passed (or never ran, or was only cancelled or timed out) on the baseline, a red `fflow/gate`, a
+ *   missing or planted baseline, a red, skipped or unrequired `Baseline`, and every guard above still refuse.
  * Boundary: no network: the read and write APIs are stubs.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1856; STA-1945 FR-22.
@@ -275,6 +275,11 @@ test("approve: each unsafe case refuses with its reason", async () => {
 /** Baseline is the per-task comparison: the job `sync` renders, from GitHub Actions. */
 const GATE = { ...VERIFY, id: 2, name: "Baseline" };
 const RED = { ...VERIFY, conclusion: "failure" };
+const RED_GATE_STATUS = {
+  context: "fflow/gate",
+  state: "failure",
+  creator: { login: "figentra-gate[bot]" },
+};
 
 /** A red main: `verify` fails on the head and on main's baseline commit, and `Baseline` is green and required. */
 const RED_MAIN = {
@@ -325,6 +330,19 @@ test("approve: on a red main, each new or unproven failure refuses with its reas
     [
       { baseline: { ...RED_MAIN.baseline, runs: [{ ...RED, app: { id: 999 } }, GATE] } },
       /required checks failed that do not fail on the baseline at f{40}: verify/,
+    ],
+    // A cancelled, timed-out or waiting run on the baseline recorded no failure.
+    ...["cancelled", "timed_out", "action_required"].map((conclusion) => [
+      { baseline: { ...RED_MAIN.baseline, runs: [{ ...RED, conclusion }, GATE] } },
+      /required checks failed that do not fail on the baseline at f{40}: verify/,
+    ]),
+    // Flow's gate runs more than Baseline's tasks, so it is never excused, even when red on the baseline too.
+    [
+      {
+        statuses: [RED_GATE_STATUS],
+        baseline: { ...RED_MAIN.baseline, statuses: [RED_GATE_STATUS] },
+      },
+      /`fflow\/gate` failed; it runs more than the tasks `Baseline` compares, so a red main never excuses it/,
     ],
     // No baseline: every required check must be green, as before.
     [
@@ -459,9 +477,35 @@ test("required checks: an App-pinned context counts only that App's newest run; 
     passed: ["verify", "gate"],
     pending: [],
     failed: [],
+    outright: [],
     untrusted: [],
     succeeded: 2,
   });
+});
+
+test("required checks: only a `failure` conclusion or status is an outright failure", () => {
+  const names = ["failure", "cancelled", "timed_out", "action_required"];
+  const state = requiredCheckState({
+    required: [
+      ...names.map((context) => ({ context, integration_id: 1 })),
+      { context: "red" },
+      { context: "errored" },
+    ],
+    checkRuns: names.map((name, id) => ({
+      id,
+      name,
+      status: "completed",
+      conclusion: name,
+      app: { id: 1 },
+    })),
+    statuses: [
+      { context: "red", state: "failure", creator: { login: "gate[bot]" } },
+      { context: "errored", state: "error", creator: { login: "gate[bot]" } },
+    ],
+    trusted: { red: "gate[bot]", errored: "gate[bot]" },
+  });
+  assert.deepEqual(state.failed, [...names, "red", "errored"]);
+  assert.deepEqual(state.outright, ["failure", "red"]);
 });
 
 /** The workflow's environment for `main`. */

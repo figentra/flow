@@ -28,11 +28,14 @@ export const requiredContexts = (rules) =>
  * Each required context's state on one commit.
  * @param {{ required: { context: string, integration_id?: number }[], statuses: any[], checkRuns: any[],
  *           trusted?: Record<string, string> }} input
- * @returns {{ passed: string[], pending: string[], failed: string[], untrusted: string[], succeeded: number }}
+ * @returns {{ passed: string[], pending: string[], failed: string[], outright: string[], untrusted: string[],
+ *             succeeded: number }} `outright`: the failed contexts that concluded `failure` itself, not cancelled,
+ *   timed out, errored or waiting for an action
  */
 export function requiredCheckState({ required, statuses, checkRuns, trusted = {} }) {
-  /** @type {{ passed: string[], pending: string[], failed: string[], untrusted: string[], succeeded: number }} */
-  const out = { passed: [], pending: [], failed: [], untrusted: [], succeeded: 0 };
+  /** @type {{ passed: string[], pending: string[], failed: string[], outright: string[], untrusted: string[],
+   *           succeeded: number }} */
+  const out = { passed: [], pending: [], failed: [], outright: [], untrusted: [], succeeded: 0 };
   for (const { context, integration_id: app } of required) {
     const login = trusted[context];
     if (app === undefined && !login) {
@@ -66,8 +69,11 @@ export function requiredCheckState({ required, statuses, checkRuns, trusted = {}
       continue;
     } else state = "pending";
     if (state === "pending") out.pending.push(context);
-    else if (state === "failure") out.failed.push(context);
-    else {
+    else if (state === "failure") {
+      out.failed.push(context);
+      if (run ? run.conclusion === "failure" : status?.state === "failure")
+        out.outright.push(context);
+    } else {
       out.passed.push(context);
       if (state === "success") out.succeeded++;
     }
