@@ -287,7 +287,7 @@ export const COMMANDS = [
   governance({
     name: "check",
     description:
-      "The CI check: owned files, the preset and the config against the lock; writes nothing",
+      "The CI check: owned files, the preset, the config and the overrides against the lock, and review dates; writes nothing",
     examples: [`${NAME} check`, `${NAME} check --workspace ~/code`],
   }),
   governance({
@@ -299,7 +299,8 @@ export const COMMANDS = [
   }),
   governance({
     name: "validate",
-    description: "Check flow.config.json against its schema, naming each field that breaks it",
+    description:
+      "Check flow.config.json and .flow/overrides/ against their schemas and the mandatory policies, naming each break",
     examples: [`${NAME} validate`, `${NAME} validate --workspace ~/code`],
   }),
   DoctorCommand,
