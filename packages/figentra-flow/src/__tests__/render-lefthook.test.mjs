@@ -2,11 +2,11 @@
  * Figentra Flow file contract:
  * Purpose: hold `lefthook.yml` and the `mise.toml` pins to STA-1945 AC-8, running each rendered job under `sh` as
  *   lefthook would, with stub `mise`, `pnpm` and `commitlint` on PATH: oxfmt and oxlint run the named mise tool and
- *   skip with a note without mise, never `pnpm exec` (STA-2039); oxfmt's exit 2 passes and any other failure fails;
- *   oxlint skips when its config extends `@stackra/oxlint-config` and no install has it; commitlint skips when not
- *   installed; a pre-push job passes on the registry's 401 alone and a non-401 failure blocks; the configuration's jobs
- *   follow the preset's. `pinTools` changes or adds only the two pins; `catalogPins` reads the catalog's versions. The
- *   rendered YAML reads back.
+ *   skip with a note without mise, never `pnpm exec` (STA-2039); an all-ignored staged set passes and any failure,
+ *   exit 2 included, fails; oxlint skips when its config extends `@stackra/oxlint-config` and no install has it;
+ *   commitlint skips when not installed; a pre-push job passes on the registry's 401 alone and a non-401 failure
+ *   blocks; the configuration's jobs follow the preset's. `pinTools` changes or adds only the two pins; `catalogPins`
+ *   reads the catalog's versions. The rendered YAML reads back.
  * Boundary: temporary folders and `sh`; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945; Stackra STA-1865; STA-2039; os#112.
@@ -98,16 +98,19 @@ function runJob(run, cwd, bin, env = {}) {
   });
 }
 
-test("oxfmt runs the mise-pinned binary, skips without mise (never pnpm exec), and exit 2 passes", (t) => {
+test("oxfmt runs the mise-pinned binary, skips without mise (never pnpm exec), and exit 2 fails", (t) => {
   const { root, withMise, noMise } = fixture(t);
   const run = runOf(hooks(), "pre-commit", "oxfmt");
   let r = runJob(run, root, withMise);
   assert.equal(r.status, 0);
-  assert.equal(r.stdout.trim(), "mise exec npm:oxfmt -- oxfmt --check a.mjs");
+  assert.equal(
+    r.stdout.trim(),
+    "mise exec npm:oxfmt -- oxfmt --check --no-error-on-unmatched-pattern a.mjs",
+  );
   r = runJob(run, root, noMise);
   assert.equal(r.status, 0);
   assert.equal(r.stdout.trim(), "oxfmt skipped: mise not installed; CI checks");
-  assert.equal(runJob(run, root, withMise, { STUB_EXIT: "2" }).status, 0, "all files ignored");
+  assert.equal(runJob(run, root, withMise, { STUB_EXIT: "2" }).status, 2, "a parse error fails");
   assert.equal(runJob(run, root, withMise, { STUB_EXIT: "1" }).status, 1, "a finding fails");
 });
 
@@ -233,9 +236,9 @@ test("the neutral preset: mise first, the installed binary without mise, no stac
   const oxfmt = runOf(parsed, "pre-commit", "oxfmt");
   assert.equal(
     runJob(oxfmt, root, withMise).stdout.trim(),
-    "mise exec npm:oxfmt -- oxfmt --check a.mjs",
+    "mise exec npm:oxfmt -- oxfmt --check --no-error-on-unmatched-pattern a.mjs",
   );
-  assert.match(oxfmt, /else node_modules\/\.bin\/oxfmt --check/);
+  assert.match(oxfmt, /exec node_modules\/\.bin\/oxfmt --check --no-error-on-unmatched-pattern/);
   assert.doesNotMatch(runOf(parsed, "pre-commit", "oxlint"), /@stackra/);
   assert.equal(
     renderLefthook({ root, config: {}, presetDir: root }).size,
