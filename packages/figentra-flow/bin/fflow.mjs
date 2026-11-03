@@ -12,6 +12,10 @@ import { NAME } from "../src/lib/product.mjs";
 const COMMANDS = [
   "init",
   "sync",
+  "update",
+  "check",
+  "diff",
+  "validate",
   "gate",
   "trace",
   "parse",

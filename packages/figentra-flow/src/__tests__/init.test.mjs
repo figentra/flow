@@ -81,7 +81,7 @@ test("with a projector, sync writes neutral .agents/skills documents; it removes
     ]);
     const lock = JSON.parse(readFileSync(join(root, ".flow/lock.json"), "utf8"));
     assert.deepEqual(Object.keys(lock.files), files);
-    assert.equal(lock.preset, "neutral");
+    assert.equal(lock.preset.name, "neutral");
     assert.deepEqual(sync(root, quiet).files, files, "a second sync is the same");
   } finally {
     rmSync(root, { recursive: true });
