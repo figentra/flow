@@ -8,9 +8,10 @@
  */
 // @covers sta-1729:AC-028 sta-163:FR-001 sta-163:FR-002 sta-163:FR-003 sta-163:FR-004 sta-163:FR-005 sta-163:FR-008
 // @covers sta-163:P-001 sta-163:P-002 sta-163:P-003 sta-163:P-005 sta-163:P-006 sta-163:P-007
-// @covers sta-1945:FR-26 sta-1945:FR-27 sta-1945:FR-28 sta-1945:FR-29 sta-1945:FR-30
+// FR-30 and P-034 are not claimed: contract drift (T047) and edited approvals (T048) are not built yet.
+// @covers sta-1945:FR-26 sta-1945:FR-27 sta-1945:FR-28 sta-1945:FR-29
 // @covers sta-1945:AC-28 sta-1945:AC-29 sta-1945:AC-30 sta-1945:AC-31 sta-1945:AC-32
-// @covers sta-1945:P-032 sta-1945:P-033 sta-1945:P-034
+// @covers sta-1945:P-032 sta-1945:P-033
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -26,8 +27,10 @@ import {
   checkTraceTasks,
   DESIGN_SECTIONS,
   checkBranch,
+  DOCUMENT_GATES_SINCE,
   checkBug,
   checkComponents,
+  clarifiedBefore,
   checkForeignStatus,
   checkLane,
   checkPlaceholders,
@@ -598,6 +601,11 @@ test("placeholders: template text, an empty mandatory section and an open questi
     [],
   );
   assert.deepEqual(checkPlaceholders("## Open questions\n\nNone.\n"), []);
+  assert.deepEqual(checkPlaceholders("## Open questions\n\nNone: D5 decided them all.\n"), []);
+  assert.deepEqual(
+    checkPlaceholders("## Open questions\n\n#### Decided\n\n- ~~Which port?~~ Decided: 8080\n"),
+    [],
+  );
   assert.deepEqual(checkPlaceholders("## Open questions\n\n- Which port?\n- Who owns it?\n"), [
     'an open question remains: "Which port?" (decide it before the approval)',
     'an open question remains: "Who owns it?" (decide it before the approval)',
@@ -610,6 +618,17 @@ test("sources: a `### Sources` section that cites every live FR, alone or in a r
   ]);
   assert.match(checkSources(`${REQUIREMENTS}\n### Sources\n\nNone.\n`).join(), /no `### Sources`/);
   assert.deepEqual(checkSources(`${REQUIREMENTS}\n${SOURCES}`), []);
+  // a subsection is part of the section; the next `###` ends it
+  assert.deepEqual(
+    checkSources(
+      `${REQUIREMENTS}\n### Sources\n\n#### Files\n\n- \`src/wallet.ts\`: FR-1 to FR-2\n\n### Next\n\nFR-9\n`,
+    ),
+    [],
+  );
+  assert.deepEqual(
+    checkSources(`${REQUIREMENTS}\n### Sources\n\n- x: FR-1\n\n### Next\n\nFR-2\n`).length,
+    1,
+  );
   assert.deepEqual(checkSources(`${REQUIREMENTS}\n### Sources\n\n- ADR 0502: FR-001\n`), [
     'spec.md: FR-002 cites no source (name it in `### Sources`, alone or in a range such as "FR-1 to FR-12")',
   ]);
@@ -630,10 +649,26 @@ test("components: each component of a plan has a folder tree and its interfaces 
   assert.deepEqual(checkComponents(plan(code)), [
     "plan.md: component `C1 Wallet` has no folder tree (a ```text block of every file it adds) (FR-27)",
   ]);
-  assert.deepEqual(checkComponents(plan(tree)), [
-    "plan.md: component `C1 Wallet` has no interface declarations (a fenced block in the repository's language) (FR-27)",
-  ]);
+  const noInterface =
+    "plan.md: component `C1 Wallet` has no interface declarations (a fenced block in the repository's language) (FR-27)";
+  assert.deepEqual(checkComponents(plan(tree)), [noInterface]);
+  // a diagram, data or shell block declares no interface
+  for (const lang of ["mermaid", "yaml", "json", "sh", "md"])
+    assert.deepEqual(
+      checkComponents(plan(`${tree}\n\`\`\`${lang}\nx\n\`\`\`\n`)),
+      [noInterface],
+      lang,
+    );
   assert.deepEqual(checkComponents("## Summary\n\nx\n"), []);
+  // fences indented in a list item count; a ````md block quoting a ``` one is one block
+  const indent = (/** @type {string} */ s) => s.replaceAll(/^(?=.)/gm, "  ");
+  assert.deepEqual(
+    checkComponents(plan(`- The tree:\n${indent(tree)}- The interface:\n${indent(code)}`)),
+    [],
+  );
+  assert.deepEqual(checkComponents(plan(`\`\`\`\`md\n${tree}\`\`\`\`\n\n${code}`)), [
+    "plan.md: component `C1 Wallet` has no folder tree (a ```text block of every file it adds) (FR-27)",
+  ]);
 });
 
 test("vague words: listed terms in FR and AC lines fail a big spec and warn on the others (FR-29)", () => {
@@ -654,6 +689,9 @@ test("vague words: listed terms in FR and AC lines fail a big spec and warn on t
   assert.deepEqual(checkVague(text, words, "big"), { problems: found, warnings: [] });
   assert.deepEqual(checkVague(text, words, "feature"), { problems: [], warnings: found });
   assert.deepEqual(checkVague(text, [], "big"), { problems: [], warnings: [] });
+  assert.deepEqual(checkVague("- **NFR-1**: THE API SHALL be fast.", words, "big").problems, [
+    'spec.md: NFR-1 uses the vague term "fast" (state a measurable value; the preset\'s quality-words.yml has an example) (FR-29)',
+  ]);
   const listed = qualityWords();
   for (const w of ["fast", "as needed", "user-friendly"]) assert.ok(listed.includes(w), w);
 });
@@ -689,6 +727,90 @@ test("checkStage: Sources at Clarified, placeholders at the approval stop, vague
   assert.doesNotMatch(
     checkStage("sta-12-x", documented("feature", "Clarified", dated), over).join(),
     /placeholder/,
+  );
+  // At Planned the feature spec is approved, and so is the plan: its placeholders, questions and components.
+  const planned = { ...over, words: [], files: ["spec.md", "plan.md"] };
+  assert.match(
+    checkStage("sta-12-x", documented("feature", "Planned", dated), planned).join(),
+    /spec\.md: the template placeholder `\[DATE\]` remains/,
+  );
+  const plan =
+    "## Components and responsibilities\n\n### C1 Wallet\n\n```text\nsrc/wallet.ts (new)\n```\n\n```mermaid\nsequenceDiagram\n```\n\nCreated on [DATE].\n\n## Open questions\n\n- Which port?\n";
+  for (const tier of ["feature", "big"]) {
+    const found = checkStage("sta-12-x", documented(tier, "Planned", SOURCES), {
+      ...planned,
+      plan,
+    }).join("\n");
+    assert.match(found, /plan\.md: the template placeholder `\[DATE\]` remains/, tier);
+    assert.match(found, /plan\.md: an open question remains: "Which port\?"/, tier);
+    assert.match(found, /plan\.md: component `C1 Wallet` has no interface declarations/, tier);
+  }
+});
+
+test("checkStage: a spec last clarified before the document gates keeps its old rules", () => {
+  const over = { team: null, words: ["fast"] };
+  const on = (/** @type {string} */ day) =>
+    checkStage(
+      "sta-12-x",
+      documented("big", "Clarified").replace("- d · Draft →", `- ${day} · Draft →`),
+      over,
+    ).join();
+  assert.doesNotMatch(on("2026-11-01"), /Sources|vague/);
+  assert.match(on(DOCUMENT_GATES_SINCE), /no `### Sources` section/);
+  assert.match(on(DOCUMENT_GATES_SINCE), /vague term "fast"/);
+  // a later re-clarification (after an amendment) is held to the new rules
+  assert.equal(
+    clarifiedBefore(
+      "- 2026-11-01: Draft → Clarified\n- 2026-11-03: Draft → Clarified\n",
+      "2026-11-03",
+    ),
+    false,
+  );
+  assert.equal(clarifiedBefore("- 2026-11-01: Draft → Clarified\n", "2026-11-03"), true);
+  assert.equal(clarifiedBefore("- d · Draft → Clarified\n", "2026-11-03"), false);
+});
+
+test("gate ci: scope drift in the branch's own spec fails a big tier and warns on a feature one (FR-30, T049)", (t) => {
+  const env = {
+    ...process.env,
+    NO_COLOR: "1",
+    STACKRA_BRANCH: "figentra/sta-12-x",
+    GIT_AUTHOR_NAME: "t",
+    GIT_AUTHOR_EMAIL: "t@t",
+    GIT_COMMITTER_NAME: "t",
+    GIT_COMMITTER_EMAIL: "t@t",
+  };
+  delete env.SPEC_GATE_REQUIRE_READY;
+  /** A repository whose main holds the spec at `tier`, and a branch that adds a named file and an unnamed one. */
+  const ci = (/** @type {string} */ tier) => {
+    const repo = mkdtempSync(join(tmpdir(), "flow-scope-"));
+    t.after(() => rmSync(repo, { recursive: true, force: true }));
+    const sh = (/** @type {string} */ cmd, /** @type {string[]} */ args) =>
+      spawnSync(cmd, args, { cwd: repo, encoding: "utf8", env });
+    const folder = join(repo, ".agents/specs/sta-12-x");
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(folder, "spec.md"), `# X\n\n**Status**: Tasked\n\n**Tier**: ${tier}\n`);
+    writeFileSync(join(folder, "tasks.md"), "- [ ] T001 Build `src/a.mjs` — covers: AC-001\n");
+    sh("git", ["init", "-q", "-b", "main"]);
+    sh("git", ["add", "-A"]);
+    sh("git", ["commit", "-q", "-m", "chore: spec"]);
+    sh("git", ["switch", "-q", "-c", "figentra/sta-12-x"]);
+    mkdirSync(join(repo, "src"));
+    writeFileSync(join(repo, "src/a.mjs"), "\n");
+    writeFileSync(join(repo, "src/b.mjs"), "\n");
+    sh("git", ["add", "-A"]);
+    sh("git", ["commit", "-q", "-m", "chore: build"]);
+    return sh(process.execPath, [BIN, "gate", "ci", "--base=main"]);
+  };
+  const big = ci("big");
+  assert.equal(big.status, 1, big.stderr);
+  assert.match(big.stderr, /spec-gate: scope drift: `src\/b\.mjs` is named by no task/);
+  assert.doesNotMatch(big.stderr, /src\/a\.mjs/);
+  const feature = ci("feature");
+  assert.equal(feature.status, 0, feature.stderr);
+  assert.match(
+    feature.stderr,
+    /spec-gate: warning: scope drift: `src\/b\.mjs` is named by no task/,
   );
 });
 

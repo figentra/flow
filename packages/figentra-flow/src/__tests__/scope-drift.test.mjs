@@ -6,7 +6,8 @@
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945 FR-30.
  */
-// @covers sta-1945:FR-30 sta-1945:AC-32 sta-1945:P-034
+// FR-30's scope part only, so FR-30 and P-034 are not claimed until contract drift (T047) and edited approvals (T048) land.
+// @covers sta-1945:AC-32
 import { test } from "node:test";
 import assert from "node:assert/strict";
 

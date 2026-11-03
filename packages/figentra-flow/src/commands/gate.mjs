@@ -34,7 +34,8 @@
  *                 history line for the current status. A tiered spec also has `### Sources` citing every FR (FR-26)
  *                 and, in its FR and AC lines, no word of the preset's `quality-words.yml` (a failure on big, else a
  *                 warning; FR-29); at its approval stop a document holds no template placeholder, empty mandatory
- *                 section or open question (FR-28)
+ *                 section or open question (FR-28). A spec whose last `→ Clarified` history line is dated before
+ *                 DOCUMENT_GATES_SINCE is exempt from FR-26 to FR-29 (it was approved under the older rules)
  *   Planned       plan.md: Constitution Check rows PASS or N/A with a reason, three deploy-mode rows, every live FR
  *                 validated by a P-### (or marked example-only); a feature or big plan's components each have a
  *                 folder tree and interface declarations (FR-27)
@@ -314,6 +315,22 @@ export function checkTasks(
   return problems;
 }
 
+/** The day the document gates (FR-26 to FR-29) began: a spec last clarified before it keeps the rules it was approved under. */
+export const DOCUMENT_GATES_SINCE = "2026-11-03";
+
+/**
+ * Whether the last dated `→ Clarified` line of a Status history is before `since` (a `YYYY-MM-DD` day); false when
+ * no such line is dated, so an undated spec gets every check.
+ * @param {string} history
+ * @param {string} since
+ */
+export function clarifiedBefore(history, since) {
+  const day = [...history.matchAll(/^\s*[-*]\s*(\d{4}-\d{2}-\d{2})\b[^\n]*→\s*Clarified\b/gim)].at(
+    -1,
+  )?.[1];
+  return day !== undefined && day < since;
+}
+
 /**
  * Problems for a spec at its declared `**Status**`; `files` lists the names in its folder.
  * @param {string} folder
@@ -362,14 +379,18 @@ export function checkStage(
       }),
       ...ownerApprovalProblems(text, loadConfig(ROOT).config.apps?.owner),
     );
-  if (tier !== undefined && tier !== "trivial") {
-    problems.push(...checkCriteria(text), ...checkSources(text));
+  const history =
+    body.match(/^## Status history\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
+  const documented = !clarifiedBefore(history, DOCUMENT_GATES_SINCE);
+  if (tier !== undefined && tier !== "trivial") problems.push(...checkCriteria(text));
+  if (documented && tier !== undefined && tier !== "trivial") {
+    problems.push(...checkSources(text));
     const vague = checkVague(text, words ?? qualityWords(), tier);
     problems.push(...vague.problems);
     for (const w of vague.warnings) warn(w);
   }
   // FR-28: what an approval stop approves holds no placeholder, empty mandatory section or open question.
-  if (tier === "feature" || tier === "big") {
+  if (documented && (tier === "feature" || tier === "big")) {
     if (atLeast(status, tier === "big" ? "clarified" : "planned"))
       problems.push(...checkPlaceholders(text).map((p) => `spec.md: ${p}`));
     if (atLeast(status, "planned") && files.includes("plan.md"))
@@ -378,8 +399,6 @@ export function checkStage(
         ...checkComponents(plan),
       );
   }
-  const history =
-    body.match(/^## Status history\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
   if (!new RegExp(`→\\s*${status}\\b`, "i").test(history))
     problems.push(
       `\`## Status history\` has no "→ ${status[0].toUpperCase()}${status.slice(1)}" line`,
@@ -690,9 +709,59 @@ export function checkTraceTasks(tasks, spec, where) {
   return problems;
 }
 
+/**
+ * Markdown's fenced blocks (``` or ~~~, indented too; only a fence of the same kind and at least the opening's length
+ * closes one, so a ````md block may quote a ``` one): each opening's language, and the text without the blocks.
+ * @param {string} text
+ * @returns {{ langs: string[], rest: string }}
+ */
+function fences(text) {
+  /** @type {string[]} */
+  const langs = [];
+  const rest = [];
+  /** @type {string | undefined} */
+  let open;
+  for (const line of text.split("\n")) {
+    const fence = line.match(/^\s*(`{3,}|~{3,})\s*([^\s`]*)/);
+    if (open === undefined) {
+      if (!fence) rest.push(line);
+      else {
+        open = fence[1];
+        langs.push(fence[2].toLowerCase());
+      }
+    } else if (fence && fence[1][0] === open[0] && fence[1].length >= open.length && !fence[2])
+      open = undefined;
+  }
+  return { langs, rest: rest.join("\n") };
+}
+
 /** Markdown without fenced blocks and inline code, which quote text rather than state it. */
-const prose = (/** @type {string} */ text) =>
-  text.replaceAll(/^```[\s\S]*?^```/gm, "").replaceAll(/`[^`\n]*`/g, "");
+const prose = (/** @type {string} */ text) => fences(text).rest.replaceAll(/`[^`\n]*`/g, "");
+
+/**
+ * The `##` to `####` sections whose title matches `title`: each runs to the next heading of its level or higher, so
+ * its subsections are part of it.
+ * @param {string} body
+ * @param {RegExp} title
+ * @returns {{ title: string, text: string }[]}
+ */
+function sectionsOf(body, title) {
+  const lines = body.split("\n");
+  const found = [];
+  for (const [i, line] of lines.entries()) {
+    const heading = line.match(/^(#{2,4}) (.*)$/);
+    if (!heading || !title.test(heading[2])) continue;
+    const level = heading[1].length;
+    const end = lines.findIndex(
+      (next, j) => j > i && (next.match(/^(#{1,6}) /)?.[1].length ?? 7) <= level,
+    );
+    found.push({
+      title: heading[2].trim(),
+      text: lines.slice(i + 1, end === -1 ? undefined : end).join("\n"),
+    });
+  }
+  return found;
+}
 
 /**
  * The `[…]` placeholders and `$ARGUMENTS` of the spec and plan templates `root` resolves (FR-28); a checkbox, `[P]` and
@@ -715,7 +784,7 @@ let marks;
 
 /**
  * FR-28: a document's template placeholders, empty `(mandatory)` sections and open questions (a `## Open questions`
- * section that is not "None").
+ * section that does not start with "None"; a struck item is decided).
  * @param {string} text
  * @returns {string[]}
  */
@@ -724,31 +793,18 @@ export function checkPlaceholders(text) {
   const problems = [];
   for (const mark of (marks ??= templatePlaceholders()))
     if (body.includes(mark)) problems.push(`the template placeholder \`${mark}\` remains`);
-  const lines = body.split("\n");
-  for (const [i, line] of lines.entries()) {
-    const heading = line.match(/^(#{2,4}) (.*\(mandatory.*)$/);
-    if (!heading) continue;
-    let filled = false;
-    for (const next of lines.slice(i + 1)) {
-      const level = next.match(/^(#{1,6}) /)?.[1].length;
-      if (level !== undefined && level <= heading[1].length) break;
-      if (level === undefined && next.trim()) {
-        filled = true;
-        break;
-      }
-    }
-    if (!filled) problems.push(`the mandatory section \`${heading[2].trim()}\` is empty`);
-  }
-  for (const [, part] of body.matchAll(
-    /^#{2,4} Open questions\b[^\n]*\n([\s\S]*?)(?=^#{1,4} |(?![\s\S]))/gim,
-  )) {
+  for (const { title, text: part } of sectionsOf(body, /\(mandatory/))
+    if (!part.split("\n").some((l) => l.trim() && !/^#{1,6} /.test(l)))
+      problems.push(`the mandatory section \`${title}\` is empty`);
+  for (const { text: part } of sectionsOf(body, /^Open questions\b/i)) {
     const open = part.trim();
-    if (!open || /^none\.?$/i.test(open)) continue;
+    if (!open || /^none\b/i.test(open)) continue;
     const items = open.split("\n").filter((l) => /^\s*(?:[-*]|\d+\.) /.test(l));
-    for (const q of items.length ? items : [open.split("\n")[0] ?? ""])
-      problems.push(
-        `an open question remains: "${q.replace(/^\s*(?:[-*]|\d+\.) /, "").trim()}" (decide it before the approval)`,
-      );
+    for (const q of items.length ? items : [open.split("\n")[0] ?? ""]) {
+      const said = q.replace(/^\s*(?:[-*]|\d+\.) /, "").trim();
+      if (!said.startsWith("~~"))
+        problems.push(`an open question remains: "${said}" (decide it before the approval)`);
+    }
   }
   return problems;
 }
@@ -759,10 +815,7 @@ export function checkPlaceholders(text) {
  * @returns {string[]}
  */
 export function checkSources(text) {
-  const sources =
-    strip(text)
-      .match(/^#{2,4} Sources\b[^\n]*\n([\s\S]*?)(?=^#{1,4} |(?![\s\S]))/m)?.[1]
-      ?.trim() ?? "";
+  const sources = sectionsOf(strip(text), /^Sources\b/)[0]?.text.trim() ?? "";
   if (!sources || /^none\.?$/i.test(sources))
     return [
       "spec.md: no `### Sources` section naming the files, ADRs, commands and issues the spec rests on (FR-26)",
@@ -782,9 +835,16 @@ export function checkSources(text) {
     );
 }
 
+/** Fence languages that declare no interface (FR-27): trees, diagrams, data, shell sessions and prose. */
+const NOT_CODE = new Set(
+  "|text|txt|plaintext|tree|mermaid|plantuml|dot|md|markdown|yaml|yml|json|jsonc|toml|ini|csv|sh|bash|zsh|shell|console|diff".split(
+    "|",
+  ),
+);
+
 /**
  * FR-27, AC-29: each component (a `###` under `## Components`) has a folder tree (a ```text block) and its interface
- * declarations (a fenced block in another language).
+ * declarations (a fenced block in a programming language: not a diagram, data, shell or prose block).
  * @param {string} plan
  * @returns {string[]}
  */
@@ -793,15 +853,12 @@ export function checkComponents(plan) {
     strip(plan).match(/^## Components\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
   const problems = [];
   for (const [, name, part] of section.matchAll(/^### (.+)\n([\s\S]*?)(?=^### |(?![\s\S]))/gm)) {
-    // the fence lines alternate: opening, closing
-    const langs = [...part.matchAll(/^```(\S*)/gm)]
-      .filter((_, i) => i % 2 === 0)
-      .map((m) => m[1].toLowerCase());
+    const { langs } = fences(part);
     if (!langs.some((l) => l === "text" || l === "tree"))
       problems.push(
         `plan.md: component \`${name.trim()}\` has no folder tree (a \`\`\`text block of every file it adds) (FR-27)`,
       );
-    if (!langs.some((l) => l !== "" && l !== "text" && l !== "tree"))
+    if (!langs.some((l) => !NOT_CODE.has(l)))
       problems.push(
         `plan.md: component \`${name.trim()}\` has no interface declarations (a fenced block in the repository's language) (FR-27)`,
       );
@@ -824,7 +881,7 @@ export function qualityWords(root = ROOT) {
 }
 
 /**
- * FR-29, AC-31: listed vague words in the FR and AC lines (their continuation lines too, inline code aside): failures
+ * FR-29, AC-31: listed vague words in the FR, NFR and AC lines (their continuation lines too, inline code aside): failures
  * on a big spec, warnings on the others.
  * @param {string} text
  * @param {string[]} words
@@ -841,7 +898,7 @@ export function checkVague(text, words, tier) {
   /** @type {string | undefined} */
   let id;
   for (const line of strip(text).split("\n")) {
-    const start = line.match(/^\s*[-*] (~~)?\*\*((?:FR|AC)-\d+)\*\*(~~)?/);
+    const start = line.match(/^\s*[-*] (~~)?\*\*((?:N?FR|AC)-\d+)\*\*(~~)?/);
     if (start) id = start[1] || start[3] ? undefined : start[2];
     else if (!/^\s+\S/.test(line)) id = undefined;
     if (id === undefined) continue;
@@ -1093,6 +1150,11 @@ const git = (...a) => {
   }
 };
 const currentBranch = () => process.env.STACKRA_BRANCH || git("branch", "--show-current").trim();
+/** The branch's own spec folder's name under SPECS_DIR, if it has one. */
+const ownSpec = (branch = currentBranch()) => {
+  const dir = join(ROOT, SPECS_DIR);
+  return (existsSync(dir) ? readdirSync(dir) : []).find((f) => isOwnSpec(f, branch));
+};
 
 /** Spec keys that exist, and the `[<KEY>]` keys in any tasks.md (phase and task sub-issues). */
 function specIndex() {
@@ -1121,7 +1183,7 @@ function roleGate(base) {
   const team = loadTeam(ROOT);
   if (!team) return [];
   const dir = join(ROOT, SPECS_DIR);
-  const own = (existsSync(dir) ? readdirSync(dir) : []).find((f) => isOwnSpec(f, currentBranch()));
+  const own = ownSpec();
   if (own === undefined) return [];
   const slug = git("remote", "get-url", "origin").match(
     /github\.com[:/]+([^/]+\/[^/\s]+?)(?:\.git)?\/?\s*$/,
@@ -1135,7 +1197,7 @@ function laneGate(base) {
   const lane = checkLane({ commits: prCommits(base), branch, ...specIndex() });
   // ADR 0502: the diff's floor against the branch's own spec; none is trivial, a spec without a tier is exempt.
   const dir = join(ROOT, SPECS_DIR);
-  const own = (existsSync(dir) ? readdirSync(dir) : []).find((f) => isOwnSpec(f, branch));
+  const own = ownSpec(branch);
   const declared = own === undefined ? undefined : tierOf(readIf(join(dir, own, "spec.md")));
   if (own !== undefined && declared === undefined) return lane;
   const changes = git("diff", "--name-status", `${base}...HEAD`)
@@ -1152,7 +1214,7 @@ function laneGate(base) {
 /** FR-30: checkScope for the branch's own spec against the PR's diff; its warnings go to stderr here. */
 function scopeGate(base) {
   const dir = join(ROOT, SPECS_DIR);
-  const own = (existsSync(dir) ? readdirSync(dir) : []).find((f) => isOwnSpec(f, currentBranch()));
+  const own = ownSpec();
   if (own === undefined) return [];
   const changed = git("diff", "--name-only", `${base}...HEAD`).split("\n").filter(Boolean);
   const { problems, warnings } = checkScope(
