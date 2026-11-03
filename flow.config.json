@@ -30,8 +30,8 @@
   },
   "apps": {
     "gate": {
-      "slug": "figentra-gate",
-      "login": "figentra-gate[bot]"
+      "slug": "figentra-flow",
+      "login": "figentra-flow[bot]"
     },
     "review": {
       "slug": "stackra-reviewer"
