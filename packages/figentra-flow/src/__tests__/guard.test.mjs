@@ -3,8 +3,10 @@
  * Purpose: hold `fflow guard` to its contract: a `git worktree add` whose path is outside the repository's
  *   `.claude/worktrees/` is denied, through `cd … &&`, `git -C`, relative paths and quotes; one inside, other git
  *   commands and commands outside a repository pass; the settings entry runs the guard before Bash. The lifecycle's
- *   other side doors (a push to the default branch, `gh pr merge`, `LEFTHOOK=0`) are denied, directly or through a
- *   wrapper, each naming the Flow command to use instead.
+ *   other side doors (a push to the default branch, `gh pr merge`, `LEFTHOOK=0` set as a variable, `--no-verify`,
+ *   `commit -n` and a `core.hooksPath` override) are denied, directly, by the program's path, behind
+ *   `env`/`command`/`exec` or through a wrapper, each naming the Flow command to use instead; `LEFTHOOK=0` as an
+ *   argument, `-n` as a message and `push -n` pass.
  * Boundary: a temporary repository; no network.
  * Runtime: node
  * Governing contract: ADR 0022; Stackra ADR 0503; STA-1729; STA-1945.
@@ -12,6 +14,7 @@
 // @covers sta-1729:FR-2 sta-1729:AC-003 sta-1729:P-002 sta-1945:FR-13 sta-1945:AC-38 sta-1945:P-018
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -30,6 +33,11 @@ test("guard: a push to the default branch is denied, naming fflow land (P-018)",
     "git push --all origin",
     `cd ${r.root} && pnpm bot:git -- -C ${r.root} push origin main`,
     "GIT_TRACE=1 git push origin main",
+    "/usr/bin/git push origin main",
+    "env GIT_TRACE=1 git push origin main",
+    "env -u HOME /usr/local/bin/git push origin main",
+    "command git push origin main",
+    "exec env git push origin main",
   ])
     assert.match(decide(command, r.root) ?? "", /Pushing to main .*fflow land/, command);
   sh(r.root, "switch", "-q", "-c", "figentra/sta-1-a");
@@ -46,13 +54,80 @@ test("guard: a push to the default branch is denied, naming fflow land (P-018)",
 test("guard: gh pr merge and LEFTHOOK=0 are denied, naming the Flow command (P-018)", (t) => {
   const r = repo();
   t.after(r.dispose);
-  for (const command of ["gh pr merge 12 --squash", "pnpm bot:gh -- pr merge 12 --auto"])
+  for (const command of [
+    "gh pr merge 12 --squash",
+    "pnpm bot:gh -- pr merge 12 --auto",
+    "env /opt/homebrew/bin/gh pr merge 12",
+  ])
     assert.match(decide(command, r.root) ?? "", /fflow land <pr>/, command);
-  for (const command of ["LEFTHOOK=0 git commit -m x", "export LEFTHOOK=0 && git commit -m x"])
+  for (const command of [
+    "LEFTHOOK=0 git commit -m x",
+    "export LEFTHOOK=0 && git commit -m x",
+    "env LEFTHOOK=false git commit -m x",
+    "env -i PATH=/bin LEFTHOOK=off command git commit -m x",
+  ])
     assert.match(decide(command, r.root) ?? "", /fflow hooks run/, command);
-  for (const command of ["gh pr view 12", `git commit -m "LEFTHOOK=0 is refused"`])
+  for (const command of [
+    "gh pr view 12",
+    `git commit -m "LEFTHOOK=0 is refused"`,
+    "git commit -m LEFTHOOK=0",
+    "echo LEFTHOOK=0",
+    "LEFTHOOK=1 git commit -m x",
+    "grep -r LEFTHOOK=0 .",
+  ])
     assert.equal(decide(command, r.root), undefined, command);
   assert.match(decide("X=1 git worktree add ../y", r.root) ?? "", /fflow start/);
+});
+
+test("guard: --no-verify, commit -n and a core.hooksPath override are denied: the hooks always run (FR-18)", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  for (const command of [
+    "git commit --no-verify -m x",
+    "git commit --no-veri -m x",
+    "git commit -n -m x",
+    "git commit -anm x",
+    "git commit -m x -n",
+    "git push --no-verify origin figentra/sta-1-a",
+    "git merge --no-verify topic",
+    "/usr/bin/git -C . commit --no-verify -m x",
+    "git -c core.hooksPath=/dev/null commit -m x",
+    "git -c CORE.HOOKSPATH= push origin x",
+    "git --config-env=core.hooksPath=HOOKS commit -m x",
+    "git -c user.name=x -c core.hooksPath=/tmp status",
+    "git config core.hooksPath /dev/null",
+    "git config set --local core.hooksPath x",
+  ])
+    assert.match(decide(command, r.root) ?? "", /skips the hooks.*fflow hooks run/, command);
+  for (const command of [
+    "git commit -m n",
+    "git commit -m -n",
+    `git commit -m "fix -n parsing"`,
+    "git commit -am x",
+    "git commit -- -n",
+    "git push -n origin figentra/sta-1-a",
+    "git -c user.name=x commit -m x",
+    "git config core.hooksPath",
+    "git config --get core.hooksPath",
+    "git config --unset core.hooksPath",
+  ])
+    assert.equal(decide(command, r.root), undefined, command);
+});
+
+// @covers sta-1945:FR-31
+test("guard: dispatches before the console engine loads, so the hook path never imports @stackra/*", () => {
+  const bin = new URL("../../bin/fflow.mjs", import.meta.url).pathname;
+  const hooks = `import { registerHooks } from "node:module";
+registerHooks({ resolve(s, c, next) { if (s.startsWith("@stackra/")) throw new Error("engine loaded: " + s); return next(s, c); } });`;
+  const refuse = ["--import", `data:text/javascript,${encodeURIComponent(hooks)}`, bin];
+  const guard = spawnSync(process.execPath, [...refuse, "guard", "--print-settings"], {
+    encoding: "utf8",
+  });
+  assert.equal(guard.status, 0, guard.stderr);
+  assert.deepEqual(JSON.parse(guard.stdout), SETTINGS);
+  // The same hook does stop the engine, so the pass above is real.
+  const doctor = spawnSync(process.execPath, [...refuse, "doctor", "--help"], { encoding: "utf8" });
+  assert.match(doctor.stderr, /engine loaded: @stackra\/console/);
 });
 
 test("words: splits simple commands and honours quotes", () => {

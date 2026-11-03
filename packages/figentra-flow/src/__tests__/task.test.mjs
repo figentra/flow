@@ -10,12 +10,12 @@
  */
 // @covers sta-1945:FR-23 sta-1945:AC-22 sta-1945:AC-23 sta-1945:AC-24 sta-1945:P-028
 // @covers sta-1945:FR-24 sta-1945:AC-25 sta-1945:P-029
-import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+
+import { runCommandForTest } from "@stackra/console/testing";
 
 import {
   docsDigest,
@@ -27,14 +27,15 @@ import {
   startTask,
   TaskError,
 } from "../commands/task.mjs";
-import { readRecord } from "../lib/record.mjs";
+import { CONSOLE } from "../lib/console.mjs";
+import { readRecord, recordPath } from "../lib/record.mjs";
 import { repo, sh } from "./__fixtures__/repo.mjs";
 
-const BIN = join(dirname(fileURLToPath(import.meta.url)), "../../bin/fflow.mjs");
-
-/** `fflow <args>` run in `cwd`. */
-const fflow = (/** @type {string} */ cwd, /** @type {string[]} */ ...args) =>
-  spawnSync(process.execPath, [BIN, ...args], { cwd, encoding: "utf8" });
+/** `fflow <argv>` through the console, in `cwd`; `out` is what it printed, both streams. */
+const fflow = async (/** @type {string} */ cwd, /** @type {string[]} */ ...argv) => {
+  const r = await runCommandForTest(CONSOLE, argv, { cwd, columns: 400 });
+  return { ...r, out: r.stdout + r.stderr };
+};
 
 const TASKS = `# Tasks
 
@@ -117,6 +118,23 @@ test("task done: a dirty tree keeps the marker; a secret-looking command never r
   assert.equal(readRecord(s.root, "sta-7")?.tasks.T002.length, 1);
 });
 
+test("task through the console: a refusal exits 2 and runs nothing; a broken record exits 1", async (t) => {
+  const s = setup(t);
+  const run = (/** @type {string[]} */ argv) =>
+    runCommandForTest(CONSOLE, argv, { cwd: s.root, columns: 400 });
+  const missing = await run(["task", "start", "STA-7", "T009"]);
+  assert.equal(missing.exitCode, 2, missing.stdout + missing.stderr);
+  assert.match(missing.stdout + missing.stderr, /no live T009/);
+  assert.equal((await run(["task", "start", "STA-7", "T001"])).exitCode, 0);
+  const secret = await run(["task", "done", "STA-7", "T001", "--command", "env > leak.txt"]);
+  assert.equal(secret.exitCode, 2, secret.stdout + secret.stderr);
+  assert.equal(existsSync(join(s.root, "leak.txt")), false);
+  writeFileSync(recordPath(s.root, "sta-7"), JSON.stringify({ recordVersion: 1, key: "sta-7" }));
+  const broken = await run(["task", "start", "STA-7", "T002"]);
+  assert.equal(broken.exitCode, 1, broken.stdout + broken.stderr);
+  assert.match(broken.stdout + broken.stderr, /stage: is required/);
+});
+
 test("a changed document resets a started task with the reason; a marker move changes nothing", (t) => {
   const s = setup(t);
   startTask(s.root, "STA-7", "T001");
@@ -165,7 +183,7 @@ test("task wave: queues the next wave, holds it while a task failed, then moves 
   assert.equal(queueWave(s.root, "STA-7"), undefined);
 });
 
-test("task wave: refuses a spec before Tasked and a deps cycle, moving no marker (FR-23, P-029)", (t) => {
+test("task wave: refuses a spec before Tasked and a deps cycle, moving no marker (FR-23, P-029)", async (t) => {
   const draft = setup(t, "Draft");
   assert.throws(() => queueWave(draft.root, "STA-7"), /the spec is draft/);
   assert.equal(draft.marker("T001"), " ");
@@ -175,35 +193,39 @@ test("task wave: refuses a spec before Tasked and a deps cycle, moving no marker
     "- [ ] T001 A in `a.mjs` — deps: T002\n- [ ] T002 B in `b.mjs` — deps: T001\n",
   );
   assert.throws(() => queueWave(s.root, "STA-7"), TaskError);
-  // the command layer prints the refusal and exits 2, never a stack trace
-  const cli = fflow(s.root, "task", "wave", "STA-7");
-  assert.equal(cli.status, 2, cli.stderr);
-  assert.match(cli.stderr, /fflow task wave: tasks\.md: dependency cycle through T00\d/);
+  // the console prints the refusal and exits 2, never a stack trace
+  const cli = await fflow(s.root, "task", "wave", "STA-7");
+  assert.equal(cli.exitCode, 2, cli.out);
+  assert.match(cli.out, /tasks\.md: dependency cycle through T00\d/);
   assert.equal(s.marker("T001"), " ");
   // `next` still names the build's command while the cycle stands
-  const next = fflow(s.root, "next", "STA-7", "--json");
-  assert.equal(next.status, 0, next.stderr);
-  const step = JSON.parse(next.stdout);
+  const next = await fflow(s.root, "next", "STA-7", "--json");
+  assert.equal(next.exitCode, 0, next.out);
+  const step = /** @type {{ data: { stage: string, command: string, wave?: unknown } }} */ (
+    next.json
+  ).data;
   assert.deepEqual(
     [step.stage, step.command, step.wave],
     ["build", "fflow task wave STA-7", undefined],
   );
 });
 
-test("task wave: the command prints usage, the wave, and the empty wave as JSON once all is done", (t) => {
+test("task wave: the console refuses a missing key, prints the wave, and the empty wave as JSON once all is done", async (t) => {
   const s = setup(t, "Implementing");
-  const usage = fflow(s.root, "task", "wave");
-  assert.equal(usage.status, 2);
-  assert.match(usage.stderr, /usage: fflow task .*wave <key> \[--json\]/);
-  assert.match(fflow(s.root, "next", "STA-7").stderr, /wave 1 starts at T001: T001, T002/);
-  const wave = fflow(s.root, "task", "wave", "STA-7");
-  assert.equal(wave.status, 0, wave.stderr);
-  assert.match(wave.stderr, /STA-7: wave 1 of 2, 2 to run/);
-  assert.equal(wave.stdout, "T001 [~] a.mjs\nT002 [~] b.mjs\n");
-  assert.match(fflow(s.root, "next", "STA-7").stderr, /wave 1 restarts at T001: T001, T002/);
+  assert.equal((await fflow(s.root, "task", "wave")).exitCode, 2);
+  assert.match((await fflow(s.root, "next", "STA-7")).out, /wave 1 starts at T001: T001, T002/);
+  const wave = await fflow(s.root, "task", "wave", "STA-7");
+  assert.equal(wave.exitCode, 0, wave.out);
+  assert.match(wave.out, /STA-7: wave 1 of 2, 2 to run/);
+  assert.match(wave.out, /T001 \[~\] a\.mjs\n.*T002 \[~\] b\.mjs/s);
+  assert.match((await fflow(s.root, "next", "STA-7")).out, /wave 1 restarts at T001: T001, T002/);
   writeFileSync(join(s.dir, "tasks.md"), TASKS.replaceAll("- [ ] T", "- [x] T"));
-  const done = fflow(s.root, "task", "wave", "STA-7", "--json");
-  assert.equal(done.status, 0, done.stderr);
-  assert.deepEqual(JSON.parse(done.stdout), { schema: "fflow.wave/1", key: "STA-7", tasks: [] });
-  assert.match(fflow(s.root, "task", "wave", "STA-7").stderr, /every wave of STA-7 is done/);
+  const done = await fflow(s.root, "task", "wave", "STA-7", "--json");
+  assert.equal(done.exitCode, 0, done.out);
+  assert.deepEqual(/** @type {{ data: unknown }} */ (done.json).data, {
+    schema: "fflow.wave/1",
+    key: "STA-7",
+    tasks: [],
+  });
+  assert.match((await fflow(s.root, "task", "wave", "STA-7")).out, /every wave of STA-7 is done/);
 });
