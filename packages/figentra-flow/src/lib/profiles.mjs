@@ -15,34 +15,47 @@ import { ConfigError } from "./config.mjs";
 /** @typedef {{ name: string, agents: string[], skills: string[], hooks: string[] }} Profile `["*"]` selects all */
 
 /** What a profile selects. */
-export const KINDS = /** @type {ProfileKind[]} */ (["agents", "skills", "hooks"]);
+const KINDS = /** @type {ProfileKind[]} */ (["agents", "skills", "hooks"]);
 
-/** The name of the profile a preset without `profiles`, or without `default`, falls back to. */
-export const DEFAULT_PROFILE = "default";
+/** The implicit profile of a preset without `profiles`. */
+const IMPLICIT = "default";
+
+/**
+ * @param {unknown} v
+ * @returns {v is Record<string, any>}
+ */
+const isMap = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /**
  * The profile `name` names in the preset, else the preset's `default`.
  * @param {Record<string, any> | undefined} presetYml the parsed `preset.yml`
  * @param {string} [name] the config's `profile`
  * @returns {Profile}
- * @throws {ConfigError} on an unknown name, or a profile whose agents, skills or hooks are not a list of names
+ * @throws {ConfigError} on an unknown name, a preset with profiles but no `default` when no name is given, or a
+ *   malformed `profiles`
  */
 export function resolveProfile(presetYml, name) {
   const declared = presetYml?.profiles;
-  const chosen = name ?? presetYml?.default ?? DEFAULT_PROFILE;
   if (declared === undefined || declared === null) {
-    if (chosen === DEFAULT_PROFILE)
-      return { name: chosen, agents: ["*"], skills: ["*"], hooks: ["*"] };
+    const chosen = name ?? IMPLICIT;
+    if (chosen === IMPLICIT) return { name: chosen, agents: ["*"], skills: ["*"], hooks: ["*"] };
     throw new ConfigError(
-      `profile "${chosen}" is unknown: the preset declares no profiles (only the implicit "${DEFAULT_PROFILE}")`,
+      `profile "${chosen}" is unknown: the preset declares no profiles (only the implicit "${IMPLICIT}")`,
     );
   }
-  const names = typeof declared === "object" ? Object.keys(declared) : [];
-  const entry = names.includes(chosen) ? declared[chosen] : undefined;
-  if (typeof entry !== "object" || entry === null || Array.isArray(entry))
+  if (!isMap(declared))
+    throw new ConfigError(`the preset's profiles must be a map of names to profiles`);
+  const names = Object.keys(declared).join(", ") || "(none)";
+  const chosen = name ?? presetYml?.default;
+  if (chosen === undefined)
     throw new ConfigError(
-      `profile "${chosen}" is unknown: the preset's profiles are ${names.join(", ") || "(none)"}`,
+      `the preset declares profiles but no \`default\`: set \`profile\` in the config to one of ${names}`,
     );
+  if (!Object.hasOwn(declared, chosen))
+    throw new ConfigError(`profile "${chosen}" is unknown: the preset's profiles are ${names}`);
+  const entry = declared[chosen];
+  if (!isMap(entry))
+    throw new ConfigError(`profile "${chosen}" must be a map of agents, skills and hooks`);
   /** @type {Profile} */
   const profile = { name: chosen, agents: [], skills: [], hooks: [] };
   for (const kind of KINDS) {

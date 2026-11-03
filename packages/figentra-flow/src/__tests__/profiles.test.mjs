@@ -1,9 +1,11 @@
 /**
  * Figentra Flow file contract:
  * Purpose: hold profiles to STA-1945 FR-6: `resolveProfile` takes the named profile, else the preset's default, else
- *   an implicit `default` selecting all, and refuses an unknown name by naming the preset's profiles; `selects` honours
- *   `"*"`; both presets declare their profiles (stackra per D3); and `sync` renders only the selected profile's skills
- *   and agents and records the profile in the lock.
+ *   an implicit `default` selecting all, and refuses an unknown name by naming the preset's profiles, a missing
+ *   `default` and a malformed profile; `selects` honours `"*"`; both presets declare their profiles (stackra per D3);
+ *   `sync` renders only the selected profile's skills and agents, records the profile in the lock, and refuses, writing
+ *   nothing, an unknown profile or an unreadable preset.yml; `validate` and `check` name an unknown profile, and
+ *   `check` a profile changed without a sync.
  * Boundary: temporary folders; no process, no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
@@ -14,13 +16,15 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { check } from "../commands/check.mjs";
 import { sync } from "../commands/sync.mjs";
+import { validateRepo } from "../commands/validate.mjs";
 import { ConfigError } from "../lib/config.mjs";
 import { FLOW_ASSETS } from "../lib/flow-dir.mjs";
-import { readLock } from "../lib/lock.mjs";
+import { readLock, writeLock } from "../lib/lock.mjs";
 import { resolveProfile, selects } from "../lib/profiles.mjs";
 import { parseYaml } from "../lib/yaml.mjs";
-import { governed, OWN_PRESET } from "./__fixtures__/governed.mjs";
+import { governed, OWN_PRESET, snapshot } from "./__fixtures__/governed.mjs";
 
 const ALL = ["*"];
 const manifest = (/** @type {string} */ preset) =>
@@ -72,6 +76,30 @@ test("resolveProfile: an unknown name is a ConfigError naming the preset's profi
   );
 });
 
+test("resolveProfile: profiles without a `default` need a name; a malformed profile is named as malformed", () => {
+  const noDefault = { profiles: { lean: { agents: ALL }, full: { agents: ALL } } };
+  assert.throws(
+    () => resolveProfile(noDefault),
+    (e) =>
+      e instanceof ConfigError &&
+      /declares profiles but no `default`: set `profile` .* one of lean, full/.test(e.message),
+  );
+  assert.equal(resolveProfile(noDefault, "lean").name, "lean");
+  for (const entry of [null, 1, "all", ["*"]])
+    assert.throws(
+      () => resolveProfile({ profiles: { lean: entry } }, "lean"),
+      (e) =>
+        e instanceof ConfigError &&
+        /profile "lean" must be a map of agents, skills and hooks/.test(e.message),
+    );
+  assert.throws(
+    () => resolveProfile({ profiles: ["lean"] }, "lean"),
+    (e) => e instanceof ConfigError && /profiles must be a map/.test(e.message),
+  );
+  // An inherited key is not a profile.
+  assert.throws(() => resolveProfile(parseYaml(LEAN), "toString"), /"toString" is unknown/);
+});
+
 test("selects: a listed id or `*`", () => {
   const lean = resolveProfile(parseYaml(LEAN), "lean");
   assert.equal(selects(lean, "agents", "git-steward"), true);
@@ -120,8 +148,45 @@ test("sync: with no profile named, the preset's default applies; an unknown one 
   sync(own, { direct: true, log: () => {} });
   assert.equal(readLock(own)?.profile, "full");
   const neutral = governed(t, { config: { profile: "brand" } });
+  const before = snapshot(neutral);
   assert.throws(
     () => sync(neutral, { direct: true, log: () => {} }),
     (e) => e instanceof ConfigError && /the preset's profiles are default/.test(e.message),
   );
+  assert.deepEqual(snapshot(neutral), before, "a refused sync writes nothing");
+});
+
+test("sync: a repository's own preset.yml outside the YAML subset is refused, not read as selecting all", (t) => {
+  const root = governed(t, { own: true });
+  writeFileSync(join(root, OWN_PRESET, "preset.yml"), `${LEAN}anchor: &x 1\n`);
+  const before = snapshot(root);
+  assert.throws(
+    () => sync(root, { direct: true, log: () => {} }),
+    (e) => e instanceof ConfigError && /presets\/ours\/preset\.yml: line 13:/.test(e.message),
+  );
+  assert.deepEqual(snapshot(root), before, "a refused sync writes nothing");
+  assert.match(validateRepo(root).problems.join(), /preset\.yml: line 13:/);
+});
+
+test("validate and check: an unknown profile is a problem, as sync would refuse it", (t) => {
+  const root = governed(t, { config: { profile: "brand" } });
+  const unknown = /profile "brand" is unknown: the preset's profiles are default/;
+  assert.match(validateRepo(root).problems.join(), unknown);
+  assert.match(check(root).problems.join(), unknown);
+});
+
+test("check: a profile changed without a sync differs from the lock's", (t) => {
+  const root = governed(t, { own: true, config: { profile: "lean" } });
+  writeFileSync(join(root, OWN_PRESET, "preset.yml"), LEAN);
+  sync(root, { direct: true, log: () => {} });
+  assert.deepEqual(check(root).problems, []);
+  const config = join(root, "flow.config.json");
+  writeFileSync(config, JSON.stringify({ version: 1, preset: OWN_PRESET, profile: "full" }));
+  assert.deepEqual(check(root).problems, [
+    'the profile is "full" but .flow/lock.json records "lean" (run `fflow sync`)',
+  ]);
+  // A lock from before profiles records "*", which any profile matches until the next sync.
+  const lock = /** @type {import("../lib/lock.mjs").Lock} */ (readLock(root));
+  writeLock(root, { ...lock, profile: "*" });
+  assert.deepEqual(check(root).problems, []);
 });
