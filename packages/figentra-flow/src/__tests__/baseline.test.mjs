@@ -9,7 +9,7 @@
  *   - STA-1945 FR-22: a gain (failed or never ran on main, passes now) is counted; a failure newly reached behind a
  *     repaired upstream task of its own package is reported with that task and does not block; a plain regression
  *     and a failure in an unrelated package still block, even beside a newly reached one; the `--json` shape, a
- *     fail-closed one included;
+ *     fail-closed one included; a task whose name the PR's `baseline.tasks` no longer runs is not missing;
  *   - the 0.2.2 rename: `sync` renames the old config file once (failing when both exist) and removes the old-named
  *     workflows; the old binary prints one notice;
  *   - the baseline search walks the ancestors, ignores an artifact a pull request run or another branch made, and
@@ -113,6 +113,56 @@ test("compare: a task main ran but the PR dropped or skipped blocks, even one re
     READERS.turbo(summary({ "a#lint": undefined, "a#test": 0, "b#build": 0 })),
   );
   assert.deepEqual([skipped.ok, skipped.missing, skipped.gains], [false, ["a#lint"], []]);
+});
+
+test("compare: a task whose name the PR's baseline.tasks no longer runs is not missing", () => {
+  const main = READERS.turbo(summary({ "pkg#test": 0, "pkg#typecheck": 0, "pkg#lint": 0 }));
+  const tasks = ["lint", "typecheck", "build"];
+  const dropped = compare(main, READERS.turbo(summary({ "pkg#typecheck": 0, "pkg#lint": 0 })), {
+    tasks,
+  });
+  assert.deepEqual([dropped.ok, dropped.missing], [true, []]);
+  // a configured task the PR did not run is still missing
+  const gone = compare(main, READERS.turbo(summary({ "pkg#lint": 0 })), { tasks });
+  assert.deepEqual([gone.ok, gone.missing], [false, ["pkg#typecheck"]]);
+});
+
+test("gate baseline check: the configured baseline.tasks decide what is missing", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "flow-baseline-tasks-"));
+  t.after(() => rmSync(root, { recursive: true }));
+  const mainDir = join(root, "main");
+  mkdirSync(mainDir);
+  mkdirSync(join(root, ".fflow-gate"));
+  writeFileSync(
+    join(mainDir, "baseline.json"),
+    JSON.stringify({ tasks: { "pkg#test": "pass", "pkg#lint": "pass" } }),
+  );
+  writeFileSync(
+    join(root, ".fflow-gate/baseline.json"),
+    JSON.stringify({ tasks: { "pkg#lint": "pass" } }),
+  );
+  const deps = {
+    root,
+    env: { GITHUB_REPOSITORY: "o/r", GITHUB_STEP_SUMMARY: join(root, "s.md") },
+    log: () => {},
+    api: github({
+      ancestors: [A],
+      artifacts: { [artifactName(A)]: [artifact(A, 9)] },
+      events: { 9: "push" },
+    }),
+    download: () => mainDir,
+  };
+  // the default tasks still run `test`, so dropping it is missing
+  assert.equal(await run(["check", "--base", A], deps), 1);
+  writeFileSync(
+    join(root, "flow.config.json"),
+    JSON.stringify({
+      version: 1,
+      preset: "neutral",
+      baseline: { tasks: ["lint", "typecheck", "build"] },
+    }),
+  );
+  assert.equal(await run(["check", "--base", A], deps), 0);
 });
 
 test("compare: a must-pass task blocks when red, even when it is red on main", () => {

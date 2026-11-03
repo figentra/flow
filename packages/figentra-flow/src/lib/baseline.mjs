@@ -64,11 +64,12 @@ const glob = (/** @type {string} */ p) =>
  * A task that failed or never ran on main and passes now is a gain. A failure that main never reached (it was `skip`
  * there) is newly reached, not new, when an upstream task of the same package (per `needs`, the PR's) is a gain: it
  * is reported with that task, and is no debt. Anything else, a task that passed on main included, is a new failure.
+ * With `tasks` (the PR's `baseline.tasks`), a task main ran whose name (after `#`) the PR no longer runs is not missing.
  * @param {Results} base
  * @param {Results} pr
- * @param {{ mustPass?: string[], needs?: Record<string, string[]> }} [options]
+ * @param {{ mustPass?: string[], needs?: Record<string, string[]>, tasks?: string[] }} [options]
  */
-export function compare(base, pr, { mustPass = [], needs = {} } = {}) {
+export function compare(base, pr, { mustPass = [], needs = {}, tasks } = {}) {
   const sorted = (/** @type {Results} */ r, /** @type {string} */ state) =>
     Object.keys(r)
       .filter((t) => r[t] === state)
@@ -87,6 +88,7 @@ export function compare(base, pr, { mustPass = [], needs = {} } = {}) {
   const stillFailing = sorted(pr, "fail").filter((t) => base[t] === "fail");
   const missing = Object.keys(base)
     .filter((t) => base[t] !== "skip" && (pr[t] === undefined || pr[t] === "skip"))
+    .filter((t) => !tasks || tasks.includes(t.split("#")[1]))
     .toSorted();
   const must = mustPass.map(glob);
   const mustPassFailures = [...new Set([...Object.keys(pr), ...Object.keys(base)])]

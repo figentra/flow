@@ -26,6 +26,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { rest } from "../lib/approve-check.mjs";
+import { BASELINE_DEFAULTS } from "../lib/baseline-workflow.mjs";
 import { compare, findBaseline, NEEDS, READERS, summaryTable } from "../lib/baseline.mjs";
 import { loadConfig } from "../lib/config.mjs";
 import { GATE_DIR, NAME } from "../lib/product.mjs";
@@ -109,9 +110,11 @@ export async function run([mode, ...args], deps = {}) {
         closed("download_failed")
       );
     const mine = JSON.parse(readFileSync(own, "utf8"));
+    const configured = loadConfig(root).config.baseline;
     const result = compare(JSON.parse(readFileSync(file, "utf8")).tasks ?? {}, mine.tasks, {
-      mustPass: loadConfig(root).config.baseline?.mustPass,
+      mustPass: configured?.mustPass,
       needs: mine.needs,
+      tasks: configured?.tasks ?? BASELINE_DEFAULTS.tasks,
     });
     json({ ...result, baselineSha: found.sha });
     summary(summaryTable(result, found.sha));
