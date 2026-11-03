@@ -23,10 +23,10 @@ under `NO_COLOR` or in a pipe, and `doctor`, `status` and `status --metrics` tak
 `{ "schema": "fflow.doctor/1", "checks" }` (its check rows, each with `id`, `ok`, `status` and `group`, are `data`), and
 `status --json` and `status --metrics --json` put the snapshot and the metrics in `data`.
 
-`doctor`, `status` and the governance commands (`update`, `check`, `diff`, `validate`) are ported to the engine.
-Every other command is passthrough, keeping its own flags and output until it is ported: `app`, `clean`, `gate`,
-`guard`, `init`, `land`, `linear`, `mcp`, `migrate`, `parse`, `readme`, `release`, `ship`, `spec`, `start`, `sync`,
-`team`, `trace` and `train`.
+`doctor`, `status`, `next`, `resume`, `task start`, `task done`, `session stop` and the governance commands (`update`,
+`check`, `diff`, `validate`) are ported to the engine (`next` takes `--json` too). Every other command is passthrough,
+keeping its own flags and output until it is ported: `app`, `clean`, `gate`, `guard`, `init`, `land`, `linear`, `mcp`,
+`migrate`, `parse`, `readme`, `release`, `ship`, `spec`, `start`, `sync`, `team`, `trace` and `train`.
 
 `@stackra/console` and `@stackra/validation` (0.7.1) are runtime dependencies of Flow (ADR 0506 decision 8, owner
 2026-11-03; this replaces STA-1945 NFR-1's "no runtime dependency, an optional peer"). They come from the Stackra
@@ -42,9 +42,9 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow spec paths\|setup-plan\|setup-tasks\|template`                 | the spec folder, its documents and the resolved templates as JSON, for the `flow-*` commands                                                                                                     |
 | `fflow sync [--direct]`                                               | renders the `flow-*` skills (for the repository's projector, or Claude Code and OpenCode directly), each with its provenance header, and writes `.flow/lock.json`; refuses a preset that differs from the lock |
 | `fflow update [--preset <version>]`                                   | prints the diff, adopts the installed preset into the lock, then syncs; `--preset` refuses any version but the installed one |
-| `fflow check`                                                         | the CI check: fails, naming each cause, on an owned file that differs from the lock, a preset that differs from its locked digest, an invalid config or override, a mandatory policy off, an override changed without a `sync`, or an override past its review date (and warns 14 days before); writes nothing |
+| `fflow check`                                                         | the CI check: fails, naming each cause, on an owned file that differs from the lock, a preset that differs from its locked digest, an invalid config or override, a profile the preset lacks or the lock does not record, a mandatory policy off, an override changed without a `sync`, or an override past its review date (and warns 14 days before); writes nothing |
 | `fflow diff`                                                          | prints every file `sync` or `update` would add, change or delete, with the lines; writes nothing |
-| `fflow validate`                                                      | checks `flow.config.json` and `.flow/overrides/` against their schemas and the mandatory policies, naming each field, target or policy that breaks them; writes nothing |
+| `fflow validate`                                                      | checks `flow.config.json` and `.flow/overrides/` against their schemas and the mandatory policies, naming each field, target or policy that breaks them and a `profile` the preset lacks; writes nothing |
 | `… --workspace <dir>`                                                 | runs `sync`, `update`, `check`, `diff` or `validate` in every repository under `<dir>` that has `flow.config.json`, one line each |
 | `fflow gate run [--ref b] [--box host] [-- flags]`                    | the repository's checks through the configured runner (or on `--box`) at the pushed head; the box posts `fflow/gate` as the gate App                                                             |
 | `fflow land [<pr>] [--stack] [--dry-run] [--manual-ok]`               | squash-merges a PR that is green on `fflow/gate` from the gate App on its head and has its approvals; Linear Done, worktree and branch removed                                                   |
@@ -64,6 +64,10 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow init --workspace <dir>…`                                       | writes the workspace list (`~/.config/fflow/workspace.yaml`) that `--all` acts on                                                                                                                |
 | `fflow status [--repo p] [--json] [--offline]`                        | specs by status, worktrees, open PRs with their gate and review, and sessions, for every repository of the workspace                                                                             |
 | `fflow mcp`                                                           | a read-only MCP server over stdio: status, spec, trace, worktrees and metrics                                                                                                                    |
+| `fflow next [<key>] [--json]`                                         | the task's stage and the command that moves it on, from Flow's record on the key's worktree or branch                                                                                            |
+| `fflow resume <key>`                                                  | re-enters the stage a stopped session left half done: the task's worktree, fast-forwarded to its pushed branch                                                                                   |
+| `fflow task start\|done <key> <T###> [--command c]`                   | moves a task's marker: `[-]` on start; `[x]` only when the check command exits 0 at a clean HEAD, recorded                                                                                       |
+| `fflow session stop [--save-only]`                                    | the SessionEnd hook: commits and pushes the tracked work with the record; `--save-only`, the Stop hook, writes the record                                                                        |
 | `fflow init --runner github-actions [--force]`                        | writes the gate workflow for the `github-actions` runner, and a starter config when there is none                                                                                                |
 | `fflow readme [--check]`                                              | renders `README.md` from `.flow/readme.yml` through the preset's `readme-template` (stackra); `--check` exits 1 when it differs                                                                  |
 
@@ -225,6 +229,13 @@ setting you have not made refuses and names it.
   `sync` names each override it skips. A replacement that links outside `.flow/overrides/` is refused.
   A whole-file template (`<name>.md`) or command (`commands/flow-<verb>.md`) in `.flow/overrides/` still replaces
   the preset's, and `validate` warns until it gets its `.yml`.
+
+- `profile` picks which of the preset's agents, skills and hooks `sync` renders, from the profiles its `preset.yml`
+  declares (`profiles: { <name>: { agents, skills, hooks } }`, `"*"` for all); `.flow/lock.json` records it. Without
+  it, the preset's `default` applies. `neutral` has one profile, `default`; `stackra` has `framework` (the default),
+  `platform`, `product`, `brand` and `starter`, which all select everything for now. `validate`, `check` and `sync`
+  refuse an unknown name, and `check` names a profile changed without a `sync`. Narrowing a profile does not yet
+  delete the agents and skills it drops: remove them by hand until a later release does.
 
 - `specs` sets where specs live: `dir` (default `.agents/specs`) and `bugsDir` (default `.agents/specs/bugs`).
 

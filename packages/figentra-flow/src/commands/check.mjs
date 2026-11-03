@@ -2,19 +2,21 @@
  * Figentra Flow file contract:
  * Purpose: `fflow check [--workspace <dir>]`, the CI check (STA-1945 FR-1, AC-1): it fails, naming each cause, when an
  *   owned file differs from the lock (any byte, provenance header or not), the installed preset differs from the
- *   locked digest, the lock is unreadable or names another Flow version, the config is invalid, a spec-kit file is
- *   left, an override is invalid (what `validate` refuses, a mandatory policy off among it), the overrides differ from
- *   the lock's digest (changed without a `sync`) or an override's review date has passed. It warns from 14 days before a review date (STA-1945 FR-4, FR-5, AC-4).
+ *   locked digest, the lock is unreadable or names another Flow version, the config is invalid or names a profile
+ *   the preset lacks, the profile differs from the lock's (FR-6), a spec-kit file is left, an override is invalid
+ *   (what `validate` refuses, a mandatory policy off among it), the overrides differ from the lock's digest (changed
+ *   without a `sync`) or an override's review date has passed. It warns from 14 days before a review date (STA-1945
+ *   FR-4, FR-5, AC-4).
  * Boundary: reads only; writes nothing.
  * Runtime: node
- * Governing contract: STA-1945 (FR-1, FR-3, FR-4, FR-5, P-001, P-005, P-007).
+ * Governing contract: STA-1945 (FR-1, FR-3, FR-4, FR-5, FR-6, P-001, P-005, P-007).
  * Secrets: none.
  */
 import { loadConfig } from "../lib/config.mjs";
 import { LockError, readLock } from "../lib/lock.mjs";
 import { REVIEW_NOTICE_DAYS, reviewState } from "../lib/overrides.mjs";
 import { NAME } from "../lib/product.mjs";
-import { installProblems, presetDrift } from "../lib/render.mjs";
+import { installProblems, presetDrift, profileProblem } from "../lib/render.mjs";
 import { runIn } from "../lib/workspace-run.mjs";
 import { overridesReport } from "./validate.mjs";
 
@@ -28,6 +30,8 @@ export function check(root, now = new Date()) {
   const config = loadConfig(root);
   const overrides = overridesReport(root);
   const problems = [...config.errors, ...overrides.problems, ...installProblems(root)];
+  const unresolved = profileProblem(root);
+  if (unresolved) problems.push(unresolved);
   const warnings = [...config.warnings, ...overrides.warnings];
   for (const o of overrides.overrides) {
     const state = reviewState(o, now);

@@ -3,11 +3,11 @@
  * Purpose: hold the configuration to AC-035, AC-036 and AC-042: the shipped schema file equals `SCHEMA`; Figentra's
  *   configuration and a minimal outside one are valid; an unknown key, a wrong kind, a wrong type and a missing field
  *   are refused by their path; a missing port is refused naming its key; the older `package.json` keys still work with
- *   a warning; the gate App's `aliases` (a rename, ADR 0523) add logins and the bare login keeps its string form; and
- *   the product's name-bearing literals live only in `product.mjs`.
+ *   a warning; the gate App's `aliases` (a rename, ADR 0523) add logins and the bare login keeps its string form;
+ *   the product's name-bearing literals live only in `product.mjs`; and `profile` is a name (STA-1945).
  * Boundary: temporary folders and the package's own source files; nothing runs.
  * Runtime: node
- * Governing contract: ADR 0022; STA-1729 phase A (A1).
+ * Governing contract: ADR 0022; STA-1729 phase A (A1); STA-1945 (FR-6).
  */
 // @covers sta-1729:FR-11 sta-1729:AC-035 sta-1729:AC-036 sta-1729:AC-042 sta-1729:P-011
 import { test } from "node:test";
@@ -99,6 +99,15 @@ test("schema: unknown keys, wrong kinds, wrong types and missing fields are refu
     /^artifacts\.maxBytes: must be at least 1$/m,
   );
   assert.match(problems({ version: 2 }), /^version: must be 1$/m);
+});
+
+// @covers sta-1945:FR-6 sta-1945:AC-6 sta-1945:P-009
+test("schema: the config names its profile by a non-empty string", () => {
+  assert.deepEqual(validate(SCHEMA, { ...FIGENTRA, profile: "framework" }), []);
+  assert.deepEqual(validate(SCHEMA, { ...FIGENTRA, profile: "" }), ["profile: must not be empty"]);
+  assert.deepEqual(validate(SCHEMA, { ...FIGENTRA, profile: ["framework"] }), [
+    "profile: must be a string",
+  ]);
 });
 
 test("config: a renamed gate App's aliases add logins; without them the login stays a string", () => {

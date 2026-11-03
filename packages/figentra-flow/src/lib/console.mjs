@@ -3,33 +3,35 @@
  * Purpose: `fflow` on the one CLI engine, `@stackra/console` (STA-1966, FR-31): the Flow theme and every command,
  *   grouped, so `fflow` alone prints the banner, the version and the grouped commands, `<command> --help` prints its
  *   usage and runs nothing, an unknown command names the closest match and exits 2, and a failure is one error block.
- *   `doctor`, `status` and the governance commands (`update`, `check`, `diff`, `validate`, STA-1945 FR-1) declare their
- *   options; every other command is passthrough (migration only, ADR 0500 decision 7): it still parses its own flags
- *   from `io.rest`, and `PASSTHROUGH` in the tests pins that list.
+ *   `doctor`, `status`, `next`, `resume`, `task start|done`, `session stop` and the governance commands (`update`,
+ *   `check`, `diff`, `validate`, STA-1945 FR-1) declare their arguments and options; every other command is
+ *   passthrough (migration only, ADR 0500 decision 7): it still parses its own flags from `io.rest`, and
+ *   `PASSTHROUGH` in the tests pins that list.
  * Boundary: the registry and the repository check, in the CLI layer only: the governance core (gate, approve, land,
  *   record, lock, baseline) imports nothing from `@stackra/*`. A command's module is imported when it runs, never for
  *   the list or the help, and bin/fflow.mjs never loads this file for `fflow guard`, the agent hook. Plain
  *   JavaScript: the engine's legacy field decorators are applied by hand after each class, exactly as TypeScript's
  *   emit applies them.
  * Runtime: node
- * Governing contract: STA-1945 FR-1, FR-31 (AC-35, AC-36, AC-37); STA-1966 (FR-024, FR-031).
+ * Governing contract: STA-1945 FR-1, FR-31 (AC-35, AC-36, AC-37), FR-13, FR-19, FR-23; STA-1966 (FR-024, FR-031).
  * Secrets: none.
  */
-import { Command, CommandError, Option, UsageError } from "@stackra/console";
+import { Argument, Command, CommandError, Option, UsageError } from "@stackra/console";
 import { Int, Str } from "@stackra/validation";
 
 import { ConfigError } from "./config.mjs";
 import { git } from "./git.mjs";
-import { DISPLAY_NAME, HOMEPAGE, NAME, VERSION } from "./product.mjs";
+import { DISPLAY_NAME, ENV_PREFIX, HOMEPAGE, NAME, VERSION } from "./product.mjs";
 
 /** @typedef {import("@stackra/console").CommandIo} CommandIo */
 /** @typedef {import("@stackra/console").CommandClass} CommandClass */
 
 /**
- * The part of the engine's `CommandIo` that `doctor` and `status` use.
+ * The part of the engine's `CommandIo` that the declared (not passthrough) commands use.
  * @typedef {{ cwd: string, json: boolean, verbose: boolean, output: { line(text: string): void,
- *   title(text: string): void, note(text: string): void, warn(text: string): void, list(items: string[]): void,
- *   json(data: unknown): void, table(spec: any): void, checklist(spec: any): unknown } }} Io
+ *   title(text: string): void, note(text: string): void, info(text: string): void, success(text: string): void,
+ *   warn(text: string): void, error(text: string): void, list(items: string[]): void, json(data: unknown): void,
+ *   table(spec: any): void, checklist(spec: any): unknown } }} Io
  */
 
 /** Where every command's help and error block point. */
@@ -251,6 +253,172 @@ Option({ description: "Serve the status page on 127.0.0.1" })(StatusCommand.prot
 Option({ description: "The status page's port (with --web)" })(StatusCommand.prototype, "port");
 Int({ min: 0, max: 65535 })(StatusCommand.prototype, "port");
 
+/**
+ * Runs a `task` command, turning its refusal (a `TaskError`) into a usage error (exit 2) and a record that fails its
+ * schema into an error block (exit 1).
+ * @param {() => number} work
+ */
+async function tasking(work) {
+  const [{ TaskError }, { RecordError }] = await Promise.all([
+    import("../commands/task.mjs"),
+    import("./record.mjs"),
+  ]);
+  try {
+    return await refusing(work);
+  } catch (error) {
+    if (error instanceof TaskError) throw new UsageError(error.message);
+    if (error instanceof RecordError) throw new CommandError(error.message);
+    throw error;
+  }
+}
+
+class NextCommand extends Command({
+  name: "next",
+  description: "The task's current stage and the command that moves it on, from Flow's record",
+  group: GROUPS.work,
+  docs: DOCS,
+  examples: [`${NAME} next`, `${NAME} next STA-12 --json`],
+}) {
+  /** @type {string | undefined} */
+  key = undefined;
+
+  /** @param {CommandIo} io */
+  async handle(io) {
+    const { next, show } = await import("../commands/next.mjs");
+    const result = await refusing(() => next({ cwd: io.cwd, key: this.key }));
+    if (result.ok === false) throw new CommandError(result.problem);
+    show(io, result);
+  }
+}
+Argument({ description: "The issue key; the branch's when left out", optional: true })(
+  NextCommand.prototype,
+  "key",
+);
+
+class ResumeCommand extends Command({
+  name: "resume",
+  description: "Re-enter the stage a stopped session left half done, in the task's worktree",
+  group: GROUPS.work,
+  docs: DOCS,
+  examples: [`${NAME} resume STA-12`],
+}) {
+  /** @type {string} */
+  key;
+
+  /** @param {CommandIo} io */
+  async handle(io) {
+    const { resume, show } = await import("../commands/resume.mjs");
+    const result = await refusing(() => resume({ cwd: io.cwd, key: this.key }));
+    if (result.ok === false) throw new CommandError(result.problem);
+    return show(io, this.key, result);
+  }
+}
+Argument({ description: "The issue key" })(ResumeCommand.prototype, "key");
+
+class TaskStartCommand extends Command({
+  name: "task:start",
+  description: "Start a task of a Tasked spec: set its marker to [-] and record the start",
+  group: GROUPS.work,
+  docs: DOCS,
+  examples: [`${NAME} task start STA-12 T003`, `${NAME} task start STA-12 T003 --session mine`],
+}) {
+  /** @type {string} */
+  key;
+  /** @type {string} */
+  id;
+  /** @type {string | undefined} */
+  session = undefined;
+
+  /** @param {CommandIo} io */
+  async handle(io) {
+    const { start } = await import("../commands/task.mjs");
+    return tasking(() => start(io, this));
+  }
+}
+Argument({ description: "The issue key" })(TaskStartCommand.prototype, "key");
+Argument({ description: "The task, as T003" })(TaskStartCommand.prototype, "id");
+Str({ pattern: /^T\d{3}$/ })(TaskStartCommand.prototype, "id");
+Option({ description: `The session's name; ${ENV_PREFIX}SESSION when left out` })(
+  TaskStartCommand.prototype,
+  "session",
+);
+Str()(TaskStartCommand.prototype, "session");
+
+class TaskDoneCommand extends Command({
+  name: "task:done",
+  description: "Run a task's check command and mark it [x] on exit 0 at a clean HEAD",
+  group: GROUPS.work,
+  docs: DOCS,
+  examples: [`${NAME} task done STA-12 T003 --command "pnpm test"`],
+}) {
+  /** @type {string} */
+  key;
+  /** @type {string} */
+  id;
+  /** @type {string | undefined} */
+  command = undefined;
+  echo = false;
+
+  /** @param {CommandIo} io */
+  async handle(io) {
+    const { key, id, command, echo } = this;
+    // An option is never required by the engine; the check command is.
+    if (!command)
+      throw new UsageError(
+        "--command is missing: the check that proves the task",
+        `${NAME} task done ${key} ${id} --command "pnpm test"`,
+      );
+    const { done } = await import("../commands/task.mjs");
+    return tasking(() => done(io, { key, id, command, echo }));
+  }
+}
+Argument({ description: "The issue key" })(TaskDoneCommand.prototype, "key");
+Argument({ description: "The task, as T003" })(TaskDoneCommand.prototype, "id");
+Str({ pattern: /^T\d{3}$/ })(TaskDoneCommand.prototype, "id");
+Option({ description: "The check command; its exit code and a digest of its output are recorded" })(
+  TaskDoneCommand.prototype,
+  "command",
+);
+Str()(TaskDoneCommand.prototype, "command");
+Option({ description: "Print the command's output after it runs" })(
+  TaskDoneCommand.prototype,
+  "echo",
+);
+
+class SessionStopCommand extends Command({
+  name: "session:stop",
+  description: "The SessionEnd hook: commit and push the session's tracked work and Flow's record",
+  group: GROUPS.agents,
+  docs: DOCS,
+  examples: [`${NAME} session stop`, `${NAME} session stop --save-only`],
+}) {
+  saveOnly = false;
+  /** @type {string | undefined} */
+  session = undefined;
+  /** @type {string | undefined} */
+  kind = undefined;
+
+  /** @param {CommandIo} io */
+  async handle(io) {
+    const { handle: stop } = await import("../commands/session.mjs");
+    return stop(io, this);
+  }
+}
+Option({ description: "The Stop hook: write the record only; no commit, no push" })(
+  SessionStopCommand.prototype,
+  "saveOnly",
+);
+Option({ description: `The session's name; ${ENV_PREFIX}SESSION, else the transcript's title` })(
+  SessionStopCommand.prototype,
+  "session",
+);
+Str()(SessionStopCommand.prototype, "session");
+Option({ description: "The session's kind, as the record keeps it" })(
+  SessionStopCommand.prototype,
+  "kind",
+);
+Str()(SessionStopCommand.prototype, "kind");
+
 /** Every command, in the order the list shows them within their group. */
 export const COMMANDS = [
   passthrough({
@@ -374,6 +542,10 @@ export const COMMANDS = [
     examples: [`${NAME} start STA-12 --slug cancel-order`, `${NAME} start STA-12 --dry-run`],
   }),
   StatusCommand,
+  NextCommand,
+  ResumeCommand,
+  TaskStartCommand,
+  TaskDoneCommand,
   passthrough({
     name: "clean",
     description: "Remove finished worktrees and report what was kept",
@@ -416,6 +588,7 @@ export const COMMANDS = [
     group: GROUPS.agents,
     examples: [`${NAME} mcp`],
   }),
+  SessionStopCommand,
   passthrough({
     name: "app",
     description: "Create the repository's gate or review GitHub App (a human only)",

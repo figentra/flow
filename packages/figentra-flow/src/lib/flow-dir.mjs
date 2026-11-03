@@ -2,7 +2,8 @@
  * Figentra Flow file contract:
  * Purpose: the `.flow/` folder a repository owns (ADR 0510): its paths, the current-spec pointer that `gate dir`
  *   writes and every `spec` subcommand reads, the spec folders from the configuration (`specs.dir`, `specs.bugsDir`),
- *   and template resolution: the repository's `.flow/overrides/`, then its preset, then Flow's base templates.
+ *   template resolution: the repository's `.flow/overrides/`, then its preset, then Flow's base templates; and the
+ *   preset's surface files (`surfaces/`) read as YAML.
  * Boundary: reads the configuration and files; `writeCurrent` is the only write.
  * Runtime: node
  * Governing contract: ADR 0510; STA-1729.
@@ -12,7 +13,8 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { loadConfig } from "./config.mjs";
+import { ConfigError, loadConfig } from "./config.mjs";
+import { parseYaml, YamlError } from "./yaml.mjs";
 
 /** The folder a repository owns. */
 export const FLOW_DIR = ".flow";
@@ -106,4 +108,22 @@ export function resolveTemplate(root, name) {
     join(presetDir(root), "templates", file),
     join(FLOW_ASSETS, "templates", file),
   ].find((p) => existsSync(p));
+}
+
+/**
+ * A preset surface file (`surfaces/<name>`) read as YAML, or undefined when the preset has none; invalid YAML is a
+ * `ConfigError` naming the file.
+ * @param {string} dir the preset's folder
+ * @param {string} name
+ * @returns {any}
+ */
+export function surfaceYaml(dir, name) {
+  const file = join(dir, "surfaces", name);
+  if (!existsSync(file)) return undefined;
+  try {
+    return parseYaml(readFileSync(file, "utf8")) ?? {};
+  } catch (error) {
+    if (error instanceof YamlError) throw new ConfigError(`${file}: ${error.message}`);
+    throw error;
+  }
 }

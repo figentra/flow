@@ -17,6 +17,10 @@
       "type": "string",
       "minLength": 1
     },
+    "profile": {
+      "type": "string",
+      "minLength": 1
+    },
     "team": {
       "type": "string",
       "minLength": 1
