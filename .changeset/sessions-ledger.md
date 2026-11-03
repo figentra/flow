@@ -2,7 +2,7 @@
 "@figentra-oss/flow": minor
 ---
 
-Live sessions, the owner's to-do and the ledger (STA-1945 FR-20, FR-21). `fflow status` (and `--web`) now lists each
+Live sessions, the owner's to-do and the ledger (STA-1945 FR-20, FR-21). `fflow status` now lists each
 running Claude Code or OpenCode session working in a repository or one of its worktrees, by its title (Claude Code's
 `sessions/<pid>.json`; an OpenCode session carries the note `title not readable for opencode`), state (`TRACK · …`,
 `hold · …`, `done · …`), worktree and stage (the worktree's record) in a Live sessions table, and warns (exit 1) when a

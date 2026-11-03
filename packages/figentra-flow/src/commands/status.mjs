@@ -6,8 +6,8 @@
  *   sessions as four tables (FR-31), and a fifth of the live agent sessions by title, state, worktree and stage
  *   (STA-1945 FR-20, AC-19), each problem counted and, under `--verbose`, every one listed; `--json` writes the
  *   snapshot as the console's data. Exit 0, or 1 when a warning (more building sessions than the cap, a session title
- *   off ADR 0001's pattern or at odds with its record) is present, so a script can alert. The options are declared in src/lib/console.mjs; `refusal` names a combination they
- *   refuse, and `status` runs them.
+ *   off ADR 0001's pattern or at odds with its record) is present, so a script can alert. The options are declared
+ *   in src/lib/console.mjs; `refusal` names a combination they refuse, and `status` runs them.
  * Boundary: read-only; GitHub through each repository's credentials, none with `--offline`.
  * Runtime: node
  * Governing contract: STA-1729 phase 4 (the leader's plan stop of 2026-10-31); STA-1945 FR-31 (AC-37).

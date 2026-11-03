@@ -135,7 +135,12 @@ test("ledger: the command exits 1 on a broken record or a missing repository, an
   assert.match(text.stdout, /problem: .*sta-6\.json: not valid JSON/);
   const json = await runCommandForTest(CONSOLE, ["ledger", "--repo", r.root, "--json"], options);
   assert.equal(json.exitCode, 1, json.stdout + json.stderr);
-  assert.match(json.stdout, /"sta-6"/);
+  const doc = /** @type {{ data: { rows: unknown[], problems: { key: string }[] } }} */ (json.json);
+  assert.deepEqual(doc.data.rows, []);
+  assert.deepEqual(
+    doc.data.problems.map((p) => p.key),
+    ["sta-6"],
+  );
   const missing = join(r.root, "missing");
   const gone = await runCommandForTest(CONSOLE, ["ledger", "--repo", missing], options);
   assert.equal(gone.exitCode, 1, gone.stdout + gone.stderr);
