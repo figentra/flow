@@ -5,9 +5,9 @@
  *                                         `baseline.tasks`, → .fflow-gate/baseline.json
  *   check --base <sha> [--json]           those results against main's baseline for the base SHA or its nearest
  *                                         ancestor; fails on a new failure and, closed, when no baseline exists
- *                                         (`--json` then prints `{ ok: false, reason }`); a task whose name main
- *                                         configured and the PR's `baseline.tasks` (default BASELINE_DEFAULTS.tasks)
- *                                         dropped is not missing (STA-1945)
+ *                                         (`--json` then prints `{ ok: false, reason }`); a task whose name main's
+ *                                         saved `configured` has and the PR's saved `configured` dropped is not
+ *                                         missing (STA-1945)
  * Boundary: reads the run summary and, for `check`, GitHub (artifacts and runs) with the job's GITHUB_TOKEN and
  *   `gh run download`; writes baseline.json and the job summary.
  * Runtime: node (GitHub Actions)
@@ -113,11 +113,10 @@ export async function run([mode, ...args], deps = {}) {
       );
     const mine = JSON.parse(readFileSync(own, "utf8"));
     const main = JSON.parse(readFileSync(file, "utf8"));
-    const config = loadConfig(root).config.baseline;
     const result = compare(main.tasks ?? {}, mine.tasks, {
-      mustPass: config?.mustPass,
+      mustPass: loadConfig(root).config.baseline?.mustPass,
       needs: mine.needs,
-      configured: { base: main.configured, pr: config?.tasks ?? BASELINE_DEFAULTS.tasks },
+      configured: { base: main.configured, pr: mine.configured },
     });
     json({ ...result, baselineSha: found.sha });
     summary(summaryTable(result, found.sha));

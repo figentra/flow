@@ -155,6 +155,13 @@ test("compare: a task whose name main configured and the PR dropped is not missi
     { configured: { pr: configured.pr } },
   );
   assert.deepEqual([legacy.ok, legacy.missing], [false, ["pkg#test"]]);
+  // a malformed `configured` in main's artifact drops nothing instead of throwing
+  const malformed = compare(
+    main,
+    READERS.turbo(summary({ ...pr, "pkg#typecheck": 0, "pkg#lint": 0 })),
+    { configured: { base: /** @type {any} */ ("test"), pr: configured.pr } },
+  );
+  assert.deepEqual([malformed.ok, malformed.missing], [false, ["pkg#test"]]);
 });
 
 test("gate baseline: save keeps the configured tasks, check drops only what main configured", async (t) => {

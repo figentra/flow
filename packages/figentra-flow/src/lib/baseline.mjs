@@ -89,8 +89,10 @@ export function compare(base, pr, { mustPass = [], needs = {}, configured = {} }
   const newlyReached = reached.map((task) => ({ task, unblockedBy: String(unblocker(task)) }));
   const newFailures = sorted(pr, "fail").filter((t) => base[t] !== "fail" && !reached.includes(t));
   const stillFailing = sorted(pr, "fail").filter((t) => base[t] === "fail");
-  const { base: was = [], pr: now } = configured;
-  const dropped = now ? was.filter((n) => !now.includes(n)) : [];
+  // `base` comes from the downloaded artifact: a non-array (malformed or legacy) drops nothing
+  const { base: was, pr: now } = configured;
+  const dropped =
+    Array.isArray(was) && Array.isArray(now) ? was.filter((n) => !now.includes(n)) : [];
   const missing = Object.keys(base)
     .filter((t) => base[t] !== "skip" && (pr[t] === undefined || pr[t] === "skip"))
     .filter((t) => !dropped.includes(t.split("#")[1]))
