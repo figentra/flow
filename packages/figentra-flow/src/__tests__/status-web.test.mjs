@@ -2,7 +2,8 @@
  * Figentra Flow file contract:
  * Purpose: hold `fflow status --web` to its boundary: the page is self-contained (no external script, style or
  *   font) and draws values as text only; `/status.json` rebuilds the snapshot on each request; only GET and HEAD are
- *   answered (405 otherwise); unknown paths are 404; a failing snapshot is a 500 naming the error.
+ *   answered (405 otherwise); unknown paths are 404; a failing snapshot is a 500 naming the error; a foreign or
+ *   missing Host is 421 and a foreign Origin 403 (DNS rebinding).
  * Boundary: a real server on 127.0.0.1 with the snapshot injected; no network beyond loopback.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1729 phase 4.
@@ -10,6 +11,7 @@
 // @covers sta-1729:FR-7 sta-1729:AC-012
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { connect } from "node:net";
 
 import { PAGE, statusServer } from "../lib/status-web.mjs";
 
@@ -22,6 +24,24 @@ async function serve(read) {
   await new Promise((done) => server.listen(0, "127.0.0.1", () => done(undefined)));
   const { port } = /** @type {import("node:net").AddressInfo} */ (server.address());
   return { server, url: `http://127.0.0.1:${port}` };
+}
+
+/**
+ * The status code of a hand-written HTTP/1.0 request, so the Host header can be anything or absent.
+ * @param {string} url
+ * @param {string[]} headers
+ */
+function statusOf(url, headers) {
+  const { hostname, port } = new URL(url);
+  return new Promise((done, fail) => {
+    let reply = "";
+    const socket = connect(Number(port), hostname, () =>
+      socket.end(["GET /status.json HTTP/1.0", ...headers, "", ""].join("\r\n")),
+    );
+    socket.on("data", (chunk) => (reply += chunk));
+    socket.on("end", () => done(Number(/^HTTP\/1\.\d (\d+)/.exec(reply)?.[1])));
+    socket.on("error", fail);
+  });
 }
 
 test("status --web: a self-contained page that draws text only", () => {
@@ -63,4 +83,28 @@ test("status --web: the page and a fresh snapshot per request; read-only; 404 an
   assert.match(await failed.text(), /git is gone/);
   assert.equal((await fetch(`${url}/status.json`, { method: "POST" })).status, 405);
   assert.equal((await fetch(`${url}/nope`)).status, 404);
+});
+
+test("status --web: only its own Host and Origin are answered (DNS rebinding)", async (t) => {
+  const { server, url } = await serve(() => ({ version: "fflow.status/1" }));
+  t.after(() => server.close());
+  const { port } = new URL(url);
+  const page = await fetch(`${url}/`);
+  assert.equal(page.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(page.headers.get("cache-control"), "no-store");
+  assert.equal(await statusOf(url, [`Host: 127.0.0.1:${port}`]), 200);
+  assert.equal(await statusOf(url, [`Host: localhost:${port}`]), 200);
+  assert.equal(
+    await statusOf(url, [`Host: localhost:${port}`, `Origin: http://127.0.0.1:${port}`]),
+    200,
+  );
+  assert.equal(await statusOf(url, [`Host: rebind.example:${port}`]), 421, "a foreign Host");
+  assert.equal(await statusOf(url, ["Host: 127.0.0.1"]), 421, "the port is part of the Host");
+  assert.equal(await statusOf(url, []), 421, "a missing Host");
+  assert.equal(
+    await statusOf(url, [`Host: 127.0.0.1:${port}`, `Origin: http://rebind.example:${port}`]),
+    403,
+    "a foreign Origin",
+  );
+  assert.equal(await statusOf(url, [`Host: 127.0.0.1:${port}`, "Origin: null"]), 403);
 });
