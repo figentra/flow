@@ -37,7 +37,13 @@ import {
   tierOf,
 } from "../commands/gate.mjs";
 import { keyScheme } from "../adapters/tracker/index.mjs";
-import { labelsFor, specLinks, unlinkedTasks } from "../commands/linear.mjs";
+import {
+  labelsFor,
+  specLinks,
+  taskTitle,
+  TITLE_LIMIT,
+  unlinkedTasks,
+} from "../commands/linear.mjs";
 import { init } from "../commands/init.mjs";
 import { FLOW_ASSETS } from "../lib/flow-dir.mjs";
 import { installProblems } from "../lib/render.mjs";
@@ -409,6 +415,18 @@ test("spec-linear parses links and finds unlinked tasks", () => {
     tasks.map((t) => t.id),
     ["T001", "T003"],
   );
+});
+
+test("spec-linear titles a task with its id and first clause, at most 120 characters", () => {
+  assert.equal(taskTitle("T001", "One"), "T001 One");
+  assert.equal(
+    taskTitle("T004", "Add the gate: it runs every shard (FR-15) and posts one status"),
+    "T004 Add the gate",
+  );
+  const long = taskTitle("T090", `${"word ".repeat(60)}end`);
+  assert.ok(long.length <= TITLE_LIMIT, `${long.length} > ${TITLE_LIMIT}`);
+  assert.ok(long.startsWith("T090 word") && long.endsWith("…"));
+  assert.ok(!/\s…$/.test(long), "cut at a word, not after a space");
 });
 
 test("spec-gate plan exits 1 on a pending spec, and spec-linear --dry-run needs no token", () => {
