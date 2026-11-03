@@ -57,6 +57,25 @@ test("trace: an FR is covered directly or through a tested P; struck IDs drop ou
   assert.deepEqual(traceProblems(t), []);
 });
 
+// @covers sta-1945:FR-23 sta-1945:P-028
+test("trace: with a record, a ticked task counts only with passing evidence", () => {
+  const ok = { command: "true", exit: 0, ms: 1, head: "h", clean: true, digest: "d", at: "t" };
+  const record = { tasks: { T001: [{ ...ok, exit: 1 }, ok], T002: [{ ...ok, clean: false }] } };
+  const t = trace({ ...base, tests: "@covers sta-901:P-001", record });
+  assert.deepEqual(
+    t.tasks.map((x) => [x.id, x.done]),
+    [
+      ["T001", true],
+      ["T002", false],
+    ],
+  );
+  assert.deepEqual(traceProblems(t), [
+    "T002 is ticked without passing evidence in the record (`fflow task done`; FR-23)",
+  ]);
+  // no record: a spec before FR-23 counts its markers
+  assert.ok(trace({ ...base }).tasks.every((x) => x.done));
+});
+
 test("trace: Done needs every FR and P tested and every SC's method", () => {
   const untested = traceProblems(trace({ ...base, tests: "@covers sta-901:FR-001" }));
   assert.match(untested.join("\n"), /FR-002 has no test carrying `@covers sta-901:FR-002`/);

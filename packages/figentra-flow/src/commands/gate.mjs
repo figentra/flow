@@ -12,7 +12,8 @@
  *                               to main's
  *   plan <spec.md>              exit 1 unless the spec may be planned (run by setup-plan.sh)
  *   check <dir>                 the stage rules for the spec's declared `**Status**`
- *   tasks <tasks.md>            tasks lint: ids, covers, routes, deps, coverage, waves
+ *   tasks <tasks.md>            tasks lint: ids, covers, routes, deps, coverage, waves; each task's files in the
+ *                               design's folder trees (FR-30: a failure on big, else a warning)
  *   lane [--base=ref]           feat commits need a lite or full spec reached through the branch or `Refs:` keys,
  *                               and the diff's tier floor is not above the branch spec's `**Tier**` (ADR 0502)
  *   branch                      warn, never fail, unless the branch (STACKRA_BRANCH, else git) is Linear-named or
@@ -38,8 +39,9 @@
  *                 DOCUMENT_GATES_SINCE is exempt from FR-26 to FR-29 (it was approved under the older rules)
  *   Planned       plan.md: Constitution Check rows PASS or N/A with a reason, three deploy-mode rows, every live FR
  *                 validated by a P-### (or marked example-only); a feature or big plan's components each have a
- *                 folder tree and interface declarations (FR-27)
- *   Tasked        tasks.md passes `tasks`
+ *                 folder tree and interface declarations, and a small spec's `## Design` has both (FR-27)
+ *   Tasked        tasks.md passes `tasks`; each task names only files of the plan's folder trees, or of a small
+ *                 spec's design (FR-30; a spec last clarified before TREE_GATES_SINCE is exempt)
  *   Implementing  at least one task ticked
  *   Done          every live task ticked (spec-trace adds test coverage)
  * Tracker: `plan` and `stage` comment the stage on the spec's issue through the tracker port; a failure warns, never part of
@@ -63,7 +65,7 @@ import { BUNDLED } from "./sync.mjs";
 import { loadConfig } from "../lib/config.mjs";
 import { presetDir, resolveTemplate, specsDirs, writeCurrent } from "../lib/flow-dir.mjs";
 import { ENV_PREFIX, LEGACY_ENV_PREFIX, NAME } from "../lib/product.mjs";
-import { scopeDrift } from "../lib/scope-drift.mjs";
+import { outsideTrees, scopeDrift, treePaths } from "../lib/scope-drift.mjs";
 import { parseYaml } from "../lib/yaml.mjs";
 
 /** The presets this package ships (`stackra`, `neutral`), installed when a repository keeps none of its own. */
@@ -274,8 +276,20 @@ export function checkTasks(
     seen.set(t.id, t.line);
   }
   const live = tasks.filter((t) => !t.struck);
-  for (const t of live) {
+  for (const [i, t] of live.entries()) {
     const at = `tasks.md:${t.line}: ${t.id}`;
+    // FR-25: a checkpoint runs a command at its phase's end; it covers nothing and names no route
+    if (t.checkpoint !== undefined) {
+      if (!t.checkpoint) problems.push(`${at} is a checkpoint with no command`);
+      if (t.optional) problems.push(`${at} is a checkpoint, which cannot be optional`);
+      if (t.covers.length || t.route || t.role)
+        problems.push(`${at} is a checkpoint, which covers nothing and names no route or role`);
+      if (live[i + 1]?.phase === t.phase)
+        problems.push(`${at} is a checkpoint, but ${live[i + 1].id} follows it in its phase`);
+      for (const d of t.deps)
+        if (!seen.has(d)) problems.push(`${at} depends on ${d}, which does not exist`);
+      continue;
+    }
     if (!t.covers.length) problems.push(`${at} has no \`covers:\``);
     for (const id of t.covers)
       if (!ids.has(id))
@@ -317,6 +331,13 @@ export function checkTasks(
 
 /** The day the document gates (FR-26 to FR-29) began: a spec last clarified before it keeps the rules it was approved under. */
 export const DOCUMENT_GATES_SINCE = "2026-11-03";
+
+/** The day FR-30's task trees began: a spec last clarified before it was tasked without them. */
+export const TREE_GATES_SINCE = "2026-11-04";
+
+/** A spec's `## Status history` section. */
+const historyOf = (/** @type {string} */ text) =>
+  strip(text).match(/^## Status history\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
 
 /**
  * Whether the last dated `→ Clarified` line of a Status history is before `since` (a `YYYY-MM-DD` day); false when
@@ -379,8 +400,7 @@ export function checkStage(
       }),
       ...ownerApprovalProblems(text, loadConfig(ROOT).config.apps?.owner),
     );
-  const history =
-    body.match(/^## Status history\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
+  const history = historyOf(text);
   const documented = !clarifiedBefore(history, DOCUMENT_GATES_SINCE);
   if (tier !== undefined && tier !== "trivial") problems.push(...checkCriteria(text));
   if (documented && tier !== undefined && tier !== "trivial") {
@@ -399,6 +419,11 @@ export function checkStage(
         ...checkComponents(plan),
       );
   }
+  if (atLeast(status, "tasked")) {
+    const trees = checkTaskTrees(text, plan, tasks, folder);
+    problems.push(...trees.problems);
+    for (const w of trees.warnings) warn(w);
+  }
   if (!new RegExp(`→\\s*${status}\\b`, "i").test(history))
     problems.push(
       `\`## Status history\` has no "→ ${status[0].toUpperCase()}${status.slice(1)}" line`,
@@ -413,7 +438,11 @@ export function checkStage(
     if (atLeast(status, "planned")) {
       if (design === undefined)
         problems.push(`status ${status} needs a \`## Design\` section in a small spec`);
-      else problems.push(...checkDesign(design, "spec.md ## Design", "###"));
+      else
+        problems.push(
+          ...checkDesign(design, "spec.md ## Design", "###"),
+          ...(documented ? checkSmallDesign(design) : []),
+        );
     }
     if (atLeast(status, "tasked")) {
       if (steps === undefined)
@@ -439,13 +468,10 @@ export function checkStage(
   const live = parseTasks(tasks).filter((t) => !t.struck);
   if (atLeast(status, "implementing") && !live.some((t) => t.done))
     problems.push(`status ${status}, but no task is ticked`);
-  if (status === "done" && live.some((t) => !t.done))
-    problems.push(
-      `status done, but ${live
-        .filter((t) => !t.done)
-        .map((t) => t.id)
-        .join(", ")} are unticked`,
-    );
+  // FR-25: an optional task may stay open at Done (status reports it)
+  const open = live.filter((t) => !t.done && !t.optional).map((t) => t.id);
+  if (status === "done" && open.length)
+    problems.push(`status done, but ${open.join(", ")} are unticked`);
   return problems;
 }
 
@@ -697,7 +723,7 @@ export function checkTraceTasks(tasks, spec, where) {
   const live = parseTasks(tasks).filter((t) => !t.struck);
   if (live.length === 0) return [`${where}: no \`- [ ] T###\` task lines`];
   const problems = [];
-  for (const t of live) {
+  for (const t of live.filter((x) => x.checkpoint === undefined)) {
     const at = `${where}:${t.line}: ${t.id}`;
     if (!t.covers.some((id) => criteria.has(id)))
       problems.push(`${at} covers no acceptance criterion (AC-###) of spec.md (ADR 0502)`);
@@ -711,13 +737,15 @@ export function checkTraceTasks(tasks, spec, where) {
 
 /**
  * Markdown's fenced blocks (``` or ~~~, indented too; only a fence of the same kind and at least the opening's length
- * closes one, so a ````md block may quote a ``` one): each opening's language, and the text without the blocks.
+ * closes one, so a ````md block may quote a ``` one): each opening's language and lines, and the text without the blocks.
  * @param {string} text
- * @returns {{ langs: string[], rest: string }}
+ * @returns {{ langs: string[], bodies: string[][], rest: string }}
  */
 function fences(text) {
   /** @type {string[]} */
   const langs = [];
+  /** @type {string[][]} */
+  const bodies = [];
   const rest = [];
   /** @type {string | undefined} */
   let open;
@@ -728,11 +756,13 @@ function fences(text) {
       else {
         open = fence[1];
         langs.push(fence[2].toLowerCase());
+        bodies.push([]);
       }
     } else if (fence && fence[1][0] === open[0] && fence[1].length >= open.length && !fence[2])
       open = undefined;
+    else bodies.at(-1)?.push(line);
   }
-  return { langs, rest: rest.join("\n") };
+  return { langs, bodies, rest: rest.join("\n") };
 }
 
 /** Markdown without fenced blocks and inline code, which quote text rather than state it. */
@@ -842,6 +872,22 @@ const NOT_CODE = new Set(
   ),
 );
 
+/** Fence languages of a folder tree (FR-27). */
+const TREE = new Set(["text", "tree"]);
+
+/** FR-27: what a design part lacks of a folder tree (a ```text block) and interface declarations (a code block). */
+function lacks(/** @type {string} */ part) {
+  const { langs } = fences(part);
+  return [
+    ...(langs.some((l) => TREE.has(l))
+      ? []
+      : ["no folder tree (a ```text block of every file it adds)"]),
+    ...(langs.some((l) => !NOT_CODE.has(l))
+      ? []
+      : ["no interface declarations (a fenced block in the repository's language)"]),
+  ];
+}
+
 /**
  * FR-27, AC-29: each component (a `###` under `## Components`) has a folder tree (a ```text block) and its interface
  * declarations (a fenced block in a programming language: not a diagram, data, shell or prose block).
@@ -852,18 +898,63 @@ export function checkComponents(plan) {
   const section =
     strip(plan).match(/^## Components\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
   const problems = [];
-  for (const [, name, part] of section.matchAll(/^### (.+)\n([\s\S]*?)(?=^### |(?![\s\S]))/gm)) {
-    const { langs } = fences(part);
-    if (!langs.some((l) => l === "text" || l === "tree"))
-      problems.push(
-        `plan.md: component \`${name.trim()}\` has no folder tree (a \`\`\`text block of every file it adds) (FR-27)`,
-      );
-    if (!langs.some((l) => !NOT_CODE.has(l)))
-      problems.push(
-        `plan.md: component \`${name.trim()}\` has no interface declarations (a fenced block in the repository's language) (FR-27)`,
-      );
-  }
+  for (const [, name, part] of section.matchAll(/^### (.+)\n([\s\S]*?)(?=^### |(?![\s\S]))/gm))
+    for (const lack of lacks(part))
+      problems.push(`plan.md: component \`${name.trim()}\` has ${lack} (FR-27)`);
   return problems;
+}
+
+/**
+ * FR-27: a small spec's one-page `## Design` keeps the folder tree and the interfaces, as a plan's component does.
+ * @param {string} design the section's text
+ * @returns {string[]}
+ */
+export function checkSmallDesign(design) {
+  return lacks(design).map((lack) => `spec.md ## Design: the design has ${lack} (FR-27)`);
+}
+
+/** FR-27, FR-30: the paths of the folder trees under a document's Components and Files and folders headings. */
+function treeEntries(/** @type {string} */ text) {
+  return sectionsOf(strip(text), /^(?:Components|Files and folders)\b/).flatMap(
+    ({ text: part }) => {
+      const { langs, bodies } = fences(part);
+      return bodies.filter((_, i) => TREE.has(langs[i])).flatMap(treePaths);
+    },
+  );
+}
+
+/**
+ * FR-30: each live task names only files of the plan's folder trees (a small spec's: its `## Design`); its own spec
+ * folder, tests, changesets and lockfiles aside. Failures on a big spec, warnings on the others; a spec without a tier,
+ * a feature or big spec without a plan (the stage gate reports that), or one last clarified before TREE_GATES_SINCE,
+ * is exempt.
+ * @param {string} spec
+ * @param {string} plan
+ * @param {string} tasks tasks.md (a small spec keeps its tasks in spec.md)
+ * @param {string} folder the spec's folder name under SPECS_DIR
+ * @returns {{ problems: string[], warnings: string[] }}
+ */
+export function checkTaskTrees(spec, plan, tasks, folder) {
+  const tier = tierOf(spec);
+  const small = tier === "small";
+  if (
+    tier === undefined ||
+    tier === "trivial" ||
+    (!small && !plan.trim()) ||
+    clarifiedBefore(historyOf(spec), TREE_GATES_SINCE)
+  )
+    return { problems: [], warnings: [] };
+  const design = strip(spec).match(/^## Design\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
+  const entries = [...treeEntries(small ? design : plan), `${SPECS_DIR}/${folder}/`];
+  const found = parseTasks(small ? spec : tasks).flatMap((t) =>
+    outsideTrees([t], entries).map(
+      (p) =>
+        `${small ? "spec.md" : "tasks.md"}:${t.line}: ${t.id} names \`${p}\`, which no folder tree of ${
+          small ? "spec.md ## Design" : "plan.md"
+        } holds (add it to the tree, or amend the task) (FR-30)`,
+    ),
+  );
+  return tier === "big" ? { problems: found, warnings: [] } : { problems: [], warnings: found };
 }
 
 /**
@@ -1324,6 +1415,13 @@ export function run([mode, ...args]) {
     // AC-048: a task with no role is the lead's to assign, never a guess.
     for (const t of roles?.unassigned ?? [])
       console.warn(`spec-gate: for the lead: ${t} has no role`);
+    const trees = checkTaskTrees(
+      readIf(join(dir, "spec.md")),
+      readIf(join(dir, "plan.md")),
+      readFileSync(arg, "utf8"),
+      basename(dir),
+    );
+    for (const w of trees.warnings) console.warn(`spec-gate: warning: ${w}`);
     return report([
       ...(roles?.problems ?? []),
       ...checkTasks(readFileSync(arg, "utf8"), {
@@ -1331,6 +1429,7 @@ export function run([mode, ...args]) {
         plan: readIf(join(dir, "plan.md")),
         known: knownRoutes(),
       }),
+      ...trees.problems,
     ])
       ? 1
       : 0;

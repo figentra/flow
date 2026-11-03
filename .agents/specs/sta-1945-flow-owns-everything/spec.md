@@ -133,12 +133,15 @@ detectable hand edits, reviewed overrides and policies no repository can switch 
     guard plugin);
   - `.mcp.yaml`: the preset's servers plus the config's additions, secrets by name;
   - `lefthook.yml`: the preset's hook steps plus the config's, including `fflow gate branch`;
-    the oxfmt and oxlint jobs follow core's STA-1865 pattern in every repository: they run the mise-pinned binary
-    first (`mise exec -- oxfmt …`), fall back to `pnpm exec` only where mise is missing, and keep the exit-2 "all
-    ignored" handling. `pnpm exec` runs pnpm 12's lockfile trust-policy check first, which fetches registry metadata,
-    so a Mac with no @figentra read token fails pre-commit with a 401 in any repository whose lockfile holds an
-    @figentra package (os, STA-1936). `sync` makes sure `mise.toml` pins `npm:oxfmt` and `npm:oxlint` at the
-    versions the catalog pins, which `repo-checks/tool-pins` requires;
+    the oxfmt and oxlint jobs follow core's hook rule (STA-1865, as STA-2039 amended it) in every repository: they
+    run the mise-pinned binary, named in `mise exec` (`mise exec npm:oxfmt -- oxfmt …`), pass an all-ignored staged
+    set through `--no-error-on-unmatched-pattern` (exit 2, a file oxfmt cannot parse, fails), and never fall back to
+    `pnpm exec`: where mise is missing the stackra preset skips them with a
+    note and CI checks, and the neutral preset runs the installed `node_modules/.bin` binary. `pnpm exec` runs pnpm
+    12's lockfile trust-policy check first, which fetches registry metadata (a 401 on a Mac with no @figentra read
+    token, os STA-1936), and pnpm 12's exec installs whole workspaces from a hook (STA-2039). `sync` makes sure
+    `mise.toml` pins `npm:oxfmt` and `npm:oxlint` at the versions the catalog pins, which `repo-checks/tool-pins`
+    requires;
   - AGENTS.md and CLAUDE.md: the preset's shared blocks plus the repository's facts from the config and
     `.flow/readme.yml`.
 
@@ -353,8 +356,8 @@ AC-28 to AC-34, listed under `## Acceptance criteria`.
 ## Acceptance criteria
 
 AC-1 to AC-12 restate FR-1 to FR-12 as checkable criteria; AC-13 to AC-34 are the amendments' (A-1 to A-3,
-approved 2026-11-03); AC-35 to AC-42 restate FR-31 and the parts of FR-13, FR-15 and FR-21 that no criterion covered.
-None adds a decision.
+approved 2026-11-03); AC-35 to AC-42 restate FR-31 and the parts of FR-13, FR-15 and FR-21 that no criterion covered;
+AC-43 restates the template part of FR-26 and FR-27 (P-031). None adds a decision.
 
 - **AC-1**: WHEN `fflow check`, `diff` or `validate` runs THE command SHALL write no file; `check` SHALL exit non-zero
   and name each cause (an owned file that differs from the lock, with or without a provenance header; the preset
@@ -380,10 +383,11 @@ None adds a decision.
   including core's 48 from the preset itself, rules, agent reference, routing, models, `.claude/settings.json`, the
   OpenCode projection, `.mcp.yaml`, `lefthook.yml`, AGENTS.md, CLAUDE.md); an owned file the preset no longer renders
   SHALL be deleted, and `.agents/specs/` SHALL be unchanged.
-- **AC-8**: WHEN `sync` renders `lefthook.yml` THE oxfmt and oxlint jobs SHALL run the mise-pinned binary first, use
-  `pnpm exec` only where mise is missing, and pass staged files that are all on oxfmt's ignore list through
-  `--no-error-on-unmatched-pattern` while every other non-zero exit fails (oxfmt also exits 2 on a file it cannot
-  parse); `mise.toml` SHALL pin `npm:oxfmt` and `npm:oxlint` at the catalog's versions with no other line changed;
+- **AC-8**: WHEN `sync` renders `lefthook.yml` THE oxfmt and oxlint jobs SHALL run the mise-pinned binary named in
+  `mise exec`, never `pnpm exec`, skip with a note where mise is missing (stackra), and pass staged files that are all
+  on oxfmt's ignore list through `--no-error-on-unmatched-pattern` while every other non-zero exit fails (oxfmt also
+  exits 2 on a file it cannot parse); `mise.toml` SHALL pin `npm:oxfmt` and `npm:oxlint` at the catalog's versions
+  with no other line changed;
   commit-msg SHALL skip commitlint without `node_modules/.bin/commitlint`, pre-push SHALL skip only on the registry's
   401, and oxlint SHALL skip without `node_modules/@stackra/oxlint-config`, each with its note.
 - **AC-9**: WHEN core's guard tests, ported, run against `fflow guard` with the stackra tables THE engine SHALL give
@@ -453,6 +457,9 @@ None adds a decision.
   status, green only when every shard passed (FR-15).
 - **AC-42**: WHEN `fflow ledger --since <date>` runs THE output SHALL list what landed, released and shipped since that
   date, by day and track, read from Flow's records only (FR-21).
+- **AC-43**: WHEN either preset's spec and plan templates are read THE asset test SHALL find every section A-3 names
+  for each tier: Discovery and Sources, the plan's components with their trees and interfaces, and the small tier's
+  one-page design with its tree and interfaces (FR-26, FR-27).
 
 ## Success criteria
 
@@ -554,3 +561,7 @@ test-level baseline inventory (STA-1942 v2).
 - 2026-11-03: owner decision "Yes, bot first", relayed by the leader session. FR-22 (baseline-aware approval) and FR-16
   (`land --stack`) are built before the rest of 0.3.0, as small PRs. FR-15's gate stage gains the testbed contract
   (owner-approved, STA-2042). No scope change
+- 2026-11-03: tasks.md corrected after PR 19 and PR 20, content only and no new decision: AC-43 restates the
+  templates' part of FR-26 and FR-27 (P-031), which T038 to T041 now cover instead of AC-28 and AC-29; T128 (FR-27's
+  small-tier design) and T129 (FR-30's task trees) added; T052 to T059's tests sit in `src/__tests__/`; T100 waits for
+  T091 (PR 14)

@@ -4,14 +4,17 @@
  *   documents either as neutral skill documents for the repository's own projector (`.agents/skills/flow-<verb>/`) or,
  *   with `direct`, as Claude Code skills and OpenCode commands; the preset's agent definitions (`agents/`, as
  *   `.agents/agents/<id>.md` or, with `direct`, `.claude/agents/<id>.md`), the approval workflow (its secret names
- *   from `preset.yml`'s `approve`) and, with `apps.owner`, a CODEOWNERS for the owner-only paths (STA-1856). Each
- *   written file carries its provenance header and `.flow/lock.json` v2 records the Flow version, the preset with its
- *   digest and each written file's digest (STA-1945 FR-2, FR-3); `installProblems`, reading a v1 or v2 lock, is the check that replaces spec-kit's tripwire: no hand edit, no
- *   forgotten `sync`, and no spec-kit leftover. With a `.flow/readme.yml`, `README.md` is rendered too (STA-1879).
+ *   from `preset.yml`'s `approve`) and, with `apps.owner`, a CODEOWNERS for the owner-only paths (STA-1856). Only
+ *   the skills and agents the config's profile selects are rendered, and the lock records the profile (STA-1945
+ *   FR-6). Each written file carries its provenance header and `.flow/lock.json` v2 records the Flow version, the
+ *   preset with its digest, the profile and each written file's digest (STA-1945 FR-2, FR-3); `installProblems`,
+ *   reading a v1 or v2 lock, is the check that replaces spec-kit's tripwire: no hand edit, no forgotten `sync`, and
+ *   no spec-kit leftover. With a `.flow/readme.yml`, `README.md` is rendered too (STA-1879).
  * Boundary: `render` and `installProblems` read; `writeRendered` writes the rendered files and the lock and removes
- *   spec-kit's rendered `speckit-*` skills and commands. Nothing here deletes `.specify/` (that is `migrate`).
+ *   spec-kit's rendered `speckit-*` skills and commands. Nothing here deletes `.specify/` (that is `migrate`), nor,
+ *   yet, an owned file a narrower profile no longer renders (STA-1945 T068).
  * Runtime: node
- * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-2, FR-3).
+ * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-2, FR-3, FR-6).
  * Secrets: none.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -19,7 +22,7 @@ import { dirname, join } from "node:path";
 
 import { approveWorkflow } from "./approve-workflow.mjs";
 import { baselineWorkflow } from "./baseline-workflow.mjs";
-import { gateLogins, loadConfig } from "./config.mjs";
+import { ConfigError, gateLogins, loadConfig } from "./config.mjs";
 import { LOCK, OVERRIDES, presetDir } from "./flow-dir.mjs";
 import {
   digestOf,
@@ -32,6 +35,7 @@ import {
   writeLock,
 } from "./lock.mjs";
 import { codeowners } from "./owner-only.mjs";
+import { resolveProfile, selects } from "./profiles.mjs";
 import {
   APPROVE_WORKFLOW,
   BASELINE_WORKFLOW,
@@ -47,6 +51,12 @@ import {
 import { withHeader } from "./provenance.mjs";
 import { renderReadme } from "./readme.mjs";
 import { parseYaml, YamlError } from "./yaml.mjs";
+
+/**
+ * What a surface renderer (`render-*.mjs`) reads: the repository, its configuration and its preset's folder. Each one
+ * returns its files, path to text, and nothing when the preset has no such surface (STA-1945 C5).
+ * @typedef {{ root: string, config: Record<string, any>, presetDir: string }} RenderContext
+ */
 
 /** The eight commands, in workflow order. */
 export const VERBS = [
@@ -87,12 +97,15 @@ export function render(root, { direct = false } = {}) {
   const dir = join(presetDir(root), "commands");
   /** @type {Map<string, string>} */
   const out = new Map();
+  // FR-6: only what the profile selects; hooks are selected the same way once the preset ships them (PR 4).
+  const profile = selectedProfile(root);
   for (const verb of VERBS) {
-    const own = join(root, OVERRIDES, "commands", `flow-${verb}.md`);
-    const file = existsSync(own) ? own : join(dir, `flow-${verb}.md`);
+    const name = `flow-${verb}`;
+    if (!selects(profile, "skills", name)) continue;
+    const own = join(root, OVERRIDES, "commands", `${name}.md`);
+    const file = existsSync(own) ? own : join(dir, `${name}.md`);
     if (!existsSync(file)) continue;
     const { meta, body } = parse(readFileSync(file, "utf8"));
-    const name = `flow-${verb}`;
     const description = JSON.stringify(meta.description ?? name);
     const provenance = [
       "metadata:",
@@ -128,7 +141,8 @@ export function render(root, { direct = false } = {}) {
     } else out.set(`.agents/skills/${name}/SKILL.md`, skill);
   }
   for (const [id, text] of presetDocs(root, "agents"))
-    out.set(direct ? `.claude/agents/${id}.md` : `.agents/agents/${id}.md`, text);
+    if (selects(profile, "agents", id))
+      out.set(direct ? `.claude/agents/${id}.md` : `.agents/agents/${id}.md`, text);
   // STA-1871: the preset's agent rules (the worktree rule among them).
   for (const [id, text] of presetDocs(root, "rules"))
     out.set(direct ? `.claude/rules/${id}.md` : `.agents/rules/${id}.md`, text);
@@ -202,6 +216,46 @@ function presetDocs(root, folder) {
   return out;
 }
 
+/**
+ * The preset's parsed `preset.yml`, or undefined when it has none.
+ * @param {string} root
+ * @returns {Record<string, any> | undefined}
+ * @throws {ConfigError} when it is outside the YAML subset (a repository's own preset.yml may be): its profiles
+ *   cannot be read, and falling back to selecting all would fail open
+ */
+export function presetManifest(root) {
+  const file = join(presetDir(root), "preset.yml");
+  try {
+    return existsSync(file) ? parseYaml(readFileSync(file, "utf8")) : undefined;
+  } catch (error) {
+    if (!(error instanceof YamlError)) throw error;
+    throw new ConfigError(`${file}: ${error.message}`);
+  }
+}
+
+/**
+ * The profile `sync` renders (FR-6): the config's `profile`, else the preset's default.
+ * @param {string} root
+ * @throws {ConfigError} when the config names a profile the preset lacks, or `preset.yml` cannot be read
+ */
+export function selectedProfile(root) {
+  return resolveProfile(presetManifest(root), loadConfig(root).config.profile);
+}
+
+/**
+ * Why `sync` would refuse the config's profile, or undefined: what `validate` and `check` report.
+ * @param {string} root
+ */
+export function profileProblem(root) {
+  try {
+    selectedProfile(root);
+  } catch (error) {
+    if (!(error instanceof ConfigError)) throw error;
+    return error.message;
+  }
+  return undefined;
+}
+
 /** A secret name GitHub accepts. */
 const SECRET_NAME = /^[A-Z_][A-Z0-9_]*$/;
 
@@ -213,13 +267,7 @@ const SECRET_NAME = /^[A-Z_][A-Z0-9_]*$/;
 export function approveSecrets(root) {
   const file = join(presetDir(root), "preset.yml");
   /** @type {{ app_id?: string, private_key?: string } | undefined} */
-  let approve;
-  try {
-    approve = existsSync(file) ? parseYaml(readFileSync(file, "utf8"))?.approve : undefined;
-  } catch (error) {
-    // A repository's own preset.yml outside the YAML subset keeps the default names.
-    if (!(error instanceof YamlError)) throw error;
-  }
+  const approve = presetManifest(root)?.approve;
   const names = {
     appId: approve?.app_id ?? `${ENV_PREFIX}APPROVER_APP_ID`,
     privateKey: approve?.private_key ?? `${ENV_PREFIX}APPROVER_PRIVATE_KEY`,
@@ -343,8 +391,7 @@ export function lockOf(root, written) {
     lockVersion: 2,
     flow: VERSION,
     preset: { name: preset, version, digest: treeDigest(presetDir(root)) },
-    // shortcut: every output is rendered until profiles land (STA-1945 PR 3), which record the selected one.
-    profile: "*",
+    profile: selectedProfile(root).name,
     overrides: overridesDigest(root),
     files: Object.fromEntries([...written].map(([path, text]) => [path, digestOf(text)])),
     // Third-party skills are pinned here once Flow installs them (STA-1945 PR 7).
@@ -380,8 +427,8 @@ export function syncedDirect(lock) {
 
 /**
  * The install check `gate ci` runs (ADR 0510 decision 7): every file `.flow/lock.json` lists is unchanged, the lock
- * names the installed Flow version, and no spec-kit file remains. A repository with neither `.flow/lock.json` nor a
- * spec-kit leftover has nothing to check.
+ * names the installed Flow version and the config's profile (FR-6), and no spec-kit file remains. A repository with
+ * neither `.flow/lock.json` nor a spec-kit leftover has nothing to check.
  * @param {string} root
  * @param {string} [version] the installed Flow version
  * @returns {string[]}
@@ -403,6 +450,13 @@ export function installProblems(root, version = VERSION) {
   if (lock.flow !== version)
     problems.push(
       `${LOCK} was written by ${NAME} ${lock.flow || "(none)"}, ${version} is installed (run \`${NAME} update\`)`,
+    );
+  // A lock from before profiles records "*", which its next sync replaces; an unknown profile is `check`'s problem.
+  const profile =
+    lock.profile === "*" || profileProblem(root) ? undefined : selectedProfile(root).name;
+  if (profile && profile !== lock.profile)
+    problems.push(
+      `the profile is "${profile}" but ${LOCK} records "${lock.profile}" (run \`${NAME} sync\`)`,
     );
   for (const { path, kind } of driftOf(root, lock))
     problems.push(

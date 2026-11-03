@@ -18,6 +18,10 @@ description: "Task list template (Stackra v2): every task covers spec IDs and na
   - `route:` is a task type in `.agents/routing.yaml`.
   - `deps:` names earlier tasks; dependencies are acyclic.
   - `[P]` tasks in one phase are a wave: they never share a backticked path.
+  - Markers: `[ ]` not started, `[~]` queued, `[-]` in progress, `[x]` done; only `[x]` counts as done.
+  - `T012*` marks a task optional: it may stay `[ ]` at Done.
+  - A phase may end in a checkpoint, ``- [ ] T013 Checkpoint: `<command>` ``: a required task that runs the command
+    and covers nothing; no later phase starts before it is done. It is the last task of its phase and never optional.
 - Phases: Setup, Foundational, one per user story (US1…USn), Polish. Each phase heading carries its Linear key once
   `/flow-tasks` has run (`## Phase 3: US1 … [STA-m]`); task lines carry ` [STA-m]` at the end.
 - Tests sit in `__tests__/` beside their subject (ADR 0022) and carry `@covers sta-n:FR-###` (spec-trace).
@@ -35,6 +39,8 @@ description: "Task list template (Stackra v2): every task covers spec IDs and na
 
 - [ ] T002 [P] [US1] [test first] in `path/__tests__/x.test.ts` — covers: FR-001 — route: tests — deps: T001
 - [ ] T003 [US1] [implementation] in `path` — covers: FR-001 — route: spec-task — deps: T002
+- [ ] T004* [US1] [optional polish] in `path` — covers: FR-001 — route: spec-task — deps: T003
+- [ ] T005 Checkpoint: `pnpm verify`
 
 ## Phase N: Polish
 

@@ -100,6 +100,8 @@ export function tablesOf(repo, verbose) {
         { header: "Spec", key: "folder" },
         { header: "Tier", key: "tier" },
         { header: "Session", key: "session" },
+        // FR-25: optional tasks a Done spec left open
+        { header: "Skipped optional", key: "skipped" },
         { header: "Problems", key: "problems", kind: "count" },
       ],
       rows: specs.map((s) => ({
@@ -107,6 +109,7 @@ export function tablesOf(repo, verbose) {
         folder: s.folder,
         tier: s.tier ?? "",
         session: s.session ?? "",
+        skipped: s.skipped?.join(", ") ?? "",
         problems: s.problems.length,
       })),
       ...(verbose

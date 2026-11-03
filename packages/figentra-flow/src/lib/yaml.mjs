@@ -3,8 +3,9 @@
  * Purpose: the YAML subset an agent roster uses, read without a dependency: block maps and lists (a list item may
  *   open a map), flow lists of scalars (`[a, b]`), `{}`, folded and literal block scalars (`>-`, `>`, `|-`, `|`),
  *   single- and double-quoted strings, booleans, integers and `#` comments. Anything else (anchors, tags, nested flow
- *   collections, multi-document files) is refused with its line number, never guessed.
- * Boundary: text in, plain data out; reads no file.
+ *   collections, multi-document files) is refused with its line number, never guessed. `stringifyYaml` writes plain
+ *   data back in the same subset (block maps and lists, literal block scalars), which the rendered surfaces use.
+ * Boundary: text in, plain data out, and back; reads no file.
  * Runtime: node
  * Governing contract: STA-1729 phase 7 (the agent-team plan stop of 2026-11-01: no new dependency).
  * Secrets: none.
@@ -189,4 +190,78 @@ export function parseYaml(text) {
   const value = node(lines[0].indent);
   if (at < lines.length) throw new YamlError(`line ${lines[at].n}: unexpected indentation`);
   return value;
+}
+
+/** A string any YAML reader reads back as itself without quotes. */
+const PLAIN = /^(?:[A-Za-z_/$]|-[A-Za-z-])[\w./@$<>=?+,() -]*$/;
+/** Plain words some YAML reader takes for a boolean or null. */
+const RESERVED = /^(?:true|false|yes|no|on|off|null|y|n)$/i;
+
+/**
+ * One scalar on its line: plain when safe, else double-quoted (a JSON string is a YAML one).
+ * @param {unknown} value
+ */
+function scalarText(value) {
+  if (typeof value !== "string") return JSON.stringify(value ?? null);
+  return PLAIN.test(value) && !value.endsWith(" ") && !RESERVED.test(value)
+    ? value
+    : JSON.stringify(value);
+}
+
+/** @param {unknown} value */
+const isNode = (value) =>
+  value !== null && typeof value === "object" && Object.keys(value).length > 0;
+
+/**
+ * `head` and a scalar: a multi-line string as a literal block scalar when it reads back unchanged, else one line.
+ * @param {string} head
+ * @param {unknown} value
+ * @param {string} pad the indent of `head`'s key
+ * @returns {string[]}
+ */
+function field(head, value, pad) {
+  if (
+    typeof value === "string" &&
+    value.includes("\n") &&
+    /^\S/.test(value) &&
+    !/\n\n$|\r|\t|\n +(?:\n|$)/.test(value)
+  ) {
+    const keep = value.endsWith("\n");
+    const body = (keep ? value.slice(0, -1) : value).split("\n");
+    return [`${head} ${keep ? "|" : "|-"}`, ...body.map((l) => (l ? `${pad}  ${l}` : ""))];
+  }
+  return [`${head} ${scalarText(value)}`];
+}
+
+/**
+ * The lines of a non-empty map or list at `pad`.
+ * @param {any} value
+ * @param {string} pad
+ * @returns {string[]}
+ */
+function blockLines(value, pad) {
+  if (Array.isArray(value))
+    return value.flatMap((item) => {
+      if (!isNode(item)) return [`${pad}- ${scalarText(item)}`];
+      const [first, ...rest] = blockLines(item, `${pad}  `);
+      return [`${pad}- ${first.trimStart()}`, ...rest];
+    });
+  return Object.entries(value)
+    .filter(([, v]) => v !== undefined)
+    .flatMap(([k, v]) => {
+      // A key that starts with a digit is quoted: a reader would take `01` for the number 1.
+      const key = /^[A-Za-z_][\w.-]*$/.test(k) && !RESERVED.test(k) ? k : JSON.stringify(k);
+      return isNode(v)
+        ? [`${pad}${key}:`, ...blockLines(v, `${pad}  `)]
+        : field(`${pad}${key}:`, v, pad);
+    });
+}
+
+/**
+ * `value` (a map or list of plain data) as YAML that `parseYaml` and any YAML reader read back as `value`.
+ * @param {Record<string, unknown> | unknown[]} value
+ * @returns {string}
+ */
+export function stringifyYaml(value) {
+  return isNode(value) ? `${blockLines(value, "").join("\n")}\n` : `${scalarText(value)}\n`;
 }
