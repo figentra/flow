@@ -90,7 +90,7 @@ test("flow assets: derived texts carry the attribution; nothing names spec-kit's
 
 // STA-1945 A-3: the spec and plan templates carry the sections FR-26 and FR-27 name, per tier; worked examples sit in
 // comments, which the gate strips.
-// @covers sta-1945:FR-26 sta-1945:FR-27 sta-1945:P-031
+// @covers sta-1945:FR-26 sta-1945:FR-27 sta-1945:P-031 sta-1945:AC-43
 const template = (/** @type {string} */ preset, /** @type {string} */ name) =>
   readFileSync(join(FLOW, "presets", preset, "templates", `${name}-template.md`), "utf8");
 /** The offsets of DESIGN_SECTIONS as `level` headings in `body`, which must rise. */

@@ -408,7 +408,7 @@ export function checkStage(
       );
   }
   if (atLeast(status, "tasked")) {
-    const trees = checkTaskTrees(text, plan, tasks);
+    const trees = checkTaskTrees(text, plan, tasks, folder);
     problems.push(...trees.problems);
     for (const w of trees.warnings) warn(w);
   }
@@ -917,22 +917,26 @@ function treeEntries(/** @type {string} */ text) {
 /**
  * FR-30: each live task names only files of the plan's folder trees (a small spec's: its `## Design`); its own spec
  * folder, tests, changesets and lockfiles aside. Failures on a big spec, warnings on the others; a spec without a tier,
- * or last clarified before TREE_GATES_SINCE, is exempt.
+ * a feature or big spec without a plan (the stage gate reports that), or one last clarified before TREE_GATES_SINCE,
+ * is exempt.
  * @param {string} spec
  * @param {string} plan
  * @param {string} tasks tasks.md (a small spec keeps its tasks in spec.md)
+ * @param {string} folder the spec's folder name under SPECS_DIR
  * @returns {{ problems: string[], warnings: string[] }}
  */
-export function checkTaskTrees(spec, plan, tasks) {
+export function checkTaskTrees(spec, plan, tasks, folder) {
   const tier = tierOf(spec);
+  const small = tier === "small";
   if (
     tier === undefined ||
     tier === "trivial" ||
+    (!small && !plan.trim()) ||
     clarifiedBefore(historyOf(spec), TREE_GATES_SINCE)
   )
     return { problems: [], warnings: [] };
-  const small = tier === "small";
-  const entries = [...treeEntries(small ? spec : plan), `${SPECS_DIR}/`];
+  const design = strip(spec).match(/^## Design\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
+  const entries = [...treeEntries(small ? design : plan), `${SPECS_DIR}/${folder}/`];
   const found = parseTasks(small ? spec : tasks).flatMap((t) =>
     outsideTrees([t], entries).map(
       (p) =>
@@ -1406,6 +1410,7 @@ export function run([mode, ...args]) {
       readIf(join(dir, "spec.md")),
       readIf(join(dir, "plan.md")),
       readFileSync(arg, "utf8"),
+      basename(dir),
     );
     for (const w of trees.warnings) console.warn(`spec-gate: warning: ${w}`);
     return report([

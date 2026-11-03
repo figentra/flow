@@ -29,12 +29,13 @@ export function scopeDrift(changed, tasks) {
 
 /**
  * The paths a folder tree block names (FR-27): one per line, joined to the folder lines it is indented beneath; the
- * `├──`, `│` and ASCII tree marks, and anything after the path (a "(new)" note), are not part of it.
+ * `├──`, `│` and ASCII tree marks, and anything after the path (a "(new)" note), are not part of it. A folder line with
+ * lines beneath it loses its trailing `/`: it holds only what it lists, and only a leaf folder holds everything under it.
  * @param {string[]} lines the block's lines
  * @returns {string[]}
  */
 export function treePaths(lines) {
-  /** @type {{ at: number, name: string }[]} */
+  /** @type {{ at: number, name: string, i: number }[]} */
   const stack = [];
   const paths = [];
   for (const line of lines) {
@@ -42,8 +43,10 @@ export function treePaths(lines) {
     if (!m || /^[.…]+$/.test(m[2])) continue;
     const at = m[1].length;
     while ((stack.at(-1)?.at ?? -1) >= at) stack.pop();
+    const top = stack.at(-1);
+    if (top) paths[top.i] = paths[top.i].replace(/\/$/, "");
     const parent = stack.map(({ name }) => (name.endsWith("/") ? name : `${name}/`)).join("");
-    stack.push({ at, name: m[2] });
+    stack.push({ at, name: m[2], i: paths.length });
     paths.push(parent + m[2]);
   }
   return paths;
@@ -59,7 +62,9 @@ const pattern = (/** @type {string} */ entry) => {
 };
 
 /** A backticked name that is a repository path: no space, glob, placeholder or call, and a folder or an extension. */
-// shortcut: a slash-separated name that is not a file (a check name such as `fflow/gate`) still counts; skip it here when a repository needs it.
+// shortcut: a slash-separated name that is not a file (a check name such as `fflow/gate`) still counts, while a task glob
+// (`src/**`), an extensionless root file (`Makefile`) and a task's `{a,b}` (matched literally) are not expanded; refine
+// it here when a repository needs it.
 const isPath = (/** @type {string} */ p) =>
   !/[\s*<>()|:]/.test(p) && !/^[/~@]/.test(p) && /\/|\.[A-Za-z]\w*$/.test(p);
 

@@ -64,18 +64,18 @@ test("tree paths: each line under the folders it nests in, the tree marks and no
       "packages/x/flat/g.mjs (new)",
     ]),
     [
-      "packages/x/",
+      "packages/x",
       "packages/x/bin/x.mjs",
-      "packages/x/src/",
-      "packages/x/src/lib/",
+      "packages/x/src",
+      "packages/x/src/lib",
       "packages/x/src/lib/a.mjs",
       "packages/x/src/b.mjs",
       "packages/x/README.md",
-      "lib/",
+      "lib",
       "lib/c.mjs",
-      "lib/d/",
+      "lib/d",
       "lib/d/e.mjs",
-      "src/",
+      "src",
       "src/f.mjs",
       "packages/x/flat/g.mjs",
     ],
@@ -119,4 +119,20 @@ test("outside trees: a live task's path no entry holds, by path, folder or glob;
     "README.md",
   ]);
   assert.deepEqual(outsideTrees([], entries), []);
+  // a folder line with lines beneath it holds only those; a leaf folder line holds everything under it
+  const rooted = treePaths(["packages/x/", "├── src/", "│   └── a.mjs", "└── docs/"]);
+  assert.deepEqual(
+    outsideTrees(
+      [
+        task([
+          "packages/x/src/a.mjs",
+          "packages/x/src/",
+          "packages/x/docs/y.md",
+          "packages/x/src/b.mjs",
+        ]),
+      ],
+      rooted,
+    ),
+    ["packages/x/src/b.mjs"],
+  );
 });

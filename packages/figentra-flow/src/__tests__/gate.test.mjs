@@ -903,6 +903,8 @@ test("small design: a small spec's one-page design keeps the folder tree and the
   assert.deepEqual(checkSmallDesign(""), [noTree, noInterface]);
 });
 
+// FR-30's task-tree part only (see scope-drift.test.mjs), so FR-30 itself is not claimed.
+// @covers sta-1945:AC-32
 test("task trees: each task names only files of the plan's folder trees, failing big and warning otherwise (FR-30)", () => {
   const plan = [
     "## Components and responsibilities",
@@ -940,11 +942,11 @@ test("task trees: each task names only files of the plan's folder trees, failing
   const outside = (/** @type {string} */ path) =>
     `tasks.md:4: T004 names \`${path}\`, which no folder tree of plan.md holds (add it to the tree, or amend the task) (FR-30)`;
   const found = [outside("src/elsewhere.ts"), outside("packages/wallet/src/pass.js")];
-  assert.deepEqual(checkTaskTrees("**Tier**: big\n", plan, tasks), {
+  assert.deepEqual(checkTaskTrees("**Tier**: big\n", plan, tasks, "sta-12-x"), {
     problems: found,
     warnings: [],
   });
-  assert.deepEqual(checkTaskTrees("**Tier**: feature\n", plan, tasks), {
+  assert.deepEqual(checkTaskTrees("**Tier**: feature\n", plan, tasks, "sta-12-x"), {
     problems: [],
     warnings: found,
   });
@@ -953,6 +955,7 @@ test("task trees: each task names only files of the plan's folder trees, failing
     "**Tier**: small\n\n## Design\n\n### Files and folders\n\n```text\nsrc/pass.ts (new)\n```\n\n## Tasks\n\n- [ ] T001 In `src/pass.ts` and `src/hide.ts` — covers: AC-001\n",
     "",
     "",
+    "sta-12-x",
   );
   assert.deepEqual(small.problems, []);
   assert.equal(small.warnings.length, 1);
@@ -961,10 +964,19 @@ test("task trees: each task names only files of the plan's folder trees, failing
     /T001 names `src\/hide\.ts`, which no folder tree of spec\.md ## Design holds/,
   );
   const none = { problems: [], warnings: [] };
-  assert.deepEqual(checkTaskTrees("**Status**: Tasked\n", plan, tasks), none);
+  assert.deepEqual(checkTaskTrees("**Status**: Tasked\n", plan, tasks, "sta-12-x"), none);
   // a spec last clarified before the cut-over was tasked without the rule
   const dated = (/** @type {string} */ day) =>
     `**Tier**: big\n\n## Status history\n\n- ${day}: Draft → Clarified\n`;
-  assert.deepEqual(checkTaskTrees(dated("2026-11-03"), plan, tasks), none);
-  assert.deepEqual(checkTaskTrees(dated(TREE_GATES_SINCE), plan, tasks).problems, found);
+  assert.deepEqual(checkTaskTrees(dated("2026-11-03"), plan, tasks, "sta-12-x"), none);
+  assert.deepEqual(
+    checkTaskTrees(dated(TREE_GATES_SINCE), plan, tasks, "sta-12-x").problems,
+    found,
+  );
+  // another spec's folder is not exempt, and a big spec without a plan is left to the stage gate
+  assert.deepEqual(checkTaskTrees("**Tier**: big\n", plan, tasks, "sta-13-y").problems, [
+    "tasks.md:3: T003 names `.agents/specs/sta-12-x/tasks.md`, which no folder tree of plan.md holds (add it to the tree, or amend the task) (FR-30)",
+    ...found,
+  ]);
+  assert.deepEqual(checkTaskTrees("**Tier**: big\n", "", tasks, "sta-12-x"), none);
 });
