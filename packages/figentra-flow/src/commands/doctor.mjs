@@ -5,8 +5,7 @@
  *   reported as passed or failed with its fix. Two warnings never fail the run (STA-1871): more linked worktrees than
  *   `clean.budget`, and under 10 GB or 10 % free on the disk that holds the repository; nor does no `credentials`
  *   block in a repository with no `origin` yet, which is information (FR-31). `doctor` writes the checks as the grouped
- *   checklist (Machine, Repo, Flow, GitHub) on the console engine or the plain output, whose summary sets the exit
- *   code.
+ *   checklist (Machine, Repo, Flow, GitHub) on the console engine, whose summary sets the exit code.
  * Boundary: reads only, reusing the checks the other commands make (`loadConfig`, `installProblems`, `loadTeam`,
  *   `connect`); one GitHub call (`GET /repos/{repo}`) unless `--offline`. Exit 0 when no check fails, 1 otherwise.
  * Runtime: node
@@ -230,7 +229,7 @@ export function rowsOf(all) {
 
 /**
  * `fflow doctor`: the checks as the grouped checklist; a failed row ends the run with exit 1, warnings keep it at 0.
- * @param {import("../lib/plain.mjs").Io} io
+ * @param {import("../lib/console.mjs").Io} io
  * @param {{ offline: boolean }} options
  */
 export function doctor(io, { offline }) {

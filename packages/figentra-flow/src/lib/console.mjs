@@ -5,10 +5,11 @@
  *   usage and runs nothing, an unknown command names the closest match and exits 2, and a failure is one error block.
  *   `doctor` and `status` declare their options; every other command is passthrough (migration only, ADR 0500
  *   decision 7): it still parses its own flags from `io.rest`, and `PASSTHROUGH` in the tests pins that list.
- * Boundary: the registry and the repository check. A command's module is imported when it runs, never for the list or
- *   the help. `@stackra/console` is an optional peer (NFR-1): bin/fflow.mjs loads this file only when it imports, and
- *   never for `fflow guard`, the agent hook (src/lib/plain.mjs runs both cases). Plain JavaScript: the engine's legacy
- *   field decorators are applied by hand after each class, exactly as TypeScript's emit applies them.
+ * Boundary: the registry and the repository check, in the CLI layer only: the governance core (gate, approve, land,
+ *   record, lock, baseline) imports nothing from `@stackra/*`. A command's module is imported when it runs, never for
+ *   the list or the help, and bin/fflow.mjs never loads this file for `fflow guard`, the agent hook. Plain
+ *   JavaScript: the engine's legacy field decorators are applied by hand after each class, exactly as TypeScript's
+ *   emit applies them.
  * Runtime: node
  * Governing contract: STA-1945 FR-31 (AC-35, AC-36, AC-37); STA-1966 (FR-024, FR-031).
  * Secrets: none.
@@ -22,6 +23,13 @@ import { DISPLAY_NAME, HOMEPAGE, NAME, VERSION } from "./product.mjs";
 
 /** @typedef {import("@stackra/console").CommandIo} CommandIo */
 /** @typedef {import("@stackra/console").CommandClass} CommandClass */
+
+/**
+ * The part of the engine's `CommandIo` that `doctor` and `status` use.
+ * @typedef {{ cwd: string, json: boolean, verbose: boolean, output: { line(text: string): void,
+ *   title(text: string): void, note(text: string): void, warn(text: string): void, list(items: string[]): void,
+ *   json(data: unknown): void, table(spec: any): void, checklist(spec: any): unknown } }} Io
+ */
 
 /** Where every command's help and error block point. */
 export const DOCS = HOMEPAGE;

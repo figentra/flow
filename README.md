@@ -43,8 +43,9 @@ pnpm exec fflow doctor    # checks Node, git, the configuration and the credenti
 
 ## Architecture at a glance
 
-One pnpm workspace with one package, `packages/figentra-flow`: plain ESM JavaScript with JSDoc and no runtime
-dependencies.
+One pnpm workspace with one package, `packages/figentra-flow`: plain ESM JavaScript with JSDoc. Its runtime
+dependencies are `undici` and the console engine (`@stackra/console`, `@stackra/validation`), which only the CLI layer
+loads.
 
 | Path                                  | What                                                                         |
 | ------------------------------------- | ---------------------------------------------------------------------------- |

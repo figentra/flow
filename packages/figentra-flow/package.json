@@ -68,26 +68,14 @@
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
+    "@stackra/console": "catalog:",
+    "@stackra/validation": "catalog:",
     "undici": "catalog:"
   },
   "devDependencies": {
-    "@stackra/console": "catalog:",
-    "@stackra/validation": "catalog:",
     "@types/node": "catalog:",
     "oxlint": "catalog:quality",
     "typescript": "catalog:build"
-  },
-  "peerDependencies": {
-    "@stackra/console": "catalog:",
-    "@stackra/validation": "catalog:"
-  },
-  "peerDependenciesMeta": {
-    "@stackra/console": {
-      "optional": true
-    },
-    "@stackra/validation": {
-      "optional": true
-    }
   },
   "engines": {
     "node": ">=24.0.0"

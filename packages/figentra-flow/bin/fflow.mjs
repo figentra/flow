@@ -2,30 +2,31 @@
 /**
  * Figentra Flow file contract:
  * Purpose: the `fflow` binary (`figentra-flow` is its deprecated alias): runs `fflow <command> …` on the console
- *   engine (src/lib/console.mjs) and exits with its code. `@stackra/console` is an optional peer (NFR-1, FR-31): when it
- *   is missing or fails to import, and always for `fflow guard`, which the agent hook runs on every tool call, the
- *   plain dispatcher (src/lib/plain.mjs) runs it instead.
+ *   engine, `@stackra/console` (src/lib/console.mjs; a dependency, ADR 0506 decision 8, FR-31), and exits with its
+ *   code. `fflow guard`, which the agent hook runs on every tool call, dispatches first and never loads the engine.
  * Runtime: node
  * Secrets: none.
  */
-import { runPlain } from "../src/lib/plain.mjs";
+import { ConfigError } from "../src/lib/config.mjs";
+import { NAME } from "../src/lib/product.mjs";
 
 const argv = process.argv.slice(2);
 
-/** The engine's run of `argv`, or undefined when the optional peer is missing or fails to import (silently, plan C9). */
-async function engine() {
+if (argv[0] === "guard" && !argv.includes("--help") && !argv.includes("-h")) {
+  const { run } = await import("../src/commands/guard.mjs");
   try {
-    const [{ createConsole }, { nodePorts }, { CONSOLE }] = await Promise.all([
-      import("@stackra/console"),
-      import("@stackra/console/node"),
-      import("../src/lib/console.mjs"),
-    ]);
-    return () => createConsole(CONSOLE).run(argv, nodePorts());
-  } catch {
-    return undefined;
+    process.exit(await run(argv.slice(1)));
+  } catch (error) {
+    // An invalid or missing configuration is a refusal (2) naming the key, not a crash.
+    if (!(error instanceof ConfigError)) throw error;
+    console.error(`${NAME} guard: ${error.message}`);
+    process.exit(2);
   }
 }
 
-const hook = argv[0] === "guard" && !argv.includes("--help") && !argv.includes("-h");
-const run = hook ? undefined : await engine();
-process.exit(await (run ? run() : runPlain(argv)));
+const [{ createConsole }, { nodePorts }, { CONSOLE }] = await Promise.all([
+  import("@stackra/console"),
+  import("@stackra/console/node"),
+  import("../src/lib/console.mjs"),
+]);
+process.exit(await createConsole(CONSOLE).run(argv, nodePorts()));

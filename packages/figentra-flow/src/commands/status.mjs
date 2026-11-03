@@ -5,8 +5,8 @@
  *   repository of the workspace (or the one named, or the current one) with its specs, worktrees, open PRs and
  *   sessions as four tables (FR-31), each problem counted and, under `--verbose`, every one listed; `--json` writes
  *   the snapshot as the console's data. Exit 0, or 1 when a warning (more building sessions than the cap) is present,
- *   so a script can alert. The options are declared in src/lib/console.mjs (and parsed by src/lib/plain.mjs without
- *   the engine); `refusal` names a combination they refuse, and `status` runs them.
+ *   so a script can alert. The options are declared in src/lib/console.mjs; `refusal` names a combination they
+ *   refuse, and `status` runs them.
  * Boundary: read-only; GitHub through each repository's credentials, none with `--offline`.
  * Runtime: node
  * Governing contract: STA-1729 phase 4 (the leader's plan stop of 2026-10-31); STA-1945 FR-31 (AC-37).
@@ -206,7 +206,7 @@ export function refusal({ offline, metrics: wanted, since, by, role, port }) {
 
 /**
  * `fflow status`, after `refusal` passed its options.
- * @param {import("../lib/plain.mjs").Io} io
+ * @param {import("../lib/console.mjs").Io} io
  * @param {StatusOptions} options
  * @returns {Promise<number>}
  */

@@ -15,7 +15,6 @@ import assert from "node:assert/strict";
 import { passthroughCommands, runCommandForTest } from "@stackra/console/testing";
 
 import { COMMANDS, CONSOLE, FLOW_THEME, GROUPS } from "../lib/console.mjs";
-import { COMMAND_NAMES } from "../lib/plain.mjs";
 import { VERSION } from "../lib/product.mjs";
 
 test("help: fflow alone prints the banner, the version and every command under its group", async () => {
@@ -73,11 +72,4 @@ test("help: the commands not yet ported are passthrough, and only these", () => 
     "trace",
     "train",
   ]);
-});
-
-test("help: the plain dispatcher, used without the engine, knows every command the engine registers", () => {
-  assert.deepEqual(
-    [...COMMAND_NAMES].sort(),
-    [...passthroughCommands(COMMANDS), "doctor", "status"].sort(),
-  );
 });

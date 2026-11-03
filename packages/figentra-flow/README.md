@@ -21,11 +21,11 @@ closest one and exits 2. A failure is one error block: what failed, why, the fix
 under `NO_COLOR` or in a pipe, and `doctor`, `status` and `status --metrics` take `--json`, which writes one document,
 `{ "ok", "data" }`.
 
-The engine is an optional peer: Flow installs nothing beyond `undici`. Add `@stackra/console` and
-`@stackra/validation` (0.6.1) to get the banner, the help and the error block; they come from the Stackra registry,
-so map the scope first (`@stackra:registry=https://npm.stackra.figentra.com/` in `.npmrc`), never npmjs. Without them
-every command still runs, `doctor` and `status` print the same checklist and tables as plain text, and `--json` writes
-the same document. `fflow guard`, the agent hook, never loads the engine.
+`@stackra/console` and `@stackra/validation` (0.7.1) are runtime dependencies of Flow (ADR 0506 decision 8, owner
+2026-11-03; this replaces STA-1945 NFR-1's "no runtime dependency, an optional peer"). They come from the Stackra
+registry, read without a token, so map the scope first (`@stackra:registry=https://npm.stackra.figentra.com/` in
+`.npmrc`), never npmjs. Only the CLI layer loads them: the governance core (gate, approve, land, record, lock,
+baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, dispatches before the engine loads.
 
 | Command                                                               | What it does                                                                                                                                                                                     |
 | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

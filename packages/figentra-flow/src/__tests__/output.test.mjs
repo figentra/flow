@@ -2,10 +2,8 @@
  * Figentra Flow file contract:
  * Purpose: hold the output layer to P-035 (AC-37): `doctor` and `status` give the same data as a table or checklist,
  *   as plain text under NO_COLOR or in a pipe without it (no escape byte), and as one `--json` document whose data is
- *   that data; without the engine (an optional peer, NFR-1) the plain dispatcher prints the same checklist, tables and
- *   document; and `status` refuses a wrong combination of options with exit 2 and the reason (AC-35).
- * Boundary: the engine's in-process test harness and the plain dispatcher over scratch repositories; `--offline`, no
- *   network.
+ *   that data; and `status` refuses a wrong combination of options with exit 2 and the reason (AC-35).
+ * Boundary: the engine's in-process test harness over scratch repositories; `--offline`, no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945 FR-31; STA-1966 FR-030.
  */
@@ -22,7 +20,6 @@ import { runCommandForTest } from "@stackra/console/testing";
 import { checks, rowsOf } from "../commands/doctor.mjs";
 import { init } from "../commands/init.mjs";
 import { CONSOLE } from "../lib/console.mjs";
-import { runPlain } from "../lib/plain.mjs";
 import { repo } from "./__fixtures__/repo.mjs";
 
 const ESC = "\u001B";
@@ -30,12 +27,6 @@ const ESC = "\u001B";
 /** The disk's free bytes move between two calls; every other field of a doctor row is the same data. */
 const stable = (/** @type {ReturnType<typeof rowsOf>} */ rows) =>
   rows.map((r) => (r.id === "disk" ? { ...r, detail: "" } : r));
-
-/** A stream that keeps what is written to it. */
-const sink = () => {
-  const s = { text: "", write: (/** @type {string} */ x) => void (s.text += x) };
-  return s;
-};
 
 /** A git repository with `.flow/` installed, removed after the test. */
 const initialised = (/** @type {import("node:test").TestContext} */ t) => {
@@ -109,53 +100,4 @@ test("output: status refuses a wrong combination of options with exit 2 and the 
     assert.equal(r.exitCode, 2, `${argv.join(" ")}: ${r.stdout}${r.stderr}`);
     assert.match(r.stdout + r.stderr, reason, argv.join(" "));
   }
-});
-
-// @covers sta-1945:FR-31 sta-1945:P-035
-test("output: without the engine, doctor and status print the same checklist, tables and document", async (t) => {
-  const root = initialised(t);
-  const out = sink();
-  const err = sink();
-  assert.equal(await runPlain(["doctor", "--offline"], { cwd: root, stdout: out, stderr: err }), 0);
-  for (const group of ["Machine", "Repo", "Flow"])
-    assert.match(out.text, new RegExp(`^${group}$`, "m"));
-  // The disk may be low on the machine that runs this: a warning, never a failure.
-  assert.match(out.text, /\d+ passed, \d+ warning\(s\), 0 failed/);
-  assert.ok(!out.text.includes(ESC));
-  const json = sink();
-  const human = sink();
-  assert.equal(
-    await runPlain(["doctor", "--offline", "--json"], { cwd: root, stdout: json, stderr: human }),
-    0,
-  );
-  const doc = JSON.parse(json.text);
-  assert.equal(doc.ok, true);
-  assert.deepEqual(stable(doc.data), stable(rowsOf(checks(root, { offline: true }))));
-  assert.match(human.text, /passed/, "under --json the checklist's text goes to stderr");
-
-  const r = repo();
-  t.after(r.dispose);
-  const tables = sink();
-  const code = await runPlain(["status", "--repo", r.root, "--offline"], {
-    stdout: tables,
-    stderr: sink(),
-  });
-  for (const table of ["Specs", "Worktrees", "PRs", "Sessions"])
-    assert.match(tables.text, new RegExp(table));
-  const snap = sink();
-  assert.equal(
-    await runPlain(["status", "--repo", r.root, "--offline", "--json"], {
-      stdout: snap,
-      stderr: sink(),
-    }),
-    code,
-  );
-  assert.equal(JSON.parse(snap.text).data.version, "fflow.status/1");
-  const refused = sink();
-  assert.equal(
-    await runPlain(["status", "--metrics", "--offline"], { stdout: sink(), stderr: refused }),
-    2,
-  );
-  assert.match(refused.text, /--metrics reads GitHub/);
-  assert.equal(await runPlain(["stauts"], { stdout: sink(), stderr: sink() }), 2);
 });
