@@ -21,7 +21,7 @@ import { join } from "node:path";
 
 import { connect, gateProblems } from "./land.mjs";
 import { gateRun } from "./gate-run.mjs";
-import { loadConfig } from "../lib/config.mjs";
+import { gateLogins, loadConfig } from "../lib/config.mjs";
 import { NAME, STATUS_CONTEXT } from "../lib/product.mjs";
 import { defaultBranch, fetch, git, mainCheckout, remote, remoteTip } from "../lib/git.mjs";
 
@@ -41,8 +41,8 @@ const SEMVER = /^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z.-]+)?$/;
  * @typedef {{ label: string, eject: "bisect" | "manual", after: string[], cutoff?: number }} TrainConfig
  * @typedef {{ api: import("../lib/github.mjs").Api, log: (s: string) => void, warn: (s: string) => void,
  *             gate: (dir: string, ref: string) => Promise<number>, now?: () => number }} TrainDeps
- * @typedef {{ root: string, repo: string, base: string, cfg: TrainConfig, gateApp?: string, dry?: boolean,
- *             deps: TrainDeps }} Ctx
+ * @typedef {{ root: string, repo: string, base: string, cfg: TrainConfig, gateApp?: string | string[],
+ *             dry?: boolean, deps: TrainDeps }} Ctx
  * @typedef {{ code: number, problems?: string[], version?: string, tip?: string }} Result
  */
 
@@ -694,7 +694,7 @@ export async function run(/** @type {string[]} */ args) {
     repo,
     base: defaultBranch(root),
     cfg: { ...DEFAULTS, ...loaded.config.train },
-    gateApp: loaded.config.apps?.gate?.login,
+    gateApp: gateLogins(loaded.config.apps),
     dry: rest.includes("--dry-run"),
     deps: {
       api,

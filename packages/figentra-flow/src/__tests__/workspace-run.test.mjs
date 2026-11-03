@@ -2,8 +2,8 @@
  * Figentra Flow file contract:
  * Purpose: hold `--workspace <dir>` to STA-1945 FR-1 and AC-3: it runs in every repository under the folder that has
  *   `flow.config.json` and in no other, prints one line per repository, the same result as the command run there
- *   alone; a repository that throws prints its error and the run goes on; the exit code is the worst; a missing folder
- *   is a usage error.
+ *   alone; a repository that throws prints its error and the run goes on; the exit code is the worst; a folder with no
+ *   governed repository fails; a missing folder argument is a usage error.
  * Boundary: temporary folders with `git init`; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
@@ -82,6 +82,23 @@ test("eachRepo: a repository that throws prints its error and the run goes on", 
   );
   assert.equal(code, 1);
   assert.deepEqual(lines, ["a: error: boom", "b: fine"]);
+});
+
+test("eachRepo: a folder with no governed repository, or none at all, fails", async (t) => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "flow-ws-empty-")));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  /** @type {string[]} */
+  const lines = [];
+  for (const at of [dir, join(dir, "missing")])
+    assert.equal(
+      await eachRepo(
+        at,
+        () => ({ code: 0, line: "ok" }),
+        (l) => lines.push(l),
+      ),
+      1,
+    );
+  assert.match(lines[0], /no repository under .* has flow\.config\.json/);
 });
 
 test("runIn: --workspace without a folder is a usage error", async () => {

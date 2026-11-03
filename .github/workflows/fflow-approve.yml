@@ -55,7 +55,7 @@ jobs:
           ENVIRONMENT: fflow-approve
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           INTEGRITY: 'sha512-92p50IwVCWOndbkTLpYSw91WF5P3jptHGXzfjArzwrMqaoD1JxHPZpiXLRV6cvlU3O6bKkAwKmGSz+YL5QMcmQ=='
-          TRUSTED: '{"fflow/gate":"figentra-gate[bot]"}'
+          TRUSTED: '{"fflow/gate":"figentra-flow[bot]"}'
           OWNER_ONLY_EXTRA: '[]'
         run: |
           cd "$RUNNER_TEMP"

@@ -10,7 +10,8 @@
  *   - the author is not the approving App;
  *   - nothing between the merge base and that head is owner-only (paths, a rename's old path, root scripts, a
  *     dependency moved off its catalog);
- *   - every required check on that head is green from its trusted source, with one success;
+ *   - every required check on that head is green from its trusted source, with one success (`TRUSTED` maps a context
+ *     to a login or a list of logins; any other shape, or text that is not JSON, refuses);
  *   - the base's ruleset requires the code owner's review and the base holds `.github/CODEOWNERS`, so GitHub itself
  *     asks the owner for owner-only paths.
  *   Everything is read at that SHA, so a later push cannot change what was checked. After approving it re-reads the
@@ -52,10 +53,21 @@ async function textAt(api, repo, path, ref) {
     : undefined;
 }
 
+/** Whether `t` maps each context to a login or a non-empty list of logins. */
+const wellFormed = (/** @type {unknown} */ t) => {
+  const login = (/** @type {unknown} */ x) => typeof x === "string" && x !== "";
+  return (
+    typeof t === "object" &&
+    t !== null &&
+    !Array.isArray(t) &&
+    Object.values(t).every((v) => login(v) || (Array.isArray(v) && v.length > 0 && v.every(login)))
+  );
+};
+
 /**
  * Every reason not to approve, and the head it checked.
  * @param {{ api: Rest, repo: string, number: number, expectedHead: string, approver: string, ref: string,
- *           environment: string, trusted?: Record<string, string>, extraOwnerOnly?: string[] }} input
+ *           environment: string, trusted?: Record<string, string | string[]>, extraOwnerOnly?: string[] }} input
  * @returns {Promise<{ refuse: string[], sha?: string, nodeId?: string }>}
  */
 export async function decide({
@@ -69,6 +81,9 @@ export async function decide({
   trusted = {},
   extraOwnerOnly = [],
 }) {
+  // Fail closed: a trusted source nobody can read trusts no one.
+  if (!wellFormed(trusted))
+    return { refuse: ["TRUSTED is not an object of context to a login or a list of logins"] };
   /** @type {string[]} */
   const refuse = [];
   if (!/^[0-9a-f]{40}$/.test(expectedHead)) refuse.push("`head` is not a 40-hex SHA");
@@ -205,6 +220,15 @@ export const rest =
     return { ok: r.ok, status: r.status, json: await r.json().catch(() => undefined) };
   };
 
+/** `text` as JSON, or null (which `decide` refuses) when it is not JSON. */
+const parsed = (/** @type {string} */ text) => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+};
+
 /**
  * Checks, then approves at the checked head or comments why not.
  * @param {Record<string, string | undefined>} env
@@ -227,7 +251,7 @@ export async function main(env, deps = {}) {
     approver: String(env.APPROVER),
     ref: String(env.GITHUB_REF),
     environment: String(env.ENVIRONMENT),
-    trusted: JSON.parse(env.TRUSTED || "{}"),
+    trusted: parsed(env.TRUSTED || "{}"),
     extraOwnerOnly: JSON.parse(env.OWNER_ONLY_EXTRA || "[]"),
   });
   if (refuse.length) {

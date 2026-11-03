@@ -316,6 +316,14 @@
             "login": {
               "type": "string",
               "minLength": 1
+            },
+            "aliases": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
             }
           }
         },
