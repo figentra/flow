@@ -16,7 +16,7 @@
        the driver's cursor documentation. -->
 
 - **Trade-off**: [the choice, the option not taken, and the cost of the one taken]
-- **Research**: [the code, ADRs, prior specs and outside work read before choosing, by path or link, and what each showed]
+- **Research**: [the code, decision records, prior specs and outside work read before choosing, by path or link, and what each showed]
 
 ## Applicable standards
 
@@ -24,8 +24,8 @@
      "review" (a finding the reviewer raises). Worked example row:
      | Secrets by name only | check: the secret scanner in CI; review: the security reviewer | -->
 
-| Rule                           | How it is enforced                                             |
-| ------------------------------ | -------------------------------------------------------------- |
+| Rule                                | How it is enforced                                           |
+| ----------------------------------- | ------------------------------------------------------------ |
 | [rule, with its decision or source] | [check: the test, lint rule or gate / review: who raises it] |
 
 <!-- For a feature or big spec plan.md is the design: the gate requires these nine sections in this order (write
@@ -64,8 +64,8 @@ sequenceDiagram
 <!-- Keep the line above: the gate reads it as this section's body. Then one `###` per component this adds or changes,
      with its responsibility, location, the folder tree of every file it adds or changes, the real interface
      declarations in the repository's language (change the fence; names, parameters, returns, thrown errors), its
-     behaviour (pseudocode for anything non-trivial) and its failure modes per dependency. The plan gate refuses a
-     component without its folder tree or its interfaces. Worked example:
+     behaviour (pseudocode for anything non-trivial) and its failure modes per dependency. A component without its
+     folder tree or its interfaces is not done. Worked example:
 
      ### C1 Export streaming
      **Responsibility**: write a table as CSV row by row. **Location**: `src/export/`.
@@ -134,7 +134,7 @@ export function [name]([param]: [Type]): [ReturnType];
 
 ## Open questions
 
-<!-- The gate refuses approval while a question is open: answer each, move the answer into the spec or this plan, then
+<!-- Approval waits until no question is open: answer each, move the answer into the spec or this plan, then
      write "None." -->
 
 - [question, who answers it, and what it blocks]

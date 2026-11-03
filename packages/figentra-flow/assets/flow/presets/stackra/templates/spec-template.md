@@ -66,8 +66,8 @@
 ### Sources
 
 <!-- Every file, ADR, command output or issue the lines above and the requirements below rest on, one per line, each
-     with an id that requirements cite ("Sources: SRC-001"). The spec gate refuses Clarified without Sources, or with a
-     requirement that cites none (AC-28 of sta-1945). Worked example:
+     with an id that requirements cite ("Sources: SRC-001"). Clarified needs Sources, and every requirement cites at
+     least one. Worked example:
      - **SRC-001**: `packages/figentra-flow/src/lib/render.mjs` on `origin/main` (64a0f4d): `writeRendered`, `installProblems`
      - **SRC-002**: `packages/figentra-flow/package.json`: `dependencies` is empty
      - **SRC-003**: `.github/CODEOWNERS` and `src/lib/owner-only.mjs` (STA-1856)
@@ -111,8 +111,8 @@
   Done, by a test carrying `@covers sta-n:FR-###` (spec-trace). Every requirement ends with the sources it rests on
   ("Sources: SRC-001, SRC-004").
 
-  Quality words: the gate flags the preset's vague terms in requirements and acceptance criteria (a warning on small
-  and feature tiers, a failure on big). Write the number or the list, not the adjective. Worked examples:
+  Quality words: never use the preset's vague terms in requirements and acceptance criteria (a warning on small and
+  feature tiers, a failure on big). Write the number or the list, not the adjective. Worked examples:
   - "fast" → "within 2 s at p95 for a 500-file repository"
   - "secure" → "only a caller with the `flow.approve` permission"
   - "user-friendly", "intuitive" → the steps, and how many

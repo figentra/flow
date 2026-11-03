@@ -9,4 +9,4 @@ non-functional requirements as `NFR-###` EARS lines, measurable success criteria
 `## Design` with its folder tree and interface declarations. A plan adds the key trade-off and research, an
 applicable-standards table, Mermaid architecture and sequence diagrams, per-component folder trees, interfaces,
 behaviour and failure modes, partial-failure ordering and open questions. Worked examples sit in comments, which the
-gate ignores. `/flow-specify` asks for the Discovery and its Sources. The gate does not enforce the new sections yet.
+gate ignores. `/flow-specify` asks for the Discovery and its Sources.

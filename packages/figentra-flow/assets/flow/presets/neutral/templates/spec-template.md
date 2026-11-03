@@ -35,8 +35,8 @@
 ### Sources
 
 <!-- Every file, decision record, command output or issue the lines above and the requirements below rest on, one per line, each
-     with an id that requirements cite ("Sources: SRC-001"). The gate refuses Clarified without Sources, or with a
-     requirement that cites none. Worked example:
+     with an id that requirements cite ("Sources: SRC-001"). Clarified needs Sources, and every requirement cites at
+     least one. Worked example:
      - **SRC-001**: `src/export/command.ts` at a1b2c3d: `runExport` stops on the first error
      - **SRC-002**: `package.json`: the database driver and its version
      - **SRC-003**: `.github/CODEOWNERS`
@@ -64,8 +64,8 @@
 <!-- EARS: "WHEN <trigger> THE <subject> SHALL <response>". IDs are permanent: an amendment strikes an ID or appends
      a new one; it never renumbers. Every requirement ends with the sources it rests on ("Sources: SRC-001").
 
-     Quality words: the gate flags the preset's vague terms in requirements and acceptance criteria (a warning on
-     small and feature tiers, a failure on big). Write the number or the list, not the adjective. Worked examples:
+     Quality words: never use the preset's vague terms in requirements and acceptance criteria (a warning on small
+     and feature tiers, a failure on big). Write the number or the list, not the adjective. Worked examples:
      - "fast" → "within 2 s at p95 for 10,000 rows"
      - "secure" → "only a caller with the export permission"
      - "user-friendly", "intuitive" → the steps, and how many

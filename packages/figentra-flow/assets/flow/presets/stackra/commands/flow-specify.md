@@ -269,7 +269,7 @@ Success criteria must be:
 
 The spec template (v2) carries an `## Impact` section. After drafting, ask the user each question in it and write
 the answers in. Then ask for the Discovery facts and Sources you could not read yourself (an issue, a decision, a
-command's output); the gate refuses Clarified without `### Sources` or with a requirement that cites none. Set
+command's output); Clarified needs `### Sources`, and every requirement cites at least one. Set
 `**Linear**` to the folder's key. Never guess an answer: leave it as
 `[NEEDS CLARIFICATION: ...]`. Write requirements in EARS form ("WHEN … THE <subject> SHALL …"), give every SC a
 verification method, and keep `## Amendments` and `## Status history` (one line: `<date> · — → Draft · <you> ·

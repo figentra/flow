@@ -90,7 +90,7 @@ test("flow assets: derived texts carry the attribution; nothing names spec-kit's
 
 // STA-1945 A-3: the spec and plan templates carry the sections FR-26 and FR-27 name, per tier; worked examples sit in
 // comments, which the gate strips.
-// @covers sta-1945:FR-26 sta-1945:FR-27 sta-1945:AC-28 sta-1945:AC-29 sta-1945:P-031
+// @covers sta-1945:FR-26 sta-1945:FR-27 sta-1945:P-031
 const template = (/** @type {string} */ preset, /** @type {string} */ name) =>
   readFileSync(join(FLOW, "presets", preset, "templates", `${name}-template.md`), "utf8");
 /** The offsets of DESIGN_SECTIONS as `level` headings in `body`, which must rise. */
@@ -112,12 +112,20 @@ test("templates: a spec states Discovery and Sources before its requirements, NF
     ])
       assert.match(body, new RegExp(`^- \\*\\*${field}\\*\\*: \\S`, "m"), `${preset}: ${field}`);
     assert.match(body, /^### Sources\n\s*- \*\*SRC-001\*\*: \S/m, `${preset}: Sources`);
+    assert.ok(
+      at("## Discovery") < at("### Sources") && at("### Sources") < at("## Requirements"),
+      `${preset}: Sources sit between Discovery and Requirements`,
+    );
     assert.match(
       body,
       /^- \*\*FR-001\*\*: WHEN .* SHALL .* Sources: SRC-001$/m,
       `${preset}: FR cites`,
     );
-    assert.match(body, /^### Non-functional Requirements\n\s*- \*\*NFR-001\*\*: THE .* SHALL /m);
+    assert.match(
+      body,
+      /^### Non-functional Requirements\n\s*- \*\*NFR-001\*\*: THE .* SHALL /m,
+      `${preset}: NFR`,
+    );
     assert.match(body, /^- \*\*SC-001\*\*: \[measurable outcome: a number, a threshold/m);
     for (const example of ['"fast" →', "**SRC-002**:", "SHALL finish within", "Not measurable:"]) {
       assert.ok(raw.includes(example), `${preset}: worked example ${example}`);
@@ -162,8 +170,9 @@ test("templates: a feature or big plan has the trade-off, standards, diagrams, f
     assert.match(body, /^- \*\*Trade-off\*\*: \S/m);
     assert.match(body, /^- \*\*Research\*\*: \S/m);
     assert.match(body, /^\| Rule +\| How it is enforced +\|$/m, `${preset}: standards table`);
-    assert.match(body, /```mermaid\nflowchart/, `${preset}: architecture diagram`);
-    assert.match(body, /```mermaid\nsequenceDiagram/, `${preset}: sequence diagram`);
+    const architecture = body.match(/^## Architecture overview\n([\s\S]*?)(?=^## )/m)?.[1] ?? "";
+    assert.match(architecture, /```mermaid\nflowchart/, `${preset}: architecture diagram`);
+    assert.match(architecture, /```mermaid\nsequenceDiagram/, `${preset}: sequence diagram`);
     const component = body.match(/^### C1 [^\n]*\n([\s\S]*?)(?=^#{2,3} )/m)?.[1] ?? "";
     for (const part of [
       /\*\*Responsibility\*\*: \S/,
@@ -174,7 +183,14 @@ test("templates: a feature or big plan has the trade-off, standards, diagrams, f
       /\*\*Failure modes\*\*: \S/,
     ])
       assert.match(component, part, `${preset}: component ${part}`);
+    // The worked examples, the example component among them, stay in comments: C1 is the only real component.
     assert.ok(raw.includes("Worked example"), `${preset}: worked examples`);
+    assert.ok(!body.includes("Worked example"), `${preset}: worked examples sit in comments`);
+    assert.deepEqual(
+      body.match(/^### C\d+ /gm),
+      ["### C1 "],
+      `${preset}: one component outside comments`,
+    );
   }
 });
 

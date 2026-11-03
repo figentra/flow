@@ -108,8 +108,8 @@ sequenceDiagram
 <!-- Keep the line above: the gate reads it as this section's body. Then one `###` per component this adds or changes,
      with its responsibility, location, the folder tree of every file it adds or changes, the real interface
      declarations in TypeScript (names, parameters, returns, thrown errors), its behaviour (pseudocode for anything
-     non-trivial) and its failure modes per dependency. The plan gate refuses a component without its folder tree or
-     its interfaces (AC-29 of sta-1945). Worked example:
+     non-trivial) and its failure modes per dependency. A component without its folder tree or its interfaces is not
+     done. Worked example:
 
      ### C1 Invoice numbering
      **Responsibility**: issue gap-free invoice numbers per tenant. **Location**: `services/billing/src/modules/invoice/`.
@@ -194,7 +194,7 @@ export function [name]([param]: [Type]): [ReturnType];
 
 ## Open questions
 
-<!-- The gate refuses approval while a question is open: answer each, move the answer into the spec or this plan, then
+<!-- Approval waits until no question is open: answer each, move the answer into the spec or this plan, then
      write "None." -->
 
 - [question, who answers it, and what it blocks]
