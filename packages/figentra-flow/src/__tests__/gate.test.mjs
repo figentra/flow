@@ -789,6 +789,7 @@ test("checkStage: a spec last clarified before the document gates keeps its old 
 });
 
 test("gate ci: scope drift in the branch's own spec fails a big tier and warns on a feature one (FR-30, T049)", (t) => {
+  /** @type {NodeJS.ProcessEnv} */
   const env = {
     ...process.env,
     NO_COLOR: "1",
