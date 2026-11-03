@@ -66,6 +66,9 @@ export const USER_DIR = [".config", NAME];
 /** The branch config key `land` records its squash commit under (`branch.<b>.<key>`, AC-029). */
 export const LANDED_KEY = `${NAME.replace(/-(\w)/g, (_, c) => c.toUpperCase())}Landed`;
 
+/** The branch config key `land --stack` records a child's squashed parent head under, for a re-run after a stop. */
+export const STACK_PARENT_KEY = `${NAME.replace(/-(\w)/g, (_, c) => c.toUpperCase())}StackParent`;
+
 /** The key before 0.2.2; `clean` still reads it, so a branch landed by 0.2.1 is still known as landed. */
 export const LEGACY_LANDED_KEY = `${LEGACY_NAME.replace(/-(\w)/g, (_, c) => c.toUpperCase())}Landed`;
 

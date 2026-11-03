@@ -327,8 +327,14 @@ GitHub calls use only the credentials the configuration names in `credentials`. 
 that gives `gh` a bot's token, and `gh-user` uses your own `gh` login, only because you said so. With neither, `land` refuses: Figentra Flow never falls back to a personal login.
 
 Until a repository's ruleset requires `fflow/gate` (phase 6), `land` refuses there without `--manual-ok`, which only
-the tester passes. A stack's next PR is brought up to date by merging the default branch and pushing: no rebase, no
-force push. The stack is gated again before that PR lands.
+the tester passes. `land --stack <top>` lands a stack bottom-up. After each squash, the next PR is brought up to date
+by merging the default branch and pushing: no rebase, no force push. A conflict in a file whose default-branch
+version is the landed parent's own is resolved: the child's side when it built on that version, the default
+branch's when the child never changed the file after taking an older version of it (so a later parent commit is
+not undone); any other conflict
+aborts the merge and stops the stack, naming the file. The PR is retargeted to the default branch if GitHub has not
+done it, gated unless its head is already green, and landed. Run it again after a stop and it resumes where it
+stopped; `--dry-run` prints the plan.
 
 ## Status
 
