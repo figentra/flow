@@ -4,18 +4,19 @@
  *   the configuration, the `.flow/` install, the machine-only skills to install from source (STA-1945 FR-8), the
  *   ignored worktree folder, the roster and the GitHub credentials, each
  *   reported as passed or failed with its fix. Two warnings never fail the run (STA-1871): more linked worktrees than
- *   `clean.budget`, and under 10 GB or 10 % free on the disk that holds the repository.
+ *   `clean.budget`, and under 10 GB or 10 % free on the disk that holds the repository; nor does no `credentials`
+ *   block in a repository with no `origin` yet, which is information (FR-31). `doctor` writes the checks as the grouped
+ *   checklist (Machine, Repo, Flow, GitHub) on the console engine, whose summary sets the exit code.
  * Boundary: reads only, reusing the checks the other commands make (`loadConfig`, `installProblems`, `loadTeam`,
- *   `connect`); one GitHub call (`GET /repos/{repo}`) unless `--offline`. Exit 0 when every check passes, 1 otherwise.
+ *   `connect`); one GitHub call (`GET /repos/{repo}`) unless `--offline`. Exit 0 when no check fails, 1 otherwise.
  * Runtime: node
- * Governing contract: STA-1729 (FR-13, AC-055); STA-1846; STA-1945 (FR-8, AC-10).
+ * Governing contract: STA-1729 (FR-13, AC-055); STA-1846; STA-1945 (FR-8, AC-10; FR-31, AC-37).
  * Secrets: none here; the token stays inside `gh` or the wrapper.
  */
 import { statfsSync } from "node:fs";
 
 import { BUDGET, ignoresWorktrees } from "./clean.mjs";
 import { connect } from "./land.mjs";
-import { say } from "../lib/cli.mjs";
 import { ConfigError, loadConfig } from "../lib/config.mjs";
 import { presetDir } from "../lib/flow-dir.mjs";
 import { git, worktrees } from "../lib/git.mjs";
@@ -25,7 +26,7 @@ import { loadThirdParty, THIRD_PARTY } from "../lib/skills.mjs";
 import { loadTeam } from "../lib/team.mjs";
 
 /**
- * @typedef {{ id: string, ok: boolean, detail: string, fix?: string, warn?: boolean }} Check
+ * @typedef {{ id: string, ok: boolean, detail: string, fix?: string, warn?: boolean, info?: boolean }} Check
  */
 
 /** Below either, the disk is low: 10 GB free, or 10 % of it. */
@@ -201,6 +202,8 @@ export function checks(cwd, { offline = false, node = process.versions.node, dis
       out.push({
         id: "credentials",
         ok: false,
+        // A fresh local repository has nothing on GitHub to read yet: information, not an error (FR-31).
+        ...(git(root, ["remote", "get-url", "origin"]).ok ? {} : { info: true }),
         detail: `${CONFIG_FILE} names no credentials, so land, train, ship and release cannot read GitHub`,
         fix: `add a "credentials" block to ${CONFIG_FILE}`,
       });
@@ -225,21 +228,46 @@ export function checks(cwd, { offline = false, node = process.versions.node, dis
   return out;
 }
 
-/** @param {string[]} args */
-export function run(args = []) {
-  const all = checks(process.cwd(), { offline: args.includes("--offline") });
-  const failed = all.filter((c) => !c.ok && !c.warn);
-  if (args.includes("--json"))
-    console.log(JSON.stringify({ schema: `${NAME}.doctor/1`, checks: all }, null, 2));
-  else {
-    for (const c of all) {
-      say(
-        c.ok ? "approved" : c.warn ? "waiting" : "blocked",
-        `${c.id}${c.warn ? " (warning)" : ""}: ${c.detail}`,
-      );
-      if (c.fix) console.error(`  fix: ${c.fix}`);
-    }
-    if (!failed.length) console.error(`  ${NAME} doctor: every check passed`);
-  }
-  return failed.length ? 1 : 0;
+/** The checklist's groups, in order. */
+export const CHECK_GROUPS = ["Machine", "Repo", "Flow", "GitHub"];
+
+/** Each check's group. */
+const GROUP_OF = {
+  node: "Machine",
+  disk: "Machine",
+  git: "Repo",
+  worktrees: "Repo",
+  "worktree-budget": "Repo",
+  config: "Flow",
+  install: "Flow",
+  team: "Flow",
+  credentials: "GitHub",
+};
+
+/**
+ * The checks as the console's checklist rows; `id` and `ok` stay on each row for `--json`.
+ * @param {Check[]} all
+ * @returns {{ name: string, status: "ok" | "info" | "warn" | "fail", detail: string, fix?: string, group: string, id: string, ok: boolean }[]}
+ */
+export function rowsOf(all) {
+  return all.map((c) => ({
+    name: c.id,
+    status: c.ok ? "ok" : c.info ? "info" : c.warn ? "warn" : "fail",
+    detail: c.detail,
+    ...(c.fix ? { fix: c.fix } : {}),
+    group: c.id.startsWith("machine-only:")
+      ? "Machine"
+      : (GROUP_OF[/** @type {keyof typeof GROUP_OF} */ (c.id)] ?? "Flow"),
+    id: c.id,
+    ok: c.ok,
+  }));
+}
+
+/**
+ * `fflow doctor`: the checks as the grouped checklist; a failed row ends the run with exit 1, warnings keep it at 0.
+ * @param {import("../lib/console.mjs").Io} io
+ * @param {{ offline: boolean }} options
+ */
+export function doctor(io, { offline }) {
+  io.output.checklist({ rows: rowsOf(checks(io.cwd, { offline })), groups: CHECK_GROUPS });
 }

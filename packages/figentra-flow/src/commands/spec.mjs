@@ -10,7 +10,8 @@
  *   - `setup-tasks [--json]` (was `setup-tasks.sh`): `FEATURE_DIR`, `AVAILABLE_DOCS`, `TASKS_TEMPLATE`,
  *     `TASKS_TEMPLATE_CONTENT`.
  *   - `template <name>`: the resolved template's text.
- *   The spec folder is `.flow/current.json` (written by `gate dir`), else the branch's issue key.
+ *   The spec folder is `.flow/current.json` (written by `gate dir`), else the branch's issue key, else the one
+ *   folder named for the branch's slug (FR-31).
  * Boundary: reads the repository; `setup-plan` writes only plan.md, and only when it is missing.
  * Runtime: node
  * Governing contract: ADR 0510; STA-1729 (F2).
@@ -41,7 +42,7 @@ export function locate(cwd) {
     const found = specDir({ root, branch, keys: schemeFor(root) });
     if (found.error)
       throw new SpecError(
-        `${found.error} (run \`${NAME} gate dir\`, or work on the issue's branch)`,
+        `${found.error}${found.fix ? ` (run \`${NAME} gate dir ${found.fix}\`)` : ""}`,
       );
     dir = found.dir ?? "";
   }
