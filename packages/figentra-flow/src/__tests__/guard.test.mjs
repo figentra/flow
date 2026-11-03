@@ -190,13 +190,17 @@ test("guard: the settings wire every guard event to the hook entry, not pnpm exe
     hooks: [
       {
         type: "command",
-        command: 'node "$CLAUDE_PROJECT_DIR/node_modules/@figentra-oss/flow/bin/fflow-guard.mjs" PreToolUse',
+        command:
+          'node "$CLAUDE_PROJECT_DIR/node_modules/@figentra-oss/flow/bin/fflow-guard.mjs" PreToolUse',
         timeout: 5,
       },
     ],
   });
   for (const event of ["UserPromptSubmit", "SessionStart", "PostToolUse"])
-    assert.match(SETTINGS.hooks[event][0].hooks[0].command, new RegExp(`fflow-guard\\.mjs" ${event}$`));
+    assert.match(
+      SETTINGS.hooks[event][0].hooks[0].command,
+      new RegExp(`fflow-guard\\.mjs" ${event}$`),
+    );
 });
 
 test("engine: the hook entry denies a side door with the command, and allows the rest (P-012)", (t) => {
@@ -207,7 +211,10 @@ test("engine: the hook entry denies a side door with the command, and allows the
     tool_input: { command: "gh pr merge 12" },
   });
   assert.equal(denied?.permissionDecision, "deny");
-  assert.match(denied?.permissionDecisionReason, /fflow land <pr>[^]*Blocked command: gh pr merge 12/);
+  assert.match(
+    denied?.permissionDecisionReason,
+    /fflow land <pr>[^]*Blocked command: gh pr merge 12/,
+  );
   assert.equal(
     hook(r.root, "PreToolUse", { tool_name: "Bash", tool_input: { command: "git status" } }),
     undefined,
@@ -235,7 +242,11 @@ test("engine: a secret file is denied to every file tool; an example and other f
     ["Write", { file_path: `${r.root}/src/env.mjs` }],
     ["Grep", { pattern: "API_KEY", path: r.root }],
   ]))
-    assert.equal(hook(r.root, "PreToolUse", { tool_name: tool, tool_input: input }), undefined, tool);
+    assert.equal(
+      hook(r.root, "PreToolUse", { tool_name: tool, tool_input: input }),
+      undefined,
+      tool,
+    );
 });
 
 test("engine: the preset's tables, the neutral ones in their place, an ask for a rule that throws (FR-5)", async (t) => {
@@ -250,18 +261,39 @@ test("engine: the preset's tables, the neutral ones in their place, an ask for a
   writeFileSync(join(r.root, CONFIG_FILE), JSON.stringify({ version: 1, preset: "stackra" }));
   const stackra = await loadTables(r.root);
   assert.ok(stackra.prompt && stackra.session, "stackra's hints");
-  assert.equal(stackra.paths[0].id, "secret-file", "neutral's path rules until stackra has its own");
-  const event = { event: /** @type {const} */ ("PreToolUse"), tool: "Bash", cwd: r.root, root: r.root };
+  assert.equal(stackra.paths[0].id, "secrets-read", "stackra's own path rules first");
+  assert.ok(
+    stackra.paths.some((x) => x.id === "secret-file"),
+    "and the neutral ones after (FR-5)",
+  );
+  assert.ok(stackra.planGated?.test("packages/a/src/a.ts"), "stackra's plan gate");
+  assert.equal(neutral.planGated, undefined, "no plan gate in the neutral preset");
+  const event = {
+    event: /** @type {const} */ ("PreToolUse"),
+    tool: "Bash",
+    cwd: r.root,
+    root: r.root,
+  };
   const broken = {
     ...neutral,
     bash: [
-      { id: "boom", decision: /** @type {const} */ ("deny"), reason: "", match: () => { throw new Error("x"); } },
+      {
+        id: "boom",
+        decision: /** @type {const} */ ("deny"),
+        reason: "",
+        match: () => {
+          throw new Error("x");
+        },
+      },
     ],
   };
-  const d = decideEvent({ ...event, input: { command: "ls" } }, broken);
+  const d = await decideEvent({ ...event, input: { command: "ls" } }, broken);
   assert.equal(d.decision, "ask");
   assert.match(d.reason ?? "", /rule boom failed/);
-  assert.equal(decideEvent({ ...event, input: { command: "ls" } }, neutral).decision, "allow");
+  assert.equal(
+    (await decideEvent({ ...event, input: { command: "ls" } }, neutral)).decision,
+    "allow",
+  );
 });
 
 test("engine: tables that fail to load deny every tool call, closed (FR-5)", (t) => {

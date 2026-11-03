@@ -1,8 +1,8 @@
 /**
  * Figentra Flow file contract:
  * Purpose: the guard engine's tables: the repository's preset's `guard/` modules (`bash-rules.mjs` → `BASH_RULES`,
- *   `path-rules.mjs` → `PATH_RULES`, `hints.mjs` → `PROMPT` and `SESSION`), each falling back to the neutral
- *   preset's module when the preset has none.
+ *   `path-rules.mjs` → `PATH_RULES` and `PLAN_GATED`, the source paths of the plan gate, `hints.mjs` → `PROMPT`
+ *   and `SESSION`), each falling back to the neutral preset's module when the preset has none.
  * Boundary: imports preset modules; throws when one fails to load or a rule table is not a list, so the engine
  *   denies (closed on the mandatory policies).
  * Runtime: node
@@ -16,7 +16,7 @@ import { pathToFileURL } from "node:url";
 import { FLOW_ASSETS, presetDir } from "../lib/flow-dir.mjs";
 
 /**
- * @typedef {{ bash: import("./bash.mjs").BashRule[], paths: import("./paths.mjs").PathRule[],
+ * @typedef {{ bash: import("./bash.mjs").BashRule[], paths: import("./paths.mjs").PathRule[], planGated?: RegExp,
  *   prompt?: import("./prompt-hints.mjs").PromptTable, session?: import("./session-context.mjs").SessionTable }} GuardTables
  */
 
@@ -57,6 +57,7 @@ export async function loadTables(root) {
   return {
     bash: list(await table(dir, "bash-rules.mjs", "BASH_RULES"), "BASH_RULES"),
     paths: list(await table(dir, "path-rules.mjs", "PATH_RULES"), "PATH_RULES"),
+    planGated: await table(dir, "path-rules.mjs", "PLAN_GATED"),
     prompt: await table(dir, "hints.mjs", "PROMPT"),
     session: await table(dir, "hints.mjs", "SESSION"),
   };

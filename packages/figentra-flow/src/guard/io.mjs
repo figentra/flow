@@ -25,6 +25,20 @@ export async function readStdin(stream = process.stdin) {
 }
 
 /**
+ * Every string anywhere in a (possibly nested) tool input value.
+ * @param {unknown} value
+ * @param {string[]} [out]
+ * @returns {string[]}
+ */
+export function collectStrings(value, out = []) {
+  if (typeof value === "string") out.push(value);
+  else if (Array.isArray(value)) value.forEach((v) => collectStrings(v, out));
+  else if (value && typeof value === "object")
+    Object.values(value).forEach((v) => collectStrings(v, out));
+  return out;
+}
+
+/**
  * The hook's answer for `decision`: a permission decision for a deny or an ask, additional context for the agent, or
  * "" (allow, nothing to add).
  * @param {string} event the hook event name
@@ -41,6 +55,8 @@ export function answer(event, d) {
       },
     });
   if (d.context)
-    return JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: d.context } });
+    return JSON.stringify({
+      hookSpecificOutput: { hookEventName: event, additionalContext: d.context },
+    });
   return "";
 }

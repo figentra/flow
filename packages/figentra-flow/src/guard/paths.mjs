@@ -1,8 +1,9 @@
 /**
  * Figentra Flow file contract:
  * Purpose: the guard engine's path decision for the file tools, ported from core's `guard-paths.mjs`: every path a
- *   Read, Grep, Glob, Write, Edit, MultiEdit or NotebookEdit call names (a Grep's or Glob's pattern under its folder)
- *   against a preset's path table; a rule marked `writes` applies to the write tools only.
+ *   Read, Grep, Glob, Write, Edit, MultiEdit or NotebookEdit call names (a Grep's or Glob's pattern under its folder;
+ *   a Grep's folder searched recursively) against a preset's path table; a rule marked `writes` applies to the write
+ *   tools only.
  * Boundary: decides only; reads nothing.
  * Runtime: node
  * Governing contract: STA-1945 (FR-7, P-012).
@@ -11,8 +12,10 @@
 import { ALLOW } from "./bash.mjs";
 
 /**
- * A path rule of a preset's table.
- * @typedef {{ id: string, match: (path: string, cwd: string) => boolean, reason: string, writes?: boolean }} PathRule
+ * A path rule of a preset's table. `match` returns true for a hit, or a string that replaces `reason`; it is handed
+ * whether the path is searched recursively (a Grep's folder) and the tool's whole input.
+ * @typedef {{ id: string, reason: string, writes?: boolean,
+ *   match: (path: string, cwd: string, how: { recursive: boolean, input: Record<string, any> }) => boolean | string | undefined }} PathRule
  */
 
 /** The tools that write a file. */
@@ -38,26 +41,34 @@ const under = (/** @type {string} */ dir, /** @type {string} */ glob) =>
 export function decidePaths(tool, input, cwd, rules) {
   const base = str(input.path) ?? cwd;
   // Grep searches its path recursively; its `glob` filter and Glob's `pattern` are relative to it.
-  const paths = [
-    input.file_path,
-    input.notebook_path,
-    tool === "Grep" ? input.path : undefined,
-    tool === "Grep" && str(input.glob) ? under(base, input.glob) : undefined,
-    tool === "Glob" ? input.path : undefined,
-    tool === "Glob" && str(input.pattern) ? under(base, input.pattern) : undefined,
-  ].filter(str);
+  /** @type {[unknown, boolean][]} */
+  const named = [
+    [input.file_path, false],
+    [input.notebook_path, false],
+    [tool === "Grep" ? input.path : undefined, true],
+    [tool === "Grep" && str(input.glob) ? under(base, input.glob) : undefined, false],
+    [tool === "Glob" ? input.path : undefined, false],
+    [tool === "Glob" && str(input.pattern) ? under(base, input.pattern) : undefined, false],
+  ];
   const write = WRITE_TOOLS.has(tool);
   /** @type {string | undefined} */
   let asked;
-  for (const path of paths)
+  for (const [path, recursive] of named) {
+    if (!str(path)) continue;
+    const p = /** @type {string} */ (path);
     for (const rule of rules) {
       if (rule.writes && !write) continue;
       try {
-        if (rule.match(path, cwd))
-          return { decision: "deny", reason: `${rule.reason}\nBlocked path: ${path}` };
+        const hit = rule.match(p, cwd, { recursive, input });
+        if (hit)
+          return {
+            decision: "deny",
+            reason: `${typeof hit === "string" ? hit : rule.reason}\nBlocked path: ${p}`,
+          };
       } catch (error) {
-        asked ??= `The guard rule ${rule.id} failed on ${path} (${/** @type {Error} */ (error)?.message}); confirm it by hand.`;
+        asked ??= `The guard rule ${rule.id} failed on ${p} (${/** @type {Error} */ (error)?.message}); confirm it by hand.`;
       }
     }
+  }
   return asked === undefined ? ALLOW : { decision: "ask", reason: asked };
 }

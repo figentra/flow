@@ -27,7 +27,9 @@ export function sessionContext(root, source, table) {
   if (!table) return undefined;
   const repo = git(root, ["rev-parse", "--is-inside-work-tree"]).ok;
   const branch = repo ? git(root, ["rev-parse", "--abbrev-ref", "HEAD"]).out : "(no git)";
-  const dirty = repo ? git(root, ["status", "--short"]).out.split("\n").slice(0, 15).join("\n") : "";
+  const dirty = repo
+    ? git(root, ["status", "--short"]).out.split("\n").slice(0, 15).join("\n")
+    : "";
   const lines = [
     `[${table.title} — ${source ?? "start"}] branch: ${branch}`,
     "Invariants:",

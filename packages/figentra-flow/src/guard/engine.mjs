@@ -1,8 +1,8 @@
 /**
  * Figentra Flow file contract:
- * Purpose: the guard engine's event dispatch: a hook event (PreToolUse for Bash and the file tools, PostToolUse,
- *   UserPromptSubmit, SessionStart) decided against the repository's preset tables, and `main`, which reads the
- *   payload on stdin and writes the hook's JSON answer.
+ * Purpose: the guard engine's event dispatch: a hook event (PreToolUse for Bash and the file tools, with the plan
+ *   gate after the path rules for a write, PostToolUse, UserPromptSubmit, SessionStart) decided against the
+ *   repository's preset tables, and `main`, which reads the payload on stdin and writes the hook's JSON answer.
  * Boundary: reads stdin, the repository's configuration and preset tables and git state; writes only the answer.
  *   Unparseable input and the engine's own errors allow (core's fail-open, kept for parity); tables that fail to
  *   load deny every tool call (closed on the mandatory policies).
@@ -13,7 +13,8 @@
 import { git } from "../lib/git.mjs";
 import { ALLOW, decideBash } from "./bash.mjs";
 import { answer, readStdin } from "./io.mjs";
-import { decidePaths, PATH_TOOLS } from "./paths.mjs";
+import { decidePaths, PATH_TOOLS, WRITE_TOOLS } from "./paths.mjs";
+import { decidePlanGate } from "./plan-gate.mjs";
 import { postWrite } from "./post-write.mjs";
 import { promptHints } from "./prompt-hints.mjs";
 import { sessionContext } from "./session-context.mjs";
@@ -31,12 +32,12 @@ const say = (/** @type {string | undefined} */ text) =>
   /** @type {Decision} */ (text ? { decision: "allow", context: text } : ALLOW);
 
 /**
- * The decision for one hook event.
+ * The decision for one hook event. Async because the plan gate loads its checks only for a gated path.
  * @param {HookEvent} event
  * @param {import("./tables.mjs").GuardTables} tables
- * @returns {Decision}
+ * @returns {Promise<Decision>}
  */
-export function decide(event, tables) {
+export async function decide(event, tables) {
   switch (event.event) {
     case "PreToolUse": {
       if (event.tool === "Bash") {
@@ -46,9 +47,13 @@ export function decide(event, tables) {
         const label = d.decision === "deny" ? "Blocked command" : "Command";
         return { ...d, reason: `${d.reason}\n${label}: ${command.slice(0, 200)}` };
       }
-      return event.tool && PATH_TOOLS.has(event.tool)
-        ? decidePaths(event.tool, event.input, event.cwd, tables.paths)
-        : ALLOW;
+      if (!event.tool || !PATH_TOOLS.has(event.tool)) return ALLOW;
+      const d = decidePaths(event.tool, event.input, event.cwd, tables.paths);
+      const target = String(event.input.file_path ?? event.input.notebook_path ?? "");
+      if (d.decision !== "allow" || !tables.planGated || !WRITE_TOOLS.has(event.tool) || !target)
+        return d;
+      const g = await decidePlanGate(target, tables.planGated, { cwd: event.cwd });
+      return g.decision === "allow" ? g : { ...g, reason: `${g.reason}\nBlocked path: ${target}` };
     }
     case "PostToolUse":
       return say(postWrite(event.root, String(event.input.file_path ?? "")));
@@ -69,9 +74,12 @@ export function decide(event, tables) {
 export async function main(name) {
   const payload = await readStdin();
   const cwd = typeof payload.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
-  const top = git(cwd, ["rev-parse", "--show-toplevel"]);
-  const root = process.env.CLAUDE_PROJECT_DIR || (top.ok ? top.out : cwd);
-  const input = payload.tool_input && typeof payload.tool_input === "object" ? payload.tool_input : {};
+  const top = process.env.CLAUDE_PROJECT_DIR
+    ? undefined
+    : git(cwd, ["rev-parse", "--show-toplevel"]);
+  const root = process.env.CLAUDE_PROJECT_DIR || (top?.ok ? top.out : cwd);
+  const input =
+    payload.tool_input && typeof payload.tool_input === "object" ? payload.tool_input : {};
   /** @type {HookEvent} */
   const event = {
     event: /** @type {HookEventName} */ (name),
@@ -96,7 +104,7 @@ export async function main(name) {
     return 0;
   }
   try {
-    process.stdout.write(answer(name, decide(event, tables)));
+    process.stdout.write(answer(name, await decide(event, tables)));
   } catch {
     // Intentionally silent: a bug in the engine never blocks work (core's fail-open).
   }
