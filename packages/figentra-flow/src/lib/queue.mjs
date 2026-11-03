@@ -81,7 +81,9 @@ export async function withQueueLock(options, fn) {
       continue;
     }
     missing = 0;
-    const since = Date.parse(api("GET", `/repos/${repo}/git/commits/${at}`).json?.committer?.date ?? "");
+    const since = Date.parse(
+      api("GET", `/repos/${repo}/git/commits/${at}`).json?.committer?.date ?? "",
+    );
     if (Number.isFinite(since) && now() - since >= staleMinutes * 60_000) {
       // A fast-forward from the stale commit: if another taker moved or released it first, this one is refused.
       const take = lockCommit(at);
@@ -109,7 +111,9 @@ export async function withQueueLock(options, fn) {
     if (api("GET", refUrl).json?.object?.sha === held) {
       const gone = api("DELETE", `/repos/${repo}/git/refs/heads/${branch}`);
       if (!gone.ok)
-        log(`${NAME}: warning: ${branch} was not released (${gone.err}); it goes stale in ${staleMinutes} minutes`);
+        log(
+          `${NAME}: warning: ${branch} was not released (${gone.err}); it goes stale in ${staleMinutes} minutes`,
+        );
     } else log(`${NAME}: warning: ${branch} was taken over as stale while this session held it`);
   }
 }

@@ -31,6 +31,7 @@ const COMMANDS = [
   "release",
   "doctor",
   "readme",
+  "adr",
 ];
 const [command, ...args] = process.argv.slice(2);
 if (!COMMANDS.includes(command)) {
