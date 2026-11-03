@@ -249,8 +249,11 @@ function blockLines(value, pad) {
   return Object.entries(value)
     .filter(([, v]) => v !== undefined)
     .flatMap(([k, v]) => {
-      const key = /^[A-Za-z0-9_][\w.-]*$/.test(k) ? k : JSON.stringify(k);
-      return isNode(v) ? [`${pad}${key}:`, ...blockLines(v, `${pad}  `)] : field(`${pad}${key}:`, v, pad);
+      // A key that starts with a digit is quoted: a reader would take `01` for the number 1.
+      const key = /^[A-Za-z_][\w.-]*$/.test(k) && !RESERVED.test(k) ? k : JSON.stringify(k);
+      return isNode(v)
+        ? [`${pad}${key}:`, ...blockLines(v, `${pad}  `)]
+        : field(`${pad}${key}:`, v, pad);
     });
 }
 

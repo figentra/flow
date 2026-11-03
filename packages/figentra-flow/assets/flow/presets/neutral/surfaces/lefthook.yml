@@ -1,0 +1,40 @@
+# The neutral preset's git hooks, rendered into `lefthook.yml` with the repository's own
+# `lefthook` jobs from flow.config.json after these. Hooks are advisory; CI is the gate.
+# - oxfmt and oxlint run the mise-pinned binary, so a commit needs no workspace install; the installed one in
+#   node_modules/.bin is the fallback where mise is missing. `fflow sync` keeps mise.toml's pins at the catalog's
+#   versions.
+# - oxfmt exits 2 when every staged file is on its ignore list: that is not a finding.
+# - commitlint needs a workspace install; without one it is skipped with a note, and CI checks the commits.
+# - Every pre-push job passes on the registry's 401 alone (fflow adds the check); any other failure blocks.
+pre-commit:
+  parallel: true
+  jobs:
+    - name: oxfmt
+      glob:
+        - "*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"
+        - "*.{json,jsonc,json5,yaml,yml,toml,md,mdx}"
+        - "*.{css,scss,less,html,graphql,vue}"
+      run: |
+        sh -c 'if command -v mise >/dev/null 2>&1; then mise exec -- oxfmt --check "$@"; else node_modules/.bin/oxfmt --check "$@"; fi;
+        s=$?; [ $s -eq 2 ] && exit 0; exit $s' -- {staged_files}
+    - name: oxlint
+      glob: "*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"
+      run: |
+        sh -c 'if command -v mise >/dev/null 2>&1; then exec mise exec -- oxlint "$@"; fi; exec node_modules/.bin/oxlint "$@"' -- {staged_files}
+commit-msg:
+  jobs:
+    - name: commitlint
+      run: |
+        if [ -x node_modules/.bin/commitlint ]; then
+          node_modules/.bin/commitlint --edit {1}
+        else
+          echo "commitlint not installed (install the workspace); CI checks the pull request's commits"
+        fi
+pre-push:
+  jobs:
+    # Warns on a branch without a tracker key; never blocks.
+    - name: spec-branch
+      run: |
+        if [ -f node_modules/@figentra-oss/flow/bin/fflow.mjs ]; then
+          node node_modules/@figentra-oss/flow/bin/fflow.mjs gate branch
+        fi
