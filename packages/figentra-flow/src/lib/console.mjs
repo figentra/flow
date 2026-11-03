@@ -3,15 +3,16 @@
  * Purpose: `fflow` on the one CLI engine, `@stackra/console` (STA-1966, FR-31): the Flow theme and every command,
  *   grouped, so `fflow` alone prints the banner, the version and the grouped commands, `<command> --help` prints its
  *   usage and runs nothing, an unknown command names the closest match and exits 2, and a failure is one error block.
- *   `doctor` and `status` declare their options; every other command is passthrough (migration only, ADR 0500
- *   decision 7): it still parses its own flags from `io.rest`, and `PASSTHROUGH` in the tests pins that list.
+ *   `doctor`, `status` and the governance commands (`update`, `check`, `diff`, `validate`, STA-1945 FR-1) declare their
+ *   options; every other command is passthrough (migration only, ADR 0500 decision 7): it still parses its own flags
+ *   from `io.rest`, and `PASSTHROUGH` in the tests pins that list.
  * Boundary: the registry and the repository check, in the CLI layer only: the governance core (gate, approve, land,
  *   record, lock, baseline) imports nothing from `@stackra/*`. A command's module is imported when it runs, never for
  *   the list or the help, and bin/fflow.mjs never loads this file for `fflow guard`, the agent hook. Plain
  *   JavaScript: the engine's legacy field decorators are applied by hand after each class, exactly as TypeScript's
  *   emit applies them.
  * Runtime: node
- * Governing contract: STA-1945 FR-31 (AC-35, AC-36, AC-37); STA-1966 (FR-024, FR-031).
+ * Governing contract: STA-1945 FR-1, FR-31 (AC-35, AC-36, AC-37); STA-1966 (FR-024, FR-031).
  * Secrets: none.
  */
 import { Command, CommandError, Option, UsageError } from "@stackra/console";
@@ -100,7 +101,8 @@ export function requireRepository(cwd, verbose = false) {
 /**
  * A command that still parses its own flags (migration only, STA-1966 FR-031).
  * @param {{ name: string, description: string, group: string, examples: string[], repository?: boolean }} definition
- *   `repository`: refuse before anything else when the working directory is not inside a git repository.
+ *   `repository`: refuse before anything else when the working directory is not inside a git repository (unless
+ *   `--workspace` is given).
  * @returns {CommandClass}
  */
 function passthrough({ name, description, group, examples, repository = false }) {
@@ -114,11 +116,67 @@ function passthrough({ name, description, group, examples, repository = false })
   }) {
     /** @param {CommandIo} io */
     async handle(io) {
-      if (repository) requireRepository(io.cwd, io.rest.includes("--verbose"));
+      // `--workspace <dir>` (sync, STA-1945) runs in the repositories under it, not in this folder's.
+      if (repository && !io.rest.includes("--workspace"))
+        requireRepository(io.cwd, io.rest.includes("--verbose"));
       const { run } = await import(`../commands/${name}.mjs`);
       return refusing(() => run([...io.rest]));
     }
   };
+}
+
+/**
+ * A governance command (STA-1945 FR-1): `update`, `check`, `diff` or `validate`, with its options declared, so its
+ * help lists them. It hands them to the command's `run` as flags, which runs it here or, with `--workspace`, in each
+ * repository of the workspace (src/lib/workspace-run.mjs); only the run here needs a repository.
+ * @param {{ name: string, description: string, examples: string[], direct?: boolean, preset?: boolean }} definition
+ *   `direct`, `preset`: the command takes `--direct`, `--preset <version>`.
+ * @returns {CommandClass}
+ */
+function governance({ name, description, examples, direct = false, preset = false }) {
+  const Governance = class extends Command({
+    name,
+    description,
+    group: GROUPS.setup,
+    examples,
+    docs: DOCS,
+  }) {
+    /** @type {string | undefined} */
+    workspace = undefined;
+    direct = false;
+    /** @type {string | undefined} */
+    preset = undefined;
+
+    /** @param {CommandIo} io */
+    async handle(io) {
+      if (this.workspace === undefined) requireRepository(io.cwd);
+      const { run } = await import(`../commands/${name}.mjs`);
+      const args = [
+        ...(this.workspace === undefined ? [] : ["--workspace", this.workspace]),
+        ...(this.direct ? ["--direct"] : []),
+        ...(this.preset === undefined ? [] : ["--preset", this.preset]),
+      ];
+      return refusing(() => run(args));
+    }
+  };
+  Option({ description: "Run in every repository under this folder that has flow.config.json" })(
+    Governance.prototype,
+    "workspace",
+  );
+  Str()(Governance.prototype, "workspace");
+  if (direct)
+    Option({ description: "Render Claude Code and OpenCode files, as `sync --direct` does" })(
+      Governance.prototype,
+      "direct",
+    );
+  if (preset) {
+    Option({ description: "The preset version to adopt; only the installed one is accepted" })(
+      Governance.prototype,
+      "preset",
+    );
+    Str()(Governance.prototype, "preset");
+  }
+  return Governance;
 }
 
 class DoctorCommand extends Command({
@@ -209,10 +267,40 @@ export const COMMANDS = [
   }),
   passthrough({
     name: "sync",
-    description: "Render the flow-* skills from the preset and write .flow/lock.json",
+    description:
+      "Render the flow-* skills from the locked preset and write .flow/lock.json; --workspace for each repository",
     group: GROUPS.setup,
-    examples: [`${NAME} sync`, `${NAME} sync --direct`],
+    examples: [`${NAME} sync`, `${NAME} sync --direct`, `${NAME} sync --workspace ~/code`],
     repository: true,
+  }),
+  governance({
+    name: "update",
+    description: "Print the diff, adopt the installed preset into the lock, then sync",
+    examples: [
+      `${NAME} update`,
+      `${NAME} update --preset 1.2.0`,
+      `${NAME} update --workspace ~/code`,
+    ],
+    direct: true,
+    preset: true,
+  }),
+  governance({
+    name: "check",
+    description:
+      "The CI check: owned files, the preset and the config against the lock; writes nothing",
+    examples: [`${NAME} check`, `${NAME} check --workspace ~/code`],
+  }),
+  governance({
+    name: "diff",
+    description:
+      "Every file sync or update would add, change or delete, with its lines; writes nothing",
+    examples: [`${NAME} diff`, `${NAME} diff --direct`, `${NAME} diff --workspace ~/code`],
+    direct: true,
+  }),
+  governance({
+    name: "validate",
+    description: "Check flow.config.json against its schema, naming each field that breaks it",
+    examples: [`${NAME} validate`, `${NAME} validate --workspace ~/code`],
   }),
   DoctorCommand,
   passthrough({

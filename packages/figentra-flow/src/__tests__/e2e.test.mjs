@@ -109,10 +109,14 @@ test("e2e: the packed package installs .flow/ and carries one spec from gate dir
   run(repo, "git", ["add", "-A"]);
   run(repo, "git", ["commit", "-q", "-m", "spec"]);
   assert.equal(flow(repo, ["gate", "ci", "--base=HEAD"]).status, 0);
+  assert.equal(flow(repo, ["check"]).status, 0, "STA-1945: a synced repository passes check");
   writeFileSync(join(repo, ".opencode/commands/flow-plan.md"), "hand edit\n");
   const ci = flow(repo, ["gate", "ci", "--base=HEAD"]);
   assert.equal(ci.status, 1);
   assert.match(ci.err, /install: \.opencode\/commands\/flow-plan\.md differs/);
+  const checked = flow(repo, ["check"]);
+  assert.equal(checked.status, 1);
+  assert.match(checked.out, /fflow check: \.opencode\/commands\/flow-plan\.md differs/);
 
   const old = join(top, "old");
   mkdirSync(join(old, ".specify/memory"), { recursive: true });
