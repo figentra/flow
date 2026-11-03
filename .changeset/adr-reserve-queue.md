@@ -11,5 +11,6 @@ land`, and prints the number only once it is on the default branch: stdout carri
 `n=$(fflow adr reserve …)` works, and the gate and land output goes to stderr. Two sessions reserving at once get
 different numbers. A reservation that does not land, including one whose auto-merge is still waiting after 10
 minutes, prints no number, names its PR and withdraws it (auto-merge off, PR closed, branch deleted) so it cannot land
-later; the lock is always released. `fflow land` gains a `refs` option so the squash names the reservation's issue. It
-replaces core's `pnpm adr:reserve`, whose losing PR conflicted.
+later; the lock is always released. `landOne` (the function behind `fflow land`) takes a `refs` issue for a branch that
+names none, so the squash names the reservation's issue. It replaces core's `pnpm adr:reserve`, whose losing PR
+conflicted.
