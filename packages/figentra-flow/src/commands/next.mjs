@@ -4,7 +4,8 @@
  *   and has `show` print the rest): the task's current stage and the command that moves it on, read from Flow's
  *   record and the spec's `**Status**`, and at the build stage the wave tasks.md's markers leave (FR-24); the key
  *   defaults to the branch's. The record is read where the task lives: its checkout, else its branch (the newer of
- *   the local and the last fetched pushed one). It warns when the record has commits origin does not.
+ *   the local and the last fetched pushed one), and the spec and its wave from the same place. It warns when the
+ *   record has commits origin does not.
  * Boundary: reads the record, the spec and git; writes nothing and never fetches.
  * Runtime: node
  * Governing contract: STA-1945 (FR-13, AC-13, P-017).
@@ -15,6 +16,7 @@ import { join } from "node:path";
 
 import { schemeFor } from "../adapters/tracker/index.mjs";
 import { specDir, statusOf } from "./gate.mjs";
+import { specsDirs } from "../lib/flow-dir.mjs";
 import { git, mainCheckout, worktrees } from "../lib/git.mjs";
 import { NAME } from "../lib/product.mjs";
 import { emptyRecord, readRecord, readRecordAt, RecordError, unpushed } from "../lib/record.mjs";
@@ -24,21 +26,29 @@ import { nextWave, WaveError } from "../lib/waves.mjs";
 
 /**
  * What the spec of `key` says: its folder and declared status, when the folder exists, and the build's next wave
- * from tasks.md's markers (`built` once tasks.md has tasks and none is owed; neither on a dependency cycle).
+ * from tasks.md's markers (`built` once tasks.md has tasks and none is owed; neither on a dependency cycle). With
+ * `ref`, the spec is read from that commit, as the record is, rather than from the checkout at `root`.
  * @param {string} root
  * @param {string} key
+ * @param {string} [ref]
  * @returns {{ specDir?: string, specStatus?: string, wave?: import("../lib/waves.mjs").Wave, built?: boolean }}
  */
-export function specFacts(root, key) {
-  const found = specDir({ root, key, keys: schemeFor(root) });
-  if (!found.dir || !existsSync(join(root, found.dir, "spec.md"))) return {};
-  const facts = {
-    specDir: found.dir,
-    specStatus: statusOf(readFileSync(join(root, found.dir, "spec.md"), "utf8")),
-  };
-  const file = join(root, found.dir, "tasks.md");
-  if (!existsSync(file)) return facts;
-  const tasks = parseTasks(readFileSync(file, "utf8"));
+export function specFacts(root, key, ref) {
+  const keys = schemeFor(root);
+  /** @type {(file: string) => string | undefined} */
+  const read = ref
+    ? (file) => {
+        const shown = git(root, ["show", `${ref}:${file}`]);
+        return shown.ok ? shown.out : undefined;
+      }
+    : (file) => (existsSync(join(root, file)) ? readFileSync(join(root, file), "utf8") : undefined);
+  const dir = ref ? specDirAt(root, ref, key, keys) : specDir({ root, key, keys }).dir;
+  const spec = dir === undefined ? undefined : read(`${dir}/spec.md`);
+  if (spec === undefined) return {};
+  const facts = { specDir: dir, specStatus: statusOf(spec) };
+  const text = read(`${dir}/tasks.md`);
+  if (text === undefined) return facts;
+  const tasks = parseTasks(text);
   try {
     const wave = nextWave(tasks);
     return wave ? { ...facts, wave } : { ...facts, built: tasks.length > 0 };
@@ -47,6 +57,20 @@ export function specFacts(root, key) {
     if (error instanceof WaveError) return facts;
     throw error;
   }
+}
+
+/**
+ * The one `<key>-*` spec folder at `ref`, as `specDir` finds it in a checkout.
+ * @param {string} root
+ * @param {string} ref
+ * @param {string} key lower-cased
+ * @param {import("../adapters/tracker/index.mjs").KeyScheme} keys
+ */
+function specDirAt(root, ref, key, keys) {
+  const specs = specsDirs(root).dir;
+  const listed = git(root, ["ls-tree", "--name-only", `${ref}:${specs}`]);
+  const found = listed.ok ? listed.out.split("\n").filter((d) => keys.folderKey(d) === key) : [];
+  return found.length === 1 ? `${specs}/${found[0]}` : undefined;
 }
 
 /**
@@ -115,16 +139,18 @@ export function next({ cwd, key }) {
   const task = findTask(top.out, k);
   if (task.ok === false) return { ok: false, problem: task.problem };
   const root = task.path ?? top.out;
+  const ref = task.branch ? newest(task.root, task.branch, !!task.local) : undefined;
   let record;
   try {
-    record = task.branch
-      ? readRecordAt(task.root, newest(task.root, task.branch, !!task.local), k)
-      : readRecord(root, k);
+    record = ref ? readRecordAt(task.root, ref, k) : readRecord(root, k);
   } catch (error) {
     if (error instanceof RecordError) return { ok: false, problem: error.message };
     throw error;
   }
-  const step = nextStep(record ?? emptyRecord(k), specFacts(root, k));
+  const step = nextStep(
+    record ?? emptyRecord(k),
+    ref ? specFacts(task.root, k, ref) : specFacts(root, k),
+  );
   return {
     ok: true,
     key: k,
