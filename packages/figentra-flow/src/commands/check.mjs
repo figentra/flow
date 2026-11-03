@@ -29,9 +29,13 @@ import { overridesReport } from "./validate.mjs";
 export function check(root, now = new Date()) {
   const config = loadConfig(root);
   const overrides = overridesReport(root);
-  const problems = [...config.errors, ...overrides.problems, ...installProblems(root)];
   const unresolved = profileProblem(root);
-  if (unresolved) problems.push(unresolved);
+  const problems = [
+    ...config.errors,
+    ...(unresolved ? [unresolved] : []),
+    ...overrides.problems,
+    ...installProblems(root),
+  ];
   const warnings = [...config.warnings, ...overrides.warnings];
   for (const o of overrides.overrides) {
     const state = reviewState(o, now);

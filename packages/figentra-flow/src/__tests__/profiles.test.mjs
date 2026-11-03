@@ -6,7 +6,7 @@
  *   `sync` renders only the selected profile's skills and agents, records the profile in the lock, and refuses, writing
  *   nothing, an unknown profile or an unreadable preset.yml; `validate` and `check` name an unknown profile, and
  *   `check` a profile changed without a sync; the overrides apply to what the profile selects, and one on an output
- *   it drops is refused (FR-4).
+ *   or a source it drops is refused (FR-4).
  * Boundary: temporary folders; no process, no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
@@ -205,7 +205,7 @@ function override(root, path, text) {
 }
 
 // @covers sta-1945:FR-4
-test("sync: the overrides apply to what the profile selects; validate refuses one on an output it drops", (t) => {
+test("sync: the overrides apply to what the profile selects; validate refuses one on an output or a source it drops", (t) => {
   const root = governed(t, { own: true, config: { profile: "lean" } });
   writeFileSync(join(root, OWN_PRESET, "preset.yml"), LEAN);
   override(
@@ -226,6 +226,16 @@ test("sync: the overrides apply to what the profile selects; validate refuses on
   );
   assert.deepEqual(validateRepo(root).problems, [
     ".flow/overrides/agents/ci.yml: extend .claude/agents/ci-steward.md: fflow renders no such output (`fflow diff` lists them)",
+  ]);
+  // A replaced source the profile drops would change nothing, so it is refused too.
+  writeFileSync(join(root, ".flow/overrides/agents/ci.md"), "Ours.\n");
+  override(
+    root,
+    "agents/ci.yml",
+    "kind: replace\ntarget: agents/ci-steward.md\nfile: agents/ci.md\nreason: ours\nowner: o\nreview: 2027-01-31\n",
+  );
+  assert.deepEqual(validateRepo(root).problems, [
+    ".flow/overrides/agents/ci.yml: replace agents/ci-steward.md: the preset has no such source",
   ]);
   // An unknown profile is named once; the overrides' targets wait until it resolves.
   const config = join(root, "flow.config.json");

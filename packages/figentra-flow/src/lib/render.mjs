@@ -277,25 +277,30 @@ function presetDocs(root, folder, source) {
 
 /**
  * What an override may target besides a rendered output: the preset's sources (`commands/`, `agents/`, `rules/`
- * and `templates/` `<name>.md`, Flow's base templates among them) and the parameter blocks `preset.yml` declares.
+ * and `templates/` `<name>.md`, Flow's base templates among them; a command or agent only when the profile selects
+ * it, since `sync` reads no other) and the parameter blocks `preset.yml` declares.
  * @param {string} root
  * @returns {{ sources: Set<string>, params: Record<string, any> }}
- * @throws {ConfigError} when `preset.yml` is outside the YAML subset (`presetManifest`)
+ * @throws {ConfigError} when the profile is unresolved or `preset.yml` is outside the YAML subset (`selectedProfile`)
  */
 export function presetTargets(root) {
   const dir = presetDir(root);
+  const profile = selectedProfile(root);
   /** @type {Set<string>} */
   const sources = new Set();
-  for (const [folder, base] of [
-    ["commands", dir],
-    ["agents", dir],
+  /** @type {[string, string, import("./profiles.mjs").ProfileKind?][]} */
+  const folders = [
+    ["commands", dir, "skills"],
+    ["agents", dir, "agents"],
     ["rules", dir],
     ["templates", dir],
     ["templates", FLOW_ASSETS],
-  ])
+  ];
+  for (const [folder, base, kind] of folders)
     if (existsSync(join(base, folder)))
       for (const f of readdirSync(join(base, folder)))
-        if (f.endsWith(".md")) sources.add(`${folder}/${f}`);
+        if (f.endsWith(".md") && (!kind || selects(profile, kind, f.slice(0, -3))))
+          sources.add(`${folder}/${f}`);
   return { sources, params: presetManifest(root)?.parameters ?? {} };
 }
 
