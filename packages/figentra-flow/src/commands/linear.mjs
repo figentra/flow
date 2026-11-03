@@ -38,6 +38,22 @@ export function unlinkedTasks(text) {
     .map(({ m, i }) => ({ index: i, id: m[1], title: m[2].trim() }));
 }
 
+/** The longest Linear title a task gets; Linear refuses long titles ("Argument Validation Error"). */
+export const TITLE_LIMIT = 120;
+
+/**
+ * A task's Linear title: its id and the first clause of its text (up to the first `. `, `; `, `: `, ` — ` or ` (`),
+ * cut at a word to `TITLE_LIMIT` characters with `…`. The whole line goes in the description.
+ */
+export function taskTitle(/** @type {string} */ id, /** @type {string} */ text) {
+  const clause = text.split(/[.;:]\s|\s—\s|\s\(/)[0].trim() || text.trim();
+  const title = `${id} ${clause}`;
+  if (title.length <= TITLE_LIMIT) return title;
+  const cut = title.slice(0, TITLE_LIMIT - 1);
+  const space = cut.lastIndexOf(" ");
+  return `${space > id.length ? cut.slice(0, space) : cut}…`;
+}
+
 /** Issues this script creates carry `agent` when an agent runs it (ADR 0121 D14), like `pnpm linear create`. */
 export const labelsFor = (env = process.env) => (isAgent(env) ? ["agent"] : []);
 
@@ -77,14 +93,15 @@ async function main([mode, file, ...flags]) {
   const todo = unlinkedTasks(lines.join("\n"));
   if (dry) {
     for (const t of todo)
-      console.log(`[dry-run] would create sub-issue of ${links.key}: ${t.id} ${t.title}`);
+      console.log(`[dry-run] would create sub-issue of ${links.key}: ${taskTitle(t.id, t.title)}`);
     return 0;
   }
   const L = linear(client());
   const parent = (await L.issue(links.key))?.id;
   if (!parent) throw new Error(`${links.key} not found in Linear`);
   for (const t of todo) {
-    const issue = await createIssue(L, links, `${t.id} ${t.title}`, `Spec ${links.key}`, parent);
+    const description = `${t.id} ${t.title}\n\nSpec ${links.key}`;
+    const issue = await createIssue(L, links, taskTitle(t.id, t.title), description, parent);
     lines[t.index] += ` [${issue.identifier}]`;
     writeFileSync(file, lines.join("\n"));
     console.log(`${t.id} -> ${issue.identifier}`);

@@ -1,6 +1,7 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `fflow resume <key>` (FR-13, AC-13): re-enters the stage a dead session left half done. It finds the
+ * Purpose: `fflow resume <key>` (FR-13, AC-13; declared in src/lib/console.mjs, which refuses a failed `resume` and
+ *   has `show` print the rest): re-enters the stage a dead session left half done. It finds the
  *   task's worktree (this checkout, a linked worktree, or a new one in `.claude/worktrees/` from the branch a stopped
  *   session pushed), fast-forwards it to the pushed branch (refusing when the two have diverged), reads Flow's record
  *   there and, when the recorded stage is active or failed, re-runs that
@@ -19,7 +20,6 @@ import { fileURLToPath } from "node:url";
 
 import { schemeFor } from "../adapters/tracker/index.mjs";
 import { findTask, specFacts } from "./next.mjs";
-import { say } from "../lib/cli.mjs";
 import { fetch, git, mainCheckout } from "../lib/git.mjs";
 import { NAME } from "../lib/product.mjs";
 import { commitRecord, readRecord, RecordError, updateRecord } from "../lib/record.mjs";
@@ -143,39 +143,33 @@ export function resume({ cwd, key, run: runCommand = runStep }) {
   };
 }
 
-/** @param {string[]} args */
-export async function run(args = []) {
-  const key = args.find((a) => !a.startsWith("--"));
-  if (!key) {
-    console.error(`usage: ${NAME} resume <issue-key>`);
-    return 2;
-  }
-  const result = resume({ cwd: process.cwd(), key });
-  if (result.ok === false) {
-    console.error(`${NAME} resume: ${result.problem}`);
-    return 1;
-  }
-  if (result.made) say("checking", `worktree ready at ${result.path}`);
+/**
+ * `fflow resume`'s output, once `resume` re-entered the task: the command to continue with, or the re-run's outcome
+ * and where its record stands.
+ * @param {import("../lib/console.mjs").Io} io
+ * @param {string} key
+ * @param {Extract<ReturnType<typeof resume>, { ok: true }>} result
+ * @returns {number}
+ */
+export function show(io, key, result) {
+  if (result.made) io.output.info(`worktree ready at ${result.path}`);
   if (!result.ran) {
-    say("waiting", `${key.toUpperCase()}: ${result.stage}; continue with:`);
-    console.log(result.command);
+    io.output.line(`${key.toUpperCase()}: ${result.stage}; continue with:`);
+    io.output.line(result.command);
     return 0;
   }
-  say(
-    result.exit === 0 ? "approved" : "blocked",
-    `${result.stage}: \`${result.command}\` exited ${result.exit}`,
-  );
+  const outcome = `${result.stage}: \`${result.command}\` exited ${result.exit}`;
+  if (result.exit === 0) io.output.success(outcome);
+  else io.output.error(outcome);
   if (result.hooks !== undefined)
-    say(
-      "blocked",
+    io.output.error(
       `the hooks refused the record's commit: ${result.hooks}; the record stays in the worktree, uncommitted`,
     );
   else if (result.uncommitted)
-    say(
-      "blocked",
+    io.output.error(
       `the record was not committed: ${result.problem}; it stays in the worktree, uncommitted`,
     );
   else if (!result.pushed)
-    say("waiting", `the record is committed but not pushed: ${result.problem}`);
+    io.output.warn(`the record is committed but not pushed: ${result.problem}`);
   return result.exit === 0 ? 0 : 1;
 }

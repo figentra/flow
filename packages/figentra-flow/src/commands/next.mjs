@@ -1,6 +1,7 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `fflow next [<key>] [--json]` (FR-13): the task's current stage and the command that moves it on, read
+ * Purpose: `fflow next [<key>] [--json]` (FR-13; declared in src/lib/console.mjs, which refuses a failed `next`
+ *   and has `show` print the rest): the task's current stage and the command that moves it on, read
  *   from Flow's record and the spec's `**Status**`; the key defaults to the branch's. The record is read where the
  *   task lives: its checkout, else its branch (the newer of the local and the last fetched pushed one). It warns when
  *   the record has commits origin does not.
@@ -14,7 +15,6 @@ import { join } from "node:path";
 
 import { schemeFor } from "../adapters/tracker/index.mjs";
 import { specDir, statusOf } from "./gate.mjs";
-import { say } from "../lib/cli.mjs";
 import { git, mainCheckout, worktrees } from "../lib/git.mjs";
 import { NAME } from "../lib/product.mjs";
 import { emptyRecord, readRecord, readRecordAt, RecordError, unpushed } from "../lib/record.mjs";
@@ -123,28 +123,23 @@ export function next({ cwd, key }) {
   };
 }
 
-/** @param {string[]} args */
-export async function run(args = []) {
-  const key = args.find((a) => !a.startsWith("--"));
-  const result = next({ cwd: process.cwd(), key });
-  if (result.ok === false) {
-    console.error(`${NAME} next: ${result.problem}`);
-    return 1;
+/**
+ * `fflow next`'s output, once `next` found the step: the stage and the command that moves it on; `--json` writes
+ * them as the console's data.
+ * @param {import("../lib/console.mjs").Io} io
+ * @param {Extract<ReturnType<typeof next>, { ok: true }>} result
+ */
+export function show(io, result) {
+  if (io.json) {
+    io.output.json({ ...result, ok: undefined });
+    return;
   }
-  if (args.includes("--json")) {
-    console.log(JSON.stringify({ schema: `${NAME}.next/1`, ...result, ok: undefined }, null, 2));
-    return 0;
-  }
-  const shown = result.key.toUpperCase();
-  say(
-    result.state === "failed" ? "blocked" : result.state === "waiting" ? "waiting" : "checking",
-    `${shown}: ${result.stage}${result.recorded ? ` (${result.state})` : " (no record yet)"}`,
+  io.output.line(
+    `${result.key.toUpperCase()}: ${result.stage}${result.recorded ? ` (${result.state})` : " (no record yet)"}`,
   );
-  console.log(result.command);
+  io.output.line(result.command);
   if (result.unpushed)
-    say(
-      "waiting",
+    io.output.warn(
       `the record has commits origin lacks: push the branch (\`${NAME} session stop\` retries)`,
     );
-  return 0;
 }

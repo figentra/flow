@@ -8,6 +8,10 @@
  */
 // @covers sta-1729:AC-028 sta-163:FR-001 sta-163:FR-002 sta-163:FR-003 sta-163:FR-004 sta-163:FR-005 sta-163:FR-008
 // @covers sta-163:P-001 sta-163:P-002 sta-163:P-003 sta-163:P-005 sta-163:P-006 sta-163:P-007
+// FR-30 and P-034 are not claimed: contract drift (T047) and edited approvals (T048) are not built yet.
+// @covers sta-1945:FR-26 sta-1945:FR-27 sta-1945:FR-28 sta-1945:FR-29
+// @covers sta-1945:AC-28 sta-1945:AC-29 sta-1945:AC-30 sta-1945:AC-31 sta-1945:AC-32
+// @covers sta-1945:P-032 sta-1945:P-033
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -23,21 +27,35 @@ import {
   checkTraceTasks,
   DESIGN_SECTIONS,
   checkBranch,
+  DOCUMENT_GATES_SINCE,
   checkBug,
+  checkComponents,
+  clarifiedBefore,
   checkForeignStatus,
   checkLane,
+  checkPlaceholders,
+  checkScope,
+  checkSources,
   checkSpec,
   checkStage,
   checkTasks,
   checkTier,
+  checkVague,
   computedTier,
   isOwnSpec,
+  qualityWords,
   refsKeys,
   specDir,
   tierOf,
 } from "../commands/gate.mjs";
 import { keyScheme } from "../adapters/tracker/index.mjs";
-import { labelsFor, specLinks, unlinkedTasks } from "../commands/linear.mjs";
+import {
+  labelsFor,
+  specLinks,
+  taskTitle,
+  TITLE_LIMIT,
+  unlinkedTasks,
+} from "../commands/linear.mjs";
 import { init } from "../commands/init.mjs";
 import { FLOW_ASSETS } from "../lib/flow-dir.mjs";
 import { installProblems } from "../lib/render.mjs";
@@ -325,7 +343,7 @@ test("specDir names the folder from the branch key, reuses an existing one, and 
     assert.deepEqual(specDir({ root, branch: "figentra/sta-7-foo", slug: "foo" }), {
       dir: ".agents/specs/sta-7-foo",
     });
-    assert.match(specDir({ root, branch: "figentra/sta-7-foo" }).error, /--slug/);
+    assert.match(specDir({ root, branch: "figentra/sta-7-foo" }).fix ?? "", /--slug/);
     assert.match(specDir({ root, branch: "main", slug: "foo" }).error, /no issue key/);
     mkdirSync(join(root, ".agents/specs/sta-7-bar"), { recursive: true });
     assert.deepEqual(specDir({ root, key: "STA-7" }), { dir: ".agents/specs/sta-7-bar" });
@@ -452,6 +470,18 @@ test("spec-linear parses links and finds unlinked tasks", () => {
     tasks.map((t) => t.id),
     ["T001", "T003", "T004", "T005"],
   );
+});
+
+test("spec-linear titles a task with its id and first clause, at most 120 characters", () => {
+  assert.equal(taskTitle("T001", "One"), "T001 One");
+  assert.equal(
+    taskTitle("T004", "Add the gate: it runs every shard (FR-15) and posts one status"),
+    "T004 Add the gate",
+  );
+  const long = taskTitle("T090", `${"word ".repeat(60)}end`);
+  assert.ok(long.length <= TITLE_LIMIT, `${long.length} > ${TITLE_LIMIT}`);
+  assert.ok(long.startsWith("T090 word") && long.endsWith("…"));
+  assert.ok(!/\s…$/.test(long), "cut at a word, not after a space");
 });
 
 test("spec-gate plan exits 1 on a pending spec, and spec-linear --dry-run needs no token", () => {
@@ -602,4 +632,278 @@ test("trace: each task covers an AC and names a file; each AC is covered", () =>
       "tasks.md: AC-001 is covered by no task",
     ],
   );
+});
+
+// STA-1945 FR-26 to FR-30: documents specific enough to check.
+const REQUIREMENTS =
+  "- **FR-001**: WHEN a pass is issued THE wallet SHALL show it fast.\n- **FR-002**: WHEN a pass expires THE wallet SHALL hide it.\n";
+/** A spec of `tier` at `stage` with two FRs, the criteria and `extra` under its requirements. */
+const documented = (tier, stage, extra = "") =>
+  spec({ stage })
+    .replace("**Linear**", `**Tier**: ${tier}\n\n**Linear**`)
+    .replace("## Requirements\n", `## Requirements\n\n${REQUIREMENTS}\n${extra}\n${CRITERIA}\n`);
+const SOURCES = "### Sources\n\n- `src/wallet.ts` and STA-12: FR-1 to FR-2\n";
+
+test("placeholders: template text, an empty mandatory section and an open question are refused (FR-28)", () => {
+  assert.deepEqual(checkPlaceholders("## Summary\n\nThe wallet shows a pass.\n"), []);
+  assert.deepEqual(checkPlaceholders("## Summary\n\nCreated on [DATE].\n"), [
+    "the template placeholder `[DATE]` remains",
+  ]);
+  assert.deepEqual(checkPlaceholders("## Summary\n\nThe template's `[DATE]` field.\n"), []);
+  assert.deepEqual(checkPlaceholders("- [ ] T001 [P] Do it\n- [x] T002 Done\n"), []);
+  assert.deepEqual(
+    checkPlaceholders(
+      "## Requirements _(mandatory)_\n\n<!-- guidance -->\n\n## Out of scope\n\nx\n",
+    ),
+    ["the mandatory section `Requirements _(mandatory)_` is empty"],
+  );
+  assert.deepEqual(
+    checkPlaceholders("## Requirements _(mandatory)_\n\n### Functional\n\n- **FR-001**: x\n"),
+    [],
+  );
+  assert.deepEqual(checkPlaceholders("## Open questions\n\nNone.\n"), []);
+  assert.deepEqual(checkPlaceholders("## Open questions\n\nNone: D5 decided them all.\n"), []);
+  assert.deepEqual(
+    checkPlaceholders("## Open questions\n\n#### Decided\n\n- ~~Which port?~~ Decided: 8080\n"),
+    [],
+  );
+  assert.deepEqual(checkPlaceholders("## Open questions\n\n- Which port?\n- Who owns it?\n"), [
+    'an open question remains: "Which port?" (decide it before the approval)',
+    'an open question remains: "Who owns it?" (decide it before the approval)',
+  ]);
+});
+
+test("sources: a `### Sources` section that cites every live FR, alone or in a range (FR-26)", () => {
+  assert.deepEqual(checkSources(REQUIREMENTS), [
+    "spec.md: no `### Sources` section naming the files, ADRs, commands and issues the spec rests on (FR-26)",
+  ]);
+  assert.match(checkSources(`${REQUIREMENTS}\n### Sources\n\nNone.\n`).join(), /no `### Sources`/);
+  assert.deepEqual(checkSources(`${REQUIREMENTS}\n${SOURCES}`), []);
+  // a subsection is part of the section; the next `###` ends it
+  assert.deepEqual(
+    checkSources(
+      `${REQUIREMENTS}\n### Sources\n\n#### Files\n\n- \`src/wallet.ts\`: FR-1 to FR-2\n\n### Next\n\nFR-9\n`,
+    ),
+    [],
+  );
+  assert.deepEqual(
+    checkSources(`${REQUIREMENTS}\n### Sources\n\n- x: FR-1\n\n### Next\n\nFR-2\n`).length,
+    1,
+  );
+  assert.deepEqual(checkSources(`${REQUIREMENTS}\n### Sources\n\n- ADR 0502: FR-001\n`), [
+    'spec.md: FR-002 cites no source (name it in `### Sources`, alone or in a range such as "FR-1 to FR-12")',
+  ]);
+  assert.deepEqual(
+    checkSources(
+      `${REQUIREMENTS}- ~~**FR-003**~~: (A-1) struck.\n\n### Sources\n\n- x: FR-1, FR-2\n`,
+    ),
+    [],
+  );
+});
+
+test("components: each component of a plan has a folder tree and its interfaces (FR-27)", () => {
+  const tree = "```text\nsrc/wallet.ts (new)\n```\n";
+  const code = "```ts\nexport function show(pass: Pass): void;\n```\n";
+  const plan = (/** @type {string} */ body) =>
+    `## Summary\n\nx\n\n## Components and responsibilities\n\n### C1 Wallet\n\n${body}\n## Files and folders\n\nx\n`;
+  assert.deepEqual(checkComponents(plan(`${tree}\n${code}`)), []);
+  assert.deepEqual(checkComponents(plan(code)), [
+    "plan.md: component `C1 Wallet` has no folder tree (a ```text block of every file it adds) (FR-27)",
+  ]);
+  const noInterface =
+    "plan.md: component `C1 Wallet` has no interface declarations (a fenced block in the repository's language) (FR-27)";
+  assert.deepEqual(checkComponents(plan(tree)), [noInterface]);
+  // a diagram, data or shell block declares no interface
+  for (const lang of ["mermaid", "yaml", "json", "sh", "md"])
+    assert.deepEqual(
+      checkComponents(plan(`${tree}\n\`\`\`${lang}\nx\n\`\`\`\n`)),
+      [noInterface],
+      lang,
+    );
+  assert.deepEqual(checkComponents("## Summary\n\nx\n"), []);
+  // fences indented in a list item count; a ````md block quoting a ``` one is one block
+  const indent = (/** @type {string} */ s) => s.replaceAll(/^(?=.)/gm, "  ");
+  assert.deepEqual(
+    checkComponents(plan(`- The tree:\n${indent(tree)}- The interface:\n${indent(code)}`)),
+    [],
+  );
+  assert.deepEqual(checkComponents(plan(`\`\`\`\`md\n${tree}\`\`\`\`\n\n${code}`)), [
+    "plan.md: component `C1 Wallet` has no folder tree (a ```text block of every file it adds) (FR-27)",
+  ]);
+});
+
+test("vague words: listed terms in FR and AC lines fail a big spec and warn on the others (FR-29)", () => {
+  const text = [
+    "- **AC-001**: WHEN a pass is issued THE wallet SHALL show it fast",
+    "  and refresh it as needed",
+    "- ~~**FR-002**~~: (A-1) fast, struck",
+    "- **FR-003**: THE `fast` flag SHALL exist for breakfast",
+    "- **SC-001**: fast",
+    "",
+    "Fast prose is not a requirement.",
+  ].join("\n");
+  const found = [
+    'spec.md: AC-001 uses the vague term "fast" (state a measurable value; the preset\'s quality-words.yml has an example) (FR-29)',
+    'spec.md: AC-001 uses the vague term "as needed" (state a measurable value; the preset\'s quality-words.yml has an example) (FR-29)',
+  ];
+  const words = ["fast", "as needed"];
+  assert.deepEqual(checkVague(text, words, "big"), { problems: found, warnings: [] });
+  assert.deepEqual(checkVague(text, words, "feature"), { problems: [], warnings: found });
+  assert.deepEqual(checkVague(text, [], "big"), { problems: [], warnings: [] });
+  assert.deepEqual(checkVague("- **NFR-1**: THE API SHALL be fast.", words, "big").problems, [
+    'spec.md: NFR-1 uses the vague term "fast" (state a measurable value; the preset\'s quality-words.yml has an example) (FR-29)',
+  ]);
+  const listed = qualityWords();
+  for (const w of ["fast", "as needed", "user-friendly"]) assert.ok(listed.includes(w), w);
+});
+
+test("checkStage: Sources at Clarified, placeholders at the approval stop, vague words by tier", () => {
+  const over = { team: null, words: ["fast"] };
+  assert.deepEqual(
+    checkStage("sta-12-x", documented("big", "Clarified", SOURCES), { ...over, words: [] }),
+    [],
+  );
+  assert.match(
+    checkStage("sta-12-x", documented("small", "Clarified"), over).join(),
+    /no `### Sources` section/,
+  );
+  assert.match(
+    checkStage("sta-12-x", documented("big", "Clarified", SOURCES), over).join(),
+    /FR-001 uses the vague term "fast"/,
+  );
+  /** @type {string[]} */
+  const warned = [];
+  const feature = checkStage("sta-12-x", documented("feature", "Clarified", SOURCES), {
+    ...over,
+    warn: (w) => warned.push(w),
+  });
+  assert.doesNotMatch(feature.join(), /vague/);
+  assert.match(warned.join(), /FR-001 uses the vague term "fast"/);
+  // big stops at Clarified; feature first stops at Planned.
+  const dated = `${SOURCES}\nCreated on [DATE].\n`;
+  assert.match(
+    checkStage("sta-12-x", documented("big", "Clarified", dated), over).join(),
+    /spec\.md: the template placeholder `\[DATE\]` remains/,
+  );
+  assert.doesNotMatch(
+    checkStage("sta-12-x", documented("feature", "Clarified", dated), over).join(),
+    /placeholder/,
+  );
+  // At Planned the feature spec is approved, and so is the plan: its placeholders, questions and components.
+  const planned = { ...over, words: [], files: ["spec.md", "plan.md"] };
+  assert.match(
+    checkStage("sta-12-x", documented("feature", "Planned", dated), planned).join(),
+    /spec\.md: the template placeholder `\[DATE\]` remains/,
+  );
+  const plan =
+    "## Components and responsibilities\n\n### C1 Wallet\n\n```text\nsrc/wallet.ts (new)\n```\n\n```mermaid\nsequenceDiagram\n```\n\nCreated on [DATE].\n\n## Open questions\n\n- Which port?\n";
+  for (const tier of ["feature", "big"]) {
+    const found = checkStage("sta-12-x", documented(tier, "Planned", SOURCES), {
+      ...planned,
+      plan,
+    }).join("\n");
+    assert.match(found, /plan\.md: the template placeholder `\[DATE\]` remains/, tier);
+    assert.match(found, /plan\.md: an open question remains: "Which port\?"/, tier);
+    assert.match(found, /plan\.md: component `C1 Wallet` has no interface declarations/, tier);
+  }
+});
+
+test("checkStage: a spec last clarified before the document gates keeps its old rules", () => {
+  const over = { team: null, words: ["fast"] };
+  const on = (/** @type {string} */ day) =>
+    checkStage(
+      "sta-12-x",
+      documented("big", "Clarified").replace("- d · Draft →", `- ${day} · Draft →`),
+      over,
+    ).join();
+  assert.doesNotMatch(on("2026-11-01"), /Sources|vague/);
+  assert.match(on(DOCUMENT_GATES_SINCE), /no `### Sources` section/);
+  assert.match(on(DOCUMENT_GATES_SINCE), /vague term "fast"/);
+  // a later re-clarification (after an amendment) is held to the new rules
+  assert.equal(
+    clarifiedBefore(
+      "- 2026-11-01: Draft → Clarified\n- 2026-11-03: Draft → Clarified\n",
+      "2026-11-03",
+    ),
+    false,
+  );
+  assert.equal(clarifiedBefore("- 2026-11-01: Draft → Clarified\n", "2026-11-03"), true);
+  assert.equal(clarifiedBefore("- d · Draft → Clarified\n", "2026-11-03"), false);
+});
+
+test("gate ci: scope drift in the branch's own spec fails a big tier and warns on a feature one (FR-30, T049)", (t) => {
+  /** @type {NodeJS.ProcessEnv} */
+  const env = {
+    ...process.env,
+    NO_COLOR: "1",
+    STACKRA_BRANCH: "figentra/sta-12-x",
+    GIT_AUTHOR_NAME: "t",
+    GIT_AUTHOR_EMAIL: "t@t",
+    GIT_COMMITTER_NAME: "t",
+    GIT_COMMITTER_EMAIL: "t@t",
+  };
+  delete env.SPEC_GATE_REQUIRE_READY;
+  /** A repository whose main holds the spec at `tier`, and a branch that adds a named file and an unnamed one. */
+  const ci = (/** @type {string} */ tier) => {
+    const repo = mkdtempSync(join(tmpdir(), "flow-scope-"));
+    t.after(() => rmSync(repo, { recursive: true, force: true }));
+    const sh = (/** @type {string} */ cmd, /** @type {string[]} */ args) =>
+      spawnSync(cmd, args, { cwd: repo, encoding: "utf8", env });
+    const folder = join(repo, ".agents/specs/sta-12-x");
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(folder, "spec.md"), `# X\n\n**Status**: Tasked\n\n**Tier**: ${tier}\n`);
+    writeFileSync(join(folder, "tasks.md"), "- [ ] T001 Build `src/a.mjs` — covers: AC-001\n");
+    sh("git", ["init", "-q", "-b", "main"]);
+    sh("git", ["add", "-A"]);
+    sh("git", ["commit", "-q", "-m", "chore: spec"]);
+    sh("git", ["switch", "-q", "-c", "figentra/sta-12-x"]);
+    mkdirSync(join(repo, "src"));
+    writeFileSync(join(repo, "src/a.mjs"), "\n");
+    writeFileSync(join(repo, "src/b.mjs"), "\n");
+    sh("git", ["add", "-A"]);
+    sh("git", ["commit", "-q", "-m", "chore: build"]);
+    return sh(process.execPath, [BIN, "gate", "ci", "--base=main"]);
+  };
+  const big = ci("big");
+  assert.equal(big.status, 1, big.stderr);
+  assert.match(big.stderr, /spec-gate: scope drift: `src\/b\.mjs` is named by no task/);
+  assert.doesNotMatch(big.stderr, /src\/a\.mjs/);
+  const feature = ci("feature");
+  assert.equal(feature.status, 0, feature.stderr);
+  assert.match(
+    feature.stderr,
+    /spec-gate: warning: scope drift: `src\/b\.mjs` is named by no task/,
+  );
+});
+
+test("scope: a changed file no task names is drift, failing on big and warning otherwise (FR-30)", () => {
+  const tasks =
+    "- [ ] T001 Build `src/a.mjs` and `docs/` — covers: AC-001 — route: spec-task\n- [ ] ~~T002~~ Was `src/c.mjs` — covers: AC-001\n";
+  const changed = [
+    "src/a.mjs",
+    "src/b.mjs",
+    "src/c.mjs",
+    "docs/guide.md",
+    "src/__tests__/a.test.mjs",
+    ".changeset/a.md",
+    "pnpm-lock.yaml",
+    ".agents/specs/sta-12-x/plan.md",
+  ];
+  const drift = [
+    "scope drift: `src/b.mjs` is named by no task (amend the spec to add it) (FR-30)",
+    "scope drift: `src/c.mjs` is named by no task (amend the spec to add it) (FR-30)",
+  ];
+  const big = "**Status**: Tasked\n\n**Tier**: big\n";
+  assert.deepEqual(checkScope(big, tasks, changed), { problems: drift, warnings: [] });
+  assert.deepEqual(checkScope(big.replace("big", "feature"), tasks, changed), {
+    problems: [],
+    warnings: drift,
+  });
+  assert.deepEqual(checkScope(`**Tier**: small\n\n## Tasks\n\n${tasks}`, "", changed), {
+    problems: [],
+    warnings: drift,
+  });
+  const none = { problems: [], warnings: [] };
+  assert.deepEqual(checkScope("**Status**: Tasked\n", tasks, changed), none);
+  assert.deepEqual(checkScope(big, "", changed), none);
 });

@@ -14,3 +14,6 @@ session's title (its last `/rename`, ADR 0001) rather than its id, and kept as o
 push to the default branch, `gh pr merge`, and skipping the hooks (`LEFTHOOK=0` set as a variable, `--no-verify`,
 `commit -n`, a `core.hooksPath` override), also behind `env`, `command` or a program's path, each naming the Flow
 command to use instead.
+`next`, `resume`, `task start`, `task done` and `session stop` run on the console engine with declared arguments and
+options, so each has its own `--help` and a failure is one error block; `next --json` writes the console's
+`{ ok, data }`.

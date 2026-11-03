@@ -166,13 +166,13 @@ test("session stop: the name is the transcript's last title, not the session's i
   assert.equal(sessionTitle(transcript), NAME);
   // The hook's JSON carries both: the title wins over the id, and --session and the environment win over both.
   const event = { transcript_path: transcript, session_id: "abc" };
-  assert.equal(sessionName(["stop"], {}, event), NAME);
-  assert.equal(sessionName(["stop", "--session", "mine"], {}, event), "mine");
-  assert.equal(sessionName(["stop"], { [`${ENV_PREFIX}SESSION`]: "env" }, event), "env");
-  assert.equal(sessionName(["stop"], {}, { session_id: "abc" }), "abc");
-  assert.equal(sessionName(["stop"], {}, {}), "session");
+  assert.equal(sessionName(undefined, {}, event), NAME);
+  assert.equal(sessionName("mine", {}, event), "mine");
+  assert.equal(sessionName(undefined, { [`${ENV_PREFIX}SESSION`]: "env" }, event), "env");
+  assert.equal(sessionName(undefined, {}, { session_id: "abc" }), "abc");
+  assert.equal(sessionName(undefined, {}, {}), "session");
   writeFileSync(transcript, `${JSON.stringify({ type: "user", sessionId: "abc" })}\n`);
-  assert.equal(sessionName(["stop"], {}, event), "abc");
+  assert.equal(sessionName(undefined, {}, event), "abc");
   assert.equal(sessionTitle(transcript), undefined);
   assert.equal(sessionTitle(join(r.root, "..", "missing.jsonl")), undefined);
   assert.equal(sessionTitle(undefined), undefined);
