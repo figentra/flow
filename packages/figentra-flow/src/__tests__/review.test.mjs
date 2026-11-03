@@ -19,7 +19,14 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { blockingFindings } from "../commands/land.mjs";
-import { findingProblems, recordReview, reviewInput, REVIEWERS } from "../commands/review.mjs";
+import {
+  findingProblems,
+  recordReview,
+  ReviewError,
+  reviewInput,
+  REVIEWERS,
+  run,
+} from "../commands/review.mjs";
 import { readRecord } from "../lib/record.mjs";
 import { actor, aiReview } from "../lib/review.mjs";
 import { commit, repo, sh } from "./__fixtures__/repo.mjs";
@@ -209,11 +216,35 @@ test("review --record: a confirmed blocking finding fails the review and is reco
     },
   ]);
   assert.deepEqual(blockingFindings(record), ["correctness-1 in a.mjs:1: drops the error"]);
-  recordReview(root, 12, [finding({ confirmed: false })]);
+  recordReview(root, 12, []);
   const again = readRecord(root, "sta-7");
   assert.equal(again?.review.at(-1)?.verdict, "PASS");
   assert.deepEqual(again?.prs, [12]);
-  assert.deepEqual(blockingFindings(again), [], "the newest review counts");
+  assert.deepEqual(
+    blockingFindings(again),
+    ["correctness-1 in a.mjs:1: drops the error"],
+    "a second review of the same head does not clear a finding",
+  );
+  commit(root, "fix.mjs");
+  recordReview(root, 12, [finding({ confirmed: false })]);
+  assert.deepEqual(
+    blockingFindings(readRecord(root, "sta-7")),
+    [],
+    "a review of the new head clears it",
+  );
+});
+
+test("review: a branch with no issue key and a findings file that is not JSON are refused", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  assert.throws(() => reviewInput(r.root, 12), /no issue key in the branch `main`/);
+  assert.throws(() => recordReview(r.root, 12, []), ReviewError);
+  const bad = join(r.root, "findings.json");
+  writeFileSync(bad, "not json\n");
+  assert.equal(run(["12", "--record", bad]), 2);
+  assert.equal(run(["12", "--record", join(r.root, "missing.json")]), 2);
+  assert.equal(run(["12"]), 2, "neither --input nor --record");
+  assert.equal(run(["x", "--input"]), 2);
 });
 
 test("review --record: output that is not a list of findings is refused, each problem named, and nothing written", (t) => {

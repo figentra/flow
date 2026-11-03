@@ -5,10 +5,11 @@
  *   output). `--input` prints, as JSON, the spec's FRs and ACs, the documents to read and the size budget (a task's
  *   file count: the preset's `plan.maxFilesPerTask`, default 10). `--record` accepts the workflow's tasks.md only when
  *   `gate tasks` passes, every FR and AC is covered and each task holds its budget (P-020), then writes it into the
- *   spec folder and records the plan stage done.
+ *   spec folder and records the plan stage done. Readiness is the gate's own `checkSpec` and `checkApproval`.
  * Boundary: reads the spec folder, the preset and `.agents/routing.yaml`; `--record` writes the spec's tasks.md and
- *   Flow's record only, and nothing when it refuses. A small spec keeps its tasks in spec.md (ADR 0502), so it is
- *   refused.
+ *   Flow's record only, and nothing when it refuses (an unreadable record refuses before tasks.md is written). A small
+ *   spec keeps its tasks in spec.md (ADR 0502), and a tasks.md that already carries issue keys or progress markers is
+ *   not replaced, so both are refused.
  * Runtime: node
  * Governing contract: STA-1945 (FR-15, AC-21, P-020).
  * Secrets: none.
@@ -18,12 +19,14 @@ import { join } from "node:path";
 
 import { schemeFor } from "../adapters/tracker/index.mjs";
 import {
-  approvedAt,
+  checkApproval,
+  checkSpec,
   checkTasks,
   presetId,
   presetOf,
   RULES,
   specDir,
+  STATUSES,
   statusOf,
   tierOf,
 } from "./gate.mjs";
@@ -31,7 +34,7 @@ import { say } from "../lib/cli.mjs";
 import { presetDir } from "../lib/flow-dir.mjs";
 import { git } from "../lib/git.mjs";
 import { NAME } from "../lib/product.mjs";
-import { RecordError, updateRecord } from "../lib/record.mjs";
+import { readRecord, RecordError, updateRecord } from "../lib/record.mjs";
 import { definedIds, parseTasks, routes } from "../lib/spec-parse.mjs";
 import { parseYaml, YamlError } from "../lib/yaml.mjs";
 
@@ -41,14 +44,32 @@ export class PlanError extends Error {}
 /** A task's file count when the preset sets none (C14). */
 export const DEFAULT_BUDGET = 10;
 
-/** A backticked token naming a file or folder; a command in backticks (it has a space) is not one. */
-const PATHLIKE = /^[\w@.{},*/-]*[./][\w@.{},*/-]*$/;
+/**
+ * Whether a backticked token names a file: no space (a command has one), and an extension that starts with a letter,
+ * of at most four characters unless the token has a folder too. So `src/a.mjs`, `b.md` and `x/.gitignore` count, and
+ * `fflow/gate`, `gate.shard` and `0.3.0` do not.
+ * shortcut: reads the token's shape; a task field that lists its files when this miscounts a real plan.
+ * @param {string} p
+ */
+const isFile = (p) =>
+  /^[\w@.*/-]+$/.test(p) &&
+  (/\.[A-Za-z][A-Za-z0-9]{0,3}$/.test(p) || (p.includes("/") && /\.[A-Za-z][\w-]*$/.test(p)));
+
+/**
+ * A token with its `{a,b}` groups expanded: `x/{a,b}.md` names `x/a.md` and `x/b.md`.
+ * @param {string} p
+ * @returns {string[]}
+ */
+const braces = (p) => {
+  const m = p.match(/\{([^{}]*)\}/);
+  return m ? m[1].split(",").flatMap((alt) => braces(p.replace(m[0], () => alt))) : [p];
+};
 
 /**
  * The files a task names.
  * @param {import("../lib/spec-parse.mjs").Task} task
  */
-export const taskFiles = (task) => task.paths.filter((p) => PATHLIKE.test(p));
+export const taskFiles = (task) => task.paths.flatMap(braces).filter(isFile);
 
 /**
  * The preset's `plan.maxFilesPerTask`, else the default.
@@ -83,29 +104,28 @@ function locate(root, key) {
   const dir = found.dir;
   const read = (/** @type {string} */ name) =>
     existsSync(join(root, dir, name)) ? readFileSync(join(root, dir, name), "utf8") : "";
-  return { k, dir, spec: read("spec.md"), plan: read("plan.md") };
+  const rules = RULES[presetId(presetOf(root), root) ?? "neutral"] ?? RULES.neutral;
+  return { k, keys, rules, dir, spec: read("spec.md"), plan: read("plan.md") };
 }
 
 /**
- * Why `spec` may not take this step: its status is outside `statuses`, it is small, or it lacks an approval its tier
- * needs before `stage` ends (ADR 0502: big at Clarified; feature and big at Planned).
- * @param {string} spec
+ * Why the spec may not take this step, through the gate's own checks so the two cannot drift: it is small, its status
+ * is outside `statuses`, `checkSpec` fails (clarified, keyed, its Impact), or `checkApproval` fails for the status the
+ * step moves it to, `next` (ADR 0502: big needs its Clarified approval to plan; feature and big their Planned one to
+ * task). A spec with no tier needs no approval, as at the gate.
+ * @param {ReturnType<typeof locate>} at
  * @param {string[]} statuses
- * @param {"clarified" | "planned"} stage
+ * @param {"planned" | "tasked"} next
  */
-function notReady(spec, statuses, stage) {
+function notReady({ spec, keys, rules }, statuses, next) {
   const status = statusOf(spec);
-  const tier = tierOf(spec);
-  if (tier === "small") return ["a small spec keeps its tasks in spec.md's `## Tasks`"];
+  if (tierOf(spec) === "small") return ["a small spec keeps its tasks in spec.md's `## Tasks`"];
   if (!statuses.includes(status))
     return [
       `the spec is ${status || "without a status"}: this step runs at ${statuses.join(" or ")}`,
     ];
-  const stops = tier === "big" ? ["clarified", "planned"] : tier === "feature" ? ["planned"] : [];
-  return stops
-    .slice(0, stops.indexOf(stage) + 1)
-    .filter((s) => approvedAt(spec, s) === undefined)
-    .map((s) => `a ${tier} spec needs its ${s} approval ("Approved by <who> <YYYY-MM-DD>") first`);
+  const target = STATUSES.indexOf(status) > STATUSES.indexOf(next) ? status : next;
+  return [...checkSpec(spec, keys, rules), ...checkApproval(spec, target)];
 }
 
 /**
@@ -116,8 +136,9 @@ function notReady(spec, statuses, stage) {
  * @throws {PlanError} when there is no spec, or it is not approved for planning
  */
 export function planInput(root, key) {
-  const { dir, spec, plan } = locate(root, key);
-  const problems = notReady(spec, ["clarified", "planned", "tasked"], "clarified");
+  const at = locate(root, key);
+  const { dir, spec, plan } = at;
+  const problems = notReady(at, ["clarified", "planned", "tasked"], "planned");
   if (problems.length) throw new PlanError(problems.join("; "));
   return {
     frs: [...definedIds(spec, "FR").live],
@@ -135,12 +156,22 @@ export function planInput(root, key) {
  * @param {string} tasksText
  * @returns {string[]} problems; empty means recorded
  * @throws {PlanError} when there is no spec
+ * @throws {RecordError} when Flow's record cannot be read, before anything is written
  */
 export function recordPlan(root, key, tasksText) {
-  const { k, dir, spec, plan } = locate(root, key);
-  const problems = notReady(spec, ["planned", "tasked"], "planned");
+  const at = locate(root, key);
+  const { k, rules, dir, spec, plan } = at;
+  const problems = notReady(at, ["planned", "tasked"], "tasked");
   if (problems.length) return problems;
-  const rules = RULES[presetId(presetOf(root), root) ?? "neutral"] ?? RULES.neutral;
+  // `spec:linear tasks` appends ` [STA-m]` keys after Tasked, and `task` sets markers: a new plan would drop them.
+  const current = join(root, dir, "tasks.md");
+  const kept = existsSync(current)
+    ? parseTasks(readFileSync(current, "utf8")).filter((t) => t.key || t.marker !== " ")
+    : [];
+  if (kept.length)
+    return [
+      `tasks.md already carries issue keys or progress (${kept.map((t) => t.id).join(", ")}): a new plan would drop them, so edit tasks.md instead`,
+    ];
   const routing = join(root, ".agents/routing.yaml");
   const known = routes(existsSync(routing) ? readFileSync(routing, "utf8") : "");
   problems.push(...checkTasks(tasksText, { spec, plan, known, rules }));
@@ -157,7 +188,8 @@ export function recordPlan(root, key, tasksText) {
       );
   }
   if (problems.length) return problems;
-  writeFileSync(join(root, dir, "tasks.md"), tasksText);
+  readRecord(root, k); // throws on a record it could not update, before tasks.md is written
+  writeFileSync(current, tasksText);
   updateRecord(root, k, (r) => ({ ...r, stage: "plan", state: "done" }));
   return [];
 }

@@ -12,18 +12,31 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 
-import { DEFAULT_BUDGET, planInput, PlanError, recordPlan, taskFiles } from "../commands/plan.mjs";
-import { readRecord } from "../lib/record.mjs";
+import {
+  DEFAULT_BUDGET,
+  planInput,
+  PlanError,
+  recordPlan,
+  run,
+  taskFiles,
+} from "../commands/plan.mjs";
+import { readRecord, RecordError, recordPath } from "../lib/record.mjs";
 import { parseTasks } from "../lib/spec-parse.mjs";
 import { repo } from "./__fixtures__/repo.mjs";
 
 const DIR = ".agents/specs/sta-7-x";
 
-/** A spec at `status`, with one FR and two ACs. */
-const spec = (/** @type {string} */ status, /** @type {string} */ head = "") =>
-  `# x\n\n**Status**: ${status}\n${head}\n## Requirements\n\n- **FR-001**: WHEN a THE b SHALL c.\n\n` +
+/** A clarified, keyed spec at `status`, with one FR and two ACs. */
+const spec = (
+  /** @type {string} */ status,
+  /** @type {string} */ head = "",
+  /** @type {string} */ clarified = "**Clarifications status**: complete\n",
+) =>
+  `# x\n\n**Status**: ${status}\n**Linear**: STA-7\n${clarified}${head}\n## Requirements\n\n` +
+  `- **FR-001**: WHEN a THE b SHALL c.\n\n` +
   `## Acceptance criteria\n\n- **AC-001**: WHEN a THE b SHALL c.\n- **AC-002**: WHEN d THE e SHALL f.\n`;
 
 const TASKS = `# Tasks
@@ -54,10 +67,22 @@ test("plan --input: the FRs, ACs, documents and budget of an approved spec; a dr
   });
   assert.throws(() => planInput(setup(t, spec("Draft")), "STA-7"), /the spec is draft/);
   assert.throws(
-    () => planInput(setup(t, spec("Clarified", "**Tier**: big\n")), "STA-7"),
-    /big spec needs its clarified approval/,
+    () => planInput(setup(t, spec("Clarified", "**Tier**: big\n**Approver**: owner\n")), "STA-7"),
+    /needs the Clarified approval of a big spec/,
   );
-  assert.ok(planInput(setup(t, spec("Clarified", "**Tier**: feature\n")), "STA-7"));
+  assert.throws(
+    () => planInput(setup(t, spec("Clarified", "**Tier**: feature\n")), "STA-7"),
+    /a feature spec names its `\*\*Approver\*\*`/,
+    "the gate's own approval check, for the status planning moves the spec to",
+  );
+  assert.ok(
+    planInput(setup(t, spec("Clarified", "**Tier**: feature\n**Approver**: owner\n")), "STA-7"),
+  );
+  assert.throws(
+    () => planInput(setup(t, spec("Clarified", "", "")), "STA-7"),
+    /`\*\*Clarifications status\*\*` is not `complete`/,
+    "the gate's checkSpec",
+  );
   assert.throws(
     () => planInput(setup(t, spec("Planned", "**Tier**: small\n")), "STA-7"),
     /small spec/,
@@ -92,10 +117,10 @@ test("plan --record: an uncovered AC, an unknown id, a task over budget or an un
   assert.match(recordPlan(root, "STA-7", "# Tasks\n").join(), /no `- \[ \] T###` task lines/);
   assert.ok(!existsSync(join(root, DIR, "tasks.md")), "a refused plan writes no tasks.md");
   assert.equal(readRecord(root, "sta-7"), undefined, "nor the record");
-  const feature = setup(t, spec("Planned", "**Tier**: feature\n"));
+  const feature = setup(t, spec("Planned", "**Tier**: feature\n**Approver**: owner\n"));
   assert.match(
     recordPlan(feature, "STA-7", TASKS).join(),
-    /feature spec needs its planned approval/,
+    /needs the Planned approval of a feature spec/,
   );
   assert.match(
     recordPlan(setup(t, spec("Clarified")), "STA-7", TASKS).join(),
@@ -103,9 +128,46 @@ test("plan --record: an uncovered AC, an unknown id, a task over budget or an un
   );
 });
 
-test("plan: a task's files are its backticked paths, not its backticked commands", () => {
+test("plan --record: a tasks.md that carries issue keys or progress is not replaced", (t) => {
+  const root = setup(t, spec("Tasked"));
+  for (const kept of [
+    TASKS.replace("deps: T001", "deps: T001 [STA-8]"),
+    TASKS.replace("- [ ] T001", "- [x] T001"),
+  ]) {
+    writeFileSync(join(root, DIR, "tasks.md"), kept);
+    assert.match(
+      recordPlan(root, "STA-7", TASKS).join(),
+      /tasks\.md already carries issue keys or progress \(T00[12]\)/,
+    );
+    assert.equal(readFileSync(join(root, DIR, "tasks.md"), "utf8"), kept);
+  }
+  assert.equal(readRecord(root, "sta-7"), undefined);
+});
+
+test("plan --record: a record it cannot update refuses before tasks.md is written", (t) => {
+  const root = setup(t, spec("Planned"));
+  mkdirSync(dirname(recordPath(root, "sta-7")), { recursive: true });
+  writeFileSync(recordPath(root, "sta-7"), "{ not json\n");
+  assert.throws(() => recordPlan(root, "STA-7", TASKS), RecordError);
+  assert.ok(!existsSync(join(root, DIR, "tasks.md")));
+});
+
+test("plan: usage, and a --record file that does not exist, are refused", () => {
+  for (const args of [
+    [],
+    ["--input"],
+    ["STA-7"],
+    ["STA-7", "--input", "--record", "x.md"],
+    ["STA-7", "--record"],
+  ])
+    assert.equal(run(args), 2, args.join(" "));
+  assert.equal(run(["STA-7", "--record", join(tmpdir(), "fflow-no-such-tasks.md")]), 2);
+});
+
+test("plan: a task's files are its backticked paths with braces expanded, not its commands or other dotted names", () => {
   const [task] = parseTasks(
-    "- [ ] T001 `fflow plan <key>` in `src/a.mjs` and `b.md`, not `flow-tasks` — covers: FR-001\n",
+    "- [ ] T001 `fflow plan <key>` in `src/a.mjs`, `b.md` and `p/{stackra,neutral}/c.md`, " +
+      "not `flow-tasks`, `fflow/gate`, `gate.shard` or `0.3.0` — covers: FR-001\n",
   );
-  assert.deepEqual(taskFiles(task), ["src/a.mjs", "b.md"]);
+  assert.deepEqual(taskFiles(task), ["src/a.mjs", "b.md", "p/stackra/c.md", "p/neutral/c.md"]);
 });

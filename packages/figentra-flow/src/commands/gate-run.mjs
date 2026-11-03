@@ -8,10 +8,12 @@
  *   `gate run` only (the owner's option C1 of 2026-11-01; the hook guard refuses a direct poster call).
  *   `--shards <n>` (FR-15, a `command` runner only) fans the check out: the workspace's packages dealt into at most
  *   n groups, one `run … --json` call per group with `gate.shard`'s `{filters}`, all at once, and one `fflow/gate`
- *   status, green only when every shard exited 0 (AC-41); a shard with still no slot or healthy box (73, 75) posts
- *   nothing, since that is never a test failure.
+ *   status, green only when every shard exited 0 (AC-41), red when one failed; a shard with still no slot or healthy
+ *   box (73, 75) and no failed shard posts nothing, since that is never a test failure. The spec gate runs on the first
+ *   shard only.
  * Boundary: runs no check on the caller's machine (FR-9). Refuses a dirty tree, a detached head without `--ref`, a
- *   head that is not the remote branch tip, and a missing runner, before any box is claimed; a runner program that
+ *   head that is not the remote branch tip, a missing runner and, with `--shards`, a workspace pattern or package
+ *   folder it cannot read, before any box is claimed; a runner program that
  *   is not installed is refused after. Removes its temporary
  *   folder when the run ends.
  * Runtime: node
@@ -56,11 +58,16 @@ const POSTER = new URL("../lib/gate-post.mjs", import.meta.url);
 
 /**
  * The repository's check command: `check` (a shard's), else the configuration's `gate.check`, else `pnpm verify`,
- * followed by the spec gate where this package is installed.
+ * followed by the spec gate where this package is installed, unless `spec` is false (a shard after the first).
  * @param {string} dir
  * @param {string} [check]
+ * @param {boolean} [spec]
  */
-export function checkCommand(dir, check = loadConfig(dir).config.gate?.check ?? "pnpm verify") {
+export function checkCommand(
+  dir,
+  check = loadConfig(dir).config.gate?.check ?? "pnpm verify",
+  spec = true,
+) {
   /** @type {any} */
   let pkg = {};
   try {
@@ -68,7 +75,7 @@ export function checkCommand(dir, check = loadConfig(dir).config.gate?.check ?? 
   } catch {
     // no package.json: the default command, which will fail loudly on the box
   }
-  const installed = Boolean(pkg.devDependencies?.[PACKAGE] ?? pkg.dependencies?.[PACKAGE]);
+  const installed = spec && Boolean(pkg.devDependencies?.[PACKAGE] ?? pkg.dependencies?.[PACKAGE]);
   return `pnpm install --frozen-lockfile && ${check}${installed ? ` && pnpm exec ${NAME} gate ci` : ""}`;
 }
 
@@ -108,7 +115,7 @@ export const slugOf = (url) => url.match(/github\.com[:/]+([^/]+\/[^/]+?)(?:\.gi
  * @param {NonNullable<import("../adapters/runner/index.mjs").Runner["start"]>} start
  * @param {string[][]} groups
  * @param {import("../adapters/runner/index.mjs").Job} job
- * @param {(group: string[]) => string} check
+ * @param {(group: string[], i: number) => string} check
  * @returns {Promise<import("../lib/shards.mjs").ShardResult[]>}
  */
 export function runShards(start, groups, job, check) {
@@ -117,7 +124,7 @@ export function runShards(start, groups, job, check) {
       const one = {
         ...job,
         label: `${job.label} shard ${i + 1}/${groups.length}`,
-        command: check(packages),
+        command: check(packages, i),
         flags: [...job.flags, "--json"],
       };
       let r = await start(one);
@@ -185,10 +192,12 @@ export async function gateRun(options) {
         code: 2,
         problem: `--shards needs "gate.shard" in ${CONFIG_FILE}: the check command, with {filters} for the shard's packages`,
       };
-    const packages = workspacePackages(root);
-    if (!packages?.length)
+    const workspace = workspacePackages(root);
+    if (workspace && "problem" in workspace)
+      return { code: 2, problem: `--shards: ${workspace.problem}` };
+    if (!workspace?.packages.length)
       return { code: 2, problem: "--shards needs pnpm-workspace.yaml naming the packages" };
-    groups = shard(packages, Math.min(options.shards, MAX_SHARDS));
+    groups = shard(workspace.packages, Math.min(options.shards, MAX_SHARDS));
   }
 
   const dir = mkdtempSync(join(tmpdir(), `${NAME}-gate-`));
@@ -234,8 +243,9 @@ export async function gateRun(options) {
     let code;
     if (groups && runner.start) {
       // AC-41: one status for every shard, green only when each passed; it goes to the poster as the check's log.
-      const results = await runShards(runner.start, groups, each, (g) =>
-        checkCommand(dir, shardCommand(template, g)),
+      // The spec gate reads the whole repository, so only the first shard runs it.
+      const results = await runShards(runner.start, groups, each, (g, i) =>
+        checkCommand(dir, shardCommand(template, g), i === 0),
       );
       const verdict = combine(results);
       for (const line of verdict.lines) console.error(`${NAME} gate run: ${line}`);

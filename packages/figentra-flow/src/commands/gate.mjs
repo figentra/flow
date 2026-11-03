@@ -565,12 +565,12 @@ export function ownerApprovalProblems(text, owner) {
 /**
  * The approval stops of ADR 0502: feature before Tasked; big before Planned and before Tasked; both name the Approver.
  * @param {string} text
+ * @param {string} [status] the status to check for (`plan` passes the one its step moves the spec to)
  * @returns {string[]}
  */
-export function checkApproval(text) {
+export function checkApproval(text, status = statusOf(text)) {
   const tier = tierOf(text);
   if (tier !== "feature" && tier !== "big") return [];
-  const status = statusOf(text);
   if (status === "abandoned" || status === "superseded") return [];
   const problems = [];
   if (atLeast(status, "planned") && !/^\*\*Approver\*\*:\s*\S/m.test(strip(text)))

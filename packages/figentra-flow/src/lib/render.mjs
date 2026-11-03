@@ -8,7 +8,8 @@
  *   and each rendered file's hash; `installProblems` is the check that replaces spec-kit's tripwire: no hand edit, no
  *   forgotten `sync`, and no spec-kit leftover. With a `.flow/readme.yml`, `README.md` is rendered too (STA-1879).
  * Boundary: `render` and `installProblems` read; `writeRendered` writes the rendered files and the lock and removes
- *   spec-kit's rendered `speckit-*` skills and commands. Nothing here deletes `.specify/` (that is `migrate`).
+ *   spec-kit's rendered `speckit-*` skills and commands, and the `flow-*` ones the lock lists, it no longer renders
+ *   and nobody edited (`flow-tasks`, STA-1945 FR-15). Nothing here deletes `.specify/` (that is `migrate`).
  * Runtime: node
  * Governing contract: ADR 0510; STA-1729 (F3).
  * Secrets: none.

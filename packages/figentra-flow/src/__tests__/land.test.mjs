@@ -20,10 +20,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { landOne, landRules, landStack, squashMessage } from "../commands/land.mjs";
-import { updateRecord } from "../lib/record.mjs";
+import { recordPath, updateRecord } from "../lib/record.mjs";
 
 /** The gate App login the configuration names. */
 const GATE_APP = "figentra-gate[bot]";
@@ -150,6 +150,7 @@ function world({
   moved = false,
   /** @type {{ filename: string, status: string }[]} */ files = [],
   blocked = false,
+  brokenRecord = false,
 } = {}) {
   const r = repo();
   const branch = "figentra/sta-5-land";
@@ -170,6 +171,13 @@ function world({
         },
       ],
     }));
+    sh(path, "add", "-A");
+    sh(path, "commit", "-q", "-m", "record");
+  }
+  // A record at the head that is not JSON: it could hide a finding.
+  if (brokenRecord) {
+    mkdirSync(dirname(recordPath(path, "sta-5")), { recursive: true });
+    writeFileSync(recordPath(path, "sta-5"), "{ not json\n");
     sh(path, "add", "-A");
     sh(path, "commit", "-q", "-m", "record");
   }
@@ -293,6 +301,28 @@ test("land: a confirmed blocking finding in the record at the head refuses the P
       blocking: [],
     }),
     [],
+  );
+});
+
+test("land: a record at the head that cannot be read refuses the PR, since it could hide a finding (STA-1945 AC-40)", async (t) => {
+  const w = world({ brokenRecord: true });
+  t.after(w.r.dispose);
+  const result = await landOne({
+    root: w.r.root,
+    repo: "figentra/flow",
+    base: "main",
+    number: 7,
+    gateApp: GATE_APP,
+    deps: { api: w.api, done: async () => {}, ...quiet },
+  });
+  assert.equal(result.code, 1);
+  assert.match(
+    result.problems?.join("\n") ?? "",
+    /the record at the head cannot be read: .*sta-5\.json: not valid JSON/,
+  );
+  assert.equal(
+    w.calls.some((c) => c.method === "PUT"),
+    false,
   );
 });
 

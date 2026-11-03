@@ -171,12 +171,19 @@ export function landRules({
 }
 
 /**
- * The confirmed blocking findings of a record's newest review, each as `<id> in <file>: <text>`; none without a
- * record or a review (AC-40).
+ * The confirmed blocking findings of every review recorded on the newest review's commit, each as
+ * `<id> in <file>: <text>`; none without a record or a review (AC-40). Only a review of a new head clears a finding:
+ * another review of the same commit cannot.
  * @param {import("../lib/record.mjs").FlowRecord | undefined} record
  */
-export const blockingFindings = (record) =>
-  (record?.review.at(-1)?.blocking ?? []).map((f) => `${f.id} in ${f.file}: ${f.text}`);
+export function blockingFindings(record) {
+  const newest = record?.review.at(-1);
+  const found = (record?.review ?? [])
+    .filter((r) => r.sha === newest?.sha)
+    .flatMap((r) => r.blocking ?? [])
+    .map((f) => `${f.id} in ${f.file}: ${f.text}`);
+  return [...new Set(found)];
+}
 
 /** The squash commit's message: one `Refs:` line and the co-author trailers of the PR's commits. */
 export function squashMessage(/** @type {string | undefined} */ key, /** @type {any[]} */ commits) {
