@@ -23,7 +23,7 @@
     ".claude/agents/linear-steward.md": "23e7fd872fc7659c1ed1edc01ca5b547609df92f03568cf84693b58c09c95a18",
     ".claude/rules/worktrees.md": "f99bce80073cc1790be0c322652ac9782292ae7074563e4cc730460be7d4b918",
     "README.md": "c9cb6c212e2e03d6ca32902eef622417784b5afd254da37754bae467830cbe6e",
-    ".github/workflows/fflow-approve.yml": "df9afc3bb392dfbe0d347b1d1d964c988df86cdda6b6bd5201cae0840e7720c8",
+    ".github/workflows/fflow-approve.yml": "307e5717af6d82ba9ad403af93a4345e669ce32c69885d4efa9505da4f3bb4f4",
     ".github/CODEOWNERS": "463c3a6887b2b0ee7a42ce65d42897d51bd467c24c54d77f7d73c1f9e26a4674"
   }
 }

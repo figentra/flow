@@ -12,7 +12,7 @@
  * Secrets: names the approving App's id and key secrets, which are distinct from any bot that pushes; holds no value.
  */
 import { SETUP_NODE } from "./gate-workflow.mjs";
-import { APPROVE_ENVIRONMENT, NAME, PACKAGE, REGISTRY } from "./product.mjs";
+import { APPROVE_ENVIRONMENT, NAME, NEVER_TOLERATED, PACKAGE, REGISTRY } from "./product.mjs";
 
 const APP_TOKEN =
   "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0";
@@ -20,9 +20,10 @@ const APP_TOKEN =
 /**
  * The workflow's YAML.
  * @param {{ version: string, integrity?: string, appId: string, privateKey: string,
- *           trusted?: Record<string, string>, ownerOnly?: string[] }} options the package version to run and its
- *   lockfile integrity (`sha512-…`; without one the workflow refuses to run), the App secret names, the trusted check
- *   sources (context to login) and the repository's extra owner-only globs
+ *           trusted?: Record<string, string>, ownerOnly?: string[], tolerate?: string[] }} options the package
+ *   version to run and its lockfile integrity (`sha512-…`; without one the workflow refuses to run), the App secret
+ *   names, the trusted check sources (context to login), the repository's extra owner-only globs and the required
+ *   checks a red main may excuse (`approve.tolerate`; none by default)
  */
 export function approveWorkflow({
   version,
@@ -31,9 +32,13 @@ export function approveWorkflow({
   privateKey,
   trusted = {},
   ownerOnly = [],
+  tolerate = [],
 }) {
   if (!/^(?:sha512-[A-Za-z0-9+/]+=*)?$/.test(integrity))
     throw new Error(`${PACKAGE}@${version}: "${integrity}" is not a sha512 integrity`);
+  const never = tolerate.filter((c) => NEVER_TOLERATED.includes(c));
+  if (never.length)
+    throw new Error(`approve.tolerate lists ${never.join(", ")}, which a red main never excuses`);
   const pkg = `${PACKAGE}@${version}`;
   const scope =
     PACKAGE.startsWith("@") && REGISTRY ? ` --${PACKAGE.split("/")[0]}:registry=${REGISTRY}` : "";
@@ -98,6 +103,7 @@ jobs:
           INTEGRITY: '${integrity}'
           TRUSTED: ${yamlJson(trusted)}
           OWNER_ONLY_EXTRA: ${yamlJson(ownerOnly)}
+          TOLERATE: ${yamlJson(tolerate)}
         run: |
           cd "$RUNNER_TEMP"
           [ -n "$INTEGRITY" ] || { echo "::error::no pinned integrity for ${pkg}; run ${NAME} sync where the lockfile resolves it"; exit 1; }

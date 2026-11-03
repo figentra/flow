@@ -363,6 +363,16 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "tolerate": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "not": {
+              "enum": ["Baseline", "fflow/gate"]
+            }
+          }
         }
       }
     },

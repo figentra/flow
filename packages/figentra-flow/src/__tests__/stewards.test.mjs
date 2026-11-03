@@ -5,7 +5,7 @@
  *   - a package.json's root scripts and a dependency moved off its catalog are findings;
  *   - CODEOWNERS maps every owner-only glob to the owner, with no catch-all;
  *   - the rendered workflow runs the pinned check in its environment with the approver's own secret names, and holds
- *     no value;
+ *     no value; it carries `approve.tolerate` (empty by default) and refuses one naming `Baseline` or `fflow/gate`;
  *   - `sync` renders each preset's stewards (neutral: git, ci, tracker; stackra: git, ci, linear), CODEOWNERS only
  *     with an owner, and refuses a secret name that is not one;
  *   - a repository override wins.
@@ -13,7 +13,7 @@
  * Runtime: node
  * Governing contract: ADR 0022; STA-1856.
  */
-// @covers sta-1856:FR-1 sta-1856:FR-4 sta-1856:FR-5 sta-1856:FR-6
+// @covers sta-1856:FR-1 sta-1856:FR-4 sta-1856:FR-5 sta-1856:FR-6 sta-1945:FR-22
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -160,6 +160,17 @@ test("approval workflow: the pinned check, in its environment, with the approver
   );
   assert.match(text, /TRUSTED: '\{"fflow\/gate":"figentra-gate\[bot\]"\}'/);
   assert.match(text, /OWNER_ONLY_EXTRA: '\["it''s\/\*\*"\]'/);
+  // STA-1945 FR-22: a red main excuses nothing unless `approve.tolerate` lists the check.
+  assert.match(text, /^ {10}TOLERATE: '\[\]'$/m);
+  assert.match(
+    approveWorkflow({ version: "1", appId: "A", privateKey: "B", tolerate: ["lint", "it's"] }),
+    /^ {10}TOLERATE: '\["lint","it''s"\]'$/m,
+  );
+  for (const never of ["Baseline", "fflow/gate"])
+    assert.throws(
+      () => approveWorkflow({ version: "1", appId: "A", privateKey: "B", tolerate: [never] }),
+      new RegExp(`approve\\.tolerate lists ${never}, which a red main never excuses`),
+    );
   assert.doesNotMatch(text, /actions\/checkout|pull_request_target|--admin/);
   assert.doesNotMatch(
     text,
@@ -197,7 +208,27 @@ test("sync renders each preset's stewards, the workflow with the approver's name
     assert.equal(existsSync(workflow), Boolean(owner));
     assert.equal(existsSync(join(root, ".github/CODEOWNERS")), Boolean(owner));
     if (owner) assert.match(readFileSync(workflow, "utf8"), /secrets\.FFLOW_APPROVER_APP_ID /);
+    if (owner) assert.match(readFileSync(workflow, "utf8"), /^ {10}TOLERATE: '\[\]'$/m);
   }
+});
+
+test("sync renders the config's approve.tolerate into the workflow", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "flow-tolerate-"));
+  t.after(() => rmSync(root, { recursive: true }));
+  writeFileSync(
+    join(root, "flow.config.json"),
+    JSON.stringify({
+      version: 1,
+      preset: "stackra",
+      apps: { owner: "figentra-usr" },
+      approve: { tolerate: ["lint"] },
+    }),
+  );
+  sync(root, { direct: true, log: () => {} });
+  assert.match(
+    readFileSync(join(root, ".github/workflows/fflow-approve.yml"), "utf8"),
+    /^ {10}TOLERATE: '\["lint"\]'$/m,
+  );
 });
 
 test("sync refuses a preset whose approval secret name is not a secret name", (t) => {

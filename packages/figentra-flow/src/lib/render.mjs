@@ -140,6 +140,7 @@ export function render(root, { direct = false } = {}) {
       // The gate's status counts only from the gate App; a repository adds its own sources in `approve.checks`.
       trusted: { ...(apps?.gate ? { [STATUS_CONTEXT]: apps.gate.login } : {}), ...approve?.checks },
       ownerOnly,
+      tolerate: approve?.tolerate,
     }),
   );
   // GitHub asks the owner for owner-only paths itself (with `require_code_owner_review`); no owner, no file.

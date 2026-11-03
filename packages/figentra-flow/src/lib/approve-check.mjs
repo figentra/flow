@@ -11,12 +11,14 @@
  *   - nothing between the merge base and that head is owner-only (paths, a rename's old path, root scripts, a
  *     dependency moved off its catalog);
  *   - every required check on that head is green from its trusted source, with one success, or it adds no new failure
- *     against the default branch's recorded baseline (STA-1945 FR-22): a required check that fails on the head and,
- *     from its trusted source, concluded `failure` on the baseline's commit too is not new, while the `Baseline`
- *     check, which the ruleset must then require, is green on the head and never tolerated itself (it compares each
- *     task with the baseline, a newly reached failure excepted). The tolerance is per check, so it is sound only for
- *     a check that runs no more than Baseline's tasks; `fflow/gate`, which runs the whole check command, is never
- *     tolerated. Without a baseline every required check must be green, as before;
+ *     against the default branch's recorded baseline (STA-1945 FR-22): a required check that fails on the head is
+ *     excused only when the repository lists it in `approve.tolerate` (rendered as `TOLERATE`; empty by default, so
+ *     nothing is), it concluded `failure`, from its trusted source, on the baseline's commit too, and the `Baseline`
+ *     check, which the ruleset must then require, is green on the head (it compares each task with the baseline, a
+ *     newly reached failure excepted). The tolerance is per check, so the list names only checks that run no more
+ *     than Baseline's tasks; `Baseline` and `fflow/gate`, which runs the whole check command, are never excused, and
+ *     a list naming either, or a `TOLERATE` that is not a list of names, refuses. Without a baseline every required
+ *     check must be green, as before;
  *   - the base's ruleset requires the code owner's review and the base holds `.github/CODEOWNERS`, so GitHub itself
  *     asks the owner for owner-only paths.
  *   Everything is read at that SHA, so a later push cannot change what was checked. After approving it re-reads the
@@ -33,7 +35,7 @@ import { pathToFileURL } from "node:url";
 
 import { findBaseline } from "./baseline.mjs";
 import { ownerOnlyPaths, packageFindings } from "./owner-only.mjs";
-import { BASELINE_CHECK, STATUS_CONTEXT } from "./product.mjs";
+import { BASELINE_CHECK, NAME, NEVER_TOLERATED } from "./product.mjs";
 import { requiredCheckState, requiredContexts } from "./required-checks.mjs";
 
 /** GitHub lists at most this many files in a comparison; at the limit the owner reviews it. */
@@ -63,10 +65,11 @@ async function textAt(api, repo, path, ref) {
 /**
  * Every reason not to approve, and the head it checked.
  * @param {{ api: Rest, repo: string, number: number, expectedHead: string, approver: string, ref: string,
- *           environment: string, trusted?: Record<string, string>, extraOwnerOnly?: string[] }} input
+ *           environment: string, trusted?: Record<string, string>, extraOwnerOnly?: string[],
+ *           tolerate?: unknown }} input `tolerate`: the parsed `TOLERATE`; anything but a list of names refuses
  * @returns {Promise<{ refuse: string[], sha?: string, nodeId?: string,
  *                     baseline?: { sha: string, tolerated: string[] } }>} `baseline`: what the failures were compared
- *   against, and the required checks failing there too
+ *   against, and the listed required checks failing there too
  */
 export async function decide({
   api,
@@ -78,10 +81,25 @@ export async function decide({
   environment,
   trusted = {},
   extraOwnerOnly = [],
+  tolerate = [],
 }) {
   /** @type {string[]} */
   const refuse = [];
   if (!/^[0-9a-f]{40}$/.test(expectedHead)) refuse.push("`head` is not a 40-hex SHA");
+  // Fail closed: a malformed list excuses nothing, and naming a never-excused check is a broken config.
+  /** @type {string[]} */
+  const listed =
+    Array.isArray(tolerate) && tolerate.every((c) => typeof c === "string" && c !== "")
+      ? tolerate
+      : [];
+  if (listed !== tolerate)
+    refuse.push(
+      `\`TOLERATE\` is not a JSON list of check names (\`${NAME} sync\` renders it from \`approve.tolerate\`)`,
+    );
+  const never = listed.filter((c) => NEVER_TOLERATED.includes(c));
+  if (never.length)
+    refuse.push(`\`approve.tolerate\` lists ${never.join(", ")}, which a red main never excuses`);
+  const excusable = listed.filter((c) => !NEVER_TOLERATED.includes(c));
 
   // The App's key is safe only while its environment admits the default branch alone.
   const main = (await api("GET", `/repos/${repo}`)).json?.default_branch;
@@ -178,8 +196,8 @@ export async function decide({
       });
     const state = await at(sha);
     let failed = state.failed;
-    // STA-1945 FR-22: on a red default branch, a check failing on its recorded baseline too is not a new failure.
-    if (failed.length) {
+    // STA-1945 FR-22: on a red default branch, a listed check failing on its recorded baseline too is not a new failure.
+    if (failed.some((c) => excusable.includes(c))) {
       const found = await findBaseline({ api, repo, base: p.base.sha });
       const gate = required.filter((r) => r.context === BASELINE_CHECK);
       if ("searched" in found)
@@ -195,13 +213,8 @@ export async function decide({
         // Baseline itself is green here, so a red Baseline run on main never excuses one on the head. Only a run that
         // concluded `failure` on main is a recorded failure: a cancelled or timed-out one shows nothing.
         const before = (await at(found.sha)).outright;
-        // Flow's gate runs the whole check command, not only the tasks Baseline compares, so it is never excused.
-        if (failed.includes(STATUS_CONTEXT))
-          refuse.push(
-            `\`${STATUS_CONTEXT}\` failed; it runs more than the tasks \`${BASELINE_CHECK}\` compares, so a red main never excuses it`,
-          );
-        const tolerated = failed.filter((c) => c !== STATUS_CONTEXT && before.includes(c));
-        failed = failed.filter((c) => c !== STATUS_CONTEXT && !tolerated.includes(c));
+        const tolerated = failed.filter((c) => excusable.includes(c) && before.includes(c));
+        failed = failed.filter((c) => !tolerated.includes(c));
         baseline = { sha: found.sha, tolerated };
       }
     }
@@ -209,7 +222,7 @@ export async function decide({
       refuse.push(`required checks still running: ${state.pending.join(", ")}`);
     if (failed.length)
       refuse.push(
-        `required checks failed${baseline ? ` that do not fail on the baseline at ${baseline.sha}` : ""}: ${failed.join(", ")}`,
+        `required checks failed${baseline ? ` that \`approve.tolerate\` does not list or that do not fail on the baseline at ${baseline.sha}` : ""}: ${failed.join(", ")}`,
       );
     refuse.push(...state.untrusted);
     if (!state.pending.length && !failed.length && !state.untrusted.length && !state.succeeded)
@@ -259,6 +272,13 @@ export async function main(env, deps = {}) {
   const repo = String(env.REPO);
   const number = Number(env.PR);
   const run = String(env.RUN_URL ?? "");
+  /** @type {unknown} */
+  let tolerate;
+  try {
+    tolerate = JSON.parse(env.TOLERATE || "[]");
+  } catch {
+    tolerate = null; // not undefined, which would default to the empty list: `decide` refuses it
+  }
   const { refuse, sha, nodeId, baseline } = await decide({
     api: read,
     repo,
@@ -269,6 +289,7 @@ export async function main(env, deps = {}) {
     environment: String(env.ENVIRONMENT),
     trusted: JSON.parse(env.TRUSTED || "{}"),
     extraOwnerOnly: JSON.parse(env.OWNER_ONLY_EXTRA || "[]"),
+    tolerate,
   });
   if (refuse.length) {
     await write("POST", `/repos/${repo}/issues/${number}/comments`, {
@@ -282,7 +303,7 @@ export async function main(env, deps = {}) {
     event: "APPROVE",
     body: baseline
       ? `Approved at ${sha}: no owner-only change, and no new failure against the default branch's baseline at ` +
-        `${baseline.sha}. Tolerated, as they fail there too: ${baseline.tolerated.map((c) => `\`${c}\``).join(", ")}. ` +
+        `${baseline.sha}. Tolerated, as \`approve.tolerate\` lists them and they fail there too: ${baseline.tolerated.map((c) => `\`${c}\``).join(", ")}. ` +
         `\`${BASELINE_CHECK}\` compared each task; its summary lists the pre-existing and newly reached ones ([run](${run})).`
       : `Approved at ${sha}: no owner-only change, every required check green from its source ([run](${run})).`,
   });

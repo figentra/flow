@@ -77,3 +77,9 @@ export const BASELINE_WORKFLOW = `${NAME}-baseline.yml`;
 
 /** The baseline workflow's job name, and so the check a red-main repository requires instead of its full gate. */
 export const BASELINE_CHECK = "Baseline";
+
+/**
+ * The checks a red main never excuses, whatever `approve.tolerate` lists (STA-1945 FR-22): Baseline is the comparison
+ * itself, and the gate runs the whole check command, more than Baseline's tasks.
+ */
+export const NEVER_TOLERATED = [BASELINE_CHECK, STATUS_CONTEXT];

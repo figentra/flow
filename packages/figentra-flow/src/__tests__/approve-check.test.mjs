@@ -12,10 +12,12 @@
  *   - an unprotected environment or a wrong ref;
  *   - the approving App as author.
  *   A refusal is one comment and no review; a head that moves after the approval gets the review dismissed.
- *   On a red main (STA-1945 FR-22) a required check failing on the head and on main's recorded baseline too is
- *   tolerated beside a green, required `Baseline` check, and the approval names the baseline and what it tolerated.
- *   A check that passed (or never ran, or was only cancelled or timed out) on the baseline, a red `fflow/gate`, a
- *   missing or planted baseline, a red, skipped or unrequired `Baseline`, and every guard above still refuse.
+ *   On a red main (STA-1945 FR-22) a required check that `approve.tolerate` lists, failing on the head and on main's
+ *   recorded baseline too, is tolerated beside a green, required `Baseline` check, and the approval names the baseline
+ *   and what it tolerated. The default empty list excuses nothing, and an unlisted check, a check that passed (or
+ *   never ran, or was only cancelled or timed out) on the baseline, a red `fflow/gate`, a missing or planted baseline,
+ *   a red, skipped or unrequired `Baseline`, a list naming `Baseline` or `fflow/gate`, a malformed `TOLERATE`, and
+ *   every guard above still refuse.
  * Boundary: no network: the read and write APIs are stubs.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1856; STA-1945 FR-22.
@@ -291,8 +293,13 @@ const RED_MAIN = {
   runs: [RED, GATE],
   baseline: { sha: MAIN, statuses: [], runs: [RED, GATE] },
 };
+/** The repository's `approve.tolerate` for RED_MAIN. */
+const TOLERATE = ["verify"];
+/** The refusal for failures a red main does not excuse. */
+const NOT_EXCUSED =
+  "required checks failed that `approve\\.tolerate` does not list or that do not fail on the baseline at f{40}";
 
-test("approve: on a red main, a required check failing on the baseline too is tolerated beside a green Baseline", async () => {
+test("approve: on a red main, a listed required check failing on the baseline too is tolerated beside a green Baseline", async () => {
   // A newly reached task failure is Baseline's to judge (`compare`); it stays green, so only the check level is left.
   const result = await decide({
     api: github(RED_MAIN).read,
@@ -303,15 +310,80 @@ test("approve: on a red main, a required check failing on the baseline too is to
     ref: "refs/heads/main",
     environment: ENV,
     trusted: TRUSTED,
+    tolerate: TOLERATE,
   });
   assert.deepEqual(result.refuse, []);
   assert.deepEqual(result.baseline, { sha: MAIN, tolerated: ["verify"] });
 
   // The approval says what it compared against and what it tolerated.
   const gh = github(RED_MAIN);
-  assert.equal(await main(env(), { read: gh.read, write: gh.write, log: () => {} }), 0);
+  const code = await main(env({ TOLERATE: JSON.stringify(TOLERATE) }), {
+    read: gh.read,
+    write: gh.write,
+    log: () => {},
+  });
+  assert.equal(code, 0);
   assert.equal(gh.writes[0].body.event, "APPROVE");
-  assert.match(gh.writes[0].body.body, new RegExp(`baseline at ${MAIN}\\. Tolerated.*\`verify\``));
+  assert.match(
+    gh.writes[0].body.body,
+    new RegExp(
+      `baseline at ${MAIN}\\. Tolerated, as \`approve\\.tolerate\` lists them and they fail there too: \`verify\`\\. `,
+    ),
+  );
+});
+
+test("approve: on a red main, the default empty list excuses nothing, and an unlisted check refuses", async () => {
+  const empty = await decide({
+    api: github(RED_MAIN).read,
+    repo: REPO,
+    number: 7,
+    expectedHead: SHA,
+    approver: APPROVER,
+    ref: "refs/heads/main",
+    environment: ENV,
+    trusted: TRUSTED,
+  });
+  assert.deepEqual(empty.refuse, ["required checks failed: verify"]);
+  assert.equal(empty.baseline, undefined);
+  // An unset TOLERATE, as an older render leaves it, is the empty list.
+  const gh = github(RED_MAIN);
+  assert.equal(await main(env(), { read: gh.read, write: gh.write, log: () => {} }), 1);
+  assert.match(gh.writes[0].body.body, /required checks failed: verify/);
+
+  assert.equal(await refusals(RED_MAIN, { tolerate: ["lint"] }), "required checks failed: verify");
+  // A listed check is excused; an unlisted one failing on the baseline too still refuses.
+  const LINT = { ...RED, id: 3, name: "lint" };
+  const both = {
+    ...RED_MAIN,
+    required: [...RED_MAIN.required, { context: "lint", integration_id: 15368 }],
+    runs: [RED, GATE, LINT],
+    baseline: { ...RED_MAIN.baseline, runs: [RED, GATE, LINT] },
+  };
+  assert.match(await refusals(both, { tolerate: TOLERATE }), new RegExp(`${NOT_EXCUSED}: lint$`));
+});
+
+test("approve: a list naming Baseline or fflow/gate, or a malformed TOLERATE, fails closed", async () => {
+  for (const never of ["Baseline", "fflow/gate"])
+    assert.match(
+      await refusals(RED_MAIN, { tolerate: [...TOLERATE, never] }),
+      new RegExp(`\`approve\\.tolerate\` lists ${never}, which a red main never excuses`),
+    );
+  // Even with every check green, a broken list refuses.
+  assert.match(await refusals({}, { tolerate: ["Baseline"] }), /lists Baseline/);
+  for (const bad of ["{not json", '"verify"', "null", "[1]", '[""]', '{"verify":true}']) {
+    const gh = github(RED_MAIN);
+    const code = await main(env({ TOLERATE: bad }), {
+      read: gh.read,
+      write: gh.write,
+      log: () => {},
+    });
+    assert.equal(code, 1, bad);
+    assert.match(
+      gh.writes[0].body.body,
+      /`TOLERATE` is not a JSON list of check names \(`fflow sync` renders it from `approve\.tolerate`\)/,
+      bad,
+    );
+  }
 });
 
 test("approve: on a red main, each new or unproven failure refuses with its reason", async () => {
@@ -319,22 +391,19 @@ test("approve: on a red main, each new or unproven failure refuses with its reas
     // Passed on the baseline, fails now: a regression.
     [
       { baseline: { ...RED_MAIN.baseline, runs: [VERIFY, GATE] } },
-      new RegExp(`required checks failed that do not fail on the baseline at ${MAIN}: verify`),
+      new RegExp(`${NOT_EXCUSED}: verify`),
     ],
     // Never ran on the baseline: nothing shows it failed before.
-    [
-      { baseline: { ...RED_MAIN.baseline, runs: [GATE] } },
-      /required checks failed that do not fail on the baseline at f{40}: verify/,
-    ],
+    [{ baseline: { ...RED_MAIN.baseline, runs: [GATE] } }, new RegExp(`${NOT_EXCUSED}: verify`)],
     // A failure on the baseline from an untrusted source proves nothing.
     [
       { baseline: { ...RED_MAIN.baseline, runs: [{ ...RED, app: { id: 999 } }, GATE] } },
-      /required checks failed that do not fail on the baseline at f{40}: verify/,
+      new RegExp(`${NOT_EXCUSED}: verify`),
     ],
     // A cancelled, timed-out or waiting run on the baseline recorded no failure.
     ...["cancelled", "timed_out", "action_required"].map((conclusion) => [
       { baseline: { ...RED_MAIN.baseline, runs: [{ ...RED, conclusion }, GATE] } },
-      /required checks failed that do not fail on the baseline at f{40}: verify/,
+      new RegExp(`${NOT_EXCUSED}: verify`),
     ]),
     // Flow's gate runs more than Baseline's tasks, so it is never excused, even when red on the baseline too.
     [
@@ -342,7 +411,7 @@ test("approve: on a red main, each new or unproven failure refuses with its reas
         statuses: [RED_GATE_STATUS],
         baseline: { ...RED_MAIN.baseline, statuses: [RED_GATE_STATUS] },
       },
-      /`fflow\/gate` failed; it runs more than the tasks `Baseline` compares, so a red main never excuses it/,
+      new RegExp(`${NOT_EXCUSED}: fflow/gate$`),
     ],
     // No baseline: every required check must be green, as before.
     [
@@ -377,12 +446,20 @@ test("approve: on a red main, each new or unproven failure refuses with its reas
     ],
   ]);
   for (const [over, reason] of cases)
-    assert.match(await refusals({ ...RED_MAIN, ...over }), reason, String(reason));
+    assert.match(
+      await refusals({ ...RED_MAIN, ...over }, { tolerate: TOLERATE }),
+      reason,
+      String(reason),
+    );
 });
 
 test("approve: on a red main, every other guard still refuses", async () => {
   for (const [over, input, reason] of CASES)
-    assert.match(await refusals({ ...RED_MAIN, ...over }, input), reason, String(reason));
+    assert.match(
+      await refusals({ ...RED_MAIN, ...over }, { tolerate: TOLERATE, ...input }),
+      reason,
+      String(reason),
+    );
 });
 
 test("approve: a refusal is one comment and no review", async () => {
@@ -508,8 +585,11 @@ test("required checks: only a `failure` conclusion or status is an outright fail
   assert.deepEqual(state.outright, ["failure", "red"]);
 });
 
-/** The workflow's environment for `main`. */
-function env() {
+/**
+ * The workflow's environment for `main`; `over` adds or replaces variables.
+ * @param {Record<string, string>} [over]
+ */
+function env(over = {}) {
   return {
     REPO,
     PR: "7",
@@ -520,5 +600,6 @@ function env() {
     RUN_URL: "https://github.com/run/1",
     TRUSTED: JSON.stringify(TRUSTED),
     OWNER_ONLY_EXTRA: "[]",
+    ...over,
   };
 }
