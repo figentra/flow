@@ -1,9 +1,9 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold `fflow land` to its contract: every rule refuses with its reason (state, draft, conflict, stacked
- *   base, no, red or foreign gate, title, approvals, the ruleset before phase 6); a green PR squash-merges on its exact
- *   head with `Refs:` and co-author trailers, then Linear Done, the merge commit recorded, the worktree removed though
- *   its squash has a new patch id, the branch deleted and a comment; a refused merge changes nothing after it; a
+ * Purpose: hold `fflow land` to its contract (the pure rules are `land-rules.test.mjs`'s): a green PR squash-merges
+ *   on its exact head with `Refs:`, the AI review's verdict and co-author trailers; a reviewed tier with no PASS, or a
+ *   FAIL, only warns and lands (ADR 0523 decision 6); then Linear Done, the merge commit recorded, the worktree
+ *   removed though its squash has a new patch id, the branch deleted and a comment; a refused merge changes nothing after it; a
  *   failed Linear call only warns; `--stack` lands bottom-up and stops at a red gate, the next PR updated by a merge
  *   commit and a normal push. STA-1856: an owner-only path refuses, one an override's `extend` of `owner-only` adds
  *   among them (STA-1945); a ruleset that requires a review gets the
@@ -13,12 +13,12 @@
  *   the stack with the file named; a PR GitHub did not retarget is retargeted, and a refused retarget stops; a re-run
  *   after a stop resumes from the record, also after a run that died right after a merge; a missing worktree, a
  *   refused push, a red gate and a branch with no PR below each stop; `--dry-run` prints the plan and changes nothing.
- *   A renamed gate App (ADR 0523) counts from either configured login, never a third. STA-1945 FR-17: given `refs` on a
+ *   STA-1945 FR-17: given `refs` on a
  *   branch that is no key branch, the squash's `Refs:` names it whatever key the slug seems to carry, no spec is read
  *   and nothing moves to Done; a key branch keeps its key, spec gate and Done.
  * Boundary: temporary repositories with a local bare origin; GitHub, Linear and the gate injected; no network.
  * Runtime: node
- * Governing contract: ADR 0022; Stackra ADR 0503; STA-1729 phase 3.
+ * Governing contract: ADR 0022; Stackra ADR 0503; ADR 0523 (decision 6); STA-1729 phase 3.
  */
 // @covers sta-1729:FR-6 sta-1729:AC-010 sta-1729:AC-011 sta-1729:AC-017 sta-1729:AC-029 sta-1729:AC-030 sta-1729:P-006
 // @covers sta-1856:FR-1 sta-1856:FR-2 sta-1856:FR-3 sta-1856:FR-6
@@ -31,7 +31,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { landOne, landRules, landStack, squashMessage } from "../commands/land.mjs";
+import { landOne, landRules, landStack } from "../commands/land.mjs";
 import { recordPath, updateRecord } from "../lib/record.mjs";
 
 /** The gate App login the configuration names. */
@@ -52,128 +52,6 @@ const pr = (over = {}) => ({
   ...over,
 });
 const quiet = { log: () => {}, warn: () => {} };
-const PASSED = { verdict: "PASS", ignored: [] };
-
-test("rules: a green, approved, conventional PR on main may land; each rule names its reason", () => {
-  const ok = { pr: pr(), statuses: GREEN, base: "main", required: true, gateApp: GATE_APP };
-  assert.deepEqual(landRules(ok), []);
-  const cases = [
-    [{ pr: pr({ state: "closed" }) }, /is closed/],
-    [{ pr: pr({ draft: true }) }, /draft/],
-    [{ pr: pr({ mergeable_state: "dirty" }) }, /conflicts with main/],
-    [{ pr: pr({ base: { ref: "figentra/sta-4-x" } }) }, /stacked on `figentra\/sta-4-x`.*--stack/],
-    [{ statuses: [] }, /no fflow\/gate on the head c{12}/],
-    [
-      {
-        statuses: [
-          { context: "fflow/gate", state: "failure", creator: { login: GATE_APP } },
-          ...GREEN,
-        ],
-      },
-      /is failure/,
-    ],
-    [
-      {
-        statuses: [{ context: "fflow/gate", state: "success", creator: { login: "someone" } }],
-      },
-      /posted by someone, not figentra-gate\[bot\]/,
-    ],
-    [{ pr: pr({ title: "Land it" }) }, /conventional commit header/],
-    [{ required: false }, /does not require fflow\/gate yet.*--manual-ok/],
-  ];
-  for (const [over, reason] of cases)
-    assert.match(
-      landRules({ ...ok, .../** @type {object} */ (over) }).join("\n"),
-      /** @type {RegExp} */ (reason),
-    );
-  assert.deepEqual(landRules({ ...ok, required: false, manualOk: true }), []);
-  assert.deepEqual(landRules({ ...ok, pr: pr({ base: { ref: "x" } }), stack: true }), []);
-});
-
-test("rules: a renamed gate App (ADR 0523) counts from either login the configuration names, not from a third", () => {
-  const by = (/** @type {string} */ login) => [
-    { context: "fflow/gate", state: "success", creator: { login } },
-  ];
-  const ok = {
-    pr: pr(),
-    base: "main",
-    required: true,
-    gateApp: [GATE_APP, "figentra-flow[bot]"],
-  };
-  assert.deepEqual(landRules({ ...ok, statuses: by(GATE_APP) }), []);
-  assert.deepEqual(landRules({ ...ok, statuses: by("figentra-flow[bot]") }), []);
-  assert.match(
-    landRules({ ...ok, statuses: by("figentra-other[bot]") }).join("\n"),
-    /posted by figentra-other\[bot\], not figentra-gate\[bot\] or figentra-flow\[bot\]/,
-  );
-  assert.match(
-    landRules({ ...ok, gateApp: [], statuses: by(GATE_APP) }).join("\n"),
-    /no gate App is configured/,
-  );
-  const ghost = [{ context: "fflow/gate", state: "success", creator: null }];
-  for (const gateApp of ["", [""]])
-    assert.match(
-      landRules({ ...ok, gateApp, statuses: ghost }).join("\n"),
-      /no gate App is configured/,
-    );
-});
-
-test("rules: a feature spec needs its approval and Tasked; a spec without a tier passes", () => {
-  const ok = {
-    pr: pr(),
-    statuses: GREEN,
-    base: "main",
-    required: true,
-    gateApp: GATE_APP,
-    review: PASSED,
-  };
-  const feature = (/** @type {string} */ status) =>
-    `# Spec\n\n**Status**: ${status}\n\n**Tier**: feature\n\n**Approver**: leader\n\n## Status history\n\n- Draft → Clarified\n`;
-  assert.match(
-    landRules({ ...ok, spec: feature("Planned") }).join("\n"),
-    /lands from Tasked or later; it is planned/,
-  );
-  // At Tasked without the recorded stop, the approval rule of ADR 0502 refuses.
-  assert.match(landRules({ ...ok, spec: feature("Tasked") }).join("\n"), /^spec: /m);
-  assert.deepEqual(landRules({ ...ok, spec: "# Spec\n\n**Status**: Draft\n" }), []);
-});
-
-test("rules: a change with a spec needs the AI review PASS on its head (AC-031); trivial work, with no spec, is exempt", () => {
-  const base = { pr: pr(), statuses: GREEN, base: "main", required: true, gateApp: GATE_APP };
-  const small = "# Spec\n\n**Status**: Tasked\n\n**Tier**: small\n";
-  assert.deepEqual(landRules(base), []);
-  assert.deepEqual(landRules({ ...base, spec: "# Spec\n\n**Tier**: trivial\n" }), []);
-  assert.match(
-    landRules({ ...base, spec: small }).join(),
-    /no AI review PASS for c{40} \(counted verdict: none\).*AI-REVIEW: PASS c{40} base=main/,
-  );
-  assert.match(
-    landRules({
-      ...base,
-      spec: small,
-      review: { verdict: "FAIL", ignored: ["x is not the stackra-reviewer app"] },
-    }).join(),
-    /counted verdict: FAIL.*ignored: x is not the stackra-reviewer app/,
-  );
-  // `review.required` narrows the tiers: a small change passes when only feature and big need the review.
-  assert.deepEqual(landRules({ ...base, spec: small, reviewTiers: ["feature", "big"] }), []);
-  assert.equal(
-    landRules({ ...base, spec: "# Spec\n\n**Tier**: trivial\n", reviewTiers: ["trivial"] }).length,
-    1,
-  );
-  assert.deepEqual(landRules({ ...base, spec: small, review: PASSED }), []);
-});
-
-test("squash message: one Refs line and each co-author once", () => {
-  const commits = [
-    { commit: { message: "feat: a\n\nCo-authored-by: Ann <a@x>" } },
-    { commit: { message: "fix: b\n\nCo-Authored-By: Ann <a@x>\nCo-authored-by: Bo <b@x>" } },
-  ];
-  assert.equal(
-    squashMessage("sta-5", commits),
-    "Refs: STA-5\nCo-Authored-By: Ann <a@x>\nCo-Authored-By: Bo <b@x>",
-  );
-});
 
 /**
  * A repository with a two-commit branch in its worktree, and a GitHub stand-in whose merge squashes it onto main and
@@ -189,6 +67,8 @@ function world({
   blocked = false,
   brokenRecord = false,
   branch = "figentra/sta-5-land",
+  /** @type {string | undefined} */ spec = undefined,
+  /** @type {any[]} */ comments = [],
 } = {}) {
   const r = repo();
   const path = join(r.root, ".claude", "worktrees", "sta-5-land");
@@ -259,8 +139,18 @@ function world({
       return ok(p.endsWith("page=1") ? files : []);
     if (p === `/repos/figentra/flow/git/ref/heads/${branch}`)
       return ok({ object: { sha: moved ? "e".repeat(40) : head } });
+    // The spec at the head, when the world has one (ADR 0523 decision 6's advisory review reads its tier).
+    if (spec !== undefined && p === `/repos/figentra/flow/contents/.agents/specs?ref=${head}`)
+      return ok([{ type: "dir", name: "sta-5-land" }]);
+    if (
+      spec !== undefined &&
+      p.startsWith("/repos/figentra/flow/contents/.agents/specs/sta-5-land/")
+    )
+      return ok({ content: Buffer.from(spec).toString("base64") });
     if (p.startsWith("/repos/figentra/flow/contents/"))
       return { ok: false, json: undefined, err: "HTTP 404" };
+    if (p.startsWith("/repos/figentra/flow/issues/7/comments") && method === "GET")
+      return ok(comments.map((c) => ({ ...c, body: c.body.replace("<head>", head) })));
     if (p.startsWith("/repos/figentra/flow/pulls/7/commits"))
       return ok([{ commit: { message: "feat: a" } }]);
     if (method === "PUT" && p === "/repos/figentra/flow/pulls/7/merge") {
@@ -292,7 +182,7 @@ test("land: a green PR squash-merges on its head, then Done, the record, the wor
     merge_method: "squash",
     sha: w.head,
     commit_title: "feat(flow): land (#7)",
-    commit_message: "Refs: STA-5",
+    commit_message: "Refs: STA-5\nAI-Review: none",
   });
   assert.deepEqual(done, ["sta-5"]);
   // AC-029: the squash has a new patch id, yet the worktree went and its branch with it.
@@ -306,6 +196,59 @@ test("land: a green PR squash-merges on its head, then Done, the record, the wor
       "POST /repos/figentra/flow/issues/7/comments",
     ],
   );
+});
+
+test("land: a reviewed tier without an AI review PASS, or with a FAIL, lands with a warning and records the verdict (ADR 0523 decision 6)", async (t) => {
+  const spec = "# Spec\n\n**Status**: Tasked\n\n**Tier**: small\n";
+  const byReviewer = (/** @type {string} */ body) => ({
+    body,
+    user: { login: "figentra-flow[bot]", type: "Bot" },
+    performed_via_github_app: { slug: "figentra-flow" },
+    created_at: "2026-11-04T10:00:00Z",
+    updated_at: "2026-11-04T10:00:00Z",
+  });
+  for (const { comments, line, warns } of [
+    { comments: [], line: "AI-Review: none", warns: true },
+    {
+      comments: [byReviewer("AI-REVIEW: FAIL <head>")],
+      line: "AI-Review: FAIL <head>",
+      warns: true,
+    },
+    {
+      comments: [byReviewer("AI-REVIEW: PASS <head> base=main")],
+      line: "AI-Review: PASS <head>",
+      warns: false,
+    },
+  ]) {
+    const w = world({ spec, comments });
+    t.after(w.r.dispose);
+    /** @type {string[]} */
+    const warned = [];
+    const result = await landOne({
+      root: w.r.root,
+      repo: "figentra/flow",
+      base: "main",
+      number: 7,
+      gateApp: GATE_APP,
+      reviewer: "figentra-flow",
+      deps: {
+        api: w.api,
+        done: async () => {},
+        log: () => {},
+        warn: (s) => void warned.push(s),
+      },
+    });
+    assert.equal(result.code, 0, `${line}: ${JSON.stringify(result)}`);
+    assert.equal(
+      w.calls.find((c) => c.method === "PUT")?.body.commit_message,
+      `Refs: STA-5\n${line.replace("<head>", w.head)}`,
+    );
+    assert.equal(
+      warned.some((s) => /warning: advisory, not blocking.*no AI review PASS/.test(s)),
+      warns,
+      `${line}: ${warned.join("; ")}`,
+    );
+  }
 });
 
 test("land: a confirmed blocking finding in the record at the head refuses the PR and names it (STA-1945 AC-40)", async (t) => {
@@ -386,7 +329,7 @@ test("land: on a branch that is no key branch, `refs` names the squash and nothi
     if (!merged)
       assert.equal(
         w.calls.find((c) => c.method === "PUT")?.body.commit_message,
-        "Refs: STA-1945",
+        "Refs: STA-1945\nAI-Review: none",
         what,
       );
     assert.ok(!w.calls.some((c) => c.path.includes("/contents/.agents/specs")), what);
@@ -409,7 +352,10 @@ test("land: on a key branch, `refs` leaves the branch's key, its spec gate and i
     deps: { api: w.api, done: async (key) => void done.push(key), ...quiet },
   });
   assert.equal(result.code, 0, JSON.stringify(result));
-  assert.equal(w.calls.find((c) => c.method === "PUT")?.body.commit_message, "Refs: STA-1945");
+  assert.equal(
+    w.calls.find((c) => c.method === "PUT")?.body.commit_message,
+    "Refs: STA-1945\nAI-Review: none",
+  );
   assert.ok(w.calls.some((c) => c.path.includes("/contents/.agents/specs")));
   assert.deepEqual(done, ["sta-1945"]);
 });
@@ -501,32 +447,6 @@ test("land --stack: lands the bottom, updates the next by a merge commit and a p
   assert.equal(sh(w.r.origin, "rev-parse", `refs/heads/${top}`), sh(topPath, "rev-parse", "HEAD"));
 });
 
-test("rules: with no gate App configured nothing lands", () => {
-  const problems = landRules({ pr: pr(), statuses: GREEN, base: "main", required: true });
-  assert.match(problems.join(), /no gate App is configured: set apps\.gate\.login/);
-});
-
-test("rules: a PR that changes an owner-only path is the owner's to land (STA-1856 FR-1)", () => {
-  const ok = { pr: pr(), statuses: GREEN, base: "main", required: true, gateApp: GATE_APP };
-  assert.deepEqual(landRules({ ...ok, files: ["src/a.mjs", ".agents/agents/git-steward.md"] }), []);
-  assert.match(landRules({ ...ok, files: [".GitHub/Workflows/x.yml"] }).join(), /owner-only paths/);
-  assert.match(
-    landRules({ ...ok, files: ["deploy/run.sh"], ownerOnly: ["deploy/**"] }).join(),
-    /owner-only paths, so the owner lands it: deploy\/run\.sh/,
-  );
-  assert.match(
-    landRules({ ...ok, ownerFindings: ["package.json: the root scripts changed"] }).join(),
-    /owner-only change, so the owner lands it: package\.json: the root scripts changed/,
-  );
-  assert.match(
-    landRules({
-      ...ok,
-      files: ["src/a.mjs", ".github/workflows/ci.yml", "pnpm-workspace.yaml"],
-    }).join(),
-    /owner-only paths, so the owner lands it: \.github\/workflows\/ci\.yml, pnpm-workspace\.yaml/,
-  );
-});
-
 test("land: a required review dispatches the approval workflow and turns on auto-merge at the head, never a merge", async (t) => {
   const w = world({ review: true });
   t.after(w.r.dispose);
@@ -564,7 +484,7 @@ test("land: a required review dispatches the approval workflow and turns on auto
     id: "PR_7",
     head: w.head,
     title: "feat(flow): land (#7)",
-    body: "Refs: STA-5",
+    body: "Refs: STA-5\nAI-Review: none",
   });
   assert.equal(existsSync(w.path), true, "nothing after the merge ran");
 });

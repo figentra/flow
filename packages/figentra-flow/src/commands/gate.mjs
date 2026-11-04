@@ -1,7 +1,8 @@
 /**
  * Figentra Flow file contract:
  * Purpose: `fflow gate` (core's `spec-gate`, moved unchanged) — the stage gates for the specs in `.agents/specs/<key>-<slug>/` (ADR 0120 D1, owner
- *          decision OR12).
+ *          decision OR12). The spec's status, tier and approval helpers live in `lib/spec-status.mjs` and are
+ *          re-exported here (ADR 0523).
  * Boundary: reads the spec folders, git and, through the tracker port, comments on the issue (best-effort); writes no spec
  *           file.
  * Runtime: node
@@ -67,7 +68,20 @@ import { loadConfig } from "../lib/config.mjs";
 import { presetDir, resolveTemplate, specsDirs, writeCurrent } from "../lib/flow-dir.mjs";
 import { ENV_PREFIX, LEGACY_ENV_PREFIX, NAME } from "../lib/product.mjs";
 import { outsideTrees, scopeDrift, treePaths } from "../lib/scope-drift.mjs";
+import {
+  approvedAt,
+  atLeast,
+  checkApproval,
+  STATUSES,
+  statusLine,
+  statusOf,
+  TIERS,
+  tierOf,
+} from "../lib/spec-status.mjs";
 import { parseYaml } from "../lib/yaml.mjs";
+
+// Moved to lib/spec-status.mjs so the land rules import nothing from commands/ (ADR 0523); kept here for callers.
+export { approvedAt, checkApproval, STATUSES, statusLine, statusOf, TIERS, tierOf };
 
 /** The presets this package ships (`stackra`, `neutral`), installed when a repository keeps none of its own. */
 import {
@@ -159,17 +173,6 @@ const issueLine = (/** @type {string} */ body, /** @type {KeyScheme} */ keys) =>
   body
     .match(new RegExp(`^\\*\\*(?:Linear|Issue)\\*\\*:\\s*(${keys.pattern})(?![0-9])`, "mi"))?.[1]
     .toLowerCase();
-export const STATUSES = [
-  "draft",
-  "clarified",
-  "planned",
-  "tasked",
-  "implementing",
-  "done",
-  "abandoned",
-  "superseded",
-];
-
 /** Problems that stop a spec from being planned; empty means it may be. */
 /**
  * @param {string} text
@@ -203,13 +206,6 @@ export function checkSpec(text, keys = repoScheme(), rules = repoRules()) {
 }
 
 export const STAGES = ["clarified", "planned", "tasked", "implementing", "done"];
-const atLeast = (status, stage) => STATUSES.indexOf(status) >= STATUSES.indexOf(stage);
-
-/** The declared `**Status**`, lower-cased ("" when absent). */
-export const statusOf = (text) =>
-  strip(text)
-    .match(/^\*\*Status\*\*:\s*([A-Za-z]+)/m)?.[1]
-    ?.toLowerCase() ?? "";
 
 /** The table rows of `text`: every `|` line but the first (the header) and the rules, each as its trimmed cells. */
 const tableRows = (text) =>
@@ -476,21 +472,6 @@ export function checkStage(
   return problems;
 }
 
-/** The spec tiers of ADR 0502, smallest first. */
-export const TIERS = ["trivial", "small", "feature", "big"];
-
-/**
- * The tier a spec declares in its `**Tier**:` header, or undefined (an older spec).
- * @param {string} text
- * @returns {string | undefined}
- */
-export const tierOf = (text) => {
-  const tier = strip(text)
-    .match(/^\*\*Tier\*\*:\s*([A-Za-z]+)/m)?.[1]
-    ?.toLowerCase();
-  return tier !== undefined && TIERS.includes(tier) ? tier : undefined;
-};
-
 /** Paths that raise the floor, highest first (ADR 0502). */
 const FLOORS = [
   {
@@ -581,25 +562,6 @@ export function checkTier({ declared, computed, reasons = [] }) {
 }
 
 /**
- * Who approved a spec at `stage` and when: "Approved by <who> <YYYY-MM-DD>" on the Status line while the spec sits
- * there, or on the Status history line that moved it there.
- * @param {string} text
- * @param {string} stage
- * @returns {{ who: string, date: string } | undefined}
- */
-export function approvedAt(text, stage) {
-  const lines = statusOf(text) === stage ? [statusLine(text)] : [];
-  const history =
-    strip(text).match(/^## Status history\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
-  lines.push(...history.split("\n").filter((l) => new RegExp(`→\\s*${stage}\\b`, "i").test(l)));
-  for (const line of lines) {
-    const found = line.match(/Approved by ([^\n]+?) (\d{4}-\d{2}-\d{2})\b/);
-    if (found) return { who: found[1] ?? "", date: found[2] ?? "" };
-  }
-  return undefined;
-}
-
-/**
  * AC-053: an owner-kept spec's stage approvals come from the owner only: "Approved by owner …" or by the configured
  * owner login. Without `**Owner stops**` (or with none) nothing is checked here.
  * @param {string} text
@@ -618,31 +580,6 @@ export function ownerApprovalProblems(text, owner) {
     if (!/^owner\b/i.test(who) && (!owner || who.toLowerCase() !== owner.toLowerCase()))
       problems.push(
         `the ${stage} approval is by ${who}, but the spec touches ${stops.join(", ")}: only the owner approves it`,
-      );
-  }
-  return problems;
-}
-
-/**
- * The approval stops of ADR 0502: feature before Tasked; big before Planned and before Tasked; both name the Approver.
- * @param {string} text
- * @param {string} [status] the status to check for (`plan` passes the one its step moves the spec to)
- * @returns {string[]}
- */
-export function checkApproval(text, status = statusOf(text)) {
-  const tier = tierOf(text);
-  if (tier !== "feature" && tier !== "big") return [];
-  if (status === "abandoned" || status === "superseded") return [];
-  const problems = [];
-  if (atLeast(status, "planned") && !/^\*\*Approver\*\*:\s*\S/m.test(strip(text)))
-    problems.push(
-      `a ${tier} spec names its \`**Approver**\` (the owner, or the leader for a technical-only stop; ADR 0502)`,
-    );
-  for (const stop of tier === "big" ? ["clarified", "planned"] : ["planned"]) {
-    const next = stop === "clarified" ? "planned" : "tasked";
-    if (atLeast(status, next) && approvedAt(text, stop) === undefined)
-      problems.push(
-        `status ${status} needs the ${stop[0].toUpperCase()}${stop.slice(1)} approval of a ${tier} spec: "Approved by <who> <YYYY-MM-DD>" on that stage (ADR 0502)`,
       );
   }
   return problems;
@@ -1049,12 +986,6 @@ export function isOwnSpec(folder, branch, keys = repoScheme()) {
   const key = keys.keys(branch)[0];
   return Boolean(key) && keys.folderKey(folder) === key;
 }
-
-/** The spec's `**Status**:` line, trimmed ("" when absent). */
-export const statusLine = (text) =>
-  strip(text)
-    .match(/^\*\*Status\*\*:.*$/m)?.[0]
-    .trim() ?? "";
 
 /** The issue keys named on the `Refs:` trailers of the commit messages, lower-cased. */
 export const refsKeys = (commits, keys = repoScheme()) =>
