@@ -127,7 +127,7 @@ engine, and the divergence report with the docs. The minor release waits for the
 - **P-033**: a listed vague term fails a big spec and warns on the others — Validates: FR-29
 - **P-034**: scope drift, contract drift and an edited approved section are each reported — Validates: FR-30
 - **P-035**: every command's output is the same data as tables, plain text and `--json`; `--help` never runs a command — Validates: FR-31
-- **P-036**: `release` dispatches the publish only after the owner's Environment approval — Validates: FR-13
+- **P-036**: `release` only reads; the Release workflow publishes when the owner merges the version PR — Validates: FR-13
 
 ## Architecture overview
 

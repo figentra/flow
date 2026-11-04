@@ -601,8 +601,11 @@ A-7's (2026-11-04).
 - **AC-38**: WHEN an agent tries one of FR-13's side doors THE guard SHALL deny it and name the Flow command to use
   instead; the side doors are `git worktree add` outside `.claude/worktrees/`, a push to the default branch,
   `gh pr merge` and a command with `LEFTHOOK=0` (FR-13).
-- **AC-39**: WHEN `fflow release` runs with pending changesets THE command SHALL open or update the version PR, and
-  SHALL dispatch the publish only after the owner's GitHub Environment approval (FR-13, D6 Q4).
+- **AC-39**: WHEN `fflow release --preflight` runs with pending changesets THE command SHALL report, reading only,
+  whether the owner may merge the version PR (branch, main's and the version PR's required checks, the versions the
+  changesets imply, the registry, the lockfile), each failed row with its fix and exit 1; `fflow release` SHALL never
+  open, merge, dispatch or publish anything, the Release workflow publishing in CI when the owner merges the version
+  PR (FR-13; this replaces D6 Q4's dispatch).
 - **AC-40**: WHEN the review workflow confirms a blocking finding THE `land` command SHALL refuse the PR and name the
   finding (FR-15).
 - **AC-41**: WHEN the gate workflow fans the check set out across testbed boxes THE gate SHALL post one `fflow/gate`
@@ -670,15 +673,15 @@ A-7's (2026-11-04).
 
 The exit criteria of `path-to-100.md`, measurable:
 
-- **SC-1**: every FR and AC of this spec is covered by a task with passing evidence and by a test (`fflow trace ci`
-  clean) — verified by: `trace ci` in the gate.
+- **SC-1**: verified by: trace ci, in the gate. Every FR and AC of this spec is covered by a task with passing
+  evidence and by a test (`fflow trace ci` clean).
 - **SC-2**: `passthroughCommands(fflow)` is empty and the round-4 owner try-out has no finding — verified by: unit
   test and the owner's scripted checklist.
-- **SC-3**: every repository's `fflow check` is green on the 0.3.0 preset and `fflow status --divergence` reports
-  nothing unreviewed — verified by: `fflow check --workspace`.
-- **SC-4**: on every repository the ruleset requires Quality Gate's `verify` and, once the owner has pinned it to the
-  Figentra Flow App's integration id, `fflow/gate` (A-4, ADR 0523 decision 3), and no other context — verified by:
-  each repository's rulesets (`gh api repos/<owner>/<repo>/rulesets`).
+- **SC-3**: verified by: fflow check --workspace. Every repository's `fflow check` is green on the 0.3.0 preset and
+  `fflow status --divergence` reports nothing unreviewed.
+- **SC-4**: verified by: gh api on each repository's rulesets (`gh api repos/<owner>/<repo>/rulesets`). On every
+  repository the ruleset requires Quality Gate's `verify` and, once the owner has pinned it to the Figentra Flow App's
+  integration id, `fflow/gate` (A-4, ADR 0523 decision 3), and no other context.
 - **SC-5**: `fflow todo` and `fflow ledger` replace the hand-kept state file — verified by: manual (the owner).
 
 ## Non-functional requirements
@@ -781,3 +784,8 @@ test-level baseline inventory (STA-1942 v2); from PLAN section 9, P5 (a proof on
   leader session; FR-46 is a default pending the owner. FR-13's required-check clause, FR-31's console line, SC-4,
   NFR-1 and the Impact's dependencies follow ADR 0523 and ADR 0506 decision 8. tasks.md ticks the 99 tasks whose work
   merged, each with its PR, and adds T130 to T151 (12 of them merged)
+- 2026-11-04: after #128 to #134, no stage change: SC-1, SC-3 and SC-4 name their method first, in a form `trace`
+  reads; AC-39 (and plan.md's P-036) say what `fflow release` does on main: it only reads, `--preflight` answers
+  whether the owner may merge the version PR, and the Release workflow publishes on that merge. tasks.md ticks T015,
+  T024, T047, T048, T116, T135, T140 and T148, and T120 to T122 name the per-command tests, `packed.e2e.mjs` and
+  `origin/main`
