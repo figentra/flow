@@ -15,10 +15,15 @@
  *   refused push, a red gate and a branch with no PR below each stop; `--dry-run` prints the plan and changes nothing.
  *   STA-1945 FR-17: given `refs` on a
  *   branch that is no key branch, the squash's `Refs:` names it whatever key the slug seems to carry, no spec is read
- *   and nothing moves to Done; a key branch keeps its key, spec gate and Done.
+ *   and nothing moves to Done; a key branch keeps its key, spec gate and Done. The L2 design (PR E): when the base's
+ *   approval workflow takes `LAND_LABEL`, `land` adds the label (or comments `/fflow land` once on a labelled PR) and
+ *   never dispatches, auto-merges or merges; it waits for the merge (then finishes), a refusal (exit 1 with the lane's
+ *   reasons), the owner (4), a moved head (1) or a timeout (4), ignoring a verdict from another login or an earlier
+ *   request; `--no-wait` returns once asked; `--dry-run` names the path; a base without it dispatches with a
+ *   deprecation warning; a branch GitHub already deleted counts as deleted; `--stack` waits on each PR.
  * Boundary: temporary repositories with a local bare origin; GitHub, Linear and the gate injected; no network.
  * Runtime: node
- * Governing contract: ADR 0022; Stackra ADR 0503; ADR 0523 (decision 6); STA-1729 phase 3.
+ * Governing contract: ADR 0022; Stackra ADR 0503; ADR 0523 (decision 6); STA-1729 phase 3; the L2 design (PR E).
  */
 // @covers sta-1729:FR-6 sta-1729:AC-010 sta-1729:AC-011 sta-1729:AC-017 sta-1729:AC-029 sta-1729:AC-030 sta-1729:P-006
 // @covers sta-1856:FR-1 sta-1856:FR-2 sta-1856:FR-3 sta-1856:FR-6
@@ -32,6 +37,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { landOne, landRules, landStack } from "../commands/land.mjs";
+import {
+  APPROVE_WORKFLOW,
+  LAND_COMMAND,
+  LAND_CONTEXT,
+  LAND_LABEL,
+  LAND_MARKER,
+} from "../lib/product.mjs";
 import { recordPath, updateRecord } from "../lib/record.mjs";
 
 /** The gate App login the configuration names. */
@@ -665,9 +677,10 @@ test("land: an unreadable package.json refuses, and so do 300 changed files", as
  * (unless `retarget` is off), and `fflow/gate` from the gate App is on each commit the injected gate passed.
  * @param {{ layers: [string, string][][], files?: Record<string, string>, retarget?: boolean,
  *           failPatch?: boolean, hotfix?: [string, string], gateCode?: number, crash?: boolean,
- *           hide?: number }} options  `layers[i]` is PR i's commits, bottom first; `hotfix` lands on main right
- *   after the bottom PR merges; `crash` throws right after that merge, its branch deleted (the process died);
- *   `hide` leaves that PR out of the head lookup
+ *           hide?: number, lane?: boolean }} options  `layers[i]` is PR i's commits, bottom first; `hotfix` lands
+ *   on main right after the bottom PR merges; `crash` throws right after that merge, its branch deleted (the process
+ *   died); `hide` leaves that PR out of the head lookup; with `lane`, main's approval workflow takes `LAND_LABEL`
+ *   and a PR merges at its tip when it is labelled, as main's land lane would
  */
 function stackWorld({
   layers,
@@ -678,6 +691,7 @@ function stackWorld({
   gateCode = 0,
   crash = false,
   hide,
+  lane = false,
 }) {
   const r = repo(files);
   /** @type {{ number: number, branch: string, path: string, base: string, merged?: string, head?: string }[]} */
@@ -719,13 +733,41 @@ function stackWorld({
   });
   const ok = (/** @type {unknown} */ json) => ({ ok: true, json, err: "" });
   const no = (/** @type {string} */ err) => ({ ok: false, json: undefined, err });
+  /** GitHub's squash of PR `p` at `sha`, pushed; a refusal's text, or the squash commit. */
+  const squash = (/** @type {(typeof prs)[number]} */ p, /** @type {string} */ sha, title = "") => {
+    if (p.base !== "main") return no(`#${p.number} is based on ${p.base}`);
+    if (sha !== tip(p.branch)) return no("Head branch was modified (HTTP 409)");
+    sh(r.root, "fetch", "-q", "origin");
+    sh(r.root, "merge", "-q", "--squash", `origin/${p.branch}`);
+    sh(r.root, "commit", "-q", "-m", title || `feat(flow): layer ${p.number} (#${p.number})`);
+    sh(r.root, "push", "-q", "origin", "main");
+    p.head = sha;
+    p.merged = sh(r.root, "rev-parse", "HEAD");
+    if (hotfix && p === prs[0]) {
+      commit(r.root, ...hotfix);
+      sh(r.root, "push", "-q", "origin", "main");
+    }
+    if (crash && p === prs[0]) {
+      sh(r.origin, "update-ref", "-d", `refs/heads/${p.branch}`);
+      for (const x of prs) if (x.base === p.branch) x.base = "main";
+      throw new Error("killed after the merge");
+    }
+    return ok({ sha: p.merged });
+  };
   /** @type {import("../lib/github.mjs").Api} */
   const api = (method, full, body) => {
     calls.push({ method, path: full, body });
     const b = /** @type {any} */ (body);
     const at = full.replace("/repos/figentra/flow", "");
-    const n = Number(at.match(/^\/pulls\/(\d+)/)?.[1]);
+    const n = Number(at.match(/^\/(?:pulls|issues)\/(\d+)/)?.[1]);
     const p = prs.find((x) => x.number === n);
+    if (lane && at === `/contents/.github/workflows/${APPROVE_WORKFLOW}?ref=main`)
+      return ok({ content: Buffer.from(`# ${LAND_LABEL}\n`).toString("base64") });
+    // Main's land lane: the label's event approves and merges the PR at its tip.
+    if (lane && method === "POST" && p && at === `/issues/${n}/labels`) {
+      const merged = squash(p, tip(p.branch) ?? "");
+      return merged.ok ? ok([]) : merged;
+    }
     if (method === "GET" && p && at === `/pulls/${n}`) return ok(view(p));
     if (method === "GET" && at.startsWith("/pulls?state=all&head=figentra:")) {
       const branch = decodeURIComponent(at.split("head=figentra:")[1]);
@@ -744,26 +786,8 @@ function stackWorld({
       return sha ? ok({ object: { sha } }) : no("HTTP 404");
     }
     if (at.startsWith("/contents/")) return no("HTTP 404");
-    if (method === "PUT" && p && at === `/pulls/${n}/merge`) {
-      if (p.base !== "main") return no(`#${n} is based on ${p.base}`);
-      if (b.sha !== tip(p.branch)) return no("Head branch was modified (HTTP 409)");
-      sh(r.root, "fetch", "-q", "origin");
-      sh(r.root, "merge", "-q", "--squash", `origin/${p.branch}`);
-      sh(r.root, "commit", "-q", "-m", b.commit_title);
-      sh(r.root, "push", "-q", "origin", "main");
-      p.head = b.sha;
-      p.merged = sh(r.root, "rev-parse", "HEAD");
-      if (hotfix && p === prs[0]) {
-        commit(r.root, ...hotfix);
-        sh(r.root, "push", "-q", "origin", "main");
-      }
-      if (crash && p === prs[0]) {
-        sh(r.origin, "update-ref", "-d", `refs/heads/${p.branch}`);
-        for (const x of prs) if (x.base === p.branch) x.base = "main";
-        throw new Error("killed after the merge");
-      }
-      return ok({ sha: p.merged });
-    }
+    if (method === "PUT" && p && at === `/pulls/${n}/merge`)
+      return squash(p, b.sha, b.commit_title);
     if (method === "DELETE" && at.startsWith("/git/refs/heads/")) {
       const branch = at.slice("/git/refs/heads/".length);
       sh(r.origin, "update-ref", "-d", `refs/heads/${branch}`);
@@ -792,7 +816,7 @@ function stackWorld({
     },
   };
   /** `fflow land --stack <top>` against this world. */
-  const land = (/** @type {{ number?: number, dry?: boolean }} */ over = {}) =>
+  const land = (/** @type {{ number?: number, dry?: boolean, wait?: number }} */ over = {}) =>
     landStack({
       root: r.root,
       repo: "figentra/flow",
@@ -1011,4 +1035,276 @@ test("land --stack: a run that dies right after a merge resumes, the next PR's p
     w.logs.join("\n"),
     /#8: resolved shared\.txt, where main holds the landed parent's version/,
   );
+});
+
+// ---- the L2 design's label path (PR E) --------------------------------------------------------------------------
+
+/**
+ * `w`'s GitHub with main's approval workflow taking `LAND_LABEL`. After the request, each read of the PR is the next
+ * of `steps` (the last repeats): `merged` squashes the branch onto main, `head` moves it, `verdict` is the newest
+ * status on the head. `before` is a verdict already on the head from an earlier request.
+ * @param {ReturnType<typeof world>} w
+ * @param {{ labelled?: boolean, before?: object, steps?: { merged?: boolean, head?: string, verdict?: object }[] }} [o]
+ */
+function onLane(w, { labelled = false, before, steps = [{}] } = {}) {
+  let asked = false;
+  let poll = -1;
+  /** @type {string | undefined} */
+  let merged;
+  let prReads = 0;
+  /** @returns {{ merged?: boolean, head?: string, verdict?: object }} */
+  const step = () => (asked ? steps[Math.min(poll, steps.length - 1)] : {});
+  const ok = (/** @type {unknown} */ json) => ({ ok: true, json, err: "" });
+  /** @type {import("../lib/github.mjs").Api} */
+  const api = (method, p, body) => {
+    if (p === `/repos/figentra/flow/contents/.github/workflows/${APPROVE_WORKFLOW}?ref=main`) {
+      w.calls.push({ method, path: p });
+      return ok({ content: Buffer.from(`# ${LAND_LABEL}\n`).toString("base64") });
+    }
+    const r = w.api(method, p, body);
+    const b = /** @type {any} */ (body);
+    if (
+      method === "POST" &&
+      (p.endsWith("/issues/7/labels") ||
+        (p.endsWith("/issues/7/comments") && b?.body === LAND_COMMAND))
+    )
+      asked = true;
+    if (method === "GET" && p === "/repos/figentra/flow/pulls/7") {
+      prReads++;
+      if (asked) poll++;
+      const s = step();
+      if (s.merged && !merged) {
+        sh(w.r.root, "merge", "-q", "--squash", w.branch);
+        sh(w.r.root, "commit", "-q", "-m", "feat(flow): land (#7)");
+        sh(w.r.root, "push", "-q", "origin", "main");
+        merged = sh(w.r.root, "rev-parse", "HEAD");
+      }
+      return ok({
+        ...r.json,
+        labels: labelled ? [{ name: LAND_LABEL }] : [],
+        ...(merged ? { state: "closed", merged: true, merge_commit_sha: merged } : {}),
+        ...(s.head ? { head: { ...r.json.head, sha: s.head } } : {}),
+      });
+    }
+    if (p.startsWith(`/repos/figentra/flow/commits/${w.head}/statuses`)) {
+      const s = step();
+      return ok([...(s.verdict ? [s.verdict] : []), ...(before ? [before] : []), ...GREEN]);
+    }
+    return r;
+  };
+  return { api, prReads: () => prReads };
+}
+
+/** A verdict of main's land lane on the head. */
+const verdict = (
+  /** @type {string} */ state,
+  /** @type {string} */ description,
+  id = 2,
+  login = GATE_APP,
+) => ({
+  id,
+  context: LAND_CONTEXT,
+  state,
+  description,
+  creator: { login },
+});
+
+/**
+ * `landOne` on `w` through `api`, without real waits.
+ * @param {ReturnType<typeof world>} w
+ * @param {import("../lib/github.mjs").Api} api
+ * @param {{ wait?: number, dry?: boolean }} [over]
+ */
+async function landVia(w, api, over = {}) {
+  /** @type {string[]} */
+  const logs = [];
+  let slept = 0;
+  const result = await landOne({
+    root: w.r.root,
+    repo: "figentra/flow",
+    base: "main",
+    number: 7,
+    gateApp: GATE_APP,
+    deps: {
+      api,
+      done: async () => {},
+      log: (s) => void logs.push(s),
+      warn: () => {},
+      sleep: async () => void slept++,
+    },
+    ...over,
+  });
+  return { result, logs, slept };
+}
+
+test("land: when the base's workflow takes the label, land adds it and waits for the merge; never dispatch, auto-merge or merge", async (t) => {
+  const w = world({ review: true });
+  t.after(w.r.dispose);
+  const waiting = verdict("pending", "waiting: required checks still running: verify");
+  const lane = onLane(w, {
+    steps: [
+      { verdict: waiting },
+      { verdict: waiting },
+      { verdict: verdict("success", "approved: ok", 3) },
+      { merged: true },
+    ],
+  });
+  const { result, logs } = await landVia(w, lane.api);
+  assert.equal(result.code, 0, JSON.stringify(result));
+  assert.ok(result.merged);
+  const writes = w.calls.filter((c) => c.method !== "GET");
+  assert.deepEqual(
+    writes.map((c) => `${c.method} ${c.path}`),
+    [
+      "POST /repos/figentra/flow/issues/7/labels",
+      `DELETE /repos/figentra/flow/git/refs/heads/${w.branch}`,
+      "POST /repos/figentra/flow/issues/7/comments",
+    ],
+  );
+  assert.deepEqual(writes[0].body, { labels: [LAND_LABEL] });
+  assert.ok(!w.calls.some((c) => /dispatches|graphql|\/merge$/.test(c.path)));
+  // Each new verdict is printed once.
+  assert.equal(logs.filter((l) => l.includes("waiting: required checks")).length, 1);
+  assert.equal(existsSync(w.path), false, "finish ran");
+});
+
+test("land: an already-labelled PR is asked again by exactly one comment", async (t) => {
+  const w = world();
+  t.after(w.r.dispose);
+  const { result } = await landVia(w, onLane(w, { labelled: true, steps: [{ merged: true }] }).api);
+  assert.equal(result.code, 0, JSON.stringify(result));
+  const asks = w.calls.filter((c) => c.method === "POST" && c.body?.body === LAND_COMMAND);
+  assert.equal(asks.length, 1);
+  assert.ok(!w.calls.some((c) => c.path.endsWith("/labels")));
+});
+
+test("land: the wait ends on a refusal, the owner, a moved head or a timeout; a status from another creator is ignored", async (t) => {
+  const sticky = {
+    body: `${LAND_MARKER}\nhead: <head> state: refused\n\n- the title is bad\n- spec: no approval\n\nFix it.`,
+    user: { login: GATE_APP, type: "Bot" },
+    created_at: "2026-11-04T10:00:00Z",
+    updated_at: "2026-11-04T10:00:00Z",
+  };
+  const refused = world({ comments: [sticky] });
+  t.after(refused.r.dispose);
+  const no = await landVia(
+    refused,
+    onLane(refused, { steps: [{ verdict: verdict("failure", "refused: the title is bad") }] }).api,
+  );
+  assert.equal(no.result.code, 1);
+  assert.deepEqual(no.result.problems, ["the title is bad", "spec: no approval"]);
+
+  const owner = world();
+  t.after(owner.r.dispose);
+  const theirs = await landVia(
+    owner,
+    onLane(owner, { steps: [{ verdict: verdict("pending", "owner: owner-only paths: x") }] }).api,
+  );
+  assert.equal(theirs.result.code, 4);
+  assert.equal(theirs.result.owner, true);
+
+  const moved = world();
+  t.after(moved.r.dispose);
+  const gone = await landVia(moved, onLane(moved, { steps: [{ head: "f".repeat(40) }] }).api);
+  assert.equal(gone.result.code, 1);
+  assert.match(gone.result.problems?.join() ?? "", /the head moved to f+; land again/);
+
+  const slow = world();
+  t.after(slow.r.dispose);
+  const late = await landVia(slow, onLane(slow).api, { wait: 0.05 });
+  assert.equal(late.result.code, 4);
+  assert.equal(late.result.queued, true);
+  assert.equal(late.slept, 1);
+  assert.match(late.logs.join("\n"), /still queued .*`fflow land 7` again finishes it/);
+
+  const spoof = world();
+  t.after(spoof.r.dispose);
+  const fake = await landVia(
+    spoof,
+    onLane(spoof, { steps: [{ verdict: verdict("failure", "refused: x", 2, "someone") }] }).api,
+    { wait: 0.05 },
+  );
+  assert.equal(
+    fake.result.code,
+    4,
+    "a status from a login that is not the gate App's does not count",
+  );
+});
+
+test("land: a verdict from an earlier request does not answer this one; --no-wait returns once asked", async (t) => {
+  const stale = world();
+  t.after(stale.r.dispose);
+  const old = verdict("failure", "refused: an earlier reason", 1);
+  const lane = onLane(stale, { before: old, steps: [{}, { merged: true }] });
+  const { result } = await landVia(stale, lane.api);
+  assert.equal(result.code, 0, JSON.stringify(result));
+
+  const quick = world();
+  t.after(quick.r.dispose);
+  const q = onLane(quick);
+  const asked = await landVia(quick, q.api, { wait: 0 });
+  assert.deepEqual(asked.result, { code: 0, queued: true, requested: true });
+  assert.equal(q.prReads(), 1, "no wait: the PR is read only before the request");
+});
+
+test("land: --dry-run names the label path; a base without it dispatches with a deprecation warning", async (t) => {
+  const w = world();
+  t.after(w.r.dispose);
+  const { result, logs } = await landVia(w, onLane(w).api, { dry: true });
+  assert.equal(result.code, 0);
+  assert.match(logs.join("\n"), new RegExp(`would request the land with ${LAND_LABEL}`));
+  assert.deepEqual(
+    w.calls.filter((c) => c.method !== "GET"),
+    [],
+  );
+
+  const old = world({ review: true });
+  t.after(old.r.dispose);
+  mkdirSync(join(old.r.root, ".github/workflows"), { recursive: true });
+  writeFileSync(join(old.r.root, ".github/workflows/fflow-approve.yml"), "name: x\n");
+  /** @type {string[]} */
+  const warned = [];
+  const queued = await landOne({
+    root: old.r.root,
+    repo: "figentra/flow",
+    base: "main",
+    number: 7,
+    gateApp: GATE_APP,
+    deps: { api: old.api, done: async () => {}, log: () => {}, warn: (s) => void warned.push(s) },
+  });
+  assert.deepEqual(queued, { code: 0, queued: true });
+  assert.match(
+    warned.join(),
+    /takes no fflow:land request yet, so land dispatches it \(deprecated/,
+  );
+});
+
+test("land: a branch GitHub already deleted after the merge counts as deleted", async (t) => {
+  const w = world({ merged: true });
+  t.after(w.r.dispose);
+  /** @type {import("../lib/github.mjs").Api} */
+  const api = (method, p, body) =>
+    p === `/repos/figentra/flow/git/ref/heads/${w.branch}`
+      ? { ok: false, json: undefined, err: "gh: Not Found (HTTP 404)" }
+      : w.api(method, p, body);
+  const { result } = await landVia(w, api);
+  assert.equal(result.code, 0, JSON.stringify(result));
+  assert.ok(!w.calls.some((c) => c.method === "DELETE"));
+});
+
+test("land --stack: on the label path each PR is asked for and waited on, so the stack goes on after each merge", async (t) => {
+  const w = stackWorld({ layers: THREE, lane: true });
+  t.after(w.r.dispose);
+  const result = await w.land({ wait: 1 });
+  assert.equal(result.code, 0, JSON.stringify(result));
+  assert.deepEqual(
+    w.prs.map((p) => Boolean(p.merged)),
+    [true, true, true],
+  );
+  assert.deepEqual([w.main("a.txt"), w.main("b.txt"), w.main("c.txt")], ["a", "b", "c"]);
+  assert.deepEqual(
+    w.calls.filter((c) => c.path.endsWith("/labels")).map((c) => c.path),
+    [7, 8, 9].map((n) => `/repos/figentra/flow/issues/${n}/labels`),
+  );
+  assert.ok(!w.calls.some((c) => c.method === "PUT" || /dispatches|graphql/.test(c.path)));
 });
