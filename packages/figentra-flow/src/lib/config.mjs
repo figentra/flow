@@ -137,6 +137,9 @@ export const SCHEMA = {
       properties: {
         ownerOnly: { type: "array", items: str },
         checks: { type: "object", additionalProperties: str },
+        // The L2 design: the workflows whose success wakes main's land lane, and the App slugs that may ask for a land.
+        workflows: { type: "array", items: { type: "string", pattern: "^[\\w .()-]+$" } },
+        requesters: { type: "array", items: { type: "string", pattern: "^[\\w-]+$" } },
       },
     },
     clean: {
@@ -252,7 +255,8 @@ export function validate(schema, value, path = "") {
  * @typedef {{ version?: number, preset?: string, profile?: string, team?: string, specs?: { dir?: string, bugsDir?: string }, tracker?: any, credentials?: any, runner?: any, secrets?: any,
  *             apps?: { gate?: { slug?: string, login: string, aliases?: string[] }, review?: { slug: string },
  *                      owner?: string },
- *             gate?: { check?: string, shard?: string }, approve?: { ownerOnly?: string[], checks?: Record<string, string> },
+ *             gate?: { check?: string, shard?: string }, approve?: { ownerOnly?: string[], checks?: Record<string, string>,
+ *                      workflows?: string[], requesters?: string[] },
  *             clean?: { keep?: string[], budget?: number }, review?: { required?: string[] },
  *             baseline?: { tasks?: string[], mustPass?: string[], install?: string, setup?: Record<string, unknown>[], branch?: string },
  *             artifacts?: { paths?: string[], maxBytes?: number },

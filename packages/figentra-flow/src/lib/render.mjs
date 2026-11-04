@@ -4,8 +4,8 @@
  *   documents either as neutral skill documents for the repository's own projector (`.agents/skills/flow-<verb>/`) or,
  *   with `direct`, as Claude Code skills and OpenCode commands; the preset's agent definitions (`agents/`, as
  *   `.agents/agents/<id>.md` or, with `direct`, `.claude/agents/<id>.md`), the approval workflow (its secret names
- *   from `preset.yml`'s `approve`; with a `github-actions` runner and `secrets.oidc`, its `verdict` job, the L2
- *   design's PR F) and, with `apps.owner`, a CODEOWNERS for the owner-only paths (STA-1856); the
+ *   from `preset.yml`'s `approve`; with `secrets.oidc`, its event lane from `approve.workflows` and
+ *   `approve.requesters`, the L2 design's PR D, and with a `github-actions` runner its `verdict` job, PR F) and, with `apps.owner`, a CODEOWNERS for the owner-only paths (STA-1856); the
  *   preset's own skills (`skills/<name>/**`, beside the `flow-*` ones) and, with `renderReference`, its agent
  *   reference, routing and models under `.agents/` (STA-1945, C6); a preset skill folder named `flow-*` or a preset
  *   file that is not UTF-8 is refused. Only the skills and agents the config's profile selects are rendered, the lock
@@ -252,6 +252,18 @@ function renderPreset(root, direct, overrides) {
   // No owner, no approval path: GitHub must be able to ask someone for the owner-only paths (CODEOWNERS).
   if (!apps?.owner) return out;
   const gate = gateLogins(apps);
+  // The L2 design: with `secrets.oidc`, main's copy mints Flow App tokens in process; events run it (PR D) and, for a
+  // github-actions runner, it posts the runner's verdict (PR F).
+  const oidc =
+    secrets?.kind === "infisical" && secrets.oidc && secrets.paths?.gate
+      ? {
+          ...secrets.oidc,
+          domain: secrets.domain,
+          projectId: secrets.projectId,
+          env: secrets.env,
+          path: secrets.paths.gate,
+        }
+      : undefined;
   out.set(
     `.github/workflows/${APPROVE_WORKFLOW}`,
     approveWorkflow({
@@ -261,23 +273,26 @@ function renderPreset(root, direct, overrides) {
       // The gate's status counts only from the gate App; a repository adds its own sources in `approve.checks`.
       trusted: { ...(gate ? { [STATUS_CONTEXT]: gate } : {}), ...approve?.checks },
       ownerOnly,
-      // The L2 design's PR F: main posts the github-actions runner's verdict, over OIDC.
-      ...(runner?.kind === "github-actions" &&
-      secrets?.kind === "infisical" &&
-      secrets.oidc &&
-      secrets.paths?.gate
+      ...(oidc
+        ? {
+            lane: {
+              defaultBranch: defaultBranch(root),
+              oidc,
+              owner: apps.owner,
+              workflows: approve?.workflows ?? [],
+              requesters: approve?.requesters ?? [],
+              // Not apps.gate.slug yet, as in `land` (ADR 0523's migration).
+              reviewers: [apps.review?.slug].filter((x) => x !== undefined),
+            },
+          }
+        : {}),
+      ...(oidc && runner?.kind === "github-actions"
         ? {
             verdict: {
               gatePath: `.github/workflows/${runner.workflow ?? GATE_WORKFLOW}`,
               owner: apps.owner,
               defaultBranch: defaultBranch(root),
-              oidc: {
-                ...secrets.oidc,
-                domain: secrets.domain,
-                projectId: secrets.projectId,
-                env: secrets.env,
-                path: secrets.paths.gate,
-              },
+              oidc,
             },
           }
         : {}),
