@@ -22,7 +22,7 @@ import { Int, Str } from "@stackra/validation";
 
 import { ConfigError } from "./config.mjs";
 import { git } from "./git.mjs";
-import { DISPLAY_NAME, ENV_PREFIX, HOMEPAGE, NAME, VERSION } from "./product.mjs";
+import { CONFIG_FILE, DISPLAY_NAME, ENV_PREFIX, HOMEPAGE, NAME, VERSION } from "./product.mjs";
 
 /** @typedef {import("@stackra/console").CommandIo} CommandIo */
 /** @typedef {import("@stackra/console").CommandClass} CommandClass */
@@ -162,7 +162,7 @@ function governance({ name, description, examples, direct = false, preset = fals
       return refusing(() => run(args));
     }
   };
-  Option({ description: "Run in every repository under this folder that has flow.config.json" })(
+  Option({ description: `Run in every repository under this folder that has ${CONFIG_FILE}` })(
     Governance.prototype,
     "workspace",
   );
@@ -522,8 +522,7 @@ export const COMMANDS = [
   }),
   governance({
     name: "validate",
-    description:
-      "Check flow.config.json and .flow/overrides/ against their schemas and the mandatory policies, naming each break",
+    description: `Check ${CONFIG_FILE} and .flow/overrides/ against their schemas and the mandatory policies, naming each break`,
     examples: [`${NAME} validate`, `${NAME} validate --workspace ~/code`],
   }),
   DoctorCommand,
