@@ -48,6 +48,7 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow init [--force]`                                                | writes `.flow/` (README, a starter constitution, `.gitignore`), a starter `flow.config.json` when there is none, and renders the `flow-*` skills                                                 |
 | `fflow migrate [--dry-run]`                                           | moves a spec-kit repository onto `.flow/` (constitution, `.specify/` and `.agents/speckit/` deleted, scripts, pins and skips), then syncs                                                        |
 | `fflow spec paths\|setup-plan\|setup-tasks\|template`                 | the spec folder, its documents and the resolved templates as JSON, for the `flow-*` commands                                                                                                     |
+| `fflow spec ask <key> [--async]`, `fflow spec resume <key>`            | the spec's open questions; `--async` posts them on the issue and marks the spec waiting, `resume` records the answers given there (see [Asynchronous questions](#asynchronous-questions)) |
 | `fflow sync [--direct]`                                               | renders the `flow-*` skills (for the repository's projector, or Claude Code and OpenCode directly), each with its provenance header, and writes `.flow/lock.json`; refuses a preset that differs from the lock |
 | `fflow update [--preset <version>]`                                   | prints the diff, adopts the installed preset into the lock, then syncs; `--preset` refuses any version but the installed one |
 | `fflow check`                                                         | the CI check: fails, naming each cause, on an owned file that differs from the lock, a preset that differs from its locked digest, an invalid config or override, a profile the preset lacks or the lock does not record, a mandatory policy off, an override changed without a `sync`, or an override past its review date (and warns 14 days before); writes nothing |
@@ -635,6 +636,24 @@ remains (`.specify/`, `.agents/speckit/`, a `speckit-*` skill: run `fflow migrat
 
 `.flow/` holds only what the repository owns: `README.md`, `constitution.md`, the optional `overrides/`, `lock.json` and
 the git-ignored `current.json`. Templates, presets and command texts come from the installed package.
+
+### Asynchronous questions
+
+An agent that runs unattended cannot wait in a chat for an answer, so it asks on the issue instead (STA-2098):
+
+```sh
+fflow spec ask STA-12 --async   # one comment on STA-12 lists each [NEEDS CLARIFICATION: …] as Q1, Q2, …
+fflow spec resume STA-12        # records the answers given since, and lists what is still open
+```
+
+`ask --async` posts the spec's open questions (its `[NEEDS CLARIFICATION: …]` markers) as one comment through the
+tracker adapter (Linear or GitHub Issues) and adds `> Waiting on clarification: <comment link>` under the spec's
+`**Clarifications status**`. The status stays as it is, so the gate keeps refusing Clarified while a marker remains.
+Someone answers in a new comment on the issue, one line per question: `Q1: <answer>`. `resume` reads the comments after
+the asking one (a later answer to the same question wins), replaces each answered marker with its answer, adds
+`- Q: <question> → A: <answer>` under `## Clarifications` / `### Session <date>` (the spec is the record), removes the
+waiting line once every asked question has an answer, and prints what it recorded and what remains. Setting
+`**Clarifications status**: complete` stays with `/flow-clarify`. Without `--async`, `ask` only lists the questions.
 
 ## Develop
 

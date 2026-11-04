@@ -1,6 +1,7 @@
 /**
  * Figentra Flow file contract:
- * Purpose: the `linear` tracker adapter: an issue's title and state, moving it to In Progress or Done, comments, and a
+ * Purpose: the `linear` tracker adapter: an issue's title and state, moving it to In Progress or Done, comments (posting
+ *   one gives its link; `comments` lists them, STA-2098), and a
  *   roster role (its one `role:<id>` label and the agent app as delegate; a missing label is reported, never created),
  *   through the Linear client in `lib/linear.mjs` (the agent app's minted token, else an API key).
  * Boundary: GraphQL calls to Linear; a failure is thrown to the caller, which reports it as a warning.
@@ -13,10 +14,11 @@ import { client, linear } from "../../lib/linear.mjs";
 
 /**
  * @param {any} block the configuration's `tracker` (`kind: "linear"`)
- * @param {{ env?: Record<string, string | undefined> }} [context]
+ * @param {{ env?: Record<string, string | undefined>, fetch?: typeof import("../../lib/net.mjs").netFetch }} [context]
+ *   `fetch` replaces the network (tests)
  * @returns {import("./index.mjs").Tracker}
  */
-export function linearTracker(block, { env = process.env } = {}) {
+export function linearTracker(block, { env = process.env, fetch } = {}) {
   // The block may name other variables; the client reads the two it knows.
   const names = block.token ?? ["LINEAR_AGENT_TOKEN", "LINEAR_API_KEY"];
   const scoped = {
@@ -27,7 +29,7 @@ export function linearTracker(block, { env = process.env } = {}) {
   /** @type {ReturnType<typeof linear> | undefined} */
   let api;
   const issue = async (/** @type {string} */ key) => {
-    api ??= linear(client({ env: scoped }));
+    api ??= linear(client({ env: scoped, ...(fetch ? { fetch } : {}) }));
     const found = await api.issue(key.toUpperCase());
     if (!found) throw new Error(`${key.toUpperCase()} not found`);
     return { api, found };
@@ -51,7 +53,13 @@ export function linearTracker(block, { env = process.env } = {}) {
     },
     async comment(key, body) {
       const { api: a, found } = await issue(key);
-      await a.comment(found, body);
+      return a.comment(found, body);
+    },
+    async comments(key) {
+      const { api: a, found } = await issue(key);
+      return (await a.comments(found)).sort((/** @type {any} */ x, /** @type {any} */ y) =>
+        x.createdAt.localeCompare(y.createdAt),
+      );
     },
     async role(key, label) {
       const { api: a, found } = await issue(key);
@@ -73,7 +81,7 @@ export function linearTracker(block, { env = process.env } = {}) {
       await a.delegateToAgent(found);
     },
     async missingLabels(labels) {
-      api ??= linear(client({ env: scoped }));
+      api ??= linear(client({ env: scoped, ...(fetch ? { fetch } : {}) }));
       /** @type {string[]} */
       const missing = [];
       for (const label of labels) if (!(await api.findLabel(label))) missing.push(label);
