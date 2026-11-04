@@ -13,8 +13,9 @@
  *   the stack with the file named; a PR GitHub did not retarget is retargeted, and a refused retarget stops; a re-run
  *   after a stop resumes from the record, also after a run that died right after a merge; a missing worktree, a
  *   refused push, a red gate and a branch with no PR below each stop; `--dry-run` prints the plan and changes nothing.
- *   A renamed gate App (ADR 0523) counts from either configured login, never a third. STA-1945 FR-17: a branch that
- *   names no issue takes the squash's `Refs:` from `refs`.
+ *   A renamed gate App (ADR 0523) counts from either configured login, never a third. STA-1945 FR-17: given `refs` on a
+ *   branch that is no key branch, the squash's `Refs:` names it whatever key the slug seems to carry, no spec is read
+ *   and nothing moves to Done; a key branch keeps its key, spec gate and Done.
  * Boundary: temporary repositories with a local bare origin; GitHub, Linear and the gate injected; no network.
  * Runtime: node
  * Governing contract: ADR 0022; Stackra ADR 0503; STA-1729 phase 3.
@@ -23,13 +24,15 @@
 // @covers sta-1856:FR-1 sta-1856:FR-2 sta-1856:FR-3 sta-1856:FR-6
 // @covers sta-1856:AC-001 sta-1856:AC-003 sta-1856:AC-004 sta-1856:AC-005 sta-1856:AC-006 sta-1856:AC-007
 // @covers sta-1856:P-001 sta-1856:P-002 sta-1856:P-003
+// @covers sta-1945:FR-15 sta-1945:AC-40 sta-1945:P-021
 // @covers sta-1945:FR-16 sta-1945:AC-14 sta-1945:P-022 sta-1945:FR-17
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { landOne, landRules, landStack, squashMessage } from "../commands/land.mjs";
+import { recordPath, updateRecord } from "../lib/record.mjs";
 
 /** The gate App login the configuration names. */
 const GATE_APP = "figentra-gate[bot]";
@@ -183,6 +186,8 @@ function world({
   /** @type {{ context: string, integration_id?: number }[]} */ required = [],
   moved = false,
   /** @type {{ filename: string, status: string }[]} */ files = [],
+  blocked = false,
+  brokenRecord = false,
   branch = "figentra/sta-5-land",
 } = {}) {
   const r = repo();
@@ -190,6 +195,29 @@ function world({
   sh(r.root, "worktree", "add", "-q", "-b", branch, path, "main");
   commit(path, "a.txt");
   commit(path, "b.txt");
+  // STA-1945 AC-40: the review workflow confirmed a blocking finding, recorded on the branch.
+  if (blocked) {
+    updateRecord(path, "sta-5", (rec) => ({
+      ...rec,
+      review: [
+        {
+          sha: "d".repeat(40),
+          verdict: "FAIL",
+          findings: 1,
+          blocking: [{ id: "security-tenancy-1", file: "a.txt", text: "leaks the token" }],
+        },
+      ],
+    }));
+    sh(path, "add", "-A");
+    sh(path, "commit", "-q", "-m", "record");
+  }
+  // A record at the head that is not JSON: it could hide a finding.
+  if (brokenRecord) {
+    mkdirSync(dirname(recordPath(path, "sta-5")), { recursive: true });
+    writeFileSync(recordPath(path, "sta-5"), "{ not json\n");
+    sh(path, "add", "-A");
+    sh(path, "commit", "-q", "-m", "record");
+  }
   const head = sh(path, "rev-parse", "HEAD");
   /** GitHub's squash of the branch onto main, pushed. */
   const squash = (/** @type {string} */ title) => {
@@ -280,8 +308,94 @@ test("land: a green PR squash-merges on its head, then Done, the record, the wor
   );
 });
 
-test("land: a branch that names no issue takes the squash's Refs from `refs` and moves nothing to Done", async (t) => {
-  const w = world({ branch: "adr/0008-queues" });
+test("land: a confirmed blocking finding in the record at the head refuses the PR and names it (STA-1945 AC-40)", async (t) => {
+  const w = world({ blocked: true });
+  t.after(w.r.dispose);
+  const result = await landOne({
+    root: w.r.root,
+    repo: "figentra/flow",
+    base: "main",
+    number: 7,
+    gateApp: GATE_APP,
+    deps: { api: w.api, done: async () => {}, ...quiet },
+  });
+  assert.equal(result.code, 1);
+  assert.match(
+    result.problems?.join("\n") ?? "",
+    /the review confirmed a blocking finding: security-tenancy-1 in a\.txt: leaks the token/,
+  );
+  assert.equal(
+    w.calls.some((c) => c.method === "PUT"),
+    false,
+  );
+  assert.deepEqual(
+    landRules({
+      pr: pr(),
+      statuses: GREEN,
+      base: "main",
+      required: true,
+      gateApp: GATE_APP,
+      blocking: [],
+    }),
+    [],
+  );
+});
+
+test("land: a record at the head that cannot be read refuses the PR, since it could hide a finding (STA-1945 AC-40)", async (t) => {
+  const w = world({ brokenRecord: true });
+  t.after(w.r.dispose);
+  const result = await landOne({
+    root: w.r.root,
+    repo: "figentra/flow",
+    base: "main",
+    number: 7,
+    gateApp: GATE_APP,
+    deps: { api: w.api, done: async () => {}, ...quiet },
+  });
+  assert.equal(result.code, 1);
+  assert.match(
+    result.problems?.join("\n") ?? "",
+    /the record at the head cannot be read: .*sta-5\.json: not valid JSON/,
+  );
+  assert.equal(
+    w.calls.some((c) => c.method === "PUT"),
+    false,
+  );
+});
+
+test("land: on a branch that is no key branch, `refs` names the squash and nothing moves to Done", async (t) => {
+  for (const { what, branch, merged } of [
+    { what: "the branch names no issue", branch: "adr/0008-queues", merged: false },
+    { what: "the slug only looks like a key", branch: "adr/0008-sta-12-cleanup", merged: false },
+    { what: "an auto-merged PR finishing", branch: "adr/0008-sta-12-cleanup", merged: true },
+  ]) {
+    const w = world({ branch, merged });
+    t.after(w.r.dispose);
+    /** @type {string[]} */
+    const done = [];
+    const result = await landOne({
+      root: w.r.root,
+      repo: "figentra/flow",
+      base: "main",
+      number: 7,
+      gateApp: GATE_APP,
+      refs: "sta-1945",
+      deps: { api: w.api, done: async (key) => void done.push(key), ...quiet },
+    });
+    assert.equal(result.code, 0, `${what}: ${JSON.stringify(result)}`);
+    if (!merged)
+      assert.equal(
+        w.calls.find((c) => c.method === "PUT")?.body.commit_message,
+        "Refs: STA-1945",
+        what,
+      );
+    assert.ok(!w.calls.some((c) => c.path.includes("/contents/.agents/specs")), what);
+    assert.deepEqual(done, [], what);
+  }
+});
+
+test("land: on a key branch, `refs` leaves the branch's key, its spec gate and its Done in place", async (t) => {
+  const w = world({ branch: "figentra/sta-1945-land" });
   t.after(w.r.dispose);
   /** @type {string[]} */
   const done = [];
@@ -296,7 +410,8 @@ test("land: a branch that names no issue takes the squash's Refs from `refs` and
   });
   assert.equal(result.code, 0, JSON.stringify(result));
   assert.equal(w.calls.find((c) => c.method === "PUT")?.body.commit_message, "Refs: STA-1945");
-  assert.deepEqual(done, []);
+  assert.ok(w.calls.some((c) => c.path.includes("/contents/.agents/specs")));
+  assert.deepEqual(done, ["sta-1945"]);
 });
 
 test("land: a refused merge changes nothing after it; a failed Linear call only warns", async (t) => {

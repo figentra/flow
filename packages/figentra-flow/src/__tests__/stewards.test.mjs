@@ -42,6 +42,7 @@ const OWNER = [
   "pnpm-workspace.yaml",
   "packages/x/.npmrc",
   "flow.config.json",
+  "presets/ours/third-party.yml",
   "sub/.infisical.json",
   ".agents/hooks/_rules.mjs",
   ".claude/settings.json",

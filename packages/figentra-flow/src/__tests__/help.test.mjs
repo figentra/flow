@@ -68,6 +68,9 @@ test("help: <command> --help prints its usage and runs nothing", async () => {
   const done = await runCommandForTest(CONSOLE, ["help", "task", "done"]);
   assert.equal(done.exitCode, 0);
   assert.match(done.stdout, /--command/);
+  const wave = await runCommandForTest(CONSOLE, ["help", "task", "wave"]);
+  assert.equal(wave.exitCode, 0);
+  assert.match(wave.stdout, /task wave STA-12/);
   const ledger = await runCommandForTest(CONSOLE, ["ledger", "--help"]);
   assert.equal(ledger.exitCode, 0);
   assert.match(ledger.stdout, /--since/);
@@ -95,6 +98,16 @@ test("help: the governance commands declare their options, --workspace among the
     const r = await runCommandForTest(CONSOLE, [name, "--help"]);
     assert.equal(r.exitCode, 0, name);
     for (const option of options) assert.match(r.stdout, new RegExp(option), `${name} ${option}`);
+  }
+});
+
+// @covers sta-1945:FR-15
+test("help: the stage commands declare --input and --record", async () => {
+  for (const name of ["plan", "review"]) {
+    const r = await runCommandForTest(CONSOLE, [name, "--help"]);
+    assert.equal(r.exitCode, 0, name);
+    for (const option of ["--input", "--record"])
+      assert.match(r.stdout, new RegExp(option), `${name} ${option}`);
   }
 });
 

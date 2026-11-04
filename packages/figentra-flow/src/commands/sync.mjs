@@ -6,11 +6,14 @@
  *   then runs the repository's own projector (`pnpm run agents:sync`) when its package.json has one; `--direct`
  *   renders Claude Code skills and OpenCode commands itself, for a repository without a projector. Nothing runs
  *   spec-kit's `specify`. It renders only the locked preset: when the installed preset's name or digest differs from
- *   the lock's, it refuses and names `fflow update` (STA-1945 FR-1, FR-2). It applies the repository's overrides and
- *   names each one it skips: an invalid one, or one that breaks a mandatory policy (FR-4, FR-5).
- * Boundary: writes only the rendered files, `.flow/lock.json`, and what the repository's own `agents:sync` writes.
+ *   the lock's, it refuses and names `fflow update` (STA-1945 FR-1, FR-2). It installs the preset's third-party skills
+ *   the profile selects (FR-6) into `.agents/skills/.vendor/`, pinned in the lock, and refuses one it may not or
+ *   cannot install (FR-8). It applies the repository's overrides and names each one it skips: an invalid one, or one
+ *   that breaks a mandatory policy (FR-4, FR-5).
+ * Boundary: writes only the rendered files, `.agents/skills/.vendor/`, `.flow/lock.json`, and what the repository's
+ *   own `agents:sync` writes; fetches third-party skills from their public sources.
  * Runtime: node
- * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-1, FR-2, P-002).
+ * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-1, FR-2, FR-4, FR-5, FR-6, FR-8, P-002).
  * Secrets: none.
  */
 import { spawnSync } from "node:child_process";
@@ -23,11 +26,14 @@ import { ConfigError } from "../lib/config.mjs";
 import { LockError, NewerLockError, readLock } from "../lib/lock.mjs";
 import {
   appliedOverrides,
+  legacyConflict,
   migrateLegacy,
   presetDrift,
   render,
+  selectedSkills,
   writeRendered,
 } from "../lib/render.mjs";
+import { installSkills } from "../lib/skills.mjs";
 import { runIn } from "../lib/workspace-run.mjs";
 
 /** The package's assets folder. */
@@ -67,15 +73,21 @@ export function lockOrNone(root) {
 /**
  * Renders and writes the `flow-*` files of `root`.
  * @param {string} root
- * @param {{ direct?: boolean, log?: (s: string) => void, adopt?: boolean }} [options] `adopt` takes the installed
- *   preset even when the lock records another (only `update` passes it)
+ * @param {{ direct?: boolean, log?: (s: string) => void, adopt?: boolean,
+ *   fetchTree?: import("../lib/skills.mjs").FetchTree }} [options] `adopt` takes the installed preset even when the
+ *   lock records another (only `update` passes it); `fetchTree` replaces the git fetch of third-party skills (tests)
  * @throws {SyncRefusal} when the installed preset differs from the lock's and `adopt` is not set
- * @throws {ConfigError} when a newer Flow wrote the lock
+ * @throws {ConfigError} when a newer Flow wrote the lock, or a third-party skill may not or cannot install
  */
-export function sync(root, { direct = false, log = console.log, adopt = false } = {}) {
+export function sync(root, { direct = false, log = console.log, adopt = false, fetchTree } = {}) {
   const lock = lockOrNone(root);
   const drift = adopt ? undefined : presetDrift(root, lock);
   if (drift) throw new SyncRefusal(drift);
+  // Both config files would resolve the wrong preset; refuse before the install prunes anything.
+  const conflict = legacyConflict(root);
+  if (conflict) throw new ConfigError(conflict);
+  // First: a skill that may not or cannot install refuses before the rename or the render writes anything.
+  installSkills(root, selectedSkills(root), { fetchTree });
   const migrated = migrateLegacy(root);
   if (migrated.error) throw new ConfigError(migrated.error);
   for (const line of migrated.done) log(`${NAME} sync: ${line} (the ${NAME} rename)`);
@@ -84,7 +96,7 @@ export function sync(root, { direct = false, log = console.log, adopt = false } 
     log(`${NAME} sync: skipped ${p} (\`${NAME} validate\` names every problem)`);
   const files = render(root, { direct, overrides });
   const removed = writeRendered(root, files, overrides);
-  for (const p of removed) log(`${NAME} sync: removed ${p} (spec-kit)`);
+  for (const p of removed) log(`${NAME} sync: removed ${p}`);
   log(`${NAME} sync: rendered ${files.size} file(s); .flow/lock.json written`);
   return { files: [...files.keys()], removed };
 }

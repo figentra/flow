@@ -3,16 +3,24 @@
  * Purpose: hold `fflow doctor` to its rules: a freshly initialised repository passes every offline check; a
  *   hand-edited rendered file fails `install`, an unignored worktree folder fails `worktrees`, invalid configuration
  *   fails `config`; outside git only `node` and `git` are reported; the binary exits 1 with the JSON report; the
- *   checks are grouped checklist rows, and a fresh local repository's missing credentials are information (FR-31).
+ *   checks are grouped checklist rows, and a fresh local repository's missing credentials are information (FR-31);
+ *   each machine-only skill is listed with its source in the Machine group (STA-1945 FR-8).
  * Boundary: scratch git repositories and `--offline`; no network.
  * Runtime: node
- * Governing contract: ADR 0022; STA-1729 (FR-13, AC-055); STA-1846; STA-1945 FR-31.
+ * Governing contract: ADR 0022; STA-1729 (FR-13, AC-055); STA-1846; STA-1945 (FR-8, FR-31).
  */
 // @covers sta-1729:FR-13 sta-1729:AC-055 sta-1729:P-013
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +28,7 @@ import { fileURLToPath } from "node:url";
 import { CHECK_GROUPS, checks, meets, rowsOf } from "../commands/doctor.mjs";
 import { init } from "../commands/init.mjs";
 import { LOCK } from "../lib/flow-dir.mjs";
+import { CONFIG_FILE } from "../lib/product.mjs";
 
 const BIN = join(dirname(fileURLToPath(import.meta.url)), "../../bin/fflow.mjs");
 
@@ -136,4 +145,39 @@ test("doctor: the checks are grouped rows; a fresh local repository's missing cr
   const credentials = rowsOf(checks(r.root, { disk })).find((row) => row.name === "credentials");
   assert.equal(credentials?.status, "fail");
   assert.match(credentials?.fix ?? "", /credentials/);
+});
+
+// @covers sta-1945:FR-8 sta-1945:AC-10 sta-1945:P-013
+test("doctor: names each machine-only skill's source; a third-party.yml it cannot read fails", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  const disk = () => ({ free: 100 * GB, total: 200 * GB });
+  writeFileSync(join(r.root, CONFIG_FILE), JSON.stringify({ version: 1, preset: "stackra" }));
+  const rows = checks(r.root, { offline: true, disk }).filter((c) =>
+    c.id.startsWith("machine-only:"),
+  );
+  assert.equal(rows.length, 2 + 6 + 13);
+  assert.ok(rows.every((c) => c.ok));
+  assert.ok(rowsOf(rows).every((row) => row.group === "Machine" && row.status === "ok"));
+  assert.match(
+    byId(rows)["machine-only:remotion-docs"].detail,
+    /^install it on this machine into ~\/\.claude\/skills\/remotion-docs\/ from github:remotion-dev\/skills \(.*\); fflow sync never installs it/,
+  );
+  // An invalid config is the config row's failure; no rows are read from the preset it names.
+  writeFileSync(
+    join(r.root, CONFIG_FILE),
+    JSON.stringify({ version: 1, preset: "stackra", bogus: true }),
+  );
+  const invalid = checks(r.root, { offline: true, disk });
+  assert.equal(byId(invalid).config.ok, false);
+  assert.deepEqual(
+    invalid.filter((c) => c.id.startsWith("machine-only:")),
+    [],
+  );
+  mkdirSync(join(r.root, "ours"));
+  writeFileSync(join(r.root, "ours", "third-party.yml"), "skills: nope\n");
+  writeFileSync(join(r.root, CONFIG_FILE), JSON.stringify({ version: 1, preset: "ours" }));
+  const c = byId(checks(r.root, { offline: true, disk }));
+  assert.equal(c["third-party"]?.ok, false);
+  assert.match(c["third-party"]?.detail ?? "", /third-party\.yml: `skills` is not a list/);
 });

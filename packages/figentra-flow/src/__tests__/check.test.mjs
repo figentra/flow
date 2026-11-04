@@ -3,15 +3,17 @@
  * Purpose: hold `fflow check` to STA-1945 FR-1 and FR-3: it writes nothing; a synced repository passes; it fails,
  *   naming each cause, on any byte changed in an owned file (in the header, in the body, the header removed, or a
  *   strict JSON file with no header), a missing owned file, a preset that differs from the locked digest, an
- *   unreadable lock and an invalid config; it warns from 14 days before an override's review date, fails after it,
- *   fails on a mandatory policy that is off, and on an override changed without a sync (FR-2, FR-4, FR-5).
- * Boundary: temporary folders; no process, no network.
+ *   unreadable lock, an invalid config, a committed machine-only skill (FR-8) and a git that cannot list the
+ *   tracked files (it fails closed); it warns from 14 days before an override's review date, fails after it, fails on
+ *   a mandatory policy that is off, and on an override changed without a sync (FR-2, FR-4, FR-5).
+ * Boundary: temporary folders and scratch git repositories; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
  */
 // @covers sta-1945:FR-1 sta-1945:FR-3 sta-1945:AC-1 sta-1945:P-001 sta-1945:P-005
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
@@ -19,6 +21,7 @@ import { check, report } from "../commands/check.mjs";
 import { sync } from "../commands/sync.mjs";
 import { LOCK } from "../lib/flow-dir.mjs";
 import { digestOf, readLock, writeLock } from "../lib/lock.mjs";
+import { THIRD_PARTY } from "../lib/skills.mjs";
 import { changePreset, governed, OWN_PRESET, snapshot } from "./__fixtures__/governed.mjs";
 
 const quiet = { log: () => {} };
@@ -121,6 +124,48 @@ test("check: names a lock it cannot read and a missing preset folder, without a 
     problems(root),
     /the preset flow\.config\.json names has no folder at .*presets\/ours/,
   );
+});
+
+// @covers sta-1945:FR-8 sta-1945:AC-10 sta-1945:P-013
+test("check: refuses a committed machine-only skill, naming its source; an untracked copy is the machine's", (t) => {
+  const root = governed(t, { own: true });
+  spawnSync("git", ["init", "-q"], { cwd: root });
+  writeFileSync(
+    join(root, OWN_PRESET, THIRD_PARTY),
+    'skills:\n  - id: animate\n    source: "the owner\'s library"\n    licence: own\n    machineOnly: true\n',
+  );
+  sync(root, quiet);
+  const dir = ".claude/skills/animate";
+  mkdirSync(join(root, dir), { recursive: true });
+  writeFileSync(join(root, dir, "SKILL.md"), "---\nname: animate\n---\n");
+  assert.equal(problems(root), "");
+  spawnSync("git", ["add", dir], { cwd: root });
+  assert.match(
+    problems(root),
+    /^\.claude\/skills\/animate is the machine-only skill animate, .*install it on the machine from the owner's library/,
+  );
+  // An invalid config is its own problem; the preset it names is not read for machine-only skills.
+  const config = join(root, "flow.config.json");
+  const valid = readFileSync(config, "utf8");
+  writeFileSync(config, JSON.stringify({ ...JSON.parse(valid), bogus: true }));
+  const invalid = problems(root);
+  assert.match(invalid, /flow\.config\.json/);
+  assert.doesNotMatch(invalid, /machine-only/);
+  writeFileSync(config, valid);
+  writeFileSync(join(root, OWN_PRESET, THIRD_PARTY), "skills: nope\n");
+  assert.match(problems(root), /third-party\.yml: `skills` is not a list/);
+});
+
+// @covers sta-1945:FR-8
+test("check: fails closed when git cannot list the tracked files of a preset with machine-only skills", (t) => {
+  const root = governed(t, { own: true });
+  writeFileSync(
+    join(root, OWN_PRESET, THIRD_PARTY),
+    'skills:\n  - id: animate\n    source: "the owner\'s library"\n    licence: own\n    machineOnly: true\n',
+  );
+  sync(root, quiet);
+  // Not a git repository: no listing is not the same as no machine-only skill committed.
+  assert.match(problems(root), /could not list the tracked SKILL\.md files: /);
 });
 
 // @covers sta-1945:FR-4 sta-1945:FR-5 sta-1945:AC-1 sta-1945:AC-4 sta-1945:P-007

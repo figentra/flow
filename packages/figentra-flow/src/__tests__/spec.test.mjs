@@ -48,7 +48,7 @@ test("spec paths: --paths-only prints every path; validation refuses as the scri
   });
   assert.throws(() => paths(at, []), /plan\.md not found .*run \/flow-plan first/);
   writeFileSync(join(w.dir, "plan.md"), "# Plan\n");
-  assert.throws(() => paths(at, ["--require-tasks"]), /tasks\.md not found .*\/flow-tasks/);
+  assert.throws(() => paths(at, ["--require-tasks"]), /tasks\.md not found .*\/flow-plan/);
   for (const f of ["quickstart.md", "research.md", "tasks.md"])
     writeFileSync(join(w.dir, f), "x\n");
   mkdirSync(join(w.dir, "contracts"));

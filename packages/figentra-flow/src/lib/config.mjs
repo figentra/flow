@@ -129,7 +129,8 @@ export const SCHEMA = {
         owner: str,
       },
     },
-    gate: { type: "object", additionalProperties: false, properties: { check: str } },
+    // `shard`: the check for `gate run --shards`, with `{filters}` for a shard's packages (FR-15)
+    gate: { type: "object", additionalProperties: false, properties: { check: str, shard: str } },
     approve: {
       type: "object",
       additionalProperties: false,
@@ -251,7 +252,7 @@ export function validate(schema, value, path = "") {
  * @typedef {{ version?: number, preset?: string, profile?: string, team?: string, specs?: { dir?: string, bugsDir?: string }, tracker?: any, credentials?: any, runner?: any, secrets?: any,
  *             apps?: { gate?: { slug?: string, login: string, aliases?: string[] }, review?: { slug: string },
  *                      owner?: string },
- *             gate?: { check?: string }, approve?: { ownerOnly?: string[], checks?: Record<string, string> },
+ *             gate?: { check?: string, shard?: string }, approve?: { ownerOnly?: string[], checks?: Record<string, string> },
  *             clean?: { keep?: string[], budget?: number }, review?: { required?: string[] },
  *             baseline?: { tasks?: string[], mustPass?: string[], install?: string, setup?: Record<string, unknown>[], branch?: string },
  *             artifacts?: { paths?: string[], maxBytes?: number },

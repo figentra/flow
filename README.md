@@ -22,7 +22,7 @@
 ## What it is
 
 Figentra Flow (`fflow`, alias `fflow`) is the spec CLI for Stackra repositories. It owns spec-driven
-development end to end (ADR 0510), from `/flow-specify` to the landed change: the presets and templates, the eight
+development end to end (ADR 0510), from `/flow-specify` to the landed change: the presets and templates, the nine
 `flow-*` commands it renders for Claude Code and OpenCode, the `.flow/` folder, the gate on a box, landing, release
 trains and releases. Adapters choose the tracker, runner, credentials and secrets per repository. Its `init` and
 `sync` also install the files every Figentra repository shares, this README layout among them.

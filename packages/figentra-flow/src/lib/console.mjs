@@ -3,18 +3,18 @@
  * Purpose: `fflow` on the one CLI engine, `@stackra/console` (STA-1966, FR-31): the Flow theme and every command,
  *   grouped, so `fflow` alone prints the banner, the version and the grouped commands, `<command> --help` prints its
  *   usage and runs nothing, an unknown command names the closest match and exits 2, and a failure is one error block.
- *   `doctor`, `status`, `next`, `resume`, `task start|done`, `todo`, `ledger`, `session stop` and the governance
- *   commands (`update`, `check`, `diff`, `validate`, STA-1945 FR-1) declare their arguments and options; every other
- *   command is passthrough (migration only, ADR 0500 decision 7): it still parses its own flags from `io.rest`, and
- *   `PASSTHROUGH` in the tests pins that list.
+ *   `doctor`, `status`, `next`, `resume`, `task start|done|wave`, `todo`, `ledger`, `session stop`, the governance
+ *   commands (`update`, `check`, `diff`, `validate`, STA-1945 FR-1) and the stage commands (`plan`, `review`, FR-15)
+ *   declare their arguments and options; every other command is passthrough (migration only, ADR 0500 decision 7): it
+ *   still parses its own flags from `io.rest`, and `PASSTHROUGH` in the tests pins that list.
  * Boundary: the registry and the repository check, in the CLI layer only: the governance core (gate, approve, land,
  *   record, lock, baseline) imports nothing from `@stackra/*`. A command's module is imported when it runs, never for
  *   the list or the help, and bin/fflow.mjs never loads this file for `fflow guard`, the agent hook. Plain
  *   JavaScript: the engine's legacy field decorators are applied by hand after each class, exactly as TypeScript's
  *   emit applies them.
  * Runtime: node
- * Governing contract: STA-1945 FR-1, FR-31 (AC-35, AC-36, AC-37), FR-13, FR-19, FR-21, FR-23; STA-1966 (FR-024,
- *   FR-031).
+ * Governing contract: STA-1945 FR-1, FR-15, FR-31 (AC-35, AC-36, AC-37), FR-13, FR-19, FR-21, FR-23, FR-24; STA-1966
+ *   (FR-024, FR-031).
  * Secrets: none.
  */
 import { Argument, Command, CommandError, Option, UsageError } from "@stackra/console";
@@ -180,6 +180,44 @@ function governance({ name, description, examples, direct = false, preset = fals
     Str()(Governance.prototype, "preset");
   }
   return Governance;
+}
+
+/**
+ * A stage command around its Claude workflow (STA-1945 FR-15): `plan <key>` or `review <pr>`, with `--input` or
+ * `--record <file>` declared, so its help lists them. It hands them to the command's `run` as flags; `run` refuses
+ * neither or both (exit 2).
+ * @param {{ name: string, description: string, group: string, examples: string[], subject: string, output: string }}
+ *   definition `subject`: what the argument names; `output`: the file `--record` takes.
+ * @returns {CommandClass}
+ */
+function stage({ name, description, group, examples, subject, output }) {
+  const Stage = class extends Command({ name, description, group, examples, docs: DOCS }) {
+    /** @type {string} */
+    subject;
+    input = false;
+    /** @type {string | undefined} */
+    record = undefined;
+
+    /** @param {CommandIo} io */
+    async handle(io) {
+      requireRepository(io.cwd);
+      const { run } = await import(`../commands/${name}.mjs`);
+      const args = [
+        this.subject,
+        ...(this.input ? ["--input"] : []),
+        ...(this.record === undefined ? [] : ["--record", this.record]),
+      ];
+      return refusing(() => run(args));
+    }
+  };
+  Argument({ description: subject })(Stage.prototype, "subject");
+  Option({ description: "Print the workflow's input as JSON" })(Stage.prototype, "input");
+  Option({ description: `Validate and record the workflow's ${output}` })(
+    Stage.prototype,
+    "record",
+  );
+  Str()(Stage.prototype, "record");
+  return Stage;
 }
 
 class DoctorCommand extends Command({
@@ -386,6 +424,24 @@ Option({ description: "Print the command's output after it runs" })(
   "echo",
 );
 
+class TaskWaveCommand extends Command({
+  name: "task:wave",
+  description: "Queue the build's next wave: set its [ ] tasks to [~] and print them",
+  group: GROUPS.work,
+  docs: DOCS,
+  examples: [`${NAME} task wave STA-12`, `${NAME} task wave STA-12 --json`],
+}) {
+  /** @type {string} */
+  key;
+
+  /** @param {CommandIo} io */
+  async handle(io) {
+    const { wave } = await import("../commands/task.mjs");
+    return tasking(() => wave(io, this));
+  }
+}
+Argument({ description: "The issue key" })(TaskWaveCommand.prototype, "key");
+
 class SessionStopCommand extends Command({
   name: "session:stop",
   description: "The SessionEnd hook: commit and push the session's tracked work and Flow's record",
@@ -572,6 +628,14 @@ export const COMMANDS = [
       `${NAME} gate run`,
     ],
   }),
+  stage({
+    name: "plan",
+    description: "The plan stage: its workflow's input, then its tasks.md checked and recorded",
+    group: GROUPS.specs,
+    examples: [`${NAME} plan STA-12 --input`, `${NAME} plan STA-12 --record tasks.md`],
+    subject: "The issue key",
+    output: "tasks.md",
+  }),
   passthrough({
     name: "trace",
     description: "The requirement to task to test matrix, spec drift and the Done rules",
@@ -608,12 +672,21 @@ export const COMMANDS = [
   ResumeCommand,
   TaskStartCommand,
   TaskDoneCommand,
+  TaskWaveCommand,
   TodoCommand,
   passthrough({
     name: "clean",
     description: "Remove finished worktrees and report what was kept",
     group: GROUPS.work,
     examples: [`${NAME} clean --dry-run`, `${NAME} clean --budget`, `${NAME} clean --all`],
+  }),
+  stage({
+    name: "review",
+    description: "The review stage: its workflow's input, then its findings recorded for land",
+    group: GROUPS.land,
+    examples: [`${NAME} review 42 --input`, `${NAME} review 42 --record findings.json`],
+    subject: "The pull request number",
+    output: "findings (JSON)",
   }),
   passthrough({
     name: "hooks",

@@ -14,12 +14,15 @@
  *   shaped it, and `.flow/lock.json` v2 records the Flow version, the preset with its digest, the profile, the
  *   overrides' digest and each written file's digest (STA-1945 FR-2, FR-3); `installProblems`, reading a v1 or v2
  *   lock, is the check that replaces spec-kit's tripwire: no hand edit, no forgotten `sync`, and no spec-kit leftover.
- *   With a `.flow/readme.yml`, `README.md` is rendered too (STA-1879).
+ *   With a `.flow/readme.yml`, `README.md` is rendered too (STA-1879). The lock pins the third-party skills the profile
+ *   selects, which `sync` installs into the git-ignored `.agents/skills/.vendor/` (STA-1945 FR-8).
  * Boundary: `render` and `installProblems` read; `writeRendered` writes the rendered files and the lock and removes
- *   spec-kit's rendered `speckit-*` skills and commands. Nothing here deletes `.specify/` (that is `migrate`), nor,
- *   yet, an owned file a narrower profile no longer renders (STA-1945 T068).
+ *   spec-kit's rendered `speckit-*` skills and commands, and the `flow-*` ones the lock lists, it no longer renders
+ *   and nobody edited (`flow-tasks`, STA-1945 FR-15, and those a narrower profile deselects, FR-6). Nothing here
+ *   deletes `.specify/` (that is `migrate`), nor, yet, another owned file (an agent, rule, surface or hook) a
+ *   narrower profile or preset no longer renders (STA-1945 T068).
  * Runtime: node
- * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-2, FR-3, FR-4, FR-5, FR-6).
+ * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-2, FR-3, FR-4, FR-5, FR-6, FR-8).
  * Secrets: none.
  */
 import {
@@ -65,6 +68,7 @@ import {
 } from "./product.mjs";
 import { withHeader } from "./provenance.mjs";
 import { renderReadme } from "./readme.mjs";
+import { loadThirdParty, pinsOf } from "./skills.mjs";
 import { parseYaml, YamlError } from "./yaml.mjs";
 
 /** @typedef {import("./overrides.mjs").Override} Override */
@@ -75,16 +79,18 @@ import { parseYaml, YamlError } from "./yaml.mjs";
  * @typedef {{ root: string, config: Record<string, any>, presetDir: string }} RenderContext
  */
 
-/** The eight commands, in workflow order. */
+/** The commands, in workflow order; `plan` writes tasks.md too, so there is no `tasks` (STA-1945 FR-15). */
 export const VERBS = [
   "specify",
   "clarify",
   "plan",
-  "tasks",
   "analyze",
   "checklist",
   "implement",
+  "build",
   "converge",
+  "gate",
+  "review",
 ];
 
 /** Where spec-kit left files; any of them after `migrate` is a finding. */
@@ -391,6 +397,7 @@ export function profileGaps(root) {
     skills: [
       ...VERBS.map((verb) => `flow-${verb}`),
       ...(existsSync(skills) ? readdirSync(skills) : []),
+      ...loadThirdParty(presetDir(root)).map((s) => s.id),
     ],
   };
   return /** @type {const} */ (["agents", "skills"]).flatMap((kind) =>
@@ -450,6 +457,16 @@ export function renderReference({ presetDir, source = (_, preset) => preset }) {
 /** The preset's top-level files `renderReference` renders under `.agents/`. */
 const REFERENCE_FILES = ["routing.yaml", "models.yaml"];
 
+/**
+ * The preset's third-party skills the profile selects (FR-6, FR-8): what `sync` installs and the lock pins.
+ * @param {string} root
+ * @throws {ConfigError} as `selectedProfile` and `loadThirdParty` do
+ */
+export function selectedSkills(root) {
+  const profile = selectedProfile(root);
+  return loadThirdParty(presetDir(root)).filter((s) => selects(profile, "skills", s.id));
+}
+
 /** A secret name GitHub accepts. */
 const SECRET_NAME = /^[A-Z_][A-Z0-9_]*$/;
 
@@ -492,6 +509,30 @@ export function leftovers(root) {
 }
 
 /**
+ * The files `.flow/lock.json` lists, path to digest; none without a lock or with one this Flow cannot read.
+ * @param {string} root
+ * @returns {Record<string, string>}
+ */
+function lockedFiles(root) {
+  try {
+    return readLock(root)?.files ?? {};
+  } catch (error) {
+    if (!(error instanceof LockError)) throw error;
+    return {};
+  }
+}
+
+/**
+ * Why `migrateLegacy` would refuse, or undefined: both config files at once. `sync` asks before it writes anything.
+ * @param {string} root
+ */
+export function legacyConflict(root) {
+  if (existsSync(join(root, LEGACY_CONFIG_FILE)) && existsSync(join(root, CONFIG_FILE)))
+    return `${CONFIG_FILE} and ${LEGACY_CONFIG_FILE} both exist: keep ${CONFIG_FILE} and delete the other`;
+  return undefined;
+}
+
+/**
  * The 0.2.2 rename (`figentra-flow` → `fflow`, owner 2026-11-02), once: the config file takes its new name (its
  * `$schema` with it) and the workflows rendered under the old name go. Both config files at once is an error.
  * @param {string} root
@@ -502,12 +543,9 @@ export function migrateLegacy(root) {
   const legacy = join(root, LEGACY_CONFIG_FILE);
   /** @type {string[]} */
   const done = [];
+  const error = legacyConflict(root);
+  if (error) return { error, done };
   if (existsSync(legacy)) {
-    if (existsSync(current))
-      return {
-        error: `${CONFIG_FILE} and ${LEGACY_CONFIG_FILE} both exist: keep ${CONFIG_FILE} and delete the other`,
-        done,
-      };
     const schema = (/** @type {string} */ f) => f.replace(".json", ".schema.json");
     writeFileSync(
       current,
@@ -526,15 +564,23 @@ export function migrateLegacy(root) {
 }
 
 /**
- * Writes the rendered files with their provenance headers, then `.flow/lock.json` v2, and removes the rendered `speckit-*` skills and commands.
+ * Writes the rendered files with their provenance headers, then `.flow/lock.json` v2 (the third-party skills `sync`
+ * installed first pinned in it, STA-1945 FR-8), and removes the rendered `speckit-*` skills and commands and the
+ * unedited `flow-*` ones it no longer renders.
  * @param {string} root
  * @param {Map<string, string>} files
  * @param {Override[]} [overrides] the overrides `files` were rendered with (the headers name them)
- * @returns {string[]} the spec-kit files it removed
+ * @returns {string[]} the files it removed
  */
 export function writeRendered(root, files, overrides) {
   const removed = removable(root);
   for (const p of removed) rmSync(join(root, p), { recursive: true, force: true });
+  for (const p of dropped(root, files)) {
+    const at = join(root, p);
+    rmSync(at);
+    removed.push(p);
+    if (!readdirSync(dirname(at)).length) rmSync(dirname(at), { recursive: true });
+  }
   const written = withHeaders(root, files, overrides);
   for (const [path, text] of written) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
@@ -543,6 +589,26 @@ export function writeRendered(root, files, overrides) {
   // The lock goes last: a failed write leaves the old lock, and `check` names what differs.
   writeLock(root, lockOf(root, written));
   return removed;
+}
+
+/**
+ * The `flow-*` skills and commands the lock lists that `files` no longer holds (`flow-tasks`, FR-15, or one a narrower
+ * profile deselects, FR-6) and nobody edited since: what `writeRendered` removes besides spec-kit's. Nothing else the
+ * lock lists goes.
+ * @param {string} root
+ * @param {Map<string, string>} files
+ */
+export function dropped(root, files) {
+  return Object.entries(lockedFiles(root))
+    .filter(
+      ([p, digest]) =>
+        !files.has(p) &&
+        SKILL_DIRS.some((d) => p.startsWith(`${d}/flow-`)) &&
+        !p.includes("..") &&
+        existsSync(join(root, p)) &&
+        digestOf(readFileSync(join(root, p), "utf8")) === digest,
+    )
+    .map(([p]) => p);
 }
 
 /**
@@ -595,8 +661,8 @@ export function lockOf(root, written) {
     profile: selectedProfile(root).name,
     overrides: overridesDigest(root),
     files: Object.fromEntries([...written].map(([path, text]) => [path, digestOf(text)])),
-    // Third-party skills are pinned here once Flow installs them (STA-1945 PR 7).
-    skills: {},
+    // The pins of what `sync` installed (machine-only skills are never recorded); `diff` reads them without a fetch.
+    skills: pinsOf(selectedSkills(root)),
   };
 }
 

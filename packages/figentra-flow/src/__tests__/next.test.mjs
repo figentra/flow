@@ -1,14 +1,15 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold `fflow next` to its contract: the key comes from the branch or the argument; with no record the task
- *   is at the stage its spec proves (else `start`); a record names its stage and command, read from the key's worktree
- *   or branch rather than this checkout; an unpushed record is flagged; a record that fails its schema is refused by
- *   its field; with no key and none on the branch, it asks for one.
+ * Purpose: hold `fflow next` to its contract: the key comes from the branch or the argument; with no record the task is
+ *   at the stage its spec proves (else `start`); a record names its stage and command, read from the key's worktree or
+ *   branch rather than this checkout, and so is its wave; an unpushed record is flagged; a record that fails its schema
+ *   is refused by its field; with no key and none on the branch, it asks for one.
  * Boundary: temporary repositories with a local bare origin; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
  */
 // @covers sta-1945:FR-13 sta-1945:AC-13 sta-1945:P-017
+// @covers sta-1945:FR-24
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -112,6 +113,38 @@ test("next <key> reads the record on the key's worktree or branch, not this chec
   sh(r.root, "branch", "-D", "figentra/sta-9-elsewhere");
   const pushed = next({ cwd: r.root, key: "STA-9" });
   assert.equal(pushed.ok && pushed.stage, "review", JSON.stringify(pushed));
+});
+
+test("next <key> on a branch with no checkout reads its wave from that branch, not this checkout", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  const spec = (/** @type {string} */ root, /** @type {string[]} */ marks) => {
+    const dir = join(root, ".agents", "specs", "sta-9-x");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "spec.md"), "# x\n\n**Status**: Implementing\n");
+    writeFileSync(
+      join(dir, "tasks.md"),
+      [
+        "## Phase 1",
+        "",
+        ...["a", "b"].map((f, i) => `- [${marks[i]}] T00${i + 1} In \`${f}.mjs\``),
+      ].join("\n"),
+    );
+  };
+  const path = join(r.root, ".claude", "worktrees", "sta-9-elsewhere");
+  sh(r.root, "worktree", "add", "-q", "-b", "figentra/sta-9-elsewhere", path, "origin/main");
+  spec(path, ["x", " "]);
+  sh(path, "add", ".agents");
+  sh(path, "commit", "-q", "-m", "add the spec");
+  updateRecord(path, "sta-9", (rec) => ({ ...rec, stage: "build", state: "active" }));
+  commitRecord(path, "sta-9", { message: "chore(flow): record" });
+  sh(r.root, "worktree", "remove", "--force", path);
+  // this checkout holds the same spec with nothing done
+  spec(r.root, [" ", " "]);
+  const step = next({ cwd: r.root, key: "STA-9" });
+  assert.ok(step.ok, JSON.stringify(step));
+  assert.equal(step.stage, "build");
+  assert.deepEqual(step.wave?.ids, ["T002"]);
 });
 
 test("next: with no key on a branch that names none, it asks for one", (t) => {

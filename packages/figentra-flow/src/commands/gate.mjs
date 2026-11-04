@@ -7,7 +7,8 @@
  * Runtime: node
  * Governing contract: ADR 0120 (SDLC spec location, lanes and change risk); ADR 0121; ADR 0065 (rule 7).
  *
- *   run [--ref b] [--box host] [-- flags]  the checks through the runner (or on `--box`); the box posts `fflow/gate`
+ *   run [--ref b] [--box host] [--shards n] [-- flags]  the checks through the runner (or on `--box`), fanned out by
+ *                               package shard with `--shards`; one `fflow/gate` status is posted
  *   baseline save|check         the baseline gate (STA-1942, gate-baseline.mjs): a PR passes when it adds no failure
  *                               to main's
  *   plan <spec.md>              exit 1 unless the spec may be planned (run by setup-plan.sh)
@@ -625,12 +626,12 @@ export function ownerApprovalProblems(text, owner) {
 /**
  * The approval stops of ADR 0502: feature before Tasked; big before Planned and before Tasked; both name the Approver.
  * @param {string} text
+ * @param {string} [status] the status to check for (`plan` passes the one its step moves the spec to)
  * @returns {string[]}
  */
-export function checkApproval(text) {
+export function checkApproval(text, status = statusOf(text)) {
   const tier = tierOf(text);
   if (tier !== "feature" && tier !== "big") return [];
-  const status = statusOf(text);
   if (status === "abandoned" || status === "superseded") return [];
   const problems = [];
   if (atLeast(status, "planned") && !/^\*\*Approver\*\*:\s*\S/m.test(strip(text)))
@@ -1475,7 +1476,7 @@ export function run([mode, ...args]) {
     return failures ? 1 : 0;
   }
   console.error(
-    `usage: ${NAME} gate run [--ref <branch>] [--box <host>] [-- <runner flags>] | command | plan <spec.md> | check <dir> | tasks <tasks.md> | lane | branch | ci [--base=ref] | stage <spec.md> <${STAGES.join("|")}> | dir [--slug s] [--key <key>]`,
+    `usage: ${NAME} gate run [--ref <branch>] [--box <host>] [--shards <n>] [-- <runner flags>] | command | plan <spec.md> | check <dir> | tasks <tasks.md> | lane | branch | ci [--base=ref] | stage <spec.md> <${STAGES.join("|")}> | dir [--slug s] [--key <key>]`,
   );
   return 2;
 }

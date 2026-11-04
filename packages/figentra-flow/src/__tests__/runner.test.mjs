@@ -1,7 +1,8 @@
 /**
  * Figentra Flow file contract:
  * Purpose: hold the runner port to AC-038 and AC-036: `command` expands `{label}`, `{dir}` and `{command}` in one pass
- *   and `{flags}` into the arguments after `--`, and reports a missing program as 127; `local` runs the command in the
+ *   and `{flags}` into the arguments after `--`, and reports a missing program as 127, and its `start` (a gate shard,
+ *   STA-1945 FR-15) keeps stdout; `local` runs the command in the
  *   job folder; `ssh` copies the folder to the host and runs it there, refusing a host that is not one; `--box` wins
  *   over the configuration; a config without a runner is refused and a repository with no config file keeps the
  *   testbed with a warning; `github-actions` is built from the block (its behaviour: github-actions.test).
@@ -9,7 +10,7 @@
  * Runtime: node
  * Governing contract: ADR 0022; STA-1729 phase A (A3).
  */
-// @covers sta-1729:FR-11 sta-1729:AC-036 sta-1729:AC-038
+// @covers sta-1729:FR-11 sta-1729:AC-036 sta-1729:AC-038 sta-1945:FR-15
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -58,6 +59,16 @@ test("command: placeholders in one pass, {flags} spread, the exit code passed th
   assert.equal(runnerPort({ kind: "command", run: ["x"], secrets: true }).wraps, true);
   const missing = runnerPort({ kind: "command", run: ["fflow-no-such-program-42"] });
   assert.equal(missing.run(JOB), 127);
+});
+
+test("command start: a gate shard runs alongside others, its stdout kept and its exit passed through; 127 when missing", async () => {
+  const runner = runnerPort({ kind: "command", run: ["sh", "-c", "{command}"] });
+  assert.deepEqual(await runner.start?.({ ...JOB, command: `echo '{"exitCode":3}'; exit 3` }), {
+    code: 3,
+    out: '{"exitCode":3}\n',
+  });
+  const missing = runnerPort({ kind: "command", run: ["fflow-no-such-program-42"] });
+  assert.equal((await missing.start?.(JOB))?.code, 127);
 });
 
 test("local: the command runs in the job folder; its exit code passes through", (t) => {

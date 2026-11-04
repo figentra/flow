@@ -2,8 +2,9 @@
  * Figentra Flow file contract:
  * Purpose: `fflow land [<pr>] [--stack] [--dry-run] [--manual-ok]`, the lander's checklist as code: squash-merge a PR
  *   only when it is open, clean, based on the default branch, green on `fflow/gate` from the gate App on its exact
- *   head, conventionally titled, its spec's approvals are recorded and it changes no owner-only path (with the globs
- *   an `extend` of `owner-only` adds, STA-1945 FR-5); then set Linear
+ *   head, conventionally titled, its spec's approvals are recorded, its recorded review confirmed no blocking finding
+ *   (STA-1945 AC-40) and it changes no owner-only path (with the globs an `extend` of `owner-only` adds, STA-1945
+ *   FR-5); then set Linear
  *   Done, record the merge commit, remove the worktree through `clean`'s rules, delete the branch and comment. When the
  *   base's ruleset requires an approving review the head lacks, it dispatches the approval workflow and turns on
  *   auto-merge at the head instead, never an admin path; `land` on a merged PR runs the steps after the merge
@@ -29,6 +30,7 @@ import { clean } from "./clean.mjs";
 import { gateRun, slugOf } from "./gate-run.mjs";
 import { trackerFor } from "../adapters/tracker/index.mjs";
 import { github } from "../lib/github.mjs";
+import { readRecordAt, RecordError } from "../lib/record.mjs";
 import { aiReview } from "../lib/review.mjs";
 import { pathProblems, reviewerProblems, roleOf } from "../lib/roles.mjs";
 import { loadTeam } from "../lib/team.mjs";
@@ -107,10 +109,11 @@ export function connect(root) {
 /**
  * Every reason the PR may not land; empty means it may.
  * @param {{ pr: any, statuses: any[], base: string, spec?: string, gateApp?: string | string[],
- *           reviewer?: string, required: boolean, files?: string[],
+ *           reviewer?: string | string[], required: boolean, files?: string[],
  *           manualOk?: boolean, stack?: boolean, review?: { verdict: string | null, ignored: string[] },
  *           artifacts?: string[], reviewTiers?: string[], ownerOnly?: string[],
- *           ownerFindings?: string[] }} input
+ *           ownerFindings?: string[], blocking?: string[] }} input `blocking`: the review workflow's confirmed
+ *   blocking findings (`blockingFindings`)
  * @returns {string[]}
  */
 export function landRules({
@@ -129,8 +132,14 @@ export function landRules({
   review,
   artifacts = [],
   reviewTiers = REVIEW_TIERS,
+  blocking = [],
 }) {
   const problems = [...artifacts];
+  // AC-40: a confirmed blocking finding stops the PR until a new review clears it.
+  for (const b of blocking)
+    problems.push(
+      `the review confirmed a blocking finding: ${b} (fix it, then review the new head: /flow-review)`,
+    );
   // STA-1856 FR-1: what only the owner approves never lands through an agent.
   const owned = ownerOnlyPaths(files, ownerOnly);
   if (owned.length)
@@ -155,7 +164,7 @@ export function landRules({
     review?.verdict !== "PASS"
   )
     problems.push(
-      `no AI review PASS for ${pr.head?.sha} (counted verdict: ${review?.verdict ?? "none"}): a different agent posts "AI-REVIEW: PASS ${pr.head?.sha} base=${pr.base?.ref}" as the ${reviewer ?? "(unconfigured, apps.review.slug)"} app${review?.ignored.length ? `; ignored: ${[...new Set(review.ignored)].join("; ")}` : ""}`,
+      `no AI review PASS for ${pr.head?.sha} (counted verdict: ${review?.verdict ?? "none"}): a different agent posts "AI-REVIEW: PASS ${pr.head?.sha} base=${pr.base?.ref}" as the ${[reviewer ?? []].flat().filter(Boolean).join(" or ") || "(unconfigured, apps.review.slug)"} app${review?.ignored.length ? `; ignored: ${[...new Set(review.ignored)].join("; ")}` : ""}`,
     );
   if (spec !== undefined) {
     problems.push(...checkApproval(spec).map((p) => `spec: ${p}`));
@@ -173,6 +182,21 @@ export function landRules({
       `${base}'s ruleset does not require ${STATUS_CONTEXT} yet (phase 6); until then only the tester lands, with --manual-ok`,
     );
   return problems;
+}
+
+/**
+ * The confirmed blocking findings of every review recorded on the newest review's commit, each as
+ * `<id> in <file>: <text>`; none without a record or a review (AC-40). Only a review of a new head clears a finding:
+ * another review of the same commit cannot.
+ * @param {import("../lib/record.mjs").FlowRecord | undefined} record
+ */
+export function blockingFindings(record) {
+  const newest = record?.review.at(-1);
+  const found = (record?.review ?? [])
+    .filter((r) => r.sha === newest?.sha)
+    .flatMap((r) => r.blocking ?? [])
+    .map((f) => `${f.id} in ${f.file}: ${f.text}`);
+  return [...new Set(found)];
 }
 
 /** The squash commit's message: one `Refs:` line and the co-author trailers of the PR's commits. */
@@ -255,8 +279,11 @@ function specAt(
 /**
  * Lands one PR.
  * @param {{ root: string, repo: string, base: string, number: number, dry?: boolean, manualOk?: boolean,
- *           gateApp?: string | string[], reviewer?: string, owner?: string, refs?: string, deps: LandDeps }} options
- *   `refs`: the issue the squash's `Refs:` names when the branch names none (it is not moved to Done).
+ *           gateApp?: string | string[], reviewer?: string | string[], owner?: string, refs?: string,
+ *           deps: LandDeps }} options
+ *   `refs`: the issue the squash's `Refs:` names when the branch is not a key branch (`<prefix>/<key>-<slug>`); then a
+ *   slug that only looks like a key (`adr/0008-sta-12-x`) neither names the squash, picks a spec nor moves to Done,
+ *   and `refs` is not moved to Done either. A key branch keeps its key, its spec gate and its Done.
  * @returns {Promise<{ code: number, problems?: string[], merged?: string, head?: string,
  *   queued?: boolean, waiting?: string[] }>}
  */
@@ -279,7 +306,8 @@ export async function landOne({
   const head = pr.json.head.sha;
   const branch = pr.json.head.ref;
   const scheme = deps.scheme ?? trackerFor(root, { warn: () => {} }).scheme;
-  const key = scheme.parse(branch);
+  // With `refs`, only a `<prefix>/<key>-<slug>` branch's key counts: an ADR slug may merely look like one.
+  const key = refs && !scheme.isBranch(branch) ? undefined : scheme.parse(branch);
   // STA-1856 FR-3: an auto-merged PR comes back here to finish.
   if (pr.json.merged && pr.json.merge_commit_sha) {
     if (pr.json.base?.ref !== base)
@@ -331,9 +359,19 @@ export async function landOne({
   );
   // AC-043: the head must be here to check its files; fetch it when it is not.
   if (!git(root, ["cat-file", "-e", `${head}^{commit}`]).ok) fetch(root);
-  const artifacts = git(root, ["cat-file", "-e", `${head}^{commit}`]).ok
+  const here = git(root, ["cat-file", "-e", `${head}^{commit}`]).ok;
+  const artifacts = here
     ? artifactProblems(root, `origin/${base}`, head, loadConfig(root).config.artifacts)
     : [`cannot read the head ${head.slice(0, 12)} to check its files (fetch failed)`];
+  // AC-40: the review recorded at the head; a record that cannot be read could hide a finding, so it refuses.
+  /** @type {string[]} */
+  let blocking = [];
+  try {
+    blocking = here && key ? blockingFindings(readRecordAt(root, head, key)) : [];
+  } catch (error) {
+    if (!(error instanceof RecordError)) throw error;
+    artifacts.push(`the record at the head cannot be read: ${error.message}`);
+  }
   const { files, entries, listed } = changedFiles(api, repo, number);
   if (listed < Number(pr.json.changed_files))
     artifacts.push(`GitHub lists only ${listed} of ${pr.json.changed_files} changed files`);
@@ -367,6 +405,7 @@ export async function landOne({
     base,
     spec,
     review,
+    blocking,
     artifacts,
     files,
     ownerOnly: ownerOnlyExtra(root),
@@ -625,7 +664,7 @@ async function bringUp({ root, repo, base, pr, parent, gateApp, dry, deps }) {
  * (`bringUp`), then landed in turn. Stops at the first that cannot go, naming it; run again, it resumes there. With
  * `dry`, prints the plan and checks only the bottom PR's rules, since the others change on the way.
  * @param {{ root: string, repo: string, base: string, number: number, dry?: boolean, manualOk?: boolean,
- *           gateApp?: string | string[], reviewer?: string, owner?: string,
+ *           gateApp?: string | string[], reviewer?: string | string[], owner?: string,
  *           deps: LandDeps & { gate: (cwd: string) => Promise<number> } }} options
  * @returns {Promise<{ code: number, problems?: string[], waiting?: string[] }>}
  */
@@ -741,6 +780,7 @@ export async function run(/** @type {string[]} */ args) {
     number,
     manualOk: args.includes("--manual-ok"),
     gateApp: gateLogins(apps),
+    // Not apps.gate.slug yet: its key is reachable outside main's OIDC job until ADR 0523's migration (L2 PR B/D/F).
     reviewer: apps.review?.slug,
     owner: apps.owner,
     deps,
