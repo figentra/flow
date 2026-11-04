@@ -64,7 +64,7 @@ import { parseYaml, YamlError } from "./yaml.mjs";
  * @typedef {{ root: string, config: Record<string, any>, presetDir: string }} RenderContext
  */
 
-/** The eight commands, in workflow order. */
+/** The commands, in workflow order. */
 export const VERBS = [
   "specify",
   "clarify",
@@ -73,6 +73,7 @@ export const VERBS = [
   "analyze",
   "checklist",
   "implement",
+  "build",
   "converge",
 ];
 
