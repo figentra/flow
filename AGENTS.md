@@ -20,7 +20,7 @@ One pnpm workspace, one package: `packages/figentra-flow` (`fflow`, binaries `ff
   repository's `infisical run` wrapper provides. Never read, print or commit a token.
 - Worktrees live only in `.claude/worktrees/` (Stackra ADR 0503): make one with `fflow start`, remove one with
   `fflow clean`. Worktree tests use the local repository fixture in `src/__tests__/__fixtures__/`.
-- Done = `pnpm verify` green on the box after the merge ("Tests run later" below). Conventional commits; a changeset for every package change.
+- Done = CI green after the merge, its `test` job included ("Tests run later" below). Conventional commits; a changeset for every package change.
 
 ## Tests run later: merge now, label `needs-testing`
 
@@ -28,6 +28,7 @@ Owner decision 2026-11-03 (STA-2083, replaces "Tests run on the box"): nothing w
 run before the merge and no waiting on CI: open the pull request and merge it right away
 (`gh pr merge --squash --admin`), then add the Linear label `needs-testing` to its STA issue and a
 `Needs testing: <what to run>` line to the pull request body. The tester lane later runs those tests on the box
-(`ci-box run "flow STA-n" . "pnpm verify"`; `stackra testbed run` once the testbed is live) and removes the label.
-GitHub CI runs no tests; its checks still run after the merge and stay visible. Nothing installs or tests on a
+(`stackra testbed run "FLOW STA-n" . "pnpm verify"`) and removes the label. Since 2026-11-04 (owner default O4) CI's
+`test` job runs the package's tests on every pull request and push to main; it is not a required check, so a red
+`test` never blocks a merge, but it is fixed before the work counts as done. Nothing installs or tests on a
 workstation.

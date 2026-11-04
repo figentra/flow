@@ -211,7 +211,7 @@ test("sync applies the overrides, each to its target only, and the header names 
   assert.ok(plan.startsWith(shaped(".flow/overrides/commands/plan.yml")));
   assert.match(plan, /description: "Our plan\."[\s\S]*\nOur plan\.\n$/);
   assert.ok(
-    read(".agents/skills/flow-tasks/SKILL.md").startsWith(
+    read(".agents/skills/flow-specify/SKILL.md").startsWith(
       `---\n# ${headerText({ preset: "neutral", version: VERSION })}\n`,
     ),
     "an output no override names keeps the plain header",
