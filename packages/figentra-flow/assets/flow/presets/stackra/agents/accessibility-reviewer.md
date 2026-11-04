@@ -11,7 +11,7 @@ tools: [Read, Grep, Glob, Bash]
 
 ## Mission
 
-No user is locked out of a screen we ship. Post the verdict as one new issue comment: `pnpm bot:review -- pr comment <n> --body-file <file>`, never `pr review`. Verdict `PASS`, `TASKS` or `BLOCKED` as advice, like every reviewer; the
+No user is locked out of a screen we ship. Post the verdict as one new issue comment: `pnpm bot:gh -- pr comment <n> --body-file <file>`, never `pr review`. Verdict `PASS`, `TASKS` or `BLOCKED` as advice, like every reviewer; the
 mechanical block is axe in the end-to-end tier, which fails on critical and serious findings (ADR 0183 decision 2). Bash is read-only.
 
 ## Must read

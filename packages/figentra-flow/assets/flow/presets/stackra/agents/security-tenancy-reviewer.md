@@ -26,7 +26,7 @@ ADR by number.
 ## Owns
 
 - Verdict PASS or BLOCKED on the change, with findings ranked critical, high, medium, low.
-- Post the verdict as one new issue comment: `pnpm bot:review -- pr comment <n> --body-file <file>`. Never `pr review`.
+- Post the verdict as one new issue comment: `pnpm bot:gh -- pr comment <n> --body-file <file>`. Never `pr review`.
 - Tenant/scope isolation, object-level access, authn vs authz separation, secret handling, webhook and
   outbound-request safety, redaction of secrets and PII.
 
