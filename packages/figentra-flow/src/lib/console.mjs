@@ -637,13 +637,15 @@ export const COMMANDS = [
   passthrough({
     name: "spec",
     description:
-      "The spec folder, its documents and the resolved templates, for the flow-* commands",
+      "The spec folder, its documents and the resolved templates, for the flow-* commands; async questions",
     group: GROUPS.specs,
     examples: [
       `${NAME} spec paths --json`,
       `${NAME} spec setup-plan --json`,
       `${NAME} spec setup-tasks --json`,
       `${NAME} spec template plan-template`,
+      `${NAME} spec ask STA-12 --async`,
+      `${NAME} spec resume STA-12`,
     ],
     repository: true,
   }),

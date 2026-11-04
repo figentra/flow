@@ -7,7 +7,8 @@
  *   branch, running the default branch's approval workflow, for one of the listed events (`checkRef`). Refuses
  *   unless the installation belongs to the repository's owner and is the App's own, and unless the grant is exactly
  *   the role's permissions (plus GitHub's `metadata: read`) on exactly this repository; a refused grant is revoked
- *   before the throw. Redirects are refused. Nothing uses it yet.
+ *   before the throw. Redirects are refused. The identity's id is `secrets.oidc.identityId`, else the Actions
+ *   variable `<prefix>OIDC_IDENTITY_ID` the workflow passes (Infisical plan K7). The verdict, approve and merge jobs use it.
  * Runtime: node (GitHub Actions); Node built-ins only.
  * Governing contract: ADR 0523; the L2 design (Tokens and permissions); STA-1945.
  * Secrets: `<prefix>GATE_APP_ID` and `<prefix>GATE_PRIVATE_KEY` from Infisical, the OIDC JWT, the Infisical access
@@ -17,7 +18,7 @@
  */
 import { appJwt } from "./gate-post.mjs";
 import { netFetch } from "./net.mjs";
-import { APPROVE_WORKFLOW, ENV_PREFIX } from "./product.mjs";
+import { APPROVE_WORKFLOW, ENV_PREFIX, OIDC_IDENTITY_VARIABLE } from "./product.mjs";
 
 const API = "https://api.github.com";
 
@@ -53,7 +54,7 @@ const SECRET_PATH = /^\/[\w./-]*$/;
 const ARMOUR = /^-----(?:BEGIN|END) [A-Z ]+-----$/;
 
 /**
- * @typedef {{ identityId: string, audience: string, domain: string, projectId: string, env: string, path: string }} Oidc
+ * @typedef {{ identityId?: string, audience: string, domain: string, projectId: string, env: string, path: string }} Oidc
  * @typedef {{ ok: boolean, status: number, json: () => Promise<any> }} Res
  * @typedef {(url: string, init?: { method?: string, headers?: Record<string, string>, body?: string,
  *             redirect?: "error" }) => Promise<Res>} Fetch
@@ -95,7 +96,8 @@ export function checkRef(env, defaultBranch) {
  */
 function checkOidc(oidc) {
   if (!oidc) return "no secrets.oidc";
-  if (!UUID.test(oidc.identityId ?? "")) return "secrets.oidc.identityId is not a uuid";
+  if (!UUID.test(oidc.identityId ?? ""))
+    return `secrets.oidc.identityId, or the Actions variable ${OIDC_IDENTITY_VARIABLE}, is not a uuid`;
   if (!SAFE.test(oidc.audience ?? "")) return "secrets.oidc.audience is not a name";
   if (!HTTPS.test(oidc.domain ?? "")) return "secrets.domain is not an https URL";
   if (!SAFE.test(oidc.projectId ?? "")) return "secrets.projectId is not an id";
@@ -130,9 +132,14 @@ export async function mint(role, options = {}) {
   const fetch = options.fetch ?? /** @type {Fetch} */ (/** @type {unknown} */ (netFetch));
   const mask = options.mask ?? masker(env);
   if (!Object.hasOwn(ROLES, role)) throw fail(`unknown role ${JSON.stringify(role)}`);
-  const refused = checkRef(env, /** @type {string} */ (defaultBranch)) || checkOidc(oidc);
+  // Infisical plan K7: without a config identityId, the id comes from the Actions variable the workflow passes.
+  const withId = oidc && {
+    ...oidc,
+    identityId: oidc.identityId || env[OIDC_IDENTITY_VARIABLE] || "",
+  };
+  const refused = checkRef(env, /** @type {string} */ (defaultBranch)) || checkOidc(withId);
   if (refused) throw fail(`refused: ${refused}; nothing minted`);
-  const o = /** @type {Oidc} */ (oidc);
+  const o = /** @type {Oidc} */ (withId);
   const repo = /** @type {string} */ (env.GITHUB_REPOSITORY);
   const [owner, name] = repo.split("/");
 

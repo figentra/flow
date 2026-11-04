@@ -4,5 +4,5 @@
  * (`SIDE_DOORS` in `src/guard/bash.mjs`), checked for every preset after its table (FR-5), so no preset can drop them.
  */
 
-/** @type {import("../../../../../src/guard/bash.mjs").BashRule[]} */
+/** @type {import("@figentra-oss/flow/guard").BashRule[]} */
 export const BASH_RULES = [];

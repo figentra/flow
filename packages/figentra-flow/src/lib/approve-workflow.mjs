@@ -33,6 +33,7 @@ import {
   LAND_COMMAND,
   LAND_LABEL,
   NAME,
+  OIDC_IDENTITY_VARIABLE,
   PACKAGE,
   REGISTRY,
   STATUS_CONTEXT,
@@ -299,6 +300,7 @@ ${extra}          REPO: \${{ github.repository }}
           REQUESTERS: ${yamlJson(lane.requesters ?? [])}
           REVIEWERS: ${yamlJson(lane.reviewers ?? [])}
           OIDC: ${yamlJson(lane.oidc)}
+          ${OIDC_IDENTITY_VARIABLE}: \${{ vars.${OIDC_IDENTITY_VARIABLE} }}
           INTEGRITY: '${integrity}'
           TRUSTED: ${yamlJson(trusted)}
           OWNER_ONLY_EXTRA: ${yamlJson(ownerOnly)}
@@ -405,6 +407,7 @@ function verdictJob(v, guard, packageRun, yamlJson, integrity) {
           OWNER: '${v.owner ?? ""}'
           DEFAULT_BRANCH: ${v.defaultBranch}
           OIDC: ${yamlJson(v.oidc)}
+          ${OIDC_IDENTITY_VARIABLE}: \${{ vars.${OIDC_IDENTITY_VARIABLE} }}
           INTEGRITY: '${integrity}'
 ${packageRun("verdict.mjs")}`;
 }

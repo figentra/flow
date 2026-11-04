@@ -4,7 +4,7 @@
  * (or its legacy name) is never written by one. The engine checks them for every preset after the preset's own table
  * (`decidePaths`, FR-5), so a preset's `guard/path-rules.mjs` cannot drop them.
  */
-import { CONFIG_FILE, LEGACY_CONFIG_FILE } from "../../../../../src/lib/product.mjs";
+import { CONFIG_FILE, LEGACY_CONFIG_FILE } from "@figentra-oss/flow/guard";
 
 /** Files that hold secret values. */
 const SECRET_FILE = [
@@ -26,7 +26,7 @@ export function isSecretPath(p) {
   return !SECRET_OK.test(s) && SECRET_FILE.some((r) => r.test(s));
 }
 
-/** @type {import("../../../../../src/guard/paths.mjs").PathRule[]} */
+/** @type {import("@figentra-oss/flow/guard").PathRule[]} */
 export const PATH_RULES = [
   {
     id: "secret-file",
