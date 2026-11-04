@@ -5,10 +5,11 @@
  *   (`CAPABILITIES`: `ask`, `todo`, `docs`, `subagent`). A harness adapter says where one tool reads a command and
  *   fills each block in for it. The fallback fill keeps the block's own words, today's text table, so a repository
  *   with no harness configured renders byte for byte what it rendered before the blocks. Claude Code (`AskUserQuestion`)
- *   and OpenCode (`question`) ask through their own question tool, the text table kept for when it is unavailable.
+ *   and OpenCode (`question`) ask through their own question tool, the text table kept for when it is unavailable;
+ *   VS Code (Copilot) prompt files, Cursor commands and Codex skills carry the text table (H3).
  * Boundary: pure text functions; `render.mjs` writes nothing through here, it only asks for paths and texts.
  * Runtime: node
- * Governing contract: STA-2098 (PLAN section 10, H1, H2).
+ * Governing contract: STA-2098 (PLAN section 10, H1, H2, H3).
  * Secrets: none.
  */
 import { CONFIG_FILE } from "../../lib/product.mjs";
@@ -111,6 +112,31 @@ export const HARNESSES = {
       ),
     fill: askThrough(OPENCODE_ASK),
   },
+  // VS Code's prompt files (its docs: `.github/prompts/<name>.prompt.md`, front matter `description` and `agent`).
+  copilot: {
+    path: (name) => `.github/prompts/${name}.prompt.md`,
+    file: (c) =>
+      [
+        "---",
+        `description: ${c.description}`,
+        "agent: agent",
+        "---",
+        "",
+        provenanceComment(c),
+        "",
+        c.body,
+      ].join("\n"),
+    fill: fallbackFill,
+  },
+  // Cursor's commands: plain Markdown in `.cursor/commands/` (its docs name no front matter).
+  cursor: {
+    path: (name) => `.cursor/commands/${name}.md`,
+    file: (c) => [provenanceComment(c), "", c.body].join("\n"),
+    fill: fallbackFill,
+  },
+  // Codex reads a repository's skills from `.agents/skills/` (its skills docs); its custom prompts live only in
+  // `~/.codex/prompts/` and are deprecated for skills, so its file is the neutral skill document.
+  codex: NEUTRAL,
 };
 
 /** The ids `harnesses` in the configuration may name. */

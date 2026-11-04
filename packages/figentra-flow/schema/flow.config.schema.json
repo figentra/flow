@@ -24,7 +24,7 @@
     "harnesses": {
       "type": "array",
       "items": {
-        "enum": ["claude-code", "opencode"]
+        "enum": ["claude-code", "opencode", "copilot", "cursor", "codex"]
       },
       "minItems": 1
     },

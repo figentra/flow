@@ -1,18 +1,20 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold the harness port to STA-2098 H1 and H2: a capability block's marker lines are the only thing the fallback
+ * Purpose: hold the harness port to STA-2098 H1 to H3: a capability block's marker lines are the only thing the fallback
  *   fill drops, an unknown capability is left as written, both presets mark the question step of `flow-clarify` and
  *   `flow-specify` with one `ask` block each, and a repository with no harness configured renders, with or without
  *   `direct`, byte for byte the command texts it rendered before the blocks (the files at the same paths). A configured Claude
  *   Code or OpenCode asks through its own question tool, the text table kept as the fallback; `harnesses` is a
- *   non-empty list of known tools, and a lock holding another harness's commands reads as a direct sync.
+ *   non-empty list of known tools, and a lock holding another harness's commands reads as a direct sync. VS Code (Copilot),
+ *   Cursor and Codex files carry the text table, the provenance header and their lock digest, and a harness dropped
+ *   from the list takes its unedited commands with it.
  * Boundary: reads the package's presets and renders temporary repositories; no process, no network.
  * Runtime: node
- * Governing contract: STA-2098 (PLAN section 10, H1, H2).
+ * Governing contract: STA-2098 (PLAN section 10, H1, H2, H3).
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -22,9 +24,13 @@ import {
   HARNESS_IDS,
   OPENCODE_ASK,
 } from "../adapters/harness/index.mjs";
+import { sync } from "../commands/sync.mjs";
 import { SCHEMA, validate } from "../lib/config.mjs";
 import { FLOW_ASSETS } from "../lib/flow-dir.mjs";
-import { render, syncedDirect } from "../lib/render.mjs";
+import { digestOf, readLock } from "../lib/lock.mjs";
+import { CONFIG_FILE, VERSION } from "../lib/product.mjs";
+import { headerText } from "../lib/provenance.mjs";
+import { installProblems, render, syncedDirect } from "../lib/render.mjs";
 import { governed } from "./__fixtures__/governed.mjs";
 
 /** A command's text as it was before the blocks: the marker lines removed, nothing else. */
@@ -148,4 +154,60 @@ test("harness: a lock with only another harness's commands still reads as a dire
   assert.equal(syncedDirect(lock([".opencode/commands/flow-clarify.md"])), true);
   assert.equal(syncedDirect(lock([".agents/skills/flow-clarify/SKILL.md"])), false);
   assert.equal(syncedDirect(lock([".opencode/commands/other.md"])), false);
+});
+
+test("harness: Copilot, Cursor and Codex get their own files with the text table, headed and locked (H3)", (t) => {
+  const root = governed(t, { config: { harnesses: ["copilot", "cursor", "codex"] } });
+  const quiet = { log: () => {} };
+  const { files } = sync(root, { ...quiet, direct: true });
+  const words = headerText({ preset: "neutral", version: VERSION });
+  const lock = /** @type {import("../lib/lock.mjs").Lock} */ (readLock(root));
+  const neutral = render(governed(t), { direct: false });
+  for (const file of readdirSync(commands("neutral"))) {
+    const name = file.slice(0, -3);
+    const body = unmarked(bodyOf(readFileSync(join(commands("neutral"), file), "utf8")));
+    const prompt = `.github/prompts/${name}.prompt.md`;
+    const command = `.cursor/commands/${name}.md`;
+    const skill = `.agents/skills/${name}/SKILL.md`;
+    for (const path of [prompt, command, skill]) {
+      assert.ok(files.includes(path), path);
+      const text = readFileSync(join(root, path), "utf8");
+      assert.equal(lock.files[path], digestOf(text), `${path} is locked as written`);
+      assert.ok(text.endsWith(`\n\n${body}`), `${path} carries today's text`);
+      assert.ok(text.includes(words), `${path} carries the provenance header`);
+    }
+    assert.ok(
+      readFileSync(join(root, prompt), "utf8").startsWith(`---\n# ${words}\ndescription: `),
+    );
+    assert.match(readFileSync(join(root, prompt), "utf8"), /^agent: agent$/m);
+    assert.ok(
+      readFileSync(join(root, command), "utf8").startsWith(
+        `<!-- ${words} -->\n<!-- generated-by: `,
+      ),
+    );
+    assert.equal(
+      render(root, { direct: true }).get(skill),
+      neutral.get(skill),
+      "Codex reads the neutral skill",
+    );
+  }
+  assert.match(
+    readFileSync(join(root, ".cursor/commands/flow-clarify.md"), "utf8"),
+    /\| Option \| Description \|/,
+  );
+  assert.equal(
+    files.filter((p) => p.startsWith(".claude/skills/flow-") || p.startsWith(".opencode/")).length,
+    0,
+  );
+  assert.deepEqual(installProblems(root), []);
+  assert.equal(syncedDirect(readLock(root)), true);
+  // A harness dropped from the list takes its unedited commands with it.
+  writeFileSync(
+    join(root, CONFIG_FILE),
+    JSON.stringify({ version: 1, preset: "neutral", harnesses: ["copilot"] }),
+  );
+  const again = sync(root, { ...quiet, direct: true });
+  assert.ok(again.removed.includes(".cursor/commands/flow-clarify.md"));
+  assert.equal(existsSync(join(root, ".cursor/commands")), false);
+  assert.deepEqual(installProblems(root), []);
 });
