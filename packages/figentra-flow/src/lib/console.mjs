@@ -3,7 +3,7 @@
  * Purpose: `fflow` on the one CLI engine, `@stackra/console` (STA-1966, FR-31): the Flow theme and every command,
  *   grouped, so `fflow` alone prints the banner, the version and the grouped commands, `<command> --help` prints its
  *   usage and runs nothing, an unknown command names the closest match and exits 2, and a failure is one error block.
- *   `doctor`, `status`, `next`, `resume`, `task start|done`, `todo`, `ledger`, `session stop` and the governance
+ *   `doctor`, `status`, `next`, `resume`, `task start|done|wave`, `todo`, `ledger`, `session stop` and the governance
  *   commands (`update`, `check`, `diff`, `validate`, STA-1945 FR-1) declare their arguments and options; every other
  *   command is passthrough (migration only, ADR 0500 decision 7): it still parses its own flags from `io.rest`, and
  *   `PASSTHROUGH` in the tests pins that list.
@@ -13,7 +13,7 @@
  *   JavaScript: the engine's legacy field decorators are applied by hand after each class, exactly as TypeScript's
  *   emit applies them.
  * Runtime: node
- * Governing contract: STA-1945 FR-1, FR-31 (AC-35, AC-36, AC-37), FR-13, FR-19, FR-21, FR-23; STA-1966 (FR-024,
+ * Governing contract: STA-1945 FR-1, FR-31 (AC-35, AC-36, AC-37), FR-13, FR-19, FR-21, FR-23, FR-24; STA-1966 (FR-024,
  *   FR-031).
  * Secrets: none.
  */
@@ -386,6 +386,24 @@ Option({ description: "Print the command's output after it runs" })(
   "echo",
 );
 
+class TaskWaveCommand extends Command({
+  name: "task:wave",
+  description: "Queue the build's next wave: set its [ ] tasks to [~] and print them",
+  group: GROUPS.work,
+  docs: DOCS,
+  examples: [`${NAME} task wave STA-12`, `${NAME} task wave STA-12 --json`],
+}) {
+  /** @type {string} */
+  key;
+
+  /** @param {CommandIo} io */
+  async handle(io) {
+    const { wave } = await import("../commands/task.mjs");
+    return tasking(() => wave(io, this));
+  }
+}
+Argument({ description: "The issue key" })(TaskWaveCommand.prototype, "key");
+
 class SessionStopCommand extends Command({
   name: "session:stop",
   description: "The SessionEnd hook: commit and push the session's tracked work and Flow's record",
@@ -608,6 +626,7 @@ export const COMMANDS = [
   ResumeCommand,
   TaskStartCommand,
   TaskDoneCommand,
+  TaskWaveCommand,
   TodoCommand,
   passthrough({
     name: "clean",

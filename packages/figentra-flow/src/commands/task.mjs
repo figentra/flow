@@ -1,18 +1,21 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `fflow task start|done <key> <task>` (STA-1945 FR-23; declared in src/lib/console.mjs, which turns a
+ * Purpose: `fflow task start|done|wave` (STA-1945 FR-23, FR-24; declared in src/lib/console.mjs, which turns a
  *   `TaskError` into a usage error): the only way a task's marker moves.
  *   start <key> <task> [--session <name>] refuses unless the spec is Tasked or Implementing with its approvals
  *                                         (ADR 0502), then sets `[-]` and records the start (session, HEAD and the
  *                                         digest of spec, plan and tasks) in Flow's record
  *   done <key> <task> --command <cmd>     runs the check command (`runEvidence`), keeps the attempt in the record and
  *                                         sets `[x]` only on exit 0 at a clean HEAD; refuses a secret-looking command
+ *   wave <key> [--json]                   refuses as `start` does, then prints the build's next wave (`nextWave`), its
+ *                                         `[ ]` tasks set to `[~]`; a wave holding a failed task is printed again, so
+ *                                         the next one never starts
  *   `resetChanged` is what `check` calls (T024): a task in progress whose documents changed since its start goes back
  *   to `[ ]` with the reason; `handTicks` names each `[x]` with no passing evidence (AC-22).
  * Boundary: writes the task's line in tasks.md and the record (`.flow/record/<key>.json`); runs the check command in
  *   the repository; commits and pushes nothing (the session's commits carry both files).
  * Runtime: node
- * Governing contract: STA-1945 FR-23, AC-23, AC-24, P-028, NFR-5.
+ * Governing contract: STA-1945 FR-23, FR-24, AC-23, AC-24, AC-25, P-028, P-029, NFR-5.
  * Secrets: none; the command's output is kept only as a digest, and a secret-looking command never runs.
  */
 import { createHash } from "node:crypto";
@@ -26,6 +29,7 @@ import { git } from "../lib/git.mjs";
 import { ENV_PREFIX, NAME } from "../lib/product.mjs";
 import { readRecord, recordPath, updateRecord } from "../lib/record.mjs";
 import { parseTasks } from "../lib/spec-parse.mjs";
+import { nextWave, waves, WaveError } from "../lib/waves.mjs";
 
 /** A refusal: a task that cannot move, or a command that may not run. */
 export class TaskError extends Error {}
@@ -68,12 +72,11 @@ export function setMarker(text, id, marker) {
 }
 
 /**
- * The spec folder and task of `key` in `root`.
+ * The spec folder and tasks.md of `key` in `root`.
  * @param {string} root
  * @param {string} key
- * @param {string} id
  */
-function locate(root, key, id) {
+function tasksOf(root, key) {
   const keys = schemeFor(root);
   const k = keys.parse(key);
   if (!k) throw new TaskError(`${key} is not an issue key`);
@@ -82,9 +85,19 @@ function locate(root, key, id) {
     throw new TaskError(found.error ?? `${found.dir} has no tasks.md`);
   const dir = join(root, found.dir);
   const file = join(dir, "tasks.md");
-  const text = readFileSync(file, "utf8");
+  return { k, shown: found.dir, dir, file, text: readFileSync(file, "utf8") };
+}
+
+/**
+ * The spec folder and task of `key` in `root`.
+ * @param {string} root
+ * @param {string} key
+ * @param {string} id
+ */
+function locate(root, key, id) {
+  const { k, shown, dir, file, text } = tasksOf(root, key);
   const task = parseTasks(text).find((t) => t.id === id && !t.struck);
-  if (!task) throw new TaskError(`${found.dir}/tasks.md has no live ${id}`);
+  if (!task) throw new TaskError(`${shown}/tasks.md has no live ${id}`);
   return { k, dir, file, text, task, spec: readFileSync(join(dir, "spec.md"), "utf8") };
 }
 
@@ -212,6 +225,76 @@ export function resetChanged(root, key) {
     id: t.id,
     reason: `the spec, plan or tasks changed since ${t.id} started (${record.started?.[t.id].at})`,
   }));
+}
+
+/**
+ * The next wave of `key`'s build (FR-24), its `[ ]` tasks set to `[~]` (queued): the wave's number, how many waves
+ * there are, and its tasks still to run in document order; a task already `[-]` (a dead session's) is in it, to finish
+ * with `task done`, and an optional task left `[ ]` is not. Undefined once every wave is done.
+ * @param {string} root
+ * @param {string} key
+ * @returns {{ wave: number, of: number, tasks: import("../lib/spec-parse.mjs").Task[] } | undefined}
+ * @throws {TaskError} when the spec has no tasks.md, is not Tasked or Implementing with its approvals (markers follow
+ *   the spec's state, as at `task start`), or its deps form a cycle
+ */
+export function queueWave(root, key) {
+  const { dir, file, text } = tasksOf(root, key);
+  const spec = readFileSync(join(dir, "spec.md"), "utf8");
+  const status = statusOf(spec);
+  const problems = checkApproval(spec);
+  if (status !== "tasked" && status !== "implementing")
+    problems.unshift(
+      `the spec is ${status || "without a status"}: a wave is queued at Tasked or Implementing`,
+    );
+  if (problems.length) throw new TaskError(problems.join("; "));
+  const tasks = parseTasks(text);
+  let all;
+  try {
+    all = waves(tasks);
+  } catch (error) {
+    if (!(error instanceof WaveError)) throw error;
+    throw new TaskError(error.message);
+  }
+  const next = nextWave(tasks, all);
+  if (!next) return undefined;
+  const queued = tasks.filter((t) => !t.struck && next.ids.includes(t.id));
+  const out = queued
+    .filter((t) => t.marker === " ")
+    .reduce((acc, t) => setMarker(acc, t.id, "~"), text);
+  if (out !== text) writeFileSync(file, out);
+  return {
+    wave: next.wave,
+    of: all.length,
+    tasks: queued.map((t) => (t.marker === " " ? { ...t, marker: /** @type {const} */ ("~") } : t)),
+  };
+}
+
+/**
+ * `fflow task wave`: queues the build's next wave and prints its tasks, or that every wave is done; `--json` writes
+ * the wave as the console's data, tagged `fflow.wave/1`.
+ * @param {import("../lib/console.mjs").Io} io
+ * @param {{ key: string }} options
+ * @returns {number}
+ */
+export function wave(io, { key }) {
+  const root = git(io.cwd, ["rev-parse", "--show-toplevel"]).out || io.cwd;
+  const next = queueWave(root, key);
+  if (io.json) {
+    io.output.json({ schema: `${NAME}.wave/1`, key, ...(next ?? { tasks: [] }) });
+    return 0;
+  }
+  if (!next) {
+    io.output.success(`every wave of ${key.toUpperCase()} is done: \`${NAME} gate run\``);
+    return 0;
+  }
+  io.output.info(
+    `${key.toUpperCase()}: wave ${next.wave} of ${next.of}, ${next.tasks.length} to run`,
+  );
+  for (const t of next.tasks)
+    io.output.line(
+      `${t.id} [${t.marker}]${t.optional ? " optional" : ""} ${t.checkpoint ?? t.paths.join(" ")}`,
+    );
+  return 0;
 }
 
 /**

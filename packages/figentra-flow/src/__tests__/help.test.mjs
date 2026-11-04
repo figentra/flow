@@ -68,6 +68,9 @@ test("help: <command> --help prints its usage and runs nothing", async () => {
   const done = await runCommandForTest(CONSOLE, ["help", "task", "done"]);
   assert.equal(done.exitCode, 0);
   assert.match(done.stdout, /--command/);
+  const wave = await runCommandForTest(CONSOLE, ["help", "task", "wave"]);
+  assert.equal(wave.exitCode, 0);
+  assert.match(wave.stdout, /task wave STA-12/);
   const ledger = await runCommandForTest(CONSOLE, ["ledger", "--help"]);
   assert.equal(ledger.exitCode, 0);
   assert.match(ledger.stdout, /--since/);
