@@ -130,14 +130,15 @@ test("config: a renamed gate App's aliases add logins; without them the login st
   assert.match(bad("b[bot]"), /^apps\.gate\.aliases: must be a array$/m);
 });
 
-test("schema: secrets.oidc names an identity by its uuid and an audience, nothing else", () => {
+test("schema: secrets.oidc names an audience and, optionally, the identity's uuid, nothing else", () => {
   const oidc = (/** @type {unknown} */ value) =>
     validate(SCHEMA, { ...FIGENTRA, secrets: { ...FIGENTRA.secrets, oidc: value } }).join("\n");
   assert.equal(
     oidc({ identityId: "0f4b2c1e-9a8d-4c3b-8e7f-6a5b4c3d2e1f", audience: "fflow-ci" }),
     "",
   );
-  assert.match(oidc({ audience: "fflow-ci" }), /^secrets\.oidc\.identityId: is required$/m);
+  // K7: the id may come from the Actions variable instead, so an audience alone is valid.
+  assert.equal(oidc({ audience: "fflow-ci" }), "");
   assert.match(
     oidc({ identityId: "0f4b2c1e-9a8d-4c3b-8e7f-6a5b4c3d2e1f" }),
     /^secrets\.oidc\.audience: is required$/m,

@@ -8,21 +8,32 @@
  *   `secrets.oidc`, the L2 design's PR F) it also runs on the gate workflow's `workflow_run`: a `verdict` job, with
  *   `id-token: write` and no App secret, runs `verdict.mjs` from the same pinned tarball, which mints a `verdict`
  *   token over OIDC and posts the gate's status. Then every job runs only on the default branch and while the
- *   automation variable allows it (missing is frozen). Without `verdict` the file is today's, byte for byte.
+ *   automation variable allows it (missing is frozen). With `lane` (`secrets.oidc`, the L2 design's PR D) events run
+ *   it: a `cancel` job removes `LAND_LABEL` on a push (with the job's token, so it starts nothing, and even while frozen,
+ *   since it only withdraws), a keyless `route` job wakes on the label, a `/fflow land` comment, the gate's success
+ *   status, a listed workflow's success, ready-for-review or the schedule and says whether any PR asks to land, then
+ *   `approve` (`approve-check.mjs` with `MODE=event`, automation `on`) and `merge` (`merge.mjs`, `on` or `merge-only`)
+ *   mint their own tokens over OIDC, one at a time per repository; the dispatched job stays as `approve-dispatch`, the
+ *   one-release fallback. Without `verdict` and `lane` the file is today's, byte for byte.
  * Boundary: returns text; writes nothing. The workflow never checks out or runs the PR's code, never downloads an
- *   artifact, never puts event text in a `run:` block (hints go through `env`, and node checks them) and never merges
- *   (auto merge does, after every required check).
+ *   artifact and never puts event text in a `run:` block (it reaches a step through `env` only). It has no `push`,
+ *   `pull_request`, `workflow_call` or `repository_dispatch` trigger. Dispatched, it never merges (auto merge does,
+ *   after every required check); with `lane`, only `merge.mjs` merges, at the approved head.
  * Runtime: node
- * Governing contract: STA-1856 FR-4 (the security review of 2026-11-01); the L2 design (PR F); STA-1945.
+ * Governing contract: STA-1856 FR-4 (the security review of 2026-11-01); the L2 design (PR D, PR F); STA-1945.
  * Secrets: names the approving App's id and key secrets, which are distinct from any bot that pushes; holds no value.
- *   The `verdict` job names none: its token comes from Infisical over the job's OIDC token, in process.
+ *   The `verdict`, `approve` and `merge` event jobs name none: their tokens come from Infisical over the job's OIDC
+ *   token, in process.
  */
 import { SETUP_NODE } from "./gate-workflow.mjs";
 import {
   APPROVE_ENVIRONMENT,
   AUTOMATION_RUNS,
   AUTOMATION_VARIABLE,
+  LAND_COMMAND,
+  LAND_LABEL,
   NAME,
+  OIDC_IDENTITY_VARIABLE,
   PACKAGE,
   REGISTRY,
   STATUS_CONTEXT,
@@ -35,15 +46,20 @@ const APP_TOKEN =
  * The `verdict` job's inputs: the gate workflow's path, the owner, the default branch and the Infisical coordinates.
  * @typedef {{ gatePath: string, owner?: string, defaultBranch: string,
  *             oidc: import("./app-token.mjs").Oidc }} Verdict
+ * The event lane's inputs: the default branch, the Infisical coordinates, the owner, the workflows whose success wakes
+ * it (`approve.workflows`), the App slugs that may ask for a land (`approve.requesters`) and the AI review's App slugs.
+ * @typedef {{ defaultBranch: string, oidc: import("./app-token.mjs").Oidc, owner?: string, workflows?: string[],
+ *             requesters?: string[], reviewers?: string[] }} Lane
  */
 
 /**
  * The workflow's YAML.
  * @param {{ version: string, integrity?: string, appId: string, privateKey: string,
- *           trusted?: Record<string, string | string[]>, ownerOnly?: string[], verdict?: Verdict }} options the
- *   package version to run and its lockfile integrity (`sha512-…`; without one the workflow refuses to run), the App
- *   secret names, the trusted check sources (context to a login or a list of logins), the repository's extra
- *   owner-only globs and, for a `github-actions` runner with `secrets.oidc`, the `verdict` job's inputs
+ *           trusted?: Record<string, string | string[]>, ownerOnly?: string[], verdict?: Verdict,
+ *           lane?: Lane }} options the package version to run and its lockfile integrity (`sha512-…`; without one the
+ *   workflow refuses to run), the App secret names, the trusted check sources (context to a login or a list of
+ *   logins), the repository's extra owner-only globs, for a `github-actions` runner with `secrets.oidc` the `verdict`
+ *   job's inputs and, with `secrets.oidc`, the event lane's
  */
 export function approveWorkflow({
   version,
@@ -53,6 +69,7 @@ export function approveWorkflow({
   trusted = {},
   ownerOnly = [],
   verdict,
+  lane,
 }) {
   if (!/^(?:sha512-[A-Za-z0-9+/]+=*)?$/.test(integrity))
     throw new Error(`${PACKAGE}@${version}: "${integrity}" is not a sha512 integrity`);
@@ -72,16 +89,22 @@ export function approveWorkflow({
           node flow/package/src/lib/${script}
 `;
   if (verdict) checkVerdict(verdict);
-  // With the verdict's event, every job runs on the default branch only, and only while automation is not frozen.
-  const guard = verdict
-    ? `github.ref == 'refs/heads/${verdict.defaultBranch}' && (${AUTOMATION_RUNS.map((v) => `vars.${AUTOMATION_VARIABLE} == '${v}'`).join(" || ")})`
+  if (lane) checkLane(lane);
+  const events = verdict ?? lane;
+  // With events, every job runs on the default branch only, and only while automation is not frozen.
+  const ref = events ? `github.ref == 'refs/heads/${events.defaultBranch}'` : "";
+  const guard = events
+    ? `${ref} && (${AUTOMATION_RUNS.map((v) => `vars.${AUTOMATION_VARIABLE} == '${v}'`).join(" || ")})`
     : "";
-  return `# Written by \`${NAME} sync\`; \`${NAME} land\` dispatches it when the ruleset requires a review (STA-1856).
+  // What approves runs only while automation is fully on (`merge-only` merges what was approved before).
+  const guardOn = `${ref} && vars.${AUTOMATION_VARIABLE} == '${AUTOMATION_RUNS[0]}'`;
+  const woken = [...(lane?.workflows ?? []), ...(verdict ? [STATUS_CONTEXT] : [])];
+  return `# Written by \`${NAME} sync\`; ${lane ? `events run it: the ${LAND_LABEL} label or a \`${LAND_COMMAND}\` comment asks for a land` : `\`${NAME} land\` dispatches it when the ruleset requires a review`} (STA-1856).
 # Every rule is in ${PACKAGE}'s approve-check.mjs, at the version below; \`${NAME} gate ci\` fails on a hand edit.
 name: ${NAME} approve
 ${
-  verdict
-    ? `run-name: \${{ github.event_name == 'workflow_dispatch' && format('${NAME} approve PR {0} at {1}', inputs.pr, inputs.head) || '${NAME} verdict' }}`
+  events
+    ? `run-name: \${{ github.event_name == 'workflow_dispatch' && format('${NAME} approve PR {0} at {1}', inputs.pr, inputs.head) || '${NAME} ${lane ? "approve" : "verdict"}' }}`
     : `run-name: ${NAME} approve PR \${{ inputs.pr }} at \${{ inputs.head }}`
 }
 
@@ -97,17 +120,29 @@ on:
         required: true
         type: string
 ${
-  verdict
-    ? `  # The gate workflow's runs on PRs; main's copy of this file reads each one (\`verdict\` below).
-  workflow_run:
-    workflows: [${JSON.stringify(STATUS_CONTEXT)}]
-    types: [completed]
+  lane
+    ? `  # A land request, and what can unblock one; each run sweeps every request, so a lost event loses nothing.
+  pull_request_target:
+    types: [labeled, synchronize, ready_for_review]
+  status:
+  issue_comment:
+    types: [created]
+  schedule:
+    - cron: "7,22,37,52 * * * *"
 `
     : ""
-}
+}${
+    woken.length
+      ? `  # ${verdict ? "The gate workflow's runs on PRs; main's copy of this file reads each one (`verdict` below)." : "A listed workflow's success wakes the lane."}
+  workflow_run:
+    workflows: [${woken.map((w) => JSON.stringify(w)).join(", ")}]
+    types: [completed]
+`
+      : ""
+  }
 permissions: {}
 ${
-  verdict
+  events
     ? ""
     : `
 concurrency:
@@ -116,9 +151,9 @@ concurrency:
 `
 }
 jobs:
-  approve:
+  approve${lane ? "-dispatch" : ""}:
 ${
-  verdict
+  events
     ? `    if: github.event_name == 'workflow_dispatch' && ${guard}
     concurrency:
       group: ${NAME}-approve-\${{ inputs.pr }}
@@ -159,7 +194,11 @@ ${
           INTEGRITY: '${integrity}'
           TRUSTED: ${yamlJson(trusted)}
           OWNER_ONLY_EXTRA: ${yamlJson(ownerOnly)}
-${packageRun("approve-check.mjs")}${verdict ? verdictJob(verdict, guard, packageRun, yamlJson, integrity) : ""}`;
+${packageRun("approve-check.mjs")}${
+    lane
+      ? laneJobs({ lane, ref, guard, guardOn, packageRun, yamlJson, integrity, trusted, ownerOnly })
+      : ""
+  }${verdict ? verdictJob(verdict, guard, packageRun, yamlJson, integrity) : ""}`;
 }
 
 const BRANCH = /^(?!.*\.\.)[\w.-]+(?:\/[\w.-]+)*$/;
@@ -179,6 +218,155 @@ function checkVerdict(v) {
     );
   if (v.owner !== undefined && !/^[\w-]+$/.test(v.owner))
     throw new Error(`verdict: the owner is not a login: ${JSON.stringify(v.owner)}`);
+}
+
+const SLUG = /^[\w-]+$/;
+
+/**
+ * Refuses lane inputs that are not plain names, since each is rendered into YAML.
+ * @param {Lane} l
+ */
+function checkLane(l) {
+  if (!BRANCH.test(l.defaultBranch ?? ""))
+    throw new Error(
+      `lane: the default branch is not a branch name: ${JSON.stringify(l.defaultBranch)}`,
+    );
+  if (l.owner !== undefined && !SLUG.test(l.owner))
+    throw new Error(`lane: the owner is not a login: ${JSON.stringify(l.owner)}`);
+  for (const w of l.workflows ?? [])
+    if (!/^[\w .()-]+$/.test(w))
+      throw new Error(
+        `lane: approve.workflows holds a name that is not plain: ${JSON.stringify(w)}`,
+      );
+  for (const s of [...(l.requesters ?? []), ...(l.reviewers ?? [])])
+    if (!SLUG.test(s)) throw new Error(`lane: ${JSON.stringify(s)} is not an App slug`);
+}
+
+/**
+ * The event lane's jobs: `cancel`, `route`, `approve` and `merge` (the L2 design, PR D).
+ * @param {{ lane: Lane, ref: string, guard: string, guardOn: string, packageRun: (script: string) => string,
+ *           yamlJson: (v: unknown) => string, integrity: string, trusted: Record<string, string | string[]>,
+ *           ownerOnly: string[] }} input
+ */
+function laneJobs({
+  lane,
+  ref,
+  guard,
+  guardOn,
+  packageRun,
+  yamlJson,
+  integrity,
+  trusted,
+  ownerOnly,
+}) {
+  const keyed = (
+    /** @type {string} */ name,
+    /** @type {string} */ ifs,
+    /** @type {string} */ group,
+    /** @type {string} */ step,
+    /** @type {string} */ script,
+    /** @type {string} */ extra,
+  ) => `
+  ${name}:
+${ifs}
+    environment: ${APPROVE_ENVIRONMENT}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # One run at a time per repository; a newer pending run replaces an older one, which loses nothing.
+    concurrency:
+      group: ${group}
+      cancel-in-progress: false
+    permissions:
+      actions: read
+      checks: read
+      contents: read
+      issues: read
+      pull-requests: read
+      statuses: read
+      id-token: write
+    steps:
+      - uses: ${SETUP_NODE}
+        with:
+          node-version: 24
+      - name: ${step}
+        env:
+          GITHUB_TOKEN: \${{ github.token }}
+${extra}          REPO: \${{ github.repository }}
+          ENVIRONMENT: ${APPROVE_ENVIRONMENT}
+          RUN_URL: \${{ github.server_url }}/\${{ github.repository }}/actions/runs/\${{ github.run_id }}
+          AUTOMATION: \${{ vars.${AUTOMATION_VARIABLE} }}
+          DEFAULT_BRANCH: ${lane.defaultBranch}
+          OWNER: '${lane.owner ?? ""}'
+          REQUESTERS: ${yamlJson(lane.requesters ?? [])}
+          REVIEWERS: ${yamlJson(lane.reviewers ?? [])}
+          OIDC: ${yamlJson(lane.oidc)}
+          ${OIDC_IDENTITY_VARIABLE}: \${{ vars.${OIDC_IDENTITY_VARIABLE} }}
+          INTEGRITY: '${integrity}'
+          TRUSTED: ${yamlJson(trusted)}
+          OWNER_ONLY_EXTRA: ${yamlJson(ownerOnly)}
+${packageRun(script)}`;
+  return `
+  cancel:
+    # A push withdraws the land request. The job's token starts no workflow; it runs even while frozen, since it only
+    # withdraws.
+    if: github.event_name == 'pull_request_target' && github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, '${LAND_LABEL}') && ${ref}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Withdraw the land request
+        env:
+          GH_TOKEN: \${{ github.token }}
+          REPO: \${{ github.repository }}
+          PR: \${{ github.event.pull_request.number }}
+        run: gh api -X DELETE "repos/$REPO/issues/$PR/labels/${encodeURIComponent(LAND_LABEL)}" --silent
+
+  route:
+    # No key: whether any open PR asks to land. The events below only wake it; approve and merge read everything again.
+    if: >-
+      ${guard} && (
+      (github.event_name == 'pull_request_target' && (github.event.action == 'ready_for_review' || github.event.label.name == '${LAND_LABEL}')) ||
+      (github.event_name == 'status' && github.event.context == '${STATUS_CONTEXT}' && github.event.state == 'success') ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && (startsWith(github.event.comment.body, '${LAND_COMMAND}') || startsWith(github.event.comment.body, 'AI-REVIEW:'))) ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      github.event_name == 'schedule')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    outputs:
+      any: \${{ steps.route.outputs.any }}
+    steps:
+      - uses: ${SETUP_NODE}
+        with:
+          node-version: 24
+      - name: Find the land requests
+        id: route
+        env:
+          GITHUB_TOKEN: \${{ github.token }}
+          REPO: \${{ github.repository }}
+          DEFAULT_BRANCH: ${lane.defaultBranch}
+          INTEGRITY: '${integrity}'
+${packageRun("land-route.mjs")}${keyed(
+    "approve",
+    `    needs: route
+    if: needs.route.outputs.any == 'true' && ${guardOn}`,
+    `${NAME}-approve`,
+    "Check and approve each land request",
+    "approve-check.mjs",
+    "          MODE: event\n",
+  )}${keyed(
+    "merge",
+    `    needs: [route, approve]
+    if: \${{ !cancelled() && needs.route.outputs.any == 'true' && needs.approve.result != 'cancelled' && ${guard} }}`,
+    `${NAME}-merge`,
+    "Merge each approved land request",
+    "merge.mjs",
+    "",
+  )}`;
 }
 
 /**
@@ -219,6 +407,7 @@ function verdictJob(v, guard, packageRun, yamlJson, integrity) {
           OWNER: '${v.owner ?? ""}'
           DEFAULT_BRANCH: ${v.defaultBranch}
           OIDC: ${yamlJson(v.oidc)}
+          ${OIDC_IDENTITY_VARIABLE}: \${{ vars.${OIDC_IDENTITY_VARIABLE} }}
           INTEGRITY: '${integrity}'
 ${packageRun("verdict.mjs")}`;
 }

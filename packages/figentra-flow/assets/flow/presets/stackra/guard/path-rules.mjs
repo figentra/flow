@@ -8,8 +8,8 @@
  */
 import { homedir } from "node:os";
 
-import { collectStrings } from "../../../../../src/guard/io.mjs";
-import { PATH_RULES as NEUTRAL } from "../../neutral/guard/path-rules.mjs";
+import { collectStrings } from "@figentra-oss/flow/guard";
+import { PATH_RULES as NEUTRAL } from "@figentra-oss/flow/guard/neutral";
 import { reachesInbox } from "./inbox.mjs";
 
 /** The home directory, read once: `homedir()` is a system call, and every word is checked against it. */
@@ -141,7 +141,7 @@ const AGENTS_MD_BLOCK = /<!--\s*(BEGIN|END) generated from \.agents\/rules/;
 const denied = (/** @type {{ decision: string, reason: string }} */ d) =>
   d.decision === "deny" && d.reason;
 
-/** @type {import("../../../../../src/guard/paths.mjs").PathRule[]} */
+/** @type {import("@figentra-oss/flow/guard").PathRule[]} */
 export const PATH_RULES = [
   {
     id: "secrets-read",
