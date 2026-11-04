@@ -21,25 +21,45 @@
 
 ## What it is
 
-Figentra Flow (`fflow`, alias `fflow`) is the spec CLI for Stackra repositories. It owns spec-driven
-development end to end (ADR 0510), from `/flow-specify` to the landed change: the presets and templates, the nine
-`flow-*` commands it renders for Claude Code and OpenCode, the `.flow/` folder, the gate on a box, landing, release
-trains and releases. Adapters choose the tracker, runner, credentials and secrets per repository. Its `init` and
-`sync` also install the files every Figentra repository shares, this README layout among them.
+Figentra Flow (`fflow`) is spec-driven development for agent teams. A change starts as a spec, stops for a human's
+approval, becomes a plan and tasks, passes a gate and lands as a reviewed pull request. Flow keeps each spec, plan,
+task and test in step, and refuses to move on when they drift.
+
+- **Specs and approval stops:** `/flow-specify`, `/flow-clarify` and `/flow-plan` for Claude Code, OpenCode and
+  other agents, with the templates and checks behind them.
+- **One command for a repository's agent setup:** `fflow sync` renders the commands, skills, agents, rules, guard
+  hooks, git hooks and CI workflows from a preset, and `fflow check` fails CI when any of them drifts.
+- **The gate and landing:** `fflow gate run` runs your checks at the pushed head, and `fflow land` merges only a
+  green, approved pull request. Release trains and releases follow the same rules.
+- **Adapters:** the tracker (Linear or GitHub Issues), the runner (GitHub Actions or your own box), credentials and
+  secrets are chosen per repository.
+
+A preset carries a team's conventions: Flow ships `neutral` for any repository and `stackra` for Stackra's own.
 
 ## Status
 
-**In progress**: 0.1.0 is published and every Stackra repository runs it.
+**In progress**: 0.2.3 is published; 1.0 is being finished.
 
 The states: **Live** (serving customers), **In progress** (being built), **Planned** (no build yet).
 
 ## Quick start
 
+Flow is published to the Figentra registry, which anyone can read without a token. Map the two scopes in `.npmrc`:
+
+```ini
+@figentra-oss:registry=https://npm.stackra.figentra.com/
+@stackra:registry=https://npm.stackra.figentra.com/
+```
+
+Then, with Node.js 24 or later:
+
 ```sh
-pnpm add -D @figentra-oss/flow    # from the Figentra registry: @figentra-oss:registry in .npmrc
-pnpm exec fflow init      # .flow/ and the flow-* skills
+pnpm add -D @figentra-oss/flow
+pnpm exec fflow init      # flow.config.json, .flow/ and the flow-* commands
 pnpm exec fflow doctor    # checks Node, git, the configuration and the credentials
 ```
+
+Every command is in the [command reference](packages/figentra-flow/README.md#commands).
 
 ## Architecture at a glance
 
