@@ -19,33 +19,38 @@
  *   FR-3); `installProblems`, reading a v1 or v2 lock, is the check that replaces spec-kit's tripwire: no hand edit,
  *   no forgotten `sync`, and no spec-kit leftover.
  *   With a `.flow/readme.yml`, `README.md` is rendered too (STA-1879). The lock pins the third-party skills the profile
- *   selects, which `sync` installs into the git-ignored `.agents/skills/.vendor/` (STA-1945 FR-8).
+ *   selects, which `sync` installs into the git-ignored `.agents/skills/.vendor/` (STA-1945 FR-8). Each surface the
+ *   preset's `surfaces/` has is rendered by its `render-*.mjs` (FR-7): `.claude/settings.json` with the hooks the
+ *   profile selects, the OpenCode projection and its guard plugin, `.mcp.yaml`, `AGENTS.md` and `CLAUDE.md`, and
+ *   `lefthook.yml`; a preset without `surfaces/` renders what it did before.
  * Boundary: `render` and `installProblems` read; `writeRendered` writes the rendered files and the lock and removes
- *   spec-kit's rendered `speckit-*` skills and commands, and the `flow-*` ones the lock lists, it no longer renders
- *   and nobody edited (`flow-tasks`, STA-1945 FR-15, and those a narrower profile deselects, FR-6). Nothing here
- *   deletes `.specify/` (that is `migrate`), nor, yet, another owned file (an agent, rule, surface or hook) a
- *   narrower profile or preset no longer renders (STA-1945 T068).
+ *   spec-kit's rendered `speckit-*` skills and commands, and every owned file the lock lists that it no longer renders
+ *   and nobody edited (an agent, rule, skill, command, surface or hook file a narrower profile or preset drops, FR-6,
+ *   FR-7; `flow-tasks`, FR-15). An edited one stays and stays in the lock, so `check` names it. Nothing here touches
+ *   the spec folders (`.agents/specs/`, the repository's own work) or deletes `.specify/` (that is `migrate`).
  * Runtime: node
- * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-2, FR-3, FR-4, FR-5, FR-6, FR-8); STA-2097; STA-2098.
+ * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-2, FR-3, FR-4, FR-5, FR-6, FR-7, FR-8, FR-15); STA-2097;
+ *   STA-2098.
  * Secrets: none.
  */
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
-import { dirname, join, sep } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, posix, resolve } from "node:path";
 
 import { commandFiles, HARNESSES, NEUTRAL } from "../adapters/harness/index.mjs";
 import { GATE_WORKFLOW } from "../adapters/runner/github-actions.mjs";
 import { approveWorkflow } from "./approve-workflow.mjs";
 import { baselineWorkflow } from "./baseline-workflow.mjs";
 import { ConfigError, gateLogins, loadConfig } from "./config.mjs";
-import { FLOW_ASSETS, LOCK, OVERRIDES, presetDir, presetSource } from "./flow-dir.mjs";
+import {
+  FLOW_ASSETS,
+  LOCK,
+  OVERRIDES,
+  presetDir,
+  presetSource,
+  presetTree,
+  SPECS_DEFAULT,
+  specsDirs,
+} from "./flow-dir.mjs";
 import { defaultBranch } from "./git.mjs";
 import {
   digestOf,
@@ -75,16 +80,26 @@ import {
 } from "./product.mjs";
 import { withHeader } from "./provenance.mjs";
 import { renderReadme } from "./readme.mjs";
+import { renderAgentsMd } from "./render-agents-md.mjs";
+import { renderLefthook } from "./render-lefthook.mjs";
+import { renderMcp } from "./render-mcp.mjs";
+import { renderOpencode } from "./render-opencode.mjs";
+import { renderSettings } from "./render-settings.mjs";
 import { loadThirdParty, pinsOf } from "./skills.mjs";
 import { parseYaml, YamlError } from "./yaml.mjs";
 
 /** @typedef {import("./overrides.mjs").Override} Override */
 
 /**
- * What a surface renderer (`render-*.mjs`) reads: the repository, its configuration and its preset's folder. Each one
- * returns its files, path to text, and nothing when the preset has no such surface (STA-1945 C5).
- * @typedef {{ root: string, config: Record<string, any>, presetDir: string }} RenderContext
+ * What a surface renderer (`render-*.mjs`) reads: the repository, its configuration, its preset's folder and the
+ * profile (the hooks it selects; all without one). Each one returns its files, path to text, and nothing when the
+ * preset has no such surface (STA-1945 C5).
+ * @typedef {{ root: string, config: Record<string, any>, presetDir: string,
+ *   profile?: import("./profiles.mjs").Profile }} RenderContext
  */
+
+/** The surface renderers `sync` runs, in the order their files are written (STA-1945 FR-7). */
+const SURFACES = [renderSettings, renderOpencode, renderMcp, renderAgentsMd, renderLefthook];
 
 /** The commands, in workflow order; `plan` writes tasks.md too, so there is no `tasks` (STA-1945 FR-15). */
 export const VERBS = [
@@ -195,7 +210,7 @@ function renderPreset(root, direct, overrides) {
   const dir = join(presetDir(root), "commands");
   /** @type {Map<string, string>} */
   const out = new Map();
-  // FR-6: only what the profile selects; hooks are selected the same way once the preset ships them (PR 4).
+  // FR-6: only what the profile selects; the surfaces' hooks too (render-settings.mjs).
   const profile = selectedProfile(root);
   const config = loadConfig(root).config;
   for (const verb of VERBS) {
@@ -239,6 +254,9 @@ function renderPreset(root, direct, overrides) {
   }
   for (const [path, text] of renderReference({ presetDir: presetDir(root), source }))
     out.set(path, text);
+  // FR-7: each surface the preset has; a preset without `surfaces/` renders what it did before.
+  const ctx = { root, config, presetDir: presetDir(root), profile };
+  for (const surface of SURFACES) for (const [path, text] of surface(ctx)) out.set(path, text);
   const readme = renderReadme(root);
   if (readme !== undefined) out.set("README.md", readme);
   const { apps, approve, baseline, runner, secrets } = config;
@@ -443,30 +461,6 @@ export function profileGaps(root) {
 }
 
 /**
- * Every file under `dir`, its `/`-separated path relative to `dir` and its text, sorted by path; none when `dir` is
- * missing.
- * @param {string} dir
- * @param {(path: string) => string} [from] the file a path's text is read from (its replacement's, FR-4)
- * @returns {[string, string][]}
- * @throws {ConfigError} on a file that is not UTF-8 text: rendered as text it would be corrupted, and the lock with it
- */
-function presetTree(dir, from = (path) => join(dir, path)) {
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir, { recursive: true, encoding: "utf8" })
-    .filter((path) => statSync(join(dir, path)).isFile())
-    .map((path) => path.split(sep).join("/"))
-    .toSorted()
-    .map((path) => {
-      const file = from(path);
-      const bytes = readFileSync(file);
-      const text = bytes.toString("utf8");
-      if (!Buffer.from(text, "utf8").equals(bytes))
-        throw new ConfigError(`${file} is not UTF-8 text; a preset ships text files only`);
-      return /** @type {[string, string]} */ ([path, text]);
-    });
-}
-
-/**
  * The preset's agent reference, routing and models, as they are in the preset (STA-1945, C6), each read through
  * `ctx.source` so a `replace` of `reference/<path>`, `routing.yaml` or `models.yaml` swaps it (FR-4). They always go
  * under `.agents/`: agents read them by that path, whichever assistant runs them.
@@ -600,8 +594,8 @@ export function migrateLegacy(root) {
 
 /**
  * Writes the rendered files with their provenance headers, then `.flow/lock.json` v2 (the third-party skills `sync`
- * installed first pinned in it, STA-1945 FR-8), and removes the rendered `speckit-*` skills and commands and the
- * unedited `flow-*` ones it no longer renders.
+ * installed first pinned in it, STA-1945 FR-8), and removes the rendered `speckit-*` skills and commands and every
+ * unedited owned file it no longer renders (`dropped`), with the folders that leaves empty.
  * @param {string} root
  * @param {Map<string, string>} files
  * @param {Override[]} [overrides] the overrides `files` were rendered with (the headers name them)
@@ -610,11 +604,13 @@ export function migrateLegacy(root) {
 export function writeRendered(root, files, overrides) {
   const removed = removable(root);
   for (const p of removed) rmSync(join(root, p), { recursive: true, force: true });
+  const top = resolve(root);
   for (const p of dropped(root, files)) {
-    const at = join(root, p);
+    const at = join(top, p);
     rmSync(at);
     removed.push(p);
-    if (!readdirSync(dirname(at)).length) rmSync(dirname(at), { recursive: true });
+    for (let dir = dirname(at); dir !== top && !readdirSync(dir).length; dir = dirname(dir))
+      rmSync(dir, { recursive: true });
   }
   const written = withHeaders(root, files, overrides);
   for (const [path, text] of written) {
@@ -627,23 +623,47 @@ export function writeRendered(root, files, overrides) {
 }
 
 /**
- * The `flow-*` skills and commands the lock lists that `files` no longer holds (`flow-tasks`, FR-15, or one a narrower
- * profile deselects, FR-6) and nobody edited since: what `writeRendered` removes besides spec-kit's. Nothing else the
- * lock lists goes.
+ * The owned files the lock lists that `files` no longer holds and that are still there, each with whether nobody
+ * edited it since (its digest is the lock's). A path outside the repository and anything under the spec folders
+ * (`.agents/specs/`, `specs.dir`, `specs.bugsDir`), the repository's own work, is never one (FR-7).
+ * @param {string} root
+ * @param {Map<string, string>} files
+ */
+function unrendered(root, files) {
+  const { dir, bugsDir } = specsDirs(root);
+  const specs = [SPECS_DEFAULT, dir, bugsDir].map(
+    (d) => `${posix.normalize(d).replace(/\/$/, "")}/`,
+  );
+  return Object.entries(lockedFiles(root))
+    .filter(([p]) => {
+      const at = posix.normalize(p);
+      return (
+        !files.has(p) &&
+        !isAbsolute(p) &&
+        !at.startsWith("../") &&
+        at !== ".." &&
+        !specs.some((d) => at.startsWith(d)) &&
+        existsSync(join(root, p))
+      );
+    })
+    .map(([path, digest]) => ({
+      path,
+      digest,
+      unedited: digestOf(readFileSync(join(root, path), "utf8")) === digest,
+    }));
+}
+
+/**
+ * The owned files the lock lists that `files` no longer holds and nobody edited since: an agent, rule, skill, command,
+ * surface or hook file a narrower profile or preset drops (FR-6, FR-7), `flow-tasks` (FR-15). What `writeRendered`
+ * removes besides spec-kit's; an edited one stays, and the lock keeps it so `check` names it (`lockOf`).
  * @param {string} root
  * @param {Map<string, string>} files
  */
 export function dropped(root, files) {
-  return Object.entries(lockedFiles(root))
-    .filter(
-      ([p, digest]) =>
-        !files.has(p) &&
-        (SKILL_DIRS.some((d) => p.startsWith(`${d}/flow-`)) || harnessCommand(p)) &&
-        !p.includes("..") &&
-        existsSync(join(root, p)) &&
-        digestOf(readFileSync(join(root, p), "utf8")) === digest,
-    )
-    .map(([p]) => p);
+  return unrendered(root, files)
+    .filter((f) => f.unedited)
+    .map((f) => f.path);
 }
 
 /**
@@ -683,7 +703,8 @@ export function withHeaders(root, files, overrides = appliedOverrides(root).over
 }
 
 /**
- * The v2 lock for the files as written, with the installed preset and the overrides as they are now.
+ * The v2 lock for the files as written, with the installed preset and the overrides as they are now; an owned file
+ * `sync` no longer renders but someone edited keeps its old digest, so `check` names it until it is deleted by hand.
  * @param {string} root
  * @param {Map<string, string>} written
  * @returns {import("./lock.mjs").Lock}
@@ -696,7 +717,12 @@ export function lockOf(root, written) {
     preset: { name: preset, version, digest: treeDigest(presetDir(root)) },
     profile: selectedProfile(root).name,
     overrides: overridesDigest(root),
-    files: Object.fromEntries([...written].map(([path, text]) => [path, digestOf(text)])),
+    files: Object.fromEntries([
+      ...[...written].map(([path, text]) => [path, digestOf(text)]),
+      ...unrendered(root, written)
+        .filter((f) => !f.unedited)
+        .map((f) => [f.path, f.digest]),
+    ]),
     // The pins of what `sync` installed (machine-only skills are never recorded); `diff` reads them without a fetch.
     skills: pinsOf(selectedSkills(root)),
   };

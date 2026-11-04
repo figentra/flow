@@ -129,19 +129,24 @@ test("presets: stackra declares D3's profiles with `framework` the default; neut
   });
 });
 
-test("sync: renders only the named profile's skills and agents, and the lock records the profile", (t) => {
+test("sync: renders only the named profile's skills, agents and hooks, and the lock records the profile", (t) => {
   const root = governed(t, { own: true, config: { profile: "lean" } });
   writeFileSync(join(root, OWN_PRESET, "preset.yml"), LEAN);
   const { files } = sync(root, { direct: true, log: () => {} });
   assert.deepEqual(files.toSorted(), [
     ".claude/agents/git-steward.md",
     ".claude/rules/worktrees.md",
+    ".claude/settings.json",
     ".claude/skills/flow-plan/SKILL.md",
     ".claude/skills/flow-specify/SKILL.md",
     ".opencode/commands/flow-plan.md",
     ".opencode/commands/flow-specify.md",
+    "lefthook.yml",
   ]);
   assert.equal(readLock(root)?.profile, "lean");
+  // `hooks: []` selects none; the guard is mandatory (FR-5), so it alone is wired.
+  const settings = JSON.parse(readFileSync(join(root, ".claude/settings.json"), "utf8"));
+  assert.deepEqual(Object.keys(settings.hooks), ["PreToolUse"]);
 });
 
 test("sync: with no profile named, the preset's default applies; an unknown one is refused", (t) => {

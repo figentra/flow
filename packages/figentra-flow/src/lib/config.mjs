@@ -7,7 +7,8 @@
  * Boundary: reads two files; never writes; never runs code from the repository (the config is JSON, ADR decision 1 of
  *   the phase A plan stop).
  * Runtime: node
- * Governing contract: STA-1729 phase A (the leader's plan stop of 2026-10-31); STA-2098 (`harnesses`).
+ * Governing contract: STA-1729 phase A (the leader's plan stop of 2026-10-31); STA-2098 (`harnesses`); STA-1945
+ *   (FR-7: `mcp`, `lefthook`, `agentsMd`).
  * Secrets: none; the config names environment variables and secret paths, never values.
  */
 import { existsSync, readFileSync } from "node:fs";
@@ -189,6 +190,14 @@ export const SCHEMA = {
         label: str,
       },
     },
+    // STA-1945 FR-7: the repository's additions to the preset's surfaces: its MCP servers by name (`.mcp.yaml`), its
+    // lefthook jobs by hook (`lefthook.yml`) and its own notes for AGENTS.md (`facts`, one Markdown string).
+    mcp: { type: "object", additionalProperties: { type: "object" } },
+    lefthook: {
+      type: "object",
+      additionalProperties: { type: "array", items: { type: "object" } },
+    },
+    agentsMd: { type: "object", additionalProperties: false, properties: { facts: str } },
   },
 };
 
@@ -263,7 +272,9 @@ export function validate(schema, value, path = "") {
  *             clean?: { keep?: string[], budget?: number }, review?: { required?: string[] },
  *             baseline?: { tasks?: string[], mustPass?: string[], install?: string, setup?: Record<string, unknown>[], branch?: string },
  *             artifacts?: { paths?: string[], maxBytes?: number },
- *             train?: { cutoff?: number, eject?: "bisect" | "manual", after?: string[], label?: string } }} Config
+ *             train?: { cutoff?: number, eject?: "bisect" | "manual", after?: string[], label?: string },
+ *             mcp?: Record<string, Record<string, any>>, lefthook?: Record<string, Record<string, any>[]>,
+ *             agentsMd?: { facts?: string } }} Config
  * @typedef {{ config: Config, source: string | undefined, warnings: string[], errors: string[] }} Loaded
  */
 

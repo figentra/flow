@@ -142,6 +142,8 @@ test("writeRendered: every comment-capable file starts with its header, and the 
         text.startsWith(`---\n# ${words}\n`) || text.startsWith(`<!-- ${words} -->\n`),
         path,
       );
+    // Strict JSON carries no header; the lock's digest identifies it (FR-3).
+    else if (path.endsWith(".json")) JSON.parse(text);
     else assert.fail(`${path} has no comment style`);
   }
   assert.deepEqual(installProblems(root), []);

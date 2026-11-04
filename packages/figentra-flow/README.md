@@ -49,7 +49,7 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow migrate [--dry-run]`                                           | moves a spec-kit repository onto `.flow/` (constitution, `.specify/` and `.agents/speckit/` deleted, scripts, pins and skips), then syncs                                                        |
 | `fflow spec paths\|setup-plan\|setup-tasks\|template`                 | the spec folder, its documents and the resolved templates as JSON, for the `flow-*` commands                                                                                                     |
 | `fflow spec ask <key> [--async]`, `fflow spec resume <key>`            | the spec's open questions; `--async` posts them on the issue and marks the spec waiting, `resume` records the answers given there (see [Asynchronous questions](#asynchronous-questions)) |
-| `fflow sync [--direct]`                                               | renders the `flow-*` skills (for the repository's projector, or Claude Code and OpenCode directly), each with its provenance header, and writes `.flow/lock.json`; refuses a preset that differs from the lock |
+| `fflow sync [--direct]`                                               | renders the `flow-*` skills (for the repository's projector, or Claude Code and OpenCode directly), the agents, rules and the preset's surfaces (see [What `sync` owns](#what-sync-owns)), each with its provenance header, and writes `.flow/lock.json`; refuses a preset that differs from the lock |
 | `fflow update [--preset <version>]`                                   | prints the diff, adopts the installed preset into the lock, then syncs; `--preset` refuses any version but the installed one |
 | `fflow check`                                                         | the CI check: fails, naming each cause, on an owned file that differs from the lock, a preset that differs from its locked digest, an invalid config or override, a profile the preset lacks or the lock does not record, a mandatory policy off, an override changed without a `sync`, or an override past its review date (and warns 14 days before); writes nothing |
 | `fflow diff`                                                          | prints every file `sync` or `update` would add, change or delete, with the lines; writes nothing |
@@ -90,6 +90,41 @@ A repository keeps one-line aliases: `"spec:gate": "fflow gate"`, `"spec:trace":
 `"spec:sync": "fflow sync"`, and `"spec:linear": "infisical run --env=dev --path=/agents --silent -- fflow linear"`.
 `fflow linear` reads its token from the environment only (`LINEAR_AGENT_TOKEN`, else `LINEAR_API_KEY`) and never
 prints it.
+
+## What `sync` owns
+
+`fflow sync` renders these files from the preset and `flow.config.json`, records each with its digest in
+`.flow/lock.json`, and starts each with its provenance header where the format has comments (strict JSON has none; its
+digest identifies it). Change the preset or `.flow/overrides/` and sync; `check` fails on a hand edit.
+
+| File                                                         | From                                                                       |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| the `flow-*` skills or commands (see Harnesses)              | the preset's `commands/`                                                   |
+| `.agents/agents/`, `.agents/rules/` (`.claude/` with `--direct`) | `agents/` (as the profile selects), `rules/`                           |
+| `.agents/skills/<name>/` (`.claude/skills/` with `--direct`) | `skills/` (as the profile selects)                                         |
+| `.agents/reference/`, `.agents/routing.yaml`, `.agents/models.yaml` | `reference/`, `routing.yaml`, `models.yaml`                         |
+| `.claude/settings.json`                                      | `surfaces/settings.json` plus Flow's hooks, below                          |
+| `opencode.jsonc`, `.opencode/plugins/fflow-guard.mjs`        | `surfaces/opencode.jsonc` and `surfaces/opencode/`                         |
+| `.mcp.yaml`                                                  | `surfaces/mcp.yaml` plus the config's `mcp` servers (secrets by `$NAME`)   |
+| `AGENTS.md`, `CLAUDE.md`                                     | `surfaces/agents-md/agents.md`, `.flow/readme.yml` and `agentsMd.facts`    |
+| `lefthook.yml`                                               | `surfaces/lefthook.yml` plus the config's `lefthook` jobs                  |
+| `README.md`                                                  | `.flow/readme.yml` (see The README)                                        |
+| `.github/workflows/fflow-approve.yml`, `.github/CODEOWNERS`, `.github/workflows/fflow-baseline.yml` | `apps.owner`, `baseline` (see Landing and The gate) |
+
+Flow's hooks in `.claude/settings.json` run the installed package through `node`, never `pnpm exec`. A profile's
+`hooks` selects them by id: `guard` (`PreToolUse`: bash, paths and the plan gate; mandatory, so every profile gets
+it), `post-write` (`PostToolUse`), `prompt-hints` (`UserPromptSubmit`), `session-context` (`SessionStart`),
+`session-save` (`Stop`: `fflow session stop --save-only` writes the session's record) and `session-stop`
+(`SessionEnd`: `fflow session stop` commits the work as WIP and pushes it). The OpenCode guard plugin puts every
+shell, edit, read, glob and grep call to the same guard entry, an ask counting as a deny. With `lefthook.yml`
+rendered, `sync` also pins `mise.toml`'s `npm:oxfmt` and `npm:oxlint` at the versions `pnpm-workspace.yaml`'s catalog
+pins.
+
+When a narrower profile or a changed preset no longer renders an owned file, `sync` deletes it, with any folder that
+leaves empty, if nobody edited it since (its digest is the lock's). An edited one is never deleted: it stays in the
+lock and `check` names it until you delete it by hand. `sync` never touches the spec folders (`.agents/specs/`,
+`specs.dir`, `specs.bugsDir`): specs are the repository's own work. A surface replaces a repository's own file of the
+same name on its first `sync` (git keeps the old one): move what you need into the preset or `.flow/overrides/` first.
 
 ## The README
 
@@ -267,8 +302,8 @@ setting you have not made refuses and names it.
   `platform`, `product`, `brand` and `starter`, which all select everything for now. `validate`, `check` and `sync`
   refuse an unknown name, and `check` names a profile changed without a `sync`. A third-party skill from the preset's
   `third-party.yml` is selected by its id in `skills`, and `sync` removes one a profile drops from
-  `.agents/skills/.vendor/`. Narrowing a profile does not yet delete the rendered agents and skills it drops: remove
-  them by hand until a later release does.
+  `.agents/skills/.vendor/`. `hooks` selects Flow's agent hooks by id (see What `sync` owns); the guard is always
+  rendered. Narrowing a profile deletes the rendered agents, skills and files it drops that nobody edited.
 
 - `specs` sets where specs live: `dir` (default `.agents/specs`) and `bugsDir` (default `.agents/specs/bugs`).
 
@@ -363,7 +398,8 @@ preset/
   rules/              # <id>.md: agent rules rendered beside them
   skills/<name>/      # the preset's own skills, rendered file for file (a folder may not be named flow-*)
   guard/              # bash-rules.mjs, path-rules.mjs, hints.mjs: the guard engine's tables
-  surfaces/           # lefthook.yml, mcp.yaml, agents-md/agents.md: the repository files sync renders from them
+  surfaces/           # settings.json, opencode.jsonc, opencode/, mcp.yaml, agents-md/agents.md, lefthook.yml:
+                      #   the repository files sync renders from them (see What sync owns)
   quality-words.yml   # vague words the spec gate flags
   third-party.yml     # third-party skills, each with its source and licence
   reference/, routing.yaml, models.yaml   # agent reference, routing and models, rendered under .agents/
