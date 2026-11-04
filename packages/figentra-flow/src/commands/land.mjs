@@ -256,9 +256,9 @@ function specAt(
  * Lands one PR.
  * @param {{ root: string, repo: string, base: string, number: number, dry?: boolean, manualOk?: boolean,
  *           gateApp?: string | string[], reviewer?: string, owner?: string, refs?: string, deps: LandDeps }} options
- *   `refs`: the issue the squash's `Refs:` names. Given, it is the PR's issue and the branch's key is not read, so a
- *   slug that only looks like a key (`adr/0008-sta-12-x`) neither names the squash, picks a spec nor moves to Done;
- *   `refs` is not moved to Done either.
+ *   `refs`: the issue the squash's `Refs:` names when the branch is not a key branch (`<prefix>/<key>-<slug>`); then a
+ *   slug that only looks like a key (`adr/0008-sta-12-x`) neither names the squash, picks a spec nor moves to Done,
+ *   and `refs` is not moved to Done either. A key branch keeps its key, its spec gate and its Done.
  * @returns {Promise<{ code: number, problems?: string[], merged?: string, head?: string,
  *   queued?: boolean, waiting?: string[] }>}
  */
@@ -281,7 +281,8 @@ export async function landOne({
   const head = pr.json.head.sha;
   const branch = pr.json.head.ref;
   const scheme = deps.scheme ?? trackerFor(root, { warn: () => {} }).scheme;
-  const key = refs ? undefined : scheme.parse(branch);
+  // With `refs`, only a `<prefix>/<key>-<slug>` branch's key counts: an ADR slug may merely look like one.
+  const key = refs && !scheme.isBranch(branch) ? undefined : scheme.parse(branch);
   // STA-1856 FR-3: an auto-merged PR comes back here to finish.
   if (pr.json.merged && pr.json.merge_commit_sha) {
     if (pr.json.base?.ref !== base)
