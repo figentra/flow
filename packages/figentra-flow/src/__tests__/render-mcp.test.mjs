@@ -1,8 +1,8 @@
 /**
  * Figentra Flow file contract:
  * Purpose: hold `.mcp.yaml` to STA-1945 FR-7: the stackra preset's servers plus the configuration's, a configured
- *   server replacing the preset's of the same name; an `env` value that is not a `$NAME` reference is refused; a
- *   preset without the surface renders nothing.
+ *   server replacing the preset's of the same name; an `env` value that is not a `$NAME` reference is refused; the
+ *   neutral preset lists only `fflow mcp`; a preset without the surface renders nothing.
  * Boundary: pure functions over the bundled presets; no process, no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
@@ -104,6 +104,19 @@ test("renderMcp: invalid YAML in the preset's surface is a ConfigError naming th
   );
 });
 
-test("renderMcp: a preset without surfaces/mcp.yaml renders nothing", () => {
-  assert.equal(renderMcp(ctx({ mcp: { x: { command: "x" } } }, NEUTRAL)).size, 0);
+test("renderMcp: the neutral preset lists only fflow's own server, plus the config's", () => {
+  const fflow = { command: "node", args: ["node_modules/@figentra-oss/flow/bin/fflow.mjs", "mcp"] };
+  assert.deepEqual(parseYaml(renderMcp(ctx({}, NEUTRAL)).get(MCP_FILE) ?? ""), {
+    mcpServers: { fflow },
+  });
+  assert.deepEqual(
+    parseYaml(renderMcp(ctx({ mcp: { x: { command: "x" } } }, NEUTRAL)).get(MCP_FILE) ?? ""),
+    { mcpServers: { fflow, x: { command: "x" } } },
+  );
+});
+
+test("renderMcp: a preset without surfaces/mcp.yaml renders nothing", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "flow-mcp-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  assert.equal(renderMcp(ctx({ mcp: { x: { command: "x" } } }, dir)).size, 0);
 });

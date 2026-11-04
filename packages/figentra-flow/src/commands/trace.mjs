@@ -6,21 +6,32 @@
  *                           and the tasks done (with Flow's record, only those with passing evidence: STA-1945 FR-23)
  *   drift <dir> [--base=r]  members changed in the diff that Impact does not name (in `ci`, that no changed spec's
  *                           Impact names); ticked tasks whose paths are gone;
- *                           for a Done spec, Impact "Docs to update" pages the diff does not touch
+ *                           for a Done spec, Impact "Docs to update" pages the diff does not touch;
+ *                           contract drift: a function the plan (a small spec: its `## Design`) declares that its
+ *                           component's files lack or declare with another signature (STA-1945 FR-30, AC-33)
  *   ci [--base=r]           for every spec folder changed since the base: at Implementing or later, drift; at Done,
- *                           every live FR and P covered by a test (an FR may be covered through a P that is) and
- *                           every SC naming its verification method. Wired into `pnpm validate`.
+ *                           contract drift (a spec last clarified before the document gates is exempt), every
+ *                           live FR and P covered by a test (an FR may be covered through a P that is) and every
+ *                           SC naming its verification method. Wired into `pnpm validate`.
  * A test covers an ID with a tag anywhere in a `__tests__/*.test.*` file: `@covers sta-163:FR-001 sta-163:P-002`.
  * Dependency-free; reads files and git only, never Linear or the network.
  * Boundary: reads specs, tasks, tests and the git diff; writes nothing.
  * Runtime: node
- * Governing contract: ADR 0120 (SDLC spec location, lanes and change risk); STA-348.
+ * Governing contract: ADR 0120 (SDLC spec location, lanes and change risk); STA-348; STA-1945 FR-30 (contracts).
  * Secrets: none.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { repoScheme, SPECS_DIR, statusOf, testsText } from "./gate.mjs";
+import {
+  clarifiedBefore,
+  DOCUMENT_GATES_SINCE,
+  historyOf,
+  repoScheme,
+  SPECS_DIR,
+  statusOf,
+  testsText,
+} from "./gate.mjs";
 import {
   coversTags,
   definedIds,
@@ -30,6 +41,7 @@ import {
   properties,
   strip,
 } from "../lib/spec-parse.mjs";
+import { contractDrift } from "../lib/contract-drift.mjs";
 import { passed } from "../lib/evidence.mjs";
 import { NAME } from "../lib/product.mjs";
 import { readRecord } from "../lib/record.mjs";
@@ -159,6 +171,16 @@ function load(dir) {
 /** Whether the repository-relative path `p` exists. */
 const existsInRepo = (p) => existsSync(join(ROOT, p));
 
+/** The repository-relative file `p`'s text, or undefined for a folder or a missing path. */
+const readInRepo = (/** @type {string} */ p) => {
+  const file = join(ROOT, p);
+  return existsSync(file) && statSync(file).isFile() ? readFileSync(file, "utf8") : undefined;
+};
+
+/** FR-30's contract drift for a loaded spec folder: its plan, or a small spec's `## Design`. */
+const contracts = (/** @type {{ spec: string, plan: string }} */ s) =>
+  contractDrift(s.plan.trim() ? s.plan : s.spec, readInRepo);
+
 export function run([mode, ...args]) {
   const base = args.find((a) => a.startsWith("--base="))?.slice(7) ?? "origin/main";
   const dir = args.find((a) => !a.startsWith("--"));
@@ -185,7 +207,11 @@ export function run([mode, ...args]) {
     return 0;
   }
   if (mode === "drift" && dir) {
-    const problems = drift({ ...load(resolve(dir)), changed: changed(), exists: existsInRepo });
+    const loaded = load(resolve(dir));
+    const problems = [
+      ...drift({ ...loaded, changed: changed(), exists: existsInRepo }),
+      ...contracts(loaded),
+    ];
     for (const p of problems) console.error(`spec-trace: ${p}`);
     return problems.length ? 1 : 0;
   }
@@ -208,7 +234,11 @@ export function run([mode, ...args]) {
       if (status !== "implementing" && status !== "done") continue;
       const problems = drift({ ...s, changed: names, exists: existsInRepo, named });
       if (status === "done")
-        problems.push(...traceProblems(trace({ ...s, tests: (tests ??= testsText()) })));
+        problems.push(
+          // a spec approved before FR-27's interface blocks was not written for this check
+          ...(clarifiedBefore(historyOf(s.spec), DOCUMENT_GATES_SINCE) ? [] : contracts(s)),
+          ...traceProblems(trace({ ...s, tests: (tests ??= testsText()) })),
+        );
       for (const p of problems) console.error(`spec-trace: ${SPECS_DIR}/${s.folder}: ${p}`);
       failures += problems.length;
     }
