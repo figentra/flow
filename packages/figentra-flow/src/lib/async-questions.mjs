@@ -79,7 +79,7 @@ export const waitingOn = (text) => text.match(new RegExp(`^${WAITING}\\s*(.*)$`,
 export function markWaiting(text, url) {
   const line = `${WAITING} ${url}`;
   const lines = clearWaiting(text).split("\n");
-  const at = lines.findIndex((l) => /^\*\*Clarifications status\*\*:/.test(l));
+  const at = lines.findIndex((l) => l.startsWith("**Clarifications status**:"));
   lines.splice(at === -1 ? 1 : at + 1, 0, "", line);
   return lines.join("\n");
 }
@@ -106,11 +106,11 @@ export function recordAnswers(text, answers, date) {
   const lines = out.split("\n");
   let section = lines.findIndex((l) => /^## Clarifications\b/.test(l));
   if (section === -1) {
-    const first = lines.findIndex((l) => /^## /.test(l));
+    const first = lines.findIndex((l) => l.startsWith("## "));
     section = first === -1 ? lines.length : first;
     lines.splice(section, 0, "## Clarifications", "");
   }
-  const sectionEnd = lines.findIndex((l, i) => i > section && /^## /.test(l));
+  const sectionEnd = lines.findIndex((l, i) => i > section && l.startsWith("## "));
   const end = sectionEnd === -1 ? lines.length : sectionEnd;
   const session = lines.findIndex(
     (l, i) => i > section && i < end && l.trim() === `### Session ${date}`,
