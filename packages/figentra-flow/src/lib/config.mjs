@@ -7,12 +7,13 @@
  * Boundary: reads two files; never writes; never runs code from the repository (the config is JSON, ADR decision 1 of
  *   the phase A plan stop).
  * Runtime: node
- * Governing contract: STA-1729 phase A (the leader's plan stop of 2026-10-31).
+ * Governing contract: STA-1729 phase A (the leader's plan stop of 2026-10-31); STA-2098 (`harnesses`).
  * Secrets: none; the config names environment variables and secret paths, never values.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { HARNESS_IDS } from "../adapters/harness/index.mjs";
 import { CONFIG_FILE, LEGACY_CONFIG_FILE, NAME } from "./product.mjs";
 
 const str = { type: "string", minLength: 1 };
@@ -44,6 +45,8 @@ export const SCHEMA = {
     preset: str,
     // STA-1945 FR-6: the preset's profile; without it, the preset's default.
     profile: str,
+    // STA-2098: the tools `sync --direct` renders the `flow-*` commands for; without it, Claude Code and OpenCode.
+    harnesses: { type: "array", items: { enum: [...HARNESS_IDS] }, minItems: 1 },
     team: str,
     specs: {
       type: "object",
@@ -96,7 +99,7 @@ export const SCHEMA = {
           oidc: {
             type: "object",
             additionalProperties: false,
-            required: ["identityId", "audience"],
+            required: ["audience"],
             properties: {
               identityId: {
                 type: "string",
@@ -137,6 +140,9 @@ export const SCHEMA = {
       properties: {
         ownerOnly: { type: "array", items: str },
         checks: { type: "object", additionalProperties: str },
+        // The L2 design: the workflows whose success wakes main's land lane, and the App slugs that may ask for a land.
+        workflows: { type: "array", items: { type: "string", pattern: "^[\\w .()-]+$" } },
+        requesters: { type: "array", items: { type: "string", pattern: "^[\\w-]+$" } },
       },
     },
     clean: {
@@ -249,10 +255,11 @@ export function validate(schema, value, path = "") {
 }
 
 /**
- * @typedef {{ version?: number, preset?: string, profile?: string, team?: string, specs?: { dir?: string, bugsDir?: string }, tracker?: any, credentials?: any, runner?: any, secrets?: any,
+ * @typedef {{ version?: number, preset?: string, profile?: string, harnesses?: string[], team?: string, specs?: { dir?: string, bugsDir?: string }, tracker?: any, credentials?: any, runner?: any, secrets?: any,
  *             apps?: { gate?: { slug?: string, login: string, aliases?: string[] }, review?: { slug: string },
  *                      owner?: string },
- *             gate?: { check?: string, shard?: string }, approve?: { ownerOnly?: string[], checks?: Record<string, string> },
+ *             gate?: { check?: string, shard?: string }, approve?: { ownerOnly?: string[], checks?: Record<string, string>,
+ *                      workflows?: string[], requesters?: string[] },
  *             clean?: { keep?: string[], budget?: number }, review?: { required?: string[] },
  *             baseline?: { tasks?: string[], mustPass?: string[], install?: string, setup?: Record<string, unknown>[], branch?: string },
  *             artifacts?: { paths?: string[], maxBytes?: number },

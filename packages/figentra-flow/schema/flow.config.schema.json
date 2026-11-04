@@ -21,6 +21,13 @@
       "type": "string",
       "minLength": 1
     },
+    "harnesses": {
+      "type": "array",
+      "items": {
+        "enum": ["claude-code", "opencode", "copilot", "cursor", "codex"]
+      },
+      "minItems": 1
+    },
     "team": {
       "type": "string",
       "minLength": 1
@@ -303,7 +310,7 @@
             "oidc": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["identityId", "audience"],
+              "required": ["audience"],
               "properties": {
                 "identityId": {
                   "type": "string",
@@ -393,6 +400,20 @@
           "additionalProperties": {
             "type": "string",
             "minLength": 1
+          }
+        },
+        "workflows": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[\\w .()-]+$"
+          }
+        },
+        "requesters": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[\\w-]+$"
           }
         }
       }

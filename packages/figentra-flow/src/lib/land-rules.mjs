@@ -7,7 +7,8 @@
  *   problems). The AI review is advisory (ADR 0523 decision 6, owner 2026-11-04): `reviewWarnings` names a missing,
  *   stale or FAIL verdict and `squashMessage` records the verdict as an `AI-Review:` line, but neither ever refuses.
  *   `gateProblems` is shared with `train`; `specAt` reads the spec at the head through the contents API, as data.
- * Boundary: pure but for `specAt`, which only reads through the given API. Imports nothing from `commands/`.
+ * Boundary: pure but for `specAt`, which only reads through the given API (`gh`'s, or a job's REST; it awaits
+ *   either). Imports nothing from `commands/`.
  * Runtime: node
  * Governing contract: Stackra ADR 0503 (decision 5), ADR 0502, ADR 0230; ADR 0523 (decision 6); STA-1729 phase 3
  *   (AC-031); STA-1856 FR-1; STA-1945 (FR-5, AC-40).
@@ -172,21 +173,27 @@ export function squashMessage(key, commits, review) {
   ].join("\n");
 }
 
-/** The spec text at `sha` for the branch's key, read through the API; undefined when there is none. */
-export function specAt(
-  /** @type {import("./github.mjs").Api} */ api,
+/**
+ * The spec text at `sha` for the branch's key, read through the API (`gh`'s, or main's job's REST); undefined when
+ * there is none.
+ */
+export async function specAt(
+  /** @type {import("./github.mjs").Api | import("./approve-check.mjs").Rest} */ api,
   /** @type {string} */ repo,
   /** @type {string} */ sha,
   /** @type {string | undefined} */ key,
 ) {
   if (!key) return undefined;
-  const dirs = api("GET", `/repos/${repo}/contents/.agents/specs?ref=${sha}`);
+  const dirs = await api("GET", `/repos/${repo}/contents/.agents/specs?ref=${sha}`);
   const dir =
     dirs.ok && Array.isArray(dirs.json)
-      ? dirs.json.find((d) => d.type === "dir" && d.name.startsWith(`${key}-`))
+      ? dirs.json.find((/** @type {any} */ d) => d.type === "dir" && d.name.startsWith(`${key}-`))
       : undefined;
   if (!dir) return undefined;
-  const file = api("GET", `/repos/${repo}/contents/.agents/specs/${dir.name}/spec.md?ref=${sha}`);
+  const file = await api(
+    "GET",
+    `/repos/${repo}/contents/.agents/specs/${dir.name}/spec.md?ref=${sha}`,
+  );
   return file.ok
     ? Buffer.from(String(file.json?.content ?? ""), "base64").toString("utf8")
     : undefined;

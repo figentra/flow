@@ -225,7 +225,7 @@ test("rules: a PR that changes an owner-only path is the owner's to land (STA-18
   );
 });
 
-test("specAt: reads the branch key's spec at the head through the contents API, as data", () => {
+test("specAt: reads the branch key's spec at the head through the contents API, as data", async () => {
   /** @type {string[]} */
   const asked = [];
   /** @type {import("../lib/github.mjs").Api} */
@@ -241,8 +241,8 @@ test("specAt: reads the branch key's spec at the head through the contents API, 
       };
     return { ok: false, json: undefined, err: "HTTP 404" };
   };
-  assert.equal(specAt(api, "o/r", SHA, "sta-5"), "**Tier**: small\n");
-  assert.equal(specAt(api, "o/r", SHA, "sta-6"), undefined);
-  assert.equal(specAt(api, "o/r", SHA, undefined), undefined);
+  assert.equal(await specAt(api, "o/r", SHA, "sta-5"), "**Tier**: small\n");
+  assert.equal(await specAt(api, "o/r", SHA, "sta-6"), undefined);
+  assert.equal(await specAt(api, "o/r", SHA, undefined), undefined);
   assert.equal(asked.length, 3, "no key reads nothing");
 });

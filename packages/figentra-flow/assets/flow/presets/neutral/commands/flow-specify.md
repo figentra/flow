@@ -155,6 +155,7 @@ Given that feature description, do this:
       - **If [NEEDS CLARIFICATION] markers remain**:
         1. Extract all [NEEDS CLARIFICATION: ...] markers from the spec
         2. **LIMIT CHECK**: If more than 3 markers exist, keep only the 3 most critical (by scope/security/UX impact) and make informed guesses for the rest
+        <!-- flow:ask -->
         3. For each clarification needed (max 3), present options to user in this format:
 
            ```markdown
@@ -184,6 +185,7 @@ Given that feature description, do this:
         5. Number questions sequentially (Q1, Q2, Q3 - max 3 total)
         6. Present all questions together before waiting for responses
         7. Wait for user to respond with their choices for all questions (e.g., "Q1: A, Q2: Custom - [details], Q3: B")
+        <!-- /flow:ask -->
         8. Update the spec by replacing each [NEEDS CLARIFICATION] marker with the user's selected or provided answer
         9. Re-run validation after all clarifications are resolved
 

@@ -2,10 +2,12 @@
  * Figentra Flow file contract:
  * Purpose: the `flow-*` skills and commands a repository carries (ADR 0510): rendered from its preset's command
  *   documents either as neutral skill documents for the repository's own projector (`.agents/skills/flow-<verb>/`) or,
- *   with `direct`, as Claude Code skills and OpenCode commands; the preset's agent definitions (`agents/`, as
+ *   with `direct`, into each tool's own folder by the harness adapters `harnesses` names, their capability blocks
+ *   filled per tool (without `harnesses`, Claude Code skills and OpenCode commands with today's text, STA-2098);
+ *   the preset's agent definitions (`agents/`, as
  *   `.agents/agents/<id>.md` or, with `direct`, `.claude/agents/<id>.md`), the approval workflow (its secret names
- *   from `preset.yml`'s `approve`; with a `github-actions` runner and `secrets.oidc`, its `verdict` job, the L2
- *   design's PR F) and, with `apps.owner`, a CODEOWNERS for the owner-only paths (STA-1856); the
+ *   from `preset.yml`'s `approve`; with `secrets.oidc`, its event lane from `approve.workflows` and
+ *   `approve.requesters`, the L2 design's PR D, and with a `github-actions` runner its `verdict` job, PR F) and, with `apps.owner`, a CODEOWNERS for the owner-only paths (STA-1856); the
  *   preset's own skills (`skills/<name>/**`, beside the `flow-*` ones) and, with `renderReference`, its agent
  *   reference, routing and models under `.agents/` (STA-1945, C6); a preset skill folder named `flow-*` or a preset
  *   file that is not UTF-8 is refused. Only the skills and agents the config's profile selects are rendered, the lock
@@ -24,7 +26,7 @@
  *   deletes `.specify/` (that is `migrate`), nor, yet, another owned file (an agent, rule, surface or hook) a
  *   narrower profile or preset no longer renders (STA-1945 T068).
  * Runtime: node
- * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-2, FR-3, FR-4, FR-5, FR-6, FR-8); STA-2097.
+ * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-2, FR-3, FR-4, FR-5, FR-6, FR-8); STA-2097; STA-2098.
  * Secrets: none.
  */
 import {
@@ -38,6 +40,7 @@ import {
 } from "node:fs";
 import { dirname, join, sep } from "node:path";
 
+import { commandFiles, HARNESSES, NEUTRAL } from "../adapters/harness/index.mjs";
 import { GATE_WORKFLOW } from "../adapters/runner/github-actions.mjs";
 import { approveWorkflow } from "./approve-workflow.mjs";
 import { baselineWorkflow } from "./baseline-workflow.mjs";
@@ -101,6 +104,19 @@ export const VERBS = [
 const LEFTOVER_DIRS = [".specify", ".agents/speckit"];
 /** Folders whose `speckit-*` or `speckit.*` entries spec-kit rendered. */
 const SKILL_DIRS = [".claude/skills", ".opencode/commands", ".agents/skills", ".agents/commands"];
+
+/**
+ * Whether `path` is where a harness renders a `flow-*` command (STA-2098); with `directOnly`, only where no
+ *   render but `--direct` puts one (not the neutral `.agents/skills/`).
+ * @param {string} path
+ * @param {{ directOnly?: boolean }} [options]
+ */
+const harnessCommand = (path, { directOnly = false } = {}) =>
+  Object.values(HARNESSES).some(
+    (h) =>
+      !(directOnly && h.path("x") === NEUTRAL.path("x")) &&
+      VERBS.some((verb) => h.path(`flow-${verb}`) === path),
+  );
 
 /**
  * A command document's front matter fields and body.
@@ -181,6 +197,7 @@ function renderPreset(root, direct, overrides) {
   const out = new Map();
   // FR-6: only what the profile selects; hooks are selected the same way once the preset ships them (PR 4).
   const profile = selectedProfile(root);
+  const config = loadConfig(root).config;
   for (const verb of VERBS) {
     const name = `flow-${verb}`;
     if (!selects(profile, "skills", name)) continue;
@@ -193,33 +210,12 @@ function renderPreset(root, direct, overrides) {
       `  generated-by: ${NAME}`,
       ...(meta["derived-from"] ? [`  derived-from: ${meta["derived-from"]}`] : []),
     ];
-    const skill = [
-      "---",
-      `name: ${name}`,
-      `description: ${description}`,
-      ...provenance,
-      "---",
-      "",
-      body,
-    ].join("\n");
-    if (direct) {
-      out.set(`.claude/skills/${name}/SKILL.md`, skill);
-      out.set(
-        `.opencode/commands/${name}.md`,
-        [
-          "---",
-          `description: ${description}`,
-          "---",
-          "",
-          `<!-- ${provenance
-            .slice(1)
-            .map((l) => l.trim())
-            .join("; ")} -->`,
-          "",
-          body,
-        ].join("\n"),
-      );
-    } else out.set(`.agents/skills/${name}/SKILL.md`, skill);
+    // STA-2098: each tool's own files, its capability blocks filled by its harness adapter.
+    for (const [path, text] of commandFiles(
+      { name, description, provenance, body },
+      { direct, harnesses: config.harnesses },
+    ))
+      out.set(path, text);
   }
   for (const [id, text] of presetDocs(root, "agents", source))
     if (selects(profile, "agents", id))
@@ -245,13 +241,25 @@ function renderPreset(root, direct, overrides) {
     out.set(path, text);
   const readme = renderReadme(root);
   if (readme !== undefined) out.set("README.md", readme);
-  const { apps, approve, baseline, runner, secrets } = loadConfig(root).config;
+  const { apps, approve, baseline, runner, secrets } = config;
   // STA-1942: only a repository whose main is red asks for the baseline gate.
   if (baseline) out.set(`.github/workflows/${BASELINE_WORKFLOW}`, baselineWorkflow(baseline));
   const ownerOnly = ownerOnlyExtra(root, overrides);
   // No owner, no approval path: GitHub must be able to ask someone for the owner-only paths (CODEOWNERS).
   if (!apps?.owner) return out;
   const gate = gateLogins(apps);
+  // The L2 design: with `secrets.oidc`, main's copy mints Flow App tokens in process; events run it (PR D) and, for a
+  // github-actions runner, it posts the runner's verdict (PR F).
+  const oidc =
+    secrets?.kind === "infisical" && secrets.oidc && secrets.paths?.gate
+      ? {
+          ...secrets.oidc,
+          domain: secrets.domain,
+          projectId: secrets.projectId,
+          env: secrets.env,
+          path: secrets.paths.gate,
+        }
+      : undefined;
   out.set(
     `.github/workflows/${APPROVE_WORKFLOW}`,
     approveWorkflow({
@@ -261,23 +269,26 @@ function renderPreset(root, direct, overrides) {
       // The gate's status counts only from the gate App; a repository adds its own sources in `approve.checks`.
       trusted: { ...(gate ? { [STATUS_CONTEXT]: gate } : {}), ...approve?.checks },
       ownerOnly,
-      // The L2 design's PR F: main posts the github-actions runner's verdict, over OIDC.
-      ...(runner?.kind === "github-actions" &&
-      secrets?.kind === "infisical" &&
-      secrets.oidc &&
-      secrets.paths?.gate
+      ...(oidc
+        ? {
+            lane: {
+              defaultBranch: defaultBranch(root),
+              oidc,
+              owner: apps.owner,
+              workflows: approve?.workflows ?? [],
+              requesters: approve?.requesters ?? [],
+              // Not apps.gate.slug yet, as in `land` (ADR 0523's migration).
+              reviewers: [apps.review?.slug].filter((x) => x !== undefined),
+            },
+          }
+        : {}),
+      ...(oidc && runner?.kind === "github-actions"
         ? {
             verdict: {
               gatePath: `.github/workflows/${runner.workflow ?? GATE_WORKFLOW}`,
               owner: apps.owner,
               defaultBranch: defaultBranch(root),
-              oidc: {
-                ...secrets.oidc,
-                domain: secrets.domain,
-                projectId: secrets.projectId,
-                env: secrets.env,
-                path: secrets.paths.gate,
-              },
+              oidc,
             },
           }
         : {}),
@@ -627,7 +638,7 @@ export function dropped(root, files) {
     .filter(
       ([p, digest]) =>
         !files.has(p) &&
-        SKILL_DIRS.some((d) => p.startsWith(`${d}/flow-`)) &&
+        (SKILL_DIRS.some((d) => p.startsWith(`${d}/flow-`)) || harnessCommand(p)) &&
         !p.includes("..") &&
         existsSync(join(root, p)) &&
         digestOf(readFileSync(join(root, p), "utf8")) === digest,
@@ -710,11 +721,14 @@ export function presetDrift(root, lock) {
 }
 
 /**
- * Whether the lock's files were rendered with `--direct` (Claude Code skills rather than neutral skill documents).
+ * Whether the lock's files were rendered with `--direct`: a Claude Code skill, or a command where only
+ *   `--direct` puts one (another harness, STA-2098), rather than neutral skill documents.
  * @param {import("./lock.mjs").Lock | undefined} lock
  */
 export function syncedDirect(lock) {
-  return Object.keys(lock?.files ?? {}).some((p) => p.startsWith(".claude/skills/"));
+  return Object.keys(lock?.files ?? {}).some(
+    (p) => p.startsWith(".claude/skills/") || harnessCommand(p, { directOnly: true }),
+  );
 }
 
 /**
