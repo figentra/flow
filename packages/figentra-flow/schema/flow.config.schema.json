@@ -522,6 +522,31 @@
           "minLength": 1
         }
       }
+    },
+    "mcp": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "lefthook": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        }
+      }
+    },
+    "agentsMd": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "facts": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
     }
   }
 }

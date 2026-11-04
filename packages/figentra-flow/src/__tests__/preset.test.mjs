@@ -4,12 +4,13 @@
  *   without a config file, a path for the repository's own); the neutral preset names no ADR, product,
  *   tracker or script of ours; the gate holds a neutral spec to the shared rules only (no Impact, Constitution Check,
  *   deploy modes, properties, routes or path floors), while `stackra` keeps them; a neutral repository renders its
- *   own `flow-*` skills.
+ *   own `flow-*` skills; `sync` removes an unedited owned file it no longer renders, keeps (and `check` names) an
+ *   edited one, and never touches `.agents/specs/` (STA-1945 FR-7).
  * Boundary: temporary folders; no `specify`, no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1729 phase A (A5).
  */
-// @covers sta-1729:FR-11 sta-1729:AC-041 sta-1945:FR-15
+// @covers sta-1729:FR-11 sta-1729:AC-041 sta-1945:FR-15 sta-1945:FR-7 sta-1945:AC-7
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -116,7 +117,7 @@ test("a neutral repository renders the neutral flow-* skills and passes the inst
   assert.deepEqual(installProblems(root), []);
 });
 
-test("sync: an unedited flow-* skill the last sync rendered and this one does not goes; nothing else does (STA-1945 FR-15)", (t) => {
+test("sync: an unedited owned file the last sync rendered and this one does not goes; an edited one and specs stay (STA-1945 FR-7, FR-15)", (t) => {
   const root = mkdtempSync(join(tmpdir(), "flow-stale-"));
   t.after(() => rmSync(root, { recursive: true }));
   sync(root, { direct: true, log: () => {} });
@@ -124,6 +125,7 @@ test("sync: an unedited flow-* skill the last sync rendered and this one does no
     ".claude/skills/flow-tasks/SKILL.md": "rendered\n",
     ".opencode/commands/flow-tasks.md": "edited since\n",
     "notes.md": "rendered\n",
+    ".agents/specs/sta-1-x/spec.md": "rendered\n",
   };
   for (const [p, text] of Object.entries(files)) {
     mkdirSync(join(root, p, ".."), { recursive: true });
@@ -137,14 +139,27 @@ test("sync: an unedited flow-* skill the last sync rendered and this one does no
   );
   assert.deepEqual(
     diff(root).filter((c) => c.kind === "delete"),
-    [{ path: ".claude/skills/flow-tasks/SKILL.md", kind: "delete", patch: "" }],
+    [
+      { path: ".claude/skills/flow-tasks/SKILL.md", kind: "delete", patch: "" },
+      { path: "notes.md", kind: "delete", patch: "" },
+    ],
     "diff names what sync drops",
   );
   const { removed } = sync(root, { direct: true, log: () => {} });
-  assert.deepEqual(removed, [".claude/skills/flow-tasks/SKILL.md"]);
+  assert.deepEqual(removed, [".claude/skills/flow-tasks/SKILL.md", "notes.md"]);
   assert.ok(!existsSync(join(root, ".claude/skills/flow-tasks")), "its folder goes too");
   assert.ok(existsSync(join(root, ".opencode/commands/flow-tasks.md")), "an edited one stays");
-  assert.ok(existsSync(join(root, "notes.md")), "only flow-* skills and commands go");
+  assert.equal(
+    readFileSync(join(root, ".agents/specs/sta-1-x/spec.md"), "utf8"),
+    "rendered\n",
+    "sync never touches .agents/specs/",
+  );
+  // The edited one stays in the lock, so check names it until it is deleted by hand.
+  assert.deepEqual(installProblems(root), [
+    ".opencode/commands/flow-tasks.md differs from what `fflow sync` rendered (change the preset or .flow/overrides/, then sync)",
+  ]);
+  rmSync(join(root, ".opencode/commands/flow-tasks.md"));
+  sync(root, { direct: true, log: () => {} });
   assert.deepEqual(installProblems(root), []);
 });
 
