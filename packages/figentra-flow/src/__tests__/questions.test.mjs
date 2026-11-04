@@ -270,7 +270,8 @@ test("mcp clarification_record: asks through elicitation/create only when the cl
   const sent = [];
   const session = connection((m) => sent.push(m));
   const readers = defaultReaders({ today: () => DATE });
-  const send = (/** @type {any} */ message) => handle(message, readers, session);
+  /** @type {(message: any) => Promise<any>} */
+  const send = (message) => handle(message, readers, session);
   // A client without the capability is never asked.
   await send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { capabilities: {} } });
   assert.equal(session.elicitation, false);
