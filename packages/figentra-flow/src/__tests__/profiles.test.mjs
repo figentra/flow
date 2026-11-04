@@ -139,8 +139,11 @@ test("sync: renders only the named profile's skills, agents and hooks, and the l
     ".claude/settings.json",
     ".claude/skills/flow-plan/SKILL.md",
     ".claude/skills/flow-specify/SKILL.md",
+    ".mcp.yaml",
     ".opencode/commands/flow-plan.md",
     ".opencode/commands/flow-specify.md",
+    "AGENTS.md",
+    "CLAUDE.md",
     "lefthook.yml",
   ]);
   assert.equal(readLock(root)?.profile, "lean");
