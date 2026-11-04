@@ -16,18 +16,43 @@
  *     asks the owner for owner-only paths.
  *   Everything is read at that SHA, so a later push cannot change what was checked. After approving it re-reads the
  *   PR and dismisses its own review if the head moved. If GitHub refuses the dismissal, the same App requests changes
- *   (which replaces its approval), turns auto-merge off, and comments what each step did. A refusal is one PR comment.
- * Boundary: GitHub REST only: reads with the job's token, the review and the comment with the App's token. It never
- *   checks out or runs the PR's code and never merges.
+ *   (which replaces its approval), turns auto-merge off, and comments what each step did.
+ *   Dispatched (no `MODE`), it checks the one PR it is given, and a refusal is one PR comment. With `MODE=event`
+ *   (main's event lane, the L2 design) it sweeps every open PR labelled `LAND_LABEL` (`select`): the label's newest
+ *   adder must be a User with write or admin, or a Bot whose App slug `REQUESTERS` lists (`requestProblems`;
+ *   `github-actions` and the Flow App never); then `decide` and the land rules (`landRules`, with `required`) run at
+ *   that head. It approves at most once per head and keeps one sticky comment (first line `LAND_MARKER`) and the
+ *   `LAND_CONTEXT` status, each rewritten only when it changes; `classify` names the state (waiting, owner, refused,
+ *   approved).
+ * Boundary: GitHub REST only: reads with the job's token; the review, the comment and the status with the App's token
+ *   (dispatched: `APP_TOKEN`; event mode: an `approve` token `app-token.mjs` mints over OIDC, only once there is
+ *   something to write, revoked at the end). It never checks out or runs the PR's code and never merges. Event mode
+ *   posts nothing unless the automation variable is `on`, exits 0 on every refusal and 1 only on an infrastructure
+ *   error.
  * Runtime: node (GitHub Actions)
- * Governing contract: STA-1856 FR-4 (the security review of 2026-11-01).
- * Secrets: `GITHUB_TOKEN` and `APP_TOKEN` from the environment; never printed.
+ * Governing contract: STA-1856 FR-4 (the security review of 2026-11-01); ADR 0523; the L2 design (PR D); STA-1945.
+ * Secrets: `GITHUB_TOKEN` and `APP_TOKEN` from the environment, or the minted token in memory; never printed.
  */
+import { appendFileSync } from "node:fs";
 import { basename } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { keyScheme } from "../adapters/tracker/index.mjs";
+import { mint } from "./app-token.mjs";
+import { landRules, specAt } from "./land-rules.mjs";
 import { ownerOnlyPaths, packageFindings } from "./owner-only.mjs";
+import {
+  AUTOMATION_VARIABLE,
+  CONFIG_FILE,
+  HOLD_LABEL,
+  LAND_COMMAND,
+  LAND_CONTEXT,
+  LAND_LABEL,
+  LAND_MARKER,
+  STATUS_CONTEXT,
+} from "./product.mjs";
 import { requiredCheckState, requiredContexts } from "./required-checks.mjs";
+import { actor } from "./review.mjs";
 
 /** GitHub lists at most this many files in a comparison; at the limit the owner reviews it. */
 const MAX_FILES = 300;
@@ -46,7 +71,7 @@ const encodePath = (/** @type {string} */ p) => p.split("/").map(encodeURICompon
  * @param {string} path
  * @param {string} ref
  */
-async function textAt(api, repo, path, ref) {
+export async function textAt(api, repo, path, ref) {
   const r = await api("GET", `/repos/${repo}/contents/${encodePath(path)}?ref=${ref}`);
   return r.ok && typeof r.json?.content === "string"
     ? Buffer.from(r.json.content, "base64").toString("utf8")
@@ -65,10 +90,12 @@ const wellFormed = (/** @type {unknown} */ t) => {
 };
 
 /**
- * Every reason not to approve, and the head it checked.
- * @param {{ api: Rest, repo: string, number: number, expectedHead: string, approver: string, ref: string,
- *           environment: string, trusted?: Record<string, string | string[]>, extraOwnerOnly?: string[] }} input
- * @returns {Promise<{ refuse: string[], sha?: string, nodeId?: string }>}
+ * Every reason not to approve, and the head it checked. `owner` holds the reasons that only the owner's review clears
+ * (owner-only paths and findings, a listing at GitHub's limit); each is in `refuse` too. `paths` are the changed paths.
+ * @param {{ api: Rest, repo: string, number: number, expectedHead: string, approver: string | string[],
+ *           ref: string, environment: string, trusted?: Record<string, string | string[]>,
+ *           extraOwnerOnly?: string[] }} input `approver`: the approving App's login, or each of its logins
+ * @returns {Promise<{ refuse: string[], sha?: string, nodeId?: string, owner?: string[], paths?: string[] }>}
  */
 export async function decide({
   api,
@@ -114,17 +141,22 @@ export async function decide({
   if (p.head?.repo?.full_name !== repo) refuse.push(`the head is not in ${repo}`);
   if (sha !== expectedHead)
     refuse.push(`the head is ${sha}, not the ${expectedHead} that was checked`);
-  if (p.user?.login === approver) refuse.push(`the author is ${approver}, the approving App`);
+  if ([approver].flat().includes(p.user?.login))
+    refuse.push(`the author is ${p.user.login}, the approving App`);
   if (refuse.length) return { refuse, sha };
 
   // Files at exactly this head, from the merge base.
   const cmp = await api("GET", `/repos/${repo}/compare/${p.base.sha}...${sha}`);
   const files = Array.isArray(cmp.json?.files) ? cmp.json.files : undefined;
+  /** @type {string[]} */
+  const owner = [];
+  /** @type {string[]} */
+  let paths = [];
   if (!files) refuse.push(`the comparison with ${p.base.ref} cannot be read`);
   else if (files.length >= MAX_FILES)
-    refuse.push(`${files.length} files changed, at GitHub's listing limit: the owner reviews it`);
+    owner.push(`${files.length} files changed, at GitHub's listing limit: the owner reviews it`);
   else {
-    const paths = files.flatMap((/** @type {any} */ f) =>
+    paths = files.flatMap((/** @type {any} */ f) =>
       [f.filename, f.previous_filename].filter(Boolean),
     );
     // A newline or other control character could split a path in a log line or a later tool.
@@ -132,7 +164,7 @@ export async function decide({
       [...x].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127);
     if (paths.some(control)) refuse.push("a changed path holds a control character");
     const owned = ownerOnlyPaths(paths, extraOwnerOnly);
-    if (owned.length) refuse.push(`owner-only paths: ${owned.slice(0, 20).join(", ")}`);
+    if (owned.length) owner.push(`owner-only paths: ${owned.slice(0, 20).join(", ")}`);
     const base = cmp.json.merge_base_commit?.sha;
     for (const f of files.filter(
       (/** @type {any} */ x) => basename(x.filename) === "package.json",
@@ -147,9 +179,10 @@ export async function decide({
         refuse.push(`${f.previous_filename ?? f.filename} cannot be read at the merge base`);
       else if (f.status !== "removed" && after === undefined)
         refuse.push(`${f.filename} cannot be read at the head`);
-      else refuse.push(...packageFindings(f.filename, before, after));
+      else owner.push(...packageFindings(f.filename, before, after));
     }
   }
+  refuse.push(...owner);
 
   // Required checks on exactly this head, from their trusted sources.
   const rules = (
@@ -190,7 +223,7 @@ export async function decide({
     )
       refuse.push("no required check succeeded (all were skipped)");
   }
-  return { refuse, sha, nodeId: p.node_id };
+  return { refuse, sha, nodeId: p.node_id, owner, paths };
 }
 
 /** Turns auto-merge off on the PR with node `id`. */
@@ -230,12 +263,71 @@ const parsed = (/** @type {string} */ text) => {
 };
 
 /**
- * Checks, then approves at the checked head or comments why not.
+ * Approves `sha` with `write`, then re-reads the PR and takes the approval back if the head moved. Undefined when the
+ * approval stands; otherwise what happened, and whether it is worth a PR comment (dispatch mode posts one).
+ * @param {{ read: Rest, write: Rest, repo: string, number: number, sha: string, nodeId?: string, run: string,
+ *           body: string }} input
+ * @returns {Promise<{ lines: string[], comment: boolean } | undefined>}
+ */
+async function approveAt({ read, write, repo, number, sha, nodeId, run, body }) {
+  const review = await write("POST", `/repos/${repo}/pulls/${number}/reviews`, {
+    commit_id: sha,
+    event: "APPROVE",
+    body,
+  });
+  if (!review.ok)
+    return { lines: [`the review was refused (HTTP ${review.status})`], comment: false };
+  // A push between the check and the review: take the approval back.
+  const now = (await read("GET", `/repos/${repo}/pulls/${number}`)).json?.head?.sha;
+  if (now === sha) return undefined;
+  const id = review.json?.id;
+  const dismissal =
+    id === undefined
+      ? undefined
+      : await write("PUT", `/repos/${repo}/pulls/${number}/reviews/${id}/dismissals`, {
+          message: `The head moved to ${now} after ${sha} was checked.`,
+          event: "DISMISS",
+        });
+  if (dismissal?.ok)
+    return {
+      lines: [`the head moved to ${now} after ${sha} was checked; the approval was dismissed`],
+      comment: false,
+    };
+  // The approval may stand on a head nobody checked. The same App's newer review replaces it (pull-requests:
+  // write is enough); auto-merge off is a second guard. The comment says what each step did.
+  const blocked = await write("POST", `/repos/${repo}/pulls/${number}/reviews`, {
+    event: "REQUEST_CHANGES",
+    body: `The head moved to ${now} after ${sha} was checked; this replaces the approval ([run](${run})).`,
+  });
+  const off = await write("POST", "/graphql", {
+    query: AUTO_MERGE_OFF,
+    variables: { id: nodeId },
+  });
+  const offError = off.ok
+    ? off.json?.errors?.map((/** @type {any} */ e) => e.message).join("; ")
+    : `HTTP ${off.status}`;
+  return {
+    lines: [
+      `The head moved to ${now} after ${sha} was checked.`,
+      `- Dismissing the approval failed (${id === undefined ? "no review id" : `HTTP ${dismissal?.status}`}).`,
+      blocked.ok
+        ? "- This App now requests changes, which replaces its approval."
+        : `- Requesting changes failed too (HTTP ${blocked.status}): the approval may still stand. Dismiss it by hand before anyone merges.`,
+      offError ? `- Turning auto-merge off failed: ${offError}.` : "- Auto-merge is off.",
+    ],
+    comment: true,
+  };
+}
+
+/**
+ * Checks, then approves at the checked head or comments why not. With `MODE=event`, sweeps the land requests
+ * (`event`).
  * @param {Record<string, string | undefined>} env
- * @param {{ read?: Rest, write?: Rest, log?: (s: string) => void }} [deps]
- * @returns {Promise<number>} 0 approved, 1 refused
+ * @param {{ read?: Rest, write?: Rest, log?: (s: string) => void, mint?: typeof mint }} [deps]
+ * @returns {Promise<number>} 0 approved (event mode: swept), 1 refused (event mode: an infrastructure error)
  */
 export async function main(env, deps = {}) {
+  if (env.MODE === "event") return event(env, deps);
   const base = env.GITHUB_API_URL;
   const read = deps.read ?? rest(String(env.GITHUB_TOKEN), base);
   const write = deps.write ?? rest(String(env.APP_TOKEN), base);
@@ -261,58 +353,353 @@ export async function main(env, deps = {}) {
     for (const r of refuse) log(`::error::${r}`);
     return 1;
   }
-  const review = await write("POST", `/repos/${repo}/pulls/${number}/reviews`, {
-    commit_id: sha,
-    event: "APPROVE",
+  const failed = await approveAt({
+    read,
+    write,
+    repo,
+    number,
+    sha: String(sha),
+    nodeId,
+    run,
     body: `Approved at ${sha}: no owner-only change, every required check green from its source ([run](${run})).`,
   });
-  if (!review.ok) {
-    log(`::error::the review was refused (HTTP ${review.status})`);
-    return 1;
-  }
-  // A push between the check and the review: take the approval back.
-  const now = (await read("GET", `/repos/${repo}/pulls/${number}`)).json?.head?.sha;
-  if (now !== sha) {
-    const id = review.json?.id;
-    const dismissal =
-      id === undefined
-        ? undefined
-        : await write("PUT", `/repos/${repo}/pulls/${number}/reviews/${id}/dismissals`, {
-            message: `The head moved to ${now} after ${sha} was checked.`,
-            event: "DISMISS",
-          });
-    if (dismissal?.ok) {
-      log(`::error::the head moved to ${now} after ${sha} was checked; the approval was dismissed`);
-      return 1;
-    }
-    // The approval may stand on a head nobody checked. The same App's newer review replaces it (pull-requests:
-    // write is enough); auto-merge off is a second guard. The comment says what each step did.
-    const blocked = await write("POST", `/repos/${repo}/pulls/${number}/reviews`, {
-      event: "REQUEST_CHANGES",
-      body: `The head moved to ${now} after ${sha} was checked; this replaces the approval ([run](${run})).`,
-    });
-    const off = await write("POST", "/graphql", {
-      query: AUTO_MERGE_OFF,
-      variables: { id: nodeId },
-    });
-    const offError = off.ok
-      ? off.json?.errors?.map((/** @type {any} */ e) => e.message).join("; ")
-      : `HTTP ${off.status}`;
-    const lines = [
-      `The head moved to ${now} after ${sha} was checked.`,
-      `- Dismissing the approval failed (${id === undefined ? "no review id" : `HTTP ${dismissal?.status}`}).`,
-      blocked.ok
-        ? "- This App now requests changes, which replaces its approval."
-        : `- Requesting changes failed too (HTTP ${blocked.status}): the approval may still stand. Dismiss it by hand before anyone merges.`,
-      offError ? `- Turning auto-merge off failed: ${offError}.` : "- Auto-merge is off.",
-      `([run](${run}))`,
-    ];
-    await write("POST", `/repos/${repo}/issues/${number}/comments`, { body: lines.join("\n") });
-    log(`::error::${lines.slice(0, -1).join(" ")}`);
+  if (failed) {
+    if (failed.comment)
+      await write("POST", `/repos/${repo}/issues/${number}/comments`, {
+        body: [...failed.lines, `([run](${run}))`].join("\n"),
+      });
+    log(`::error::${failed.lines.join(" ")}`);
     return 1;
   }
   log(`Approved ${repo}#${number} at ${sha}`);
   return 0;
+}
+
+/** Raised for an answer that is not the expected one: an infrastructure error, so the job goes red. */
+export class ApiError extends Error {}
+
+/**
+ * One GET's JSON, or an `ApiError` naming the path and status.
+ * @param {Rest} api
+ * @param {string} path
+ */
+export async function get(api, path) {
+  const r = await api("GET", path);
+  if (!r.ok || r.json === undefined)
+    throw new ApiError(`GET ${path.split("?")[0]} answered ${r.status}`);
+  return r.json;
+}
+
+/**
+ * Every item of a listing, oldest page first (at most 30 pages of 100).
+ * @param {Rest} api
+ * @param {string} path
+ * @returns {Promise<any[]>}
+ */
+export async function pages(api, path) {
+  const items = [];
+  for (let page = 1; page <= 30; page++) {
+    const json = await get(
+      api,
+      `${path}${path.includes("?") ? "&" : "?"}per_page=100&page=${page}`,
+    );
+    if (!Array.isArray(json)) throw new ApiError(`GET ${path.split("?")[0]} answered no list`);
+    items.push(...json);
+    if (json.length < 100) break;
+  }
+  return items;
+}
+
+/**
+ * The open PRs labelled `LAND_LABEL`, in number order: those without `HOLD_LABEL`, based on `defaultBranch`, with
+ * their head in `repo`. Each is the full pull request; every event sweeps all of them, so a run that GitHub's
+ * concurrency replaces loses nothing.
+ * @param {Rest} api
+ * @param {string} repo
+ * @param {string} defaultBranch
+ */
+export async function select(api, repo, defaultBranch) {
+  const issues = await pages(
+    api,
+    `/repos/${repo}/issues?state=open&labels=${encodeURIComponent(LAND_LABEL)}`,
+  );
+  const out = [];
+  for (const i of issues
+    .filter(
+      (i) => i.pull_request && !i.labels?.some((/** @type {any} */ l) => l.name === HOLD_LABEL),
+    )
+    .toSorted((a, b) => a.number - b.number)) {
+    const pr = await get(api, `/repos/${repo}/pulls/${i.number}`);
+    if (pr.state === "open" && pr.base?.ref === defaultBranch && pr.head?.repo?.full_name === repo)
+      out.push(pr);
+  }
+  return out;
+}
+
+/**
+ * Why the land request on PR `number` does not count: the newest `labeled` event for `LAND_LABEL` must be by a User
+ * with write or admin (maintain reads as write), or by a Bot whose App slug `requesters` lists. `github-actions` and
+ * the Flow App (`flow`, its logins) never count, since either could add the label without anyone asking.
+ * @param {Rest} api
+ * @param {string} repo
+ * @param {number} number
+ * @param {string[]} requesters App slugs
+ * @param {string[]} [flow] the Flow App's logins
+ * @returns {Promise<string[]>}
+ */
+export async function requestProblems(api, repo, number, requesters, flow = []) {
+  const events = await pages(api, `/repos/${repo}/issues/${number}/events`);
+  const added = events
+    .filter((e) => e.event === "labeled" && e.label?.name === LAND_LABEL)
+    .toSorted((a, b) => a.id - b.id)
+    .at(-1);
+  if (!added) return [`no one is recorded adding ${LAND_LABEL}`];
+  const login = String(added.actor?.login ?? "");
+  const slug = added.performed_via_github_app?.slug;
+  if (
+    login === "github-actions[bot]" ||
+    flow.includes(login) ||
+    (slug && flow.map((f) => actor(f)).includes(slug))
+  )
+    return [`${LAND_LABEL} was added by ${login}, which never requests a land`];
+  if (added.actor?.type === "Bot")
+    return slug && requesters.includes(slug)
+      ? []
+      : [`${LAND_LABEL} was added by ${login}, an App approve.requesters does not list`];
+  if (added.actor?.type !== "User") return [`${LAND_LABEL} was added by ${login || "nobody"}`];
+  const r = await api(
+    "GET",
+    `/repos/${repo}/collaborators/${encodeURIComponent(login)}/permission`,
+  );
+  if (r.status >= 500) throw new ApiError(`GET collaborators permission answered ${r.status}`);
+  const permission = r.ok ? r.json?.permission : undefined;
+  return permission === "admin" || permission === "write"
+    ? []
+    : [
+        `${LAND_LABEL} was added by ${login}, whose permission is ${permission ?? "unknown"} (write or admin asks for a land)`,
+      ];
+}
+
+/** Reasons that only time clears: a check or the gate still running, or a draft. */
+const waiting = (/** @type {string} */ r) =>
+  r.startsWith("required checks still running") ||
+  r.startsWith("the PR is a draft") ||
+  r.startsWith(`no ${STATUS_CONTEXT} on the head`) ||
+  r.startsWith(`${STATUS_CONTEXT} is pending`);
+
+/**
+ * The land request's state from its reasons: `approved` with none, `refused` when any reason is neither waiting nor
+ * the owner's, else `owner` when the owner's review is needed, else `waiting`.
+ * @param {string[]} refuse
+ * @param {string[]} [owner] the reasons only the owner's review clears (`decide`'s `owner`)
+ * @returns {"approved" | "refused" | "owner" | "waiting"}
+ */
+export function classify(refuse, owner = []) {
+  if (!refuse.length) return "approved";
+  const rest = refuse.filter((r) => !owner.includes(r));
+  if (rest.some((r) => !waiting(r))) return "refused";
+  return rest.length < refuse.length ? "owner" : "waiting";
+}
+
+/** What to do next, for each state. */
+const NEXT = {
+  approved: "Approved at this head; the merge lane merges it once GitHub allows.",
+  waiting: "Nothing to do: Flow checks again when they finish.",
+  owner: `The owner reviews it. Once the owner approves this head, comment \`${LAND_COMMAND}\`.`,
+  refused: `Fix each reason and push (a push withdraws the request), then \`${LAND_COMMAND}\` again.`,
+  merged: "Nothing to do.",
+};
+
+/**
+ * The sticky comment's body: `LAND_MARKER`, then `head: <sha> state: <state>`, each reason and the next step. It
+ * holds nothing that changes from run to run, so an unchanged state is never rewritten.
+ * @param {string} sha
+ * @param {keyof typeof NEXT} state
+ * @param {string[]} reasons
+ */
+export const stickyBody = (sha, state, reasons) =>
+  [
+    LAND_MARKER,
+    `head: ${sha} state: ${state}`,
+    "",
+    ...reasons.map((r) => `- ${r}`),
+    ...(reasons.length ? [""] : []),
+    NEXT[state],
+  ].join("\n");
+
+/**
+ * Writes the one comment on PR `number` that starts with `LAND_MARKER` and is by the Flow App (`flow`), only when its
+ * body differs. `write` gives the App's API, minted only when a write is needed. Returns the comment's URL.
+ * @param {{ read: Rest, write: () => Promise<Rest>, repo: string, number: number, body: string,
+ *           flow: string[] }} input
+ */
+export async function upsertSticky({ read, write, repo, number, body, flow }) {
+  const mine = (await pages(read, `/repos/${repo}/issues/${number}/comments`)).find(
+    (c) => flow.includes(c.user?.login) && String(c.body ?? "").startsWith(LAND_MARKER),
+  );
+  if (mine && String(mine.body).trim() === body.trim()) return String(mine.html_url ?? "");
+  const w = await write();
+  const r = mine
+    ? await w("PATCH", `/repos/${repo}/issues/comments/${mine.id}`, { body })
+    : await w("POST", `/repos/${repo}/issues/${number}/comments`, { body });
+  if (!r.ok)
+    throw new ApiError(
+      `${mine ? "PATCH" : "POST"} the ${LAND_CONTEXT} comment answered ${r.status}`,
+    );
+  return String(r.json?.html_url ?? mine?.html_url ?? "");
+}
+
+/**
+ * The issue key of `branch` under the default branch's configuration, read through the contents API.
+ * @param {Rest} api
+ * @param {string} repo
+ * @param {string} branch
+ * @param {string} defaultBranch
+ */
+export async function keyAt(api, repo, branch, defaultBranch) {
+  const text = await textAt(api, repo, CONFIG_FILE, encodeURIComponent(defaultBranch));
+  const config = (text && parsed(text)) || {};
+  return keyScheme(config.tracker).parse(branch);
+}
+
+/** The `LAND_CONTEXT` state for each land state. */
+const STATUS_STATE = {
+  approved: "success",
+  waiting: "pending",
+  owner: "pending",
+  refused: "failure",
+};
+
+/**
+ * Event mode: every land request, checked, then approved once at its head or explained, in the sticky comment and the
+ * `LAND_CONTEXT` status.
+ * @param {Record<string, string | undefined>} env
+ * @param {{ read?: Rest, write?: Rest, log?: (s: string) => void, mint?: typeof mint }} deps
+ */
+async function event(env, deps) {
+  const log = deps.log ?? console.log;
+  const automation = env.AUTOMATION ?? "";
+  if (automation !== "on") {
+    log(`::notice::${AUTOMATION_VARIABLE} is ${JSON.stringify(automation)}: approve posts nothing`);
+    return 0;
+  }
+  const base = env.GITHUB_API_URL;
+  const read = deps.read ?? rest(String(env.GITHUB_TOKEN), base);
+  const repo = String(env.REPO);
+  const run = String(env.RUN_URL ?? "");
+  const defaultBranch = String(env.DEFAULT_BRANCH);
+  const trusted = parsed(env.TRUSTED || "{}");
+  const flow = /** @type {string[]} */ ([trusted?.[STATUS_CONTEXT] ?? []].flat().filter(Boolean));
+  const requesters = JSON.parse(env.REQUESTERS || "[]");
+  /** @type {import("./app-token.mjs").Minted | undefined} */
+  let minted;
+  /** @type {Rest | undefined} */
+  let writer;
+  // Minted only when something is written; one token for the sweep.
+  const write = async () => {
+    if (writer) return writer;
+    if (deps.write) return (writer = deps.write);
+    minted = await (deps.mint ?? mint)("approve", {
+      oidc: JSON.parse(env.OIDC || "null"),
+      defaultBranch,
+      env,
+    });
+    return (writer = rest(minted.token, base));
+  };
+  try {
+    for (const pr of await select(read, repo, defaultBranch)) {
+      const number = pr.number;
+      const sha = String(pr.head.sha);
+      const d = await decide({
+        api: read,
+        repo,
+        number,
+        expectedHead: sha,
+        approver: flow,
+        ref: String(env.GITHUB_REF),
+        environment: String(env.ENVIRONMENT),
+        trusted,
+        extraOwnerOnly: JSON.parse(env.OWNER_ONLY_EXTRA || "[]"),
+      });
+      const statuses = await pages(read, `/repos/${repo}/commits/${sha}/statuses`);
+      // Owner-only paths and findings are decide's (`d.owner`), so the land rules get no files.
+      const rules = landRules({
+        pr,
+        statuses,
+        base: defaultBranch,
+        spec: await specAt(read, repo, sha, await keyAt(read, repo, pr.head.ref, defaultBranch)),
+        gateApp: flow,
+        required: true,
+      });
+      const reasons = [
+        ...new Set([
+          ...(await requestProblems(read, repo, number, requesters, flow)),
+          ...d.refuse,
+          ...rules,
+        ]),
+      ];
+      let state = classify(reasons, d.owner);
+      if (state === "approved") {
+        const reviews = await pages(read, `/repos/${repo}/pulls/${number}/reviews`);
+        const mine = reviews.filter((r) => flow.includes(r.user?.login)).at(-1);
+        // One approval per head: a repeated event never posts a second.
+        if (!(mine?.state === "APPROVED" && mine.commit_id === sha)) {
+          const failed = await approveAt({
+            read,
+            write: await write(),
+            repo,
+            number,
+            sha,
+            nodeId: d.nodeId,
+            run,
+            body: `Approved at ${sha}: every land rule passed and every required check is green from its source ([run](${run})).`,
+          });
+          if (failed) {
+            reasons.push(...failed.lines);
+            state = "refused";
+          }
+        }
+      }
+      const url = await upsertSticky({
+        read,
+        write,
+        repo,
+        number,
+        body: stickyBody(sha, state, reasons),
+        flow,
+      });
+      const description = `${state}: ${reasons[0] ?? "every land rule passed at this head"}`.slice(
+        0,
+        140,
+      );
+      const last = statuses.find(
+        (s) => s.context === LAND_CONTEXT && flow.includes(s.creator?.login),
+      );
+      if (last?.state !== STATUS_STATE[state] || last?.description !== description) {
+        const r = await (
+          await write()
+        )("POST", `/repos/${repo}/statuses/${sha}`, {
+          state: STATUS_STATE[state],
+          context: LAND_CONTEXT,
+          description,
+          ...(url.startsWith("https://") ? { target_url: url } : {}),
+        });
+        if (!r.ok) throw new ApiError(`POST the ${LAND_CONTEXT} status answered ${r.status}`);
+      }
+      log(`#${number} at ${sha}: ${state}${reasons.length ? `: ${reasons.join("; ")}` : ""}`);
+      if (env.GITHUB_STEP_SUMMARY)
+        appendFileSync(
+          env.GITHUB_STEP_SUMMARY,
+          `| #${number} | ${sha.slice(0, 12)} | ${state} | ${(reasons[0] ?? "").replaceAll("|", "\\|")} |\n`,
+        );
+    }
+    return 0;
+  } catch (error) {
+    log(`::error::${/** @type {Error} */ (error).message}`);
+    return 1;
+  } finally {
+    await minted?.revoke().catch(() => log("::warning::revoking the approve token failed"));
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)

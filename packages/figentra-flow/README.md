@@ -209,6 +209,12 @@ setting you have not made refuses and names it.
   with no tier counts as `small`). The review is advisory: `land` warns when such a change has no PASS on its head,
   and never refuses for it.
 
+- `approve` shapes the approval workflow (see "When the ruleset requires an approving review"):
+  - `ownerOnly`: globs only the owner lands, beside Flow's own list;
+  - `checks`: a required context's trusted login, beside the gate App;
+  - `workflows`: the workflow names (e.g. `["Quality Gate"]`) whose successful run wakes main's land lane;
+  - `requesters`: the App slugs (e.g. `["stackra-bot"]`) whose `fflow:land` label counts as a land request.
+
 - `runner` says where `gate run`'s checks run:
   - `ssh` with `host`, the same as `--box <host>` for one run;
   - `local`, the caller's machine;
@@ -501,6 +507,61 @@ this Flow version when `sync` ran. Without that integrity it refuses to run.
 
 GitHub merges once the approval and every required check are in. After that, `land <n>` on the merged PR runs steps 1
 to 5.
+
+With `secrets.oidc`, main's land lane approves and merges instead (next section).
+
+
+### Main's land lane: approve and merge on events
+
+With `secrets.oidc` (and `paths.gate`), `sync` renders the approval workflow with an event lane, and main's copy
+approves and merges. Nothing in it uses a repository secret: each job that writes mints a narrowed Figentra Flow App
+token in process (`src/lib/app-token.mjs`) and revokes it when done.
+
+A land request is the `fflow:land` label on a PR into the default branch. It counts only when the label's newest
+adder is a User with write or admin, or an App whose slug `approve.requesters` lists. `github-actions` and the Flow
+App never count. `HOLD` pauses one PR. A push removes the label (the `cancel` job, with the job's own token, even while
+automation is frozen), so each request is for one head. A `/fflow land` comment wakes the lane again without the label
+changing, for example after the owner's review.
+
+- `cancel` runs on a push to a labelled PR, with the job's token (`pull-requests: write`).
+- `route` runs on the label, ready for review, `fflow/gate`'s success, a `/fflow land` or `AI-REVIEW:` comment, the
+  success of a workflow `approve.workflows` names, and every 15 minutes. It holds only a read-only token and says
+  whether any PR asks to land.
+- `approve` runs when `route` found one and automation is `on`, with an `approve` token (pull requests, statuses).
+- `merge` runs after it, while automation is `on` or `merge-only`, with a `merge` token per PR.
+
+Every run sweeps every request, so a lost or replaced event loses nothing. `approve` runs `approve-check.mjs` with
+`MODE=event`: every rule above, plus `land`'s server-side rules (`src/lib/land-rules.mjs`: the gate on the head, a
+conventional title, the spec's approvals and tier). It approves at most once per head and keeps one comment, whose
+first line is `<!-- fflow/land -->` and whose second is `head: <sha> state: <state>`, and the `fflow/land` status on
+the head:
+
+| State      | Status    | Meaning                                                                        |
+| ---------- | --------- | ------------------------------------------------------------------------------ |
+| `approved` | `success` | approved at this head; `merge` merges it                                       |
+| `waiting`  | `pending` | a required check or the gate still runs, or the PR is a draft; nothing to do   |
+| `owner`    | `pending` | an owner-only change: once the owner approves this head, comment `/fflow land` |
+| `refused`  | `failure` | the comment lists each reason; fix them and push, then ask again               |
+
+Both are rewritten only when they change. `fflow/land` is never a required check.
+
+`merge` takes the requests in PR order. It merges a PR only while `mergeable_state` is `clean`, `unstable` or
+`has_hooks`, every required check is green from its trusted source, and either the Flow App approved this head and
+nothing is owner-only, or `apps.owner` approved this head. It squash-merges with `sha`, the title with `(#n)` and the
+`Refs:`, `AI-Review:` and co-author lines (the key from the default branch's configuration), then removes the label.
+Only an owner-approved PR that changes `.github/workflows/**` or `.github/actions/**` gets a `workflows: write` token.
+Auto-merge is never used.
+
+The organisation variable `FIGENTRA_AUTOMATION` is the freeze switch: `on` runs everything, `merge-only` merges what
+was approved but approves nothing new, and `frozen`, unset or any other value runs nothing but `cancel`. Every job
+also runs only on the default branch.
+
+The owner sets it up once, as for the verdict (see "The github-actions runner's verdict"): the App's permissions
+(contents, pull requests, statuses and workflows write; issues, checks and actions read), the Infisical OIDC identity
+bound to `job_workflow_ref` `<owner>/<repo>/.github/workflows/fflow-approve.yml@refs/heads/<default branch>` and
+`ref=refs/heads/<default branch>`, `secrets.oidc`, `approve.requesters` and `approve.workflows`, then `fflow sync` and
+landing the re-rendered, owner-only workflow. The dispatched `approve-dispatch` job with `FFLOW_APPROVER_*` stays for
+one release as the fallback.
 
 ### When main is red: the baseline gate
 

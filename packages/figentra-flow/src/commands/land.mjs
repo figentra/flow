@@ -216,7 +216,7 @@ export async function landOne({
     (/** @type {any} */ r) =>
       r.type === "pull_request" && (r.parameters?.required_approving_review_count ?? 0) > 0,
   );
-  const spec = specAt(api, repo, head, key);
+  const spec = await specAt(api, repo, head, key);
   const commit = api("GET", `/repos/${repo}/commits/${head}`).json ?? {};
   const reviews = list(api("GET", `/repos/${repo}/pulls/${number}/reviews?per_page=100`));
   const approved = reviews.some(

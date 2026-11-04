@@ -401,6 +401,20 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "workflows": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[\\w .()-]+$"
+          }
+        },
+        "requesters": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[\\w-]+$"
+          }
         }
       }
     },
