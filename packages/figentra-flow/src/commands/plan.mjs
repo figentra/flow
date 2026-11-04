@@ -5,13 +5,14 @@
  *   output). `--input` prints, as JSON, the spec's FRs and ACs, the documents to read and the size budget (a task's
  *   file count: the preset's `plan.maxFilesPerTask`, default 10). `--record` accepts the workflow's tasks.md only when
  *   `gate tasks` passes, every FR and AC is covered and each task holds its budget (P-020), then writes it into the
- *   spec folder and records the plan stage done. Readiness is the gate's own `checkSpec` and `checkApproval`.
+ *   spec folder and records the plan stage done, with the spec's approvals bound to the documents' content (A-3).
+ *   Readiness is the gate's own `checkSpec` and `checkApproval`.
  * Boundary: reads the spec folder, the preset and `.agents/routing.yaml`; `--record` writes the spec's tasks.md and
  *   Flow's record only, and nothing when it refuses (an unreadable record refuses before tasks.md is written). A small
  *   spec keeps its tasks in spec.md (ADR 0502), and a tasks.md that already carries issue keys or progress markers is
  *   not replaced, so both are refused.
  * Runtime: node
- * Governing contract: STA-1945 (FR-15, AC-21, P-020).
+ * Governing contract: STA-1945 (FR-15, FR-30, AC-21, AC-34, P-020, P-034).
  * Secrets: none.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -35,7 +36,7 @@ import { say } from "../lib/cli.mjs";
 import { presetDir } from "../lib/flow-dir.mjs";
 import { git } from "../lib/git.mjs";
 import { NAME } from "../lib/product.mjs";
-import { readRecord, RecordError, updateRecord } from "../lib/record.mjs";
+import { bindApprovals, docsIn, readRecord, RecordError, updateRecord } from "../lib/record.mjs";
 import { checkTaskRoles } from "../lib/roles.mjs";
 import { definedIds, parseTasks, routes } from "../lib/spec-parse.mjs";
 import { loadTeam } from "../lib/team.mjs";
@@ -199,7 +200,9 @@ export function recordPlan(root, key, tasksText) {
   if (problems.length) return problems;
   readRecord(root, k); // throws on a record it could not update, before tasks.md is written
   writeFileSync(current, tasksText);
-  updateRecord(root, k, (r) => ({ ...r, stage: "plan", state: "done" }));
+  updateRecord(root, k, (r) =>
+    bindApprovals({ ...r, stage: "plan", state: "done" }, docsIn(join(root, dir))),
+  );
   return [];
 }
 

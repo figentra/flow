@@ -2,7 +2,7 @@
  * Figentra Flow file contract:
  * Purpose: hold `fflow init` and `sync` to ADR 0510: `init` writes `.flow/` (README, a starter constitution from
  *   Flow's template, `.gitignore`) and renders the `flow-*` skills directly when the repository has no projector, or
- *   neutral `.agents/skills/flow-<verb>` documents, the preset's agents and the approval workflow when it has `agents:sync`; an existing `.flow/` is refused unless
+ *   neutral `.agents/skills/flow-<verb>` documents, the preset's agents, its surfaces and the approval workflow when it has `agents:sync`; an existing `.flow/` is refused unless
  *   forced, and the constitution is never overwritten; `sync` removes spec-kit's rendered skills and commands and
  *   records every file it wrote in `.flow/lock.json`; a repository override wins over the preset's command.
  * Boundary: writes only temp directories; node:test and node:assert.
@@ -82,6 +82,11 @@ test("with a projector, sync writes neutral .agents/skills documents; it removes
       ".agents/agents/git-steward.md",
       ".agents/agents/tracker-steward.md",
       ".agents/rules/worktrees.md",
+      ".claude/settings.json",
+      ".mcp.yaml",
+      "AGENTS.md",
+      "CLAUDE.md",
+      "lefthook.yml",
     ]);
     assert.deepEqual(removed.toSorted(), [
       ".claude/skills/speckit-plan",

@@ -6,8 +6,9 @@
  *   (STA-1945 AC-40) and it changes no owner-only path (with the globs an `extend` of `owner-only` adds, STA-1945
  *   FR-5). The rules are `lib/land-rules.mjs`'s, re-exported here. The AI review is advisory (ADR 0523 decision 6):
  *   a missing, stale or FAIL verdict only warns, and the squash message records it (`AI-Review: PASS <sha>`,
- *   `FAIL <sha>` or `none`). Then set Linear Done, record the merge commit, remove the worktree through `clean`'s
- *   rules, delete the branch (a branch GitHub already deleted counts as deleted) and comment. When the base's own
+ *   `FAIL <sha>` or `none`). Then set Linear Done, record the merge commit, record `land` done with the PR in Flow's
+ *   record in the task's worktree (STA-1945 FR-14; committed there, never pushed, since the branch is landed), remove
+ *   the worktree through `clean`'s rules, delete the branch (a branch GitHub already deleted counts as deleted) and comment. When the base's own
  *   approval workflow (read through the contents API) takes `LAND_LABEL`, `land` only asks main's land lane (the L2
  *   design): it adds the label, or comments `/fflow land` when the label is already there, then waits up to `--wait`
  *   minutes (default 10; `--no-wait` returns at once) for the merge or the lane's verdict on the head (`LAND_CONTEXT`,
@@ -26,7 +27,7 @@
  *   conflict stops the stack with the merge aborted and the files named.
  * Runtime: node
  * Governing contract: Stackra ADR 0503 (decision 5), ADR 0502; ADR 0523 (decision 6); STA-1729 phase 3 (the leader's
- *   plan stop of 2026-10-31); STA-1856 (FR-1 to FR-3); STA-1945 (FR-16, AC-14); the L2 design (PR E).
+ *   plan stop of 2026-10-31); STA-1856 (FR-1 to FR-3); STA-1945 (FR-14, FR-16, AC-14, AC-42); the L2 design (PR E).
  * Secrets: none here. GitHub calls go through `gh` (or the repository's `bot:gh`), Linear through the environment's
  *   token, which is never read into output.
  */
@@ -38,7 +39,7 @@ import { clean } from "./clean.mjs";
 import { gateRun, slugOf } from "./gate-run.mjs";
 import { trackerFor } from "../adapters/tracker/index.mjs";
 import { github } from "../lib/github.mjs";
-import { readRecordAt, RecordError } from "../lib/record.mjs";
+import { endStage, readRecordAt, RecordError } from "../lib/record.mjs";
 import { aiReview } from "../lib/review.mjs";
 import { pathProblems, reviewerProblems, roleOf } from "../lib/roles.mjs";
 import { loadTeam } from "../lib/team.mjs";
@@ -511,8 +512,8 @@ function landReasons(api, repo, number, logins, description) {
 }
 
 /**
- * The steps after a merge: tracker Done, the merge commit recorded, the worktree removed, the branch deleted and a
- * comment. Each only warns (exit 3); none undoes the merge.
+ * The steps after a merge: tracker Done, the merge commit recorded, `land` done in Flow's record, the worktree
+ * removed, the branch deleted and a comment. Each only warns (exit 3); none undoes the merge.
  * @param {{ root: string, repo: string, number: number, branch: string, head: string, key: string | undefined,
  *           sha: string, scheme: import("../adapters/tracker/index.mjs").KeyScheme, manualOk?: boolean,
  *           deps: LandDeps }} options
@@ -553,6 +554,15 @@ async function finish({
     );
   await step("fetch", () => fetch(root).ok);
   const tree = worktrees(root).find((t) => t.branch === branch);
+  // FR-14: committed in the worktree only; a push would move the branch off the landed head the delete checks.
+  if (tree && key)
+    await step("record the land", () => {
+      const problem = endStage(tree.path, key, "land", {
+        change: (r) => ({ ...r, prs: r.prs.includes(number) ? r.prs : [...r.prs, number] }),
+        push: false,
+      });
+      if (problem) throw new Error(problem);
+    });
   if (tree)
     await step("remove the worktree", async () => {
       const r = await clean({

@@ -67,8 +67,8 @@ test("flow assets: each preset has its manifest, its templates and the ten flow-
     );
     assert.deepEqual(readdirSync(join(dir, "templates")).toSorted(), [
       "plan-template.md",
-      // The README layout is Figentra's, so only the stackra preset ships it (STA-1879).
-      ...(preset === "stackra" ? ["readme-template.md"] : []),
+      // Each preset ships a README layout (STA-1879): stackra's is Figentra's, neutral's names no brand.
+      "readme-template.md",
       "spec-template.md",
       "tasks-template.md",
     ]);
@@ -142,6 +142,8 @@ test("writeRendered: every comment-capable file starts with its header, and the 
         text.startsWith(`---\n# ${words}\n`) || text.startsWith(`<!-- ${words} -->\n`),
         path,
       );
+    // Strict JSON carries no header; the lock's digest identifies it (FR-3).
+    else if (path.endsWith(".json")) JSON.parse(text);
     else assert.fail(`${path} has no comment style`);
   }
   assert.deepEqual(installProblems(root), []);

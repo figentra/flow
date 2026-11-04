@@ -200,7 +200,7 @@ export function renderReadme(root) {
   const template = resolveTemplate(root, "readme-template");
   if (!template)
     throw new ConfigError(
-      `the "${loadConfig(root).config.preset ?? "neutral"}" preset has no readme-template; set "preset": "stackra" or add ${OVERRIDES}/readme-template.md (${NAME} readme)`,
+      `the "${loadConfig(root).config.preset ?? "neutral"}" preset has no readme-template; set "preset": "neutral" or "stackra", or add ${OVERRIDES}/readme-template.md (${NAME} readme)`,
     );
   const text = fill(readFileSync(template, "utf8"), readmeView(root, data));
   return `${text.replace(/\n{3,}/g, "\n\n").trim()}\n`;
