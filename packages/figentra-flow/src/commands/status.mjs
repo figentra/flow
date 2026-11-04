@@ -1,19 +1,26 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `fflow status [--repo <path>] [--json] [--offline] [--metrics [--since <n>d]] [--by role [--role <id>]]`
- *   (FR-7, FR-12, AC-012, AC-024, AC-026, AC-032, AC-050): one block per
+ * Purpose: `fflow status [--repo <path>] [--json] [--offline] [--metrics [--since <n>d]] [--by role [--role <id>]]
+ *   [--divergence]` (FR-7, FR-12, AC-012, AC-024, AC-026, AC-032, AC-050): one block per
  *   repository of the workspace (or the one named, or the current one) with its specs, worktrees, open PRs and
  *   sessions as four tables (FR-31), and a fifth of the live agent sessions by title, state, worktree and stage
  *   (STA-1945 FR-20, AC-19), each problem counted and, under `--verbose`, every one listed; `--json` writes the
  *   snapshot as the console's data. Exit 0, or 1 when a warning (more building sessions than the cap, a session title
  *   off ADR 0001's pattern or at odds with its record) is present, so a script can alert. The options are declared
- *   in src/lib/console.mjs; `refusal` names a combination they refuse, and `status` runs them.
+ *   in src/lib/console.mjs; `refusal` names a combination they refuse, and `status` runs them. `--divergence`
+ *   (STA-1945 FR-9, AC-11) prints instead, per repository, its lock's Flow version and preset (name, version,
+ *   digest), the preset lag, the overrides by kind with the replacements and disables (owner, review date) and those
+ *   past their review date, and the drift from the lock; exit 1 when a repository drifts or has an override past
+ *   its review date. It reads the repositories only, never GitHub.
  * Boundary: read-only; GitHub through each repository's credentials, none with `--offline`.
  * Runtime: node
- * Governing contract: STA-1729 phase 4 (the leader's plan stop of 2026-10-31); STA-1945 FR-31 (AC-37).
+ * Governing contract: STA-1729 phase 4 (the leader's plan stop of 2026-10-31); STA-1945 FR-31 (AC-37), FR-9 (AC-11).
  * Secrets: none.
  */
+import { existsSync } from "node:fs";
+
 import { slugOf } from "./gate-run.mjs";
+import { divergence } from "../lib/divergence.mjs";
 import { git } from "../lib/git.mjs";
 import { github } from "../lib/github.mjs";
 import { NAME, STATUS_CONTEXT } from "../lib/product.mjs";
@@ -206,14 +213,45 @@ export function tablesOf(repo, verbose) {
   ];
 }
 
-/** @typedef {{ repo?: string, offline: boolean, metrics: boolean, since: string, by?: string, role?: string, web: boolean, port: number }} StatusOptions */
+/**
+ * One repository's divergence report as text lines (FR-9).
+ * @param {import("../lib/divergence.mjs").Divergence} d
+ * @returns {string[]}
+ */
+export function renderDivergence(d) {
+  if (!d.synced && !d.drift.length) return ["not synced (no .flow/lock.json)", ...d.problems];
+  const kinds = Object.entries(d.overrides).map(([kind, n]) => `${kind} ${n}`);
+  return [
+    ...(d.preset
+      ? [
+          `${NAME} ${d.flow}; preset ${d.preset.name} ${d.preset.version} (${d.preset.digest || "no digest"}); profile ${d.profile}`,
+          d.lag ? `preset lag: locked ${d.lag.locked}, latest ${d.lag.latest}` : "preset lag: none",
+        ]
+      : []),
+    `overrides: ${kinds.join(", ") || "none"}${d.expired.length ? `; past review: ${d.expired.join(", ")}` : ""}`,
+    ...d.reviewed.map(
+      (r) =>
+        `  ${r.kind} ${r.id}: owner ${r.owner}, review ${r.review}${r.state === "ok" ? "" : ` (${r.state})`}`,
+    ),
+    ...d.problems,
+    d.drift.length ? "drift:" : "drift: none",
+    ...d.drift.map((p) => `  ${p}`),
+  ];
+}
+
+/** @typedef {{ repo?: string, offline: boolean, metrics: boolean, since: string, by?: string, role?: string, web: boolean, port: number, divergence?: boolean }} StatusOptions */
 
 /**
  * What is wrong with `fflow status`'s options, as a usage error's message and hint, or undefined.
  * @param {StatusOptions} options
  * @returns {{ message: string, hint: string } | undefined}
  */
-export function refusal({ offline, metrics: wanted, since, by, role, port }) {
+export function refusal({ offline, metrics: wanted, since, by, role, web, port, divergence: div }) {
+  if (div && (wanted || web || by !== undefined))
+    return {
+      message: "--divergence is its own report; it takes no --metrics, --web or --by",
+      hint: `${NAME} status --divergence`,
+    };
   if (!Number.isInteger(port) || port < 0 || port > 65535)
     return { message: "--port takes a port number", hint: `${NAME} status --web --port 4747` };
   if (wanted && offline)
@@ -239,8 +277,25 @@ export function refusal({ offline, metrics: wanted, since, by, role, port }) {
  * @param {StatusOptions} options
  * @returns {Promise<number>}
  */
-export async function status(io, { repo, offline, metrics: wanted, since, by, role, web, port }) {
+export async function status(
+  io,
+  { repo, offline, metrics: wanted, since, by, role, web, port, divergence: div },
+) {
   const repos = () => reposFor(repo, io.cwd);
+  if (div) {
+    const found = repos().map((r) => ({
+      ...r,
+      ...(existsSync(r.path) ? divergence(r.path) : { repo: r.path, error: "missing" }),
+    }));
+    if (io.json) io.output.json({ repos: found });
+    else
+      for (const d of found) {
+        io.output.title(`${d.github || d.path}${d.github ? `  (${d.path})` : ""}`);
+        if ("error" in d) io.output.warn(`skipped: ${d.error}`);
+        else for (const line of renderDivergence(d)) io.output.line(`  ${line}`);
+      }
+    return found.some((d) => "drift" in d && (d.drift.length || d.expired.length)) ? 1 : 0;
+  }
   const read = () => {
     const live = systemSessions();
     // One process listing and one read of the session files serve every repository's `in use` and live sessions.

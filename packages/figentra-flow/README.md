@@ -673,6 +673,13 @@ verdicts) and approval latency (a merged spec's Draft line to its last approval)
 is computed from GitHub and the specs on each call; nothing is stored. `--json` writes the metrics as the document's
 `data`.
 
+`fflow status --divergence` reports, per repository of the workspace list (or `--repo <path>`), how far it has moved
+from its preset: the Flow version and the preset (name, version, digest) and profile its `.flow/lock.json` records,
+the preset lag (the locked version against the installed one), the overrides by kind with each `replace` and
+`disable`'s owner and review date and any past it, and the drift `fflow check` finds against the lock. A repository
+without a lock is "not synced", never skipped. It reads the repositories only; `--json` writes `{ repos: [...] }`. The
+exit code is 1 when a repository drifts or holds an override past its review date.
+
 `fflow mcp` is an MCP server over stdio for agents. It offers eight tools, each returning JSON. Seven read:
 
 | Tool                   | Arguments                    | What it returns                                                                       |
