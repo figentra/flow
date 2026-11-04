@@ -391,9 +391,10 @@ required-check clause and SC-4, and changes no other requirement.
   token covers this one repository and only the permissions of its role (`approve`, `merge`, `merge-workflows` for an
   owner-approved workflow change only, `verdict`). A wider grant is revoked before the job fails, and every token is
   revoked when its job ends. The mint refuses before any network call unless the job runs main's `fflow-approve.yml`
-  at `refs/heads/<default>` on a GitHub-hosted runner for one of FR-32's events. The identity is the config's
-  `secrets.oidc` (`identityId`, `audience`); moving Flow and each consumer onto it and retiring `FFLOW_APPROVER_*` is
-  the Infisical plan's K7.
+  at `refs/heads/<default>` on a GitHub-hosted runner for one of FR-32's events. The config's `secrets.oidc` names
+  the `audience`; the identity's id comes from the Actions variable `FFLOW_OIDC_IDENTITY_ID`, or from
+  `secrets.oidc.identityId`, which wins (#129). Moving Flow and each consumer onto it and retiring `FFLOW_APPROVER_*`
+  is the Infisical plan's K7.
 - **FR-34**: _AI review is advisory_ (ADR 0523 decision 6). A missing, stale or FAIL AI-REVIEW verdict never refuses
   a land: `land` prints a warning, and the squash body records `AI-Review: PASS <sha>`, `AI-Review: FAIL <sha>` or
   `AI-Review: none`. A verdict counts only from a listed reviewer App (`apps.review.slug`, one slug or a list). A
