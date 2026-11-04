@@ -96,7 +96,7 @@ export function sync(root, { direct = false, log = console.log, adopt = false, f
     log(`${NAME} sync: skipped ${p} (\`${NAME} validate\` names every problem)`);
   const files = render(root, { direct, overrides });
   const removed = writeRendered(root, files, overrides);
-  for (const p of removed) log(`${NAME} sync: removed ${p} (spec-kit)`);
+  for (const p of removed) log(`${NAME} sync: removed ${p}`);
   log(`${NAME} sync: rendered ${files.size} file(s); .flow/lock.json written`);
   return { files: [...files.keys()], removed };
 }

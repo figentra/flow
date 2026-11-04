@@ -30,8 +30,8 @@ Every change goes through Figentra Flow (`fflow`, the {{preset}} preset). Specs 
 - Every branch and pull request carries a {{kind}} key{{#team}} (`{{team}}-<n>`){{/team}}; branches are
   `{{branchPrefix}}/<key>-<slug>`.
 {{/tracker}}
-- Spec the change with `/flow-specify`, `/flow-clarify`, `/flow-plan` and `/flow-tasks`, then build it with
-  `/flow-implement`.
+- Spec the change with `/flow-specify`, `/flow-clarify` and `/flow-plan` (it writes the tasks too), then build it
+  with `/flow-implement`.
 - Work in a worktree under `.claude/worktrees/<name>/`, made with `fflow start <key>`; never next to the repository.
 - Land with `fflow land <pr>`: it waits for the gate and removes the worktree after the merge.
 

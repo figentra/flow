@@ -23,11 +23,11 @@ under `NO_COLOR` or in a pipe, and `doctor`, `status` and `status --metrics` tak
 `{ "schema": "fflow.doctor/1", "checks" }` (its check rows, each with `id`, `ok`, `status` and `group`, are `data`), and
 `status --json` and `status --metrics --json` put the snapshot and the metrics in `data`.
 
-`doctor`, `status`, `next`, `resume`, `task start`, `task done`, `task wave`, `todo`, `ledger`, `session stop` and the
-governance commands (`update`, `check`, `diff`, `validate`) are ported to the engine (`next` takes `--json` too). Every
-other command is passthrough, keeping its own flags and output until it is ported: `adr`, `app`, `clean`, `gate`,
-`guard`, `hooks`, `init`, `land`, `linear`, `mcp`, `migrate`, `parse`, `readme`, `release`, `ship`, `spec`, `start`,
-`sync`, `team`, `trace` and `train`.
+`doctor`, `status`, `next`, `resume`, `task start`, `task done`, `task wave`, `todo`, `ledger`, `session stop`, the
+governance commands (`update`, `check`, `diff`, `validate`) and the stage commands (`plan`, `review`) are ported to the
+engine (`next` takes `--json` too). Every other command is passthrough, keeping its own flags and output until it is
+ported: `adr`, `app`, `clean`, `gate`, `guard`, `hooks`, `init`, `land`, `linear`, `mcp`, `migrate`, `parse`, `readme`,
+`release`, `ship`, `spec`, `start`, `sync`, `team`, `trace` and `train`.
 
 `@stackra/console` and `@stackra/validation` (0.7.1) are runtime dependencies of Flow (ADR 0506 decision 8, owner
 2026-11-03; this replaces STA-1945 NFR-1's "no runtime dependency, an optional peer"). They come from the Stackra
@@ -47,7 +47,9 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow diff`                                                          | prints every file `sync` or `update` would add, change or delete, with the lines; writes nothing |
 | `fflow validate`                                                      | checks `flow.config.json` and `.flow/overrides/` against their schemas and the mandatory policies, naming each field, target or policy that breaks them and a `profile` the preset lacks; writes nothing |
 | `… --workspace <dir>`                                                 | runs `sync`, `update`, `check`, `diff` or `validate` in every repository under `<dir>` that has `flow.config.json`, one line each |
-| `fflow gate run [--ref b] [--box host] [-- flags]`                    | the repository's checks through the configured runner (or on `--box`) at the pushed head; the box posts `fflow/gate` as the gate App                                                             |
+| `fflow gate run [--ref b] [--box host] [--shards n] [-- flags]`       | the repository's checks through the configured runner (or on `--box`) at the pushed head, fanned out by package shard with `--shards`; one `fflow/gate` is posted as the gate App               |
+| `fflow plan <key> --input \| --record <tasks.md>`                     | the plan workflow's input (FRs, ACs, documents, size budget), and its tasks.md written only when every FR and AC is covered within the budget and `gate tasks` passes                         |
+| `fflow review <pr> --input \| --record <findings.json>`               | the review workflow's input, and its verified findings recorded; `land` refuses a confirmed blocking one                                                                                         |
 | `fflow hooks run <pre-commit\|commit-msg\|pre-push>`                  | the stage's lefthook jobs here with the workspace install, else on the runner's box for the staged tree; the commit gets a `Hooks-Run:` trailer                                                  |
 | `fflow land [<pr>] [--stack] [--dry-run] [--manual-ok]`               | squash-merges a PR that is green on `fflow/gate` from the gate App on its head and has its approvals; Linear Done, worktree and branch removed                                                   |
 | `fflow adr reserve <slug> --issue <key> [--owner <who>]`              | under the `adr` queue lock (`flow/queue/adr`, stale after 15 minutes), lands the next number of the preset's `queues.adr` file on the default branch, then prints only it on stdout; a reservation that does not land is withdrawn |
@@ -151,7 +153,9 @@ setting you have not made refuses and names it.
   `oidc` (`identityId`, the uuid of an Infisical OIDC machine identity, and `audience`, e.g. `"fflow-ci"`) names the
   identity main's approval job logs in as with its own OIDC token, to mint a narrowed Figentra Flow App token in
   process (`src/lib/app-token.mjs`); that path reads the App's key, in memory only. Nothing uses it yet.
-- `gate.check` is the check command (default `pnpm verify`).
+- `gate.check` is the check command (default `pnpm verify`). `gate.shard` is the check one shard of
+  `gate run --shards <n>` runs, with `{filters}` for its packages as `--filter=./<folder>` flags, e.g.
+  `pnpm format:check && pnpm turbo run lint typecheck test build {filters}`.
 
 - `tracker` names the issue tracker:
   - `linear` with `team` and `branchPrefix`, and optionally `token`, the names of the environment variables holding

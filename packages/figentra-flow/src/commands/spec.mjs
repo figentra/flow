@@ -108,7 +108,7 @@ export function paths(at, args) {
   if (args.includes("--require-spec") && !existsSync(at.spec))
     throw new SpecError(`spec.md not found in ${at.featureDir} (run /flow-specify first)`);
   if (args.includes("--require-tasks") && !existsSync(at.tasks))
-    throw new SpecError(`tasks.md not found in ${at.featureDir} (run /flow-tasks first)`);
+    throw new SpecError(`tasks.md not found in ${at.featureDir} (run /flow-plan first)`);
   const out = {
     FEATURE_DIR: at.featureDir,
     AVAILABLE_DOCS: availableDocs(at.featureDir, args.includes("--include-tasks")),

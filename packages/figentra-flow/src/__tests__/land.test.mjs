@@ -24,13 +24,15 @@
 // @covers sta-1856:FR-1 sta-1856:FR-2 sta-1856:FR-3 sta-1856:FR-6
 // @covers sta-1856:AC-001 sta-1856:AC-003 sta-1856:AC-004 sta-1856:AC-005 sta-1856:AC-006 sta-1856:AC-007
 // @covers sta-1856:P-001 sta-1856:P-002 sta-1856:P-003
+// @covers sta-1945:FR-15 sta-1945:AC-40 sta-1945:P-021
 // @covers sta-1945:FR-16 sta-1945:AC-14 sta-1945:P-022 sta-1945:FR-17
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { landOne, landRules, landStack, squashMessage } from "../commands/land.mjs";
+import { recordPath, updateRecord } from "../lib/record.mjs";
 
 /** The gate App login the configuration names. */
 const GATE_APP = "figentra-gate[bot]";
@@ -184,6 +186,8 @@ function world({
   /** @type {{ context: string, integration_id?: number }[]} */ required = [],
   moved = false,
   /** @type {{ filename: string, status: string }[]} */ files = [],
+  blocked = false,
+  brokenRecord = false,
   branch = "figentra/sta-5-land",
 } = {}) {
   const r = repo();
@@ -191,6 +195,29 @@ function world({
   sh(r.root, "worktree", "add", "-q", "-b", branch, path, "main");
   commit(path, "a.txt");
   commit(path, "b.txt");
+  // STA-1945 AC-40: the review workflow confirmed a blocking finding, recorded on the branch.
+  if (blocked) {
+    updateRecord(path, "sta-5", (rec) => ({
+      ...rec,
+      review: [
+        {
+          sha: "d".repeat(40),
+          verdict: "FAIL",
+          findings: 1,
+          blocking: [{ id: "security-tenancy-1", file: "a.txt", text: "leaks the token" }],
+        },
+      ],
+    }));
+    sh(path, "add", "-A");
+    sh(path, "commit", "-q", "-m", "record");
+  }
+  // A record at the head that is not JSON: it could hide a finding.
+  if (brokenRecord) {
+    mkdirSync(dirname(recordPath(path, "sta-5")), { recursive: true });
+    writeFileSync(recordPath(path, "sta-5"), "{ not json\n");
+    sh(path, "add", "-A");
+    sh(path, "commit", "-q", "-m", "record");
+  }
   const head = sh(path, "rev-parse", "HEAD");
   /** GitHub's squash of the branch onto main, pushed. */
   const squash = (/** @type {string} */ title) => {
@@ -278,6 +305,61 @@ test("land: a green PR squash-merges on its head, then Done, the record, the wor
       `DELETE /repos/figentra/flow/git/refs/heads/${w.branch}`,
       "POST /repos/figentra/flow/issues/7/comments",
     ],
+  );
+});
+
+test("land: a confirmed blocking finding in the record at the head refuses the PR and names it (STA-1945 AC-40)", async (t) => {
+  const w = world({ blocked: true });
+  t.after(w.r.dispose);
+  const result = await landOne({
+    root: w.r.root,
+    repo: "figentra/flow",
+    base: "main",
+    number: 7,
+    gateApp: GATE_APP,
+    deps: { api: w.api, done: async () => {}, ...quiet },
+  });
+  assert.equal(result.code, 1);
+  assert.match(
+    result.problems?.join("\n") ?? "",
+    /the review confirmed a blocking finding: security-tenancy-1 in a\.txt: leaks the token/,
+  );
+  assert.equal(
+    w.calls.some((c) => c.method === "PUT"),
+    false,
+  );
+  assert.deepEqual(
+    landRules({
+      pr: pr(),
+      statuses: GREEN,
+      base: "main",
+      required: true,
+      gateApp: GATE_APP,
+      blocking: [],
+    }),
+    [],
+  );
+});
+
+test("land: a record at the head that cannot be read refuses the PR, since it could hide a finding (STA-1945 AC-40)", async (t) => {
+  const w = world({ brokenRecord: true });
+  t.after(w.r.dispose);
+  const result = await landOne({
+    root: w.r.root,
+    repo: "figentra/flow",
+    base: "main",
+    number: 7,
+    gateApp: GATE_APP,
+    deps: { api: w.api, done: async () => {}, ...quiet },
+  });
+  assert.equal(result.code, 1);
+  assert.match(
+    result.problems?.join("\n") ?? "",
+    /the record at the head cannot be read: .*sta-5\.json: not valid JSON/,
+  );
+  assert.equal(
+    w.calls.some((c) => c.method === "PUT"),
+    false,
   );
 });
 

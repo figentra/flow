@@ -27,7 +27,7 @@ state of the code, determine which requirements, acceptance criteria, plan decis
 existing tasks are unmet, incomplete, or only partially satisfied, and **append each piece
 of remaining work as a new, traceable task** at the bottom of `tasks.md` so that
 `/flow-implement` can complete it. This command MUST run only after
-`/flow-implement` has run on the current `tasks.md`, and after `/flow-tasks` has produced a complete `tasks.md`.
+`/flow-implement` has run on the current `tasks.md`, and after `/flow-plan` has produced a complete `tasks.md`.
 
 This is **not** a diff tool and does **not** track changes. It assesses the present state
 of the code relative to the feature's artifacts — no git, no branch comparison, no history.
@@ -63,7 +63,7 @@ Run `fflow spec paths --json --require-spec --require-tasks --include-tasks` onc
 - CONSTITUTION = `.flow/constitution.md` (if present)
 If `spec.md`, `plan.md`, or `tasks.md` is missing, STOP with a clear, actionable message naming the
 prerequisite command to run (`/flow-specify` for a missing spec, `/flow-plan` for a missing plan,
-`/flow-tasks` for missing tasks). Do not produce partial output.
+`/flow-plan` for missing tasks). Do not produce partial output.
 For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 ### 2. Load Artifacts (Progressive Disclosure)

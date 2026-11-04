@@ -9,10 +9,18 @@
  * Runtime: node
  * Governing contract: ADR 0022; STA-1729 phase A (A5).
  */
-// @covers sta-1729:FR-11 sta-1729:AC-041
+// @covers sta-1729:FR-11 sta-1729:AC-041 sta-1945:FR-15
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -26,12 +34,16 @@ import {
   RULES,
 } from "../commands/gate.mjs";
 import { keyScheme } from "../adapters/tracker/index.mjs";
+import { diff } from "../commands/diff.mjs";
 import { sync } from "../commands/sync.mjs";
 import { FLOW_ASSETS, presetDir } from "../lib/flow-dir.mjs";
+import { digestOf } from "../lib/lock.mjs";
 import { installProblems, VERBS } from "../lib/render.mjs";
 import { CONFIG_FILE } from "../lib/product.mjs";
 
 const NEUTRAL = join(FLOW_ASSETS, "presets/neutral");
+/** The commands that read a spec folder first; the gate workflow reads none. */
+const SPEC_VERBS = VERBS.filter((v) => v !== "gate");
 /** @returns {string[]} */
 const walk = (/** @type {string} */ dir) =>
   readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
@@ -62,7 +74,7 @@ test("neutral preset: wraps every gated command and names no ADR, product, track
       /\bADR\b|Stackra|Figentra|Linear|\bSTA-|\bpnpm\b(?!-lock)/,
       file,
     );
-  for (const verb of VERBS)
+  for (const verb of SPEC_VERBS)
     assert.ok(
       readFileSync(join(NEUTRAL, `commands/flow-${verb}.md`), "utf8").includes(
         "## Workflow: feature directory",
@@ -96,11 +108,43 @@ test("a neutral repository renders the neutral flow-* skills and passes the inst
   const root = mkdtempSync(join(tmpdir(), "flow-neutral-"));
   t.after(() => rmSync(root, { recursive: true }));
   sync(root, { direct: true, log: () => {} });
-  for (const verb of VERBS)
+  for (const verb of SPEC_VERBS)
     assert.match(
       readFileSync(join(root, `.claude/skills/flow-${verb}/SKILL.md`), "utf8"),
       /## Workflow: feature directory/,
     );
+  assert.deepEqual(installProblems(root), []);
+});
+
+test("sync: an unedited flow-* skill the last sync rendered and this one does not goes; nothing else does (STA-1945 FR-15)", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "flow-stale-"));
+  t.after(() => rmSync(root, { recursive: true }));
+  sync(root, { direct: true, log: () => {} });
+  const files = {
+    ".claude/skills/flow-tasks/SKILL.md": "rendered\n",
+    ".opencode/commands/flow-tasks.md": "edited since\n",
+    "notes.md": "rendered\n",
+  };
+  for (const [p, text] of Object.entries(files)) {
+    mkdirSync(join(root, p, ".."), { recursive: true });
+    writeFileSync(join(root, p), text);
+  }
+  const lock = JSON.parse(readFileSync(join(root, ".flow/lock.json"), "utf8"));
+  const old = Object.fromEntries(Object.keys(files).map((p) => [p, digestOf("rendered\n")]));
+  writeFileSync(
+    join(root, ".flow/lock.json"),
+    JSON.stringify({ ...lock, files: { ...lock.files, ...old } }),
+  );
+  assert.deepEqual(
+    diff(root).filter((c) => c.kind === "delete"),
+    [{ path: ".claude/skills/flow-tasks/SKILL.md", kind: "delete", patch: "" }],
+    "diff names what sync drops",
+  );
+  const { removed } = sync(root, { direct: true, log: () => {} });
+  assert.deepEqual(removed, [".claude/skills/flow-tasks/SKILL.md"]);
+  assert.ok(!existsSync(join(root, ".claude/skills/flow-tasks")), "its folder goes too");
+  assert.ok(existsSync(join(root, ".opencode/commands/flow-tasks.md")), "an edited one stays");
+  assert.ok(existsSync(join(root, "notes.md")), "only flow-* skills and commands go");
   assert.deepEqual(installProblems(root), []);
 });
 

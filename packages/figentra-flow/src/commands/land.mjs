@@ -2,8 +2,9 @@
  * Figentra Flow file contract:
  * Purpose: `fflow land [<pr>] [--stack] [--dry-run] [--manual-ok]`, the lander's checklist as code: squash-merge a PR
  *   only when it is open, clean, based on the default branch, green on `fflow/gate` from the gate App on its exact
- *   head, conventionally titled, its spec's approvals are recorded and it changes no owner-only path (with the globs
- *   an `extend` of `owner-only` adds, STA-1945 FR-5); then set Linear
+ *   head, conventionally titled, its spec's approvals are recorded, its recorded review confirmed no blocking finding
+ *   (STA-1945 AC-40) and it changes no owner-only path (with the globs an `extend` of `owner-only` adds, STA-1945
+ *   FR-5); then set Linear
  *   Done, record the merge commit, remove the worktree through `clean`'s rules, delete the branch and comment. When the
  *   base's ruleset requires an approving review the head lacks, it dispatches the approval workflow and turns on
  *   auto-merge at the head instead, never an admin path; `land` on a merged PR runs the steps after the merge
@@ -29,6 +30,7 @@ import { clean } from "./clean.mjs";
 import { gateRun, slugOf } from "./gate-run.mjs";
 import { trackerFor } from "../adapters/tracker/index.mjs";
 import { github } from "../lib/github.mjs";
+import { readRecordAt, RecordError } from "../lib/record.mjs";
 import { aiReview } from "../lib/review.mjs";
 import { pathProblems, reviewerProblems, roleOf } from "../lib/roles.mjs";
 import { loadTeam } from "../lib/team.mjs";
@@ -110,7 +112,8 @@ export function connect(root) {
  *           reviewer?: string | string[], required: boolean, files?: string[],
  *           manualOk?: boolean, stack?: boolean, review?: { verdict: string | null, ignored: string[] },
  *           artifacts?: string[], reviewTiers?: string[], ownerOnly?: string[],
- *           ownerFindings?: string[] }} input
+ *           ownerFindings?: string[], blocking?: string[] }} input `blocking`: the review workflow's confirmed
+ *   blocking findings (`blockingFindings`)
  * @returns {string[]}
  */
 export function landRules({
@@ -129,8 +132,14 @@ export function landRules({
   review,
   artifacts = [],
   reviewTiers = REVIEW_TIERS,
+  blocking = [],
 }) {
   const problems = [...artifacts];
+  // AC-40: a confirmed blocking finding stops the PR until a new review clears it.
+  for (const b of blocking)
+    problems.push(
+      `the review confirmed a blocking finding: ${b} (fix it, then review the new head: /flow-review)`,
+    );
   // STA-1856 FR-1: what only the owner approves never lands through an agent.
   const owned = ownerOnlyPaths(files, ownerOnly);
   if (owned.length)
@@ -173,6 +182,21 @@ export function landRules({
       `${base}'s ruleset does not require ${STATUS_CONTEXT} yet (phase 6); until then only the tester lands, with --manual-ok`,
     );
   return problems;
+}
+
+/**
+ * The confirmed blocking findings of every review recorded on the newest review's commit, each as
+ * `<id> in <file>: <text>`; none without a record or a review (AC-40). Only a review of a new head clears a finding:
+ * another review of the same commit cannot.
+ * @param {import("../lib/record.mjs").FlowRecord | undefined} record
+ */
+export function blockingFindings(record) {
+  const newest = record?.review.at(-1);
+  const found = (record?.review ?? [])
+    .filter((r) => r.sha === newest?.sha)
+    .flatMap((r) => r.blocking ?? [])
+    .map((f) => `${f.id} in ${f.file}: ${f.text}`);
+  return [...new Set(found)];
 }
 
 /** The squash commit's message: one `Refs:` line and the co-author trailers of the PR's commits. */
@@ -335,9 +359,19 @@ export async function landOne({
   );
   // AC-043: the head must be here to check its files; fetch it when it is not.
   if (!git(root, ["cat-file", "-e", `${head}^{commit}`]).ok) fetch(root);
-  const artifacts = git(root, ["cat-file", "-e", `${head}^{commit}`]).ok
+  const here = git(root, ["cat-file", "-e", `${head}^{commit}`]).ok;
+  const artifacts = here
     ? artifactProblems(root, `origin/${base}`, head, loadConfig(root).config.artifacts)
     : [`cannot read the head ${head.slice(0, 12)} to check its files (fetch failed)`];
+  // AC-40: the review recorded at the head; a record that cannot be read could hide a finding, so it refuses.
+  /** @type {string[]} */
+  let blocking = [];
+  try {
+    blocking = here && key ? blockingFindings(readRecordAt(root, head, key)) : [];
+  } catch (error) {
+    if (!(error instanceof RecordError)) throw error;
+    artifacts.push(`the record at the head cannot be read: ${error.message}`);
+  }
   const { files, entries, listed } = changedFiles(api, repo, number);
   if (listed < Number(pr.json.changed_files))
     artifacts.push(`GitHub lists only ${listed} of ${pr.json.changed_files} changed files`);
@@ -371,6 +405,7 @@ export async function landOne({
     base,
     spec,
     review,
+    blocking,
     artifacts,
     files,
     ownerOnly: ownerOnlyExtra(root),

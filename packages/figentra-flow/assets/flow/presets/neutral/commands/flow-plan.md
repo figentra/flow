@@ -1,5 +1,5 @@
 ---
-description: Plan the feature; refuses until the spec gate passes.
+description: Plan the feature and split it into PR-sized tasks; refuses until the spec gate passes.
 derived-from: github/spec-kit 1.0.10 (MIT)
 ---
 
@@ -105,7 +105,8 @@ Command ends after Phase 1 design. Report branch, IMPL_PLAN path, and generated 
 
 For a `feature` or `big` spec, `plan.md` is the design: the gate requires its sections (write "none" under one that
 does not apply). Then set `**Status**: Planned`, append the Status history line, and run
-`fflow gate check <folder>`. The next step is `/flow-tasks`.
+`fflow gate check <folder>`. Then the approval stop (below), then the tasks: this command writes tasks.md too; there
+is no separate tasks command.
 
 ## Workflow: approval stop
 
@@ -114,3 +115,23 @@ the plan (before tasks). At a stop, ask the approver named in `**Approver**`: Ap
 Approve, add `— Approved by <who> <YYYY-MM-DD>` to the `**Status**` line and to its Status history line. On Revise,
 apply the notes and ask again. On Reject, set `**Status**: Abandoned`. Never record an approval nobody gave; the gate
 reads it before tasks and code.
+
+## Workflow: tasks (after the Planned approval)
+
+The plan stage splits the approved spec into PR-sized tasks and writes tasks.md. `fflow plan` hands the workflow its
+input and validates and records its output; never write tasks.md by hand.
+
+1. **Input**: run `fflow plan <key> --input`. It prints the FRs and ACs to cover, the documents to read and the size
+   budget (the most files one task may name). If it refuses (the spec is not approved, or is small: a small spec keeps
+   its tasks in spec.md's `## Tasks`), STOP and report it.
+2. **Template**: run `fflow spec setup-tasks --json` and use TASKS_TEMPLATE_CONTENT as the structure.
+3. **Split**: read the documents and write the tasks, grouped into phases, one PR each, in stack order (a phase comes
+   after the phases it builds on). Each task names its files in backticks, at most the budget, and every line follows
+   `- [ ] T012 [P] <desc> in <path> — covers: FR-003, AC-004 — deps: T010`. Together the tasks cover every FR and AC;
+   `[P]` tasks in one phase share no file.
+4. **Record**: write the result to a scratch file and run `fflow plan <key> --record <file>`. It writes tasks.md into
+   the spec folder only when `gate tasks` passes, every FR and AC is covered and each task holds its budget; otherwise
+   it names each problem. Fix them and record again.
+5. **Tasked**: set `**Status**: Tasked`, append the Status history line and run `fflow gate check <folder>`.
+
+The next step is `fflow start <key>` (the worktree), then `/flow-implement`.

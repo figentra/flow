@@ -23,7 +23,7 @@ description: "Task list template (Stackra v2): every task covers spec IDs and na
   - A phase may end in a checkpoint, ``- [ ] T013 Checkpoint: `<command>` ``: a required task that runs the command
     and covers nothing; no later phase starts before it is done. It is the last task of its phase and never optional.
 - Phases: Setup, Foundational, one per user story (US1…USn), Polish. Each phase heading carries its Linear key once
-  `/flow-tasks` has run (`## Phase 3: US1 … [STA-m]`); task lines carry ` [STA-m]` at the end.
+  `/flow-plan` has filed the tasks (`## Phase 3: US1 … [STA-m]`); task lines carry ` [STA-m]` at the end.
 - Tests sit in `__tests__/` beside their subject (ADR 0022) and carry `@covers sta-n:FR-###` (spec-trace).
 - Do not keep sample tasks.
 

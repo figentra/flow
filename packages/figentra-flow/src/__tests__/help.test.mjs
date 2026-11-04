@@ -101,6 +101,16 @@ test("help: the governance commands declare their options, --workspace among the
   }
 });
 
+// @covers sta-1945:FR-15
+test("help: the stage commands declare --input and --record", async () => {
+  for (const name of ["plan", "review"]) {
+    const r = await runCommandForTest(CONSOLE, [name, "--help"]);
+    assert.equal(r.exitCode, 0, name);
+    for (const option of ["--input", "--record"])
+      assert.match(r.stdout, new RegExp(option), `${name} ${option}`);
+  }
+});
+
 test("help: an unknown command names the closest match and exits 2", async () => {
   const r = await runCommandForTest(CONSOLE, ["stauts"]);
   assert.equal(r.exitCode, 2);
