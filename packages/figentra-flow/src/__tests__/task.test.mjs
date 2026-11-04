@@ -1,6 +1,7 @@
 /**
  * Figentra Flow file contract:
  * Purpose: hold `fflow task start|done` to STA-1945 FR-23: a task starts only on a Tasked spec and records its start,
+ *   `task start` first resets a task whose documents changed with the reason and restarts a hand-ticked one (T024),
  *   `done` keeps every attempt and sets `[x]` only on exit 0 at a clean HEAD, a secret-looking command never runs, a
  *   changed document resets a started task with the reason, a hand tick is named, and `task wave` queues the next wave
  *   and holds it while one of its tasks failed.
@@ -151,6 +152,31 @@ test("a changed document resets a started task with the reason; a marker move ch
   assert.match(reset[0].reason, /the spec, plan or tasks changed since T001 started/);
   assert.deepEqual([s.marker("T001"), s.marker("T002")], [" ", " "]);
   assert.deepEqual(readRecord(s.root, "sta-7")?.started, {});
+});
+
+test("task start: resets each task whose documents changed, with the reason, then restarts it (AC-24)", async (t) => {
+  const s = setup(t);
+  startTask(s.root, "STA-7", "T001");
+  startTask(s.root, "STA-7", "T002");
+  writeFileSync(join(s.dir, "plan.md"), "# plan, amended\n");
+  sh(s.root, "commit", "-q", "-am", "amend the plan");
+  const r = await fflow(s.root, "task", "start", "STA-7", "T001");
+  assert.equal(r.exitCode, 0, r.out);
+  assert.match(r.out, /T001 is back to \[ \]: the spec, plan or tasks changed since T001 started/);
+  assert.match(r.out, /T002 is back to \[ \]/);
+  assert.deepEqual([s.marker("T001"), s.marker("T002")], ["-", " "]);
+  assert.equal(readRecord(s.root, "sta-7")?.started?.T001?.docs, docsDigest(s.dir));
+  assert.equal(doneTask(s.root, "STA-7", "T001", "true").done, true);
+});
+
+test("task start: a hand tick starts again; a task with passing evidence stays done (AC-22)", (t) => {
+  const s = setup(t);
+  startTask(s.root, "STA-7", "T001");
+  doneTask(s.root, "STA-7", "T001", "true");
+  writeFileSync(join(s.dir, "tasks.md"), setMarker(s.tasks(), "T002", "x"));
+  assert.match(startTask(s.root, "STA-7", "T001").join(), /T001 is done/);
+  assert.deepEqual(startTask(s.root, "STA-7", "T002"), []);
+  assert.equal(s.marker("T002"), "-");
 });
 
 test("a hand tick is named once the spec has a record", (t) => {

@@ -2,20 +2,23 @@
  * Figentra Flow file contract:
  * Purpose: `fflow task start|done|wave` (STA-1945 FR-23, FR-24; declared in src/lib/console.mjs, which turns a
  *   `TaskError` into a usage error): the only way a task's marker moves.
- *   start <key> <task> [--session <name>] refuses unless the spec is Tasked or Implementing with its approvals
- *                                         (ADR 0502), then sets `[-]` and records the start (session, HEAD and the
- *                                         digest of spec, plan and tasks) in Flow's record
+ *   start <key> <task> [--session <name>] first resets each task whose documents changed since it started
+ *                                         (`resetChanged`, AC-24), then refuses unless the spec is Tasked or
+ *                                         Implementing with its approvals (ADR 0502), then sets `[-]` and records the
+ *                                         start (session, HEAD and the digest of spec, plan and tasks) in Flow's
+ *                                         record; a task ticked `[x]` by hand (no passing evidence) starts again
  *   done <key> <task> --command <cmd>     runs the check command (`runEvidence`), keeps the attempt in the record and
  *                                         sets `[x]` only on exit 0 at a clean HEAD; refuses a secret-looking command
  *   wave <key> [--json]                   refuses as `start` does, then prints the build's next wave (`nextWave`), its
  *                                         `[ ]` tasks set to `[~]`; a wave holding a failed task is printed again, so
  *                                         the next one never starts
- *   `resetChanged` is what `check` calls (T024): a task in progress whose documents changed since its start goes back
- *   to `[ ]` with the reason; `handTicks` names each `[x]` with no passing evidence (AC-22).
+ *   `check` writes nothing, so it names what `task start` fixes (T024): `changedTasks`, each task in progress whose
+ *   documents changed since its start, which `resetChanged` sets back to `[ ]` with the reason (AC-24); `handTicks`,
+ *   each `[x]` with no passing evidence (AC-22).
  * Boundary: writes the task's line in tasks.md and the record (`.flow/record/<key>.json`); runs the check command in
  *   the repository; commits and pushes nothing (the session's commits carry both files).
  * Runtime: node
- * Governing contract: STA-1945 FR-23, FR-24, AC-23, AC-24, AC-25, P-028, P-029, NFR-5.
+ * Governing contract: STA-1945 FR-23, FR-24, AC-22, AC-23, AC-24, AC-25, P-028, P-029, NFR-5.
  * Secrets: none; the command's output is kept only as a digest, and a secret-looking command never runs.
  */
 import { createHash } from "node:crypto";
@@ -119,7 +122,9 @@ export function startTask(root, key, id, { session, now = () => new Date() } = {
     );
   problems.push(...checkApproval(spec));
   if (task.marker === "-") problems.push(`${id} is already in progress`);
-  if (task.marker === "x") problems.push(`${id} is done`);
+  // AC-22: a hand tick (no passing evidence in the record) is not done; it starts again
+  const record = readRecord(root, k);
+  if (task.marker === "x" && (!record || passed(record.tasks[id]))) problems.push(`${id} is done`);
   if (problems.length) return problems;
   writeFileSync(file, setMarker(text, id, "-"));
   updateRecord(root, k, (r) => ({
@@ -159,7 +164,9 @@ export function doneTask(root, key, id, command, options = {}) {
     );
   const start = readRecord(root, k)?.started?.[id];
   if (start && start.docs !== docsDigest(dir))
-    throw new TaskError(`the spec, plan or tasks changed since ${id} started: \`check\` resets it`);
+    throw new TaskError(
+      `the spec, plan or tasks changed since ${id} started: \`${NAME} task start ${key} ${id}\` restarts it`,
+    );
   let evidence;
   try {
     evidence = runEvidence(root, command, {
@@ -192,6 +199,21 @@ export const handTicks = (tasks, record) =>
     : [];
 
 /**
+ * Each live task in progress whose documents changed since its start (FR-23): its start's digest is not `docs`.
+ * @param {string} tasks the tasks.md text
+ * @param {import("../lib/record.mjs").FlowRecord | undefined} record
+ * @param {string} docs `docsDigest` of the spec folder now
+ */
+export const changedTasks = (tasks, record, docs) =>
+  parseTasks(tasks).filter(
+    (t) =>
+      t.marker === "-" &&
+      !t.struck &&
+      record?.started?.[t.id] &&
+      record.started[t.id].docs !== docs,
+  );
+
+/**
  * Sets each task in progress whose documents changed since its start back to `[ ]` and drops its start (AC-24).
  * @param {string} root
  * @param {string} key
@@ -207,11 +229,8 @@ export function resetChanged(root, key) {
   const dir = join(root, found.dir);
   const file = join(dir, "tasks.md");
   if (!existsSync(file)) return [];
-  const docs = docsDigest(dir);
   let text = readFileSync(file, "utf8");
-  const reset = parseTasks(text).filter(
-    (t) => t.marker === "-" && record.started?.[t.id] && record.started[t.id].docs !== docs,
-  );
+  const reset = changedTasks(text, record, docsDigest(dir));
   if (!reset.length) return [];
   for (const t of reset) text = setMarker(text, t.id, " ");
   writeFileSync(file, text);
@@ -305,6 +324,7 @@ export function wave(io, { key }) {
  */
 export function start(io, { key, id, session }) {
   const root = git(io.cwd, ["rev-parse", "--show-toplevel"]).out || io.cwd;
+  for (const r of resetChanged(root, key)) io.output.warn(`${r.id} is back to [ ]: ${r.reason}`);
   // the same session name `session stop` records: the option, then the environment
   const problems = startTask(root, key, id, {
     session: session ?? process.env[`${ENV_PREFIX}SESSION`],
