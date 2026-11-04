@@ -31,6 +31,18 @@ import { strip } from "../lib/spec-parse.mjs";
 import { governed } from "./__fixtures__/governed.mjs";
 
 const PKG = new URL("../..", import.meta.url).pathname;
+/** An owner and `secrets.oidc`: since the L2 design's PR G, `sync` renders the approval workflow only with both. */
+const APPROVING = {
+  apps: { owner: "o" },
+  secrets: {
+    kind: "infisical",
+    projectId: "86c297d4-ce42-4e94-b4b3-810a715812f2",
+    env: "prod",
+    domain: "https://eu.infisical.com",
+    paths: { gate: "/ci/gate" },
+    oidc: { identityId: "0b5c1a2e-3d4f-4a5b-8c6d-7e8f9a0b1c2d", audience: "fflow-ci" },
+  },
+};
 const FLOW = join(PKG, "assets", "flow");
 /** The commands with front matter and no spec-kit machinery; `plan` writes tasks.md, so no `tasks` (STA-1945 FR-15). */
 const DERIVED_VERBS = [
@@ -109,7 +121,7 @@ test("flow assets: derived texts carry the attribution; nothing names spec-kit's
 
 // @covers sta-1945:FR-2 sta-1945:FR-3 sta-1945:AC-2 sta-1945:P-004 sta-1945:P-006
 test("writeRendered: every comment-capable file starts with its header, and the lock is v2 with each digest", (t) => {
-  const root = governed(t, { config: { apps: { owner: "o" } } });
+  const root = governed(t, { config: APPROVING });
   const { files } = sync(root, { direct: true, log: () => {} });
   assert.ok(files.includes(".github/CODEOWNERS"));
   assert.ok(files.includes(".github/workflows/fflow-approve.yml"));
@@ -178,7 +190,7 @@ test("installProblems reads a v1 lock; the next sync rewrites it as v2", (t) => 
 
 // @covers sta-1945:FR-4 sta-1945:FR-3 sta-1945:AC-4 sta-1945:P-007 sta-1945:P-006
 test("sync applies the overrides, each to its target only, and the header names the override that shaped a file", (t) => {
-  const root = governed(t, { config: { apps: { owner: "o" } } });
+  const root = governed(t, { config: APPROVING });
   const governance = "reason: ours\nowner: o\nreview: 2027-01-31\n";
   const own = {
     "rules/worktrees.yml": "kind: extend\ntarget: .agents/rules/worktrees.md\nitems:\n  - Ours.\n",
