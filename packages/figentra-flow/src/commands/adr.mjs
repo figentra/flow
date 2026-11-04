@@ -254,7 +254,7 @@ export async function run(
             gateApp: gateLogins(apps),
             reviewer: apps.review?.slug,
             owner: apps.owner,
-            // The branch `adr/<n>-<slug>` names no issue; the squash names this one, which landing does not close.
+            // The squash names this issue, whatever key the slug `adr/<n>-<slug>` seems to carry; landing does not close it.
             refs: issue,
             deps: landDeps,
           }),

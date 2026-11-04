@@ -1,18 +1,20 @@
 /**
  * Figentra Flow file contract:
  * Purpose: hold Flow's own spec assets (ADR 0510) to their shape: each preset ships `preset.yml`, the three templates
- *   and exactly the eight `flow-*` commands; every command and the checklist and constitution templates carry the
- *   spec-kit attribution line; no asset still names spec-kit's machinery (`.specify`, `SPECIFY_*`, `extensions.yml`,
- *   `speckit`, the bash scripts, `{SCRIPT}`); the package ships `THIRD_PARTY_NOTICES.md`; and the spec and plan
- *   templates carry the sections of STA-1945 A-3 per tier, which `/flow-specify` asks for. What `sync` writes from
- *   them starts with its provenance header, and `.flow/lock.json` v2 records each digest; a v1 lock still reads
- *   (STA-1945). `sync` applies the overrides, each to its target only, skips (and names) one that breaks a mandatory
- *   policy, and the header names the override that shaped a file (STA-1945 FR-4).
+ *   and exactly the nine `flow-*` commands; every command derived from spec-kit (all but Flow's own `flow-build`) and
+ *   the checklist and constitution templates carry the spec-kit attribution line; no asset still names spec-kit's
+ *   machinery (`.specify`, `SPECIFY_*`, `extensions.yml`, `speckit`, the bash scripts, `{SCRIPT}`); the package ships
+ *   `THIRD_PARTY_NOTICES.md`; and the spec and plan templates carry the sections of STA-1945 A-3 per tier, which
+ *   `/flow-specify` asks for. What `sync` writes from them starts with its provenance header, and `.flow/lock.json` v2
+ *   records each digest; a v1 lock still reads (STA-1945). `sync` applies the overrides, each to its target only,
+ *   skips (and names) one that breaks a mandatory policy, and the header names the override that shaped a file
+ *   (STA-1945 FR-4).
  * Boundary: reads the package's files and writes temporary folders; no process, no network.
  * Runtime: node
  * Governing contract: ADR 0022; ADR 0502; ADR 0510; STA-1729; STA-1945.
  */
 // @covers sta-1729:FR-11
+// @covers sta-1945:FR-24
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -32,6 +34,7 @@ const PKG = new URL("../..", import.meta.url).pathname;
 const FLOW = join(PKG, "assets", "flow");
 const VERBS = [
   "analyze",
+  "build",
   "checklist",
   "clarify",
   "converge",
@@ -40,6 +43,8 @@ const VERBS = [
   "specify",
   "tasks",
 ];
+/** Commands Flow wrote itself, with no spec-kit text (STA-1945 FR-24). */
+const OWN = ["build"];
 const DERIVED = "derived-from: github/spec-kit 1.0.10 (MIT)";
 const LEFTOVERS = [
   ".specify",
@@ -51,7 +56,7 @@ const LEFTOVERS = [
   "{ARGS}",
 ];
 
-test("flow assets: each preset has its manifest, its templates and the eight flow-* commands", () => {
+test("flow assets: each preset has its manifest, its templates and the nine flow-* commands", () => {
   for (const preset of ["neutral", "stackra"]) {
     const dir = join(FLOW, "presets", preset);
     assert.match(
@@ -83,7 +88,8 @@ test("flow assets: derived texts carry the attribution; nothing names spec-kit's
   for (const file of derived) {
     const text = readFileSync(file, "utf8");
     assert.match(text, /^---\n[\s\S]*?\n---\n/, `${file} has front matter`);
-    assert.ok(text.split("\n---\n")[0].includes(DERIVED), `${file} carries the attribution`);
+    if (!OWN.some((v) => file.endsWith(`flow-${v}.md`)))
+      assert.ok(text.split("\n---\n")[0].includes(DERIVED), `${file} carries the attribution`);
     for (const leftover of LEFTOVERS)
       assert.ok(!text.includes(leftover), `${file} names ${leftover}`);
   }
