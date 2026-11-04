@@ -747,7 +747,11 @@ export const COMMANDS = [
     name: "release",
     description: "What the next release would publish and what stands in its way",
     group: GROUPS.land,
-    examples: [`${NAME} release`, `${NAME} release --offline --json`],
+    examples: [
+      `${NAME} release`,
+      `${NAME} release --offline --json`,
+      `${NAME} release --preflight`,
+    ],
   }),
   LedgerCommand,
   passthrough({
