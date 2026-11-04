@@ -76,7 +76,7 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow guard [--print-settings]`                                      | the guard engine on the hook event on stdin: the preset's rules, the side doors and the secret files; `--print-settings` prints the hooks that wire `bin/fflow-guard.mjs` for four events        |
 | `fflow init --workspace <dir>…`                                       | writes the workspace list (`~/.config/fflow/workspace.yaml`) that `--all` acts on                                                                                                                |
 | `fflow status [--repo p] [--json] [--offline]`                        | specs by status, worktrees, open PRs with their gate and review, and sessions, for every repository of the workspace                                                                             |
-| `fflow mcp`                                                           | a read-only MCP server over stdio: status, spec, trace, worktrees and metrics                                                                                                                    |
+| `fflow mcp`                                                           | an MCP server over stdio: status, spec, trace, worktrees, metrics, a spec's open questions, a docs lookup, and the one writer, recording an answer                                               |
 | `fflow next [<key>] [--json]`                                         | the task's stage and the command that moves it on, from Flow's record on the key's worktree or branch                                                                                            |
 | `fflow resume <key>`                                                  | re-enters the stage a stopped session left half done: the task's worktree, fast-forwarded to its pushed branch                                                                                   |
 | `fflow task start\|done <key> <T###> [--command c]`                   | moves a task's marker: `[-]` on start; `[x]` only when the check command exits 0 at a clean HEAD, recorded                                                                                       |
@@ -271,8 +271,37 @@ setting you have not made refuses and names it.
 
 - `specs` sets where specs live: `dir` (default `.agents/specs`) and `bugsDir` (default `.agents/specs/bugs`).
 
+- `harnesses` names the tools `sync --direct` renders the `flow-*` commands for (see Harnesses below). Without it,
+  `--direct` renders Claude Code's and OpenCode's files with the text-table questions, as before.
+
 Only
 `flow.config.json` is read; no other file stands in for it.
+
+## Harnesses
+
+A command names what a step needs, not the tool that does it: the question step of `flow-clarify` and `flow-specify`
+is an `ask` block (`<!-- flow:ask -->` … `<!-- /flow:ask -->`; `todo`, `docs` and `subagent` are reserved the same
+way). A harness adapter renders each command where one tool reads it and fills each block in for that tool. Choose the
+tools in `flow.config.json` and run `fflow sync --direct`:
+
+```json
+{ "version": 1, "harnesses": ["claude-code", "copilot"] }
+```
+
+| Harness       | Files                                     | The `ask` step                                                            |
+| ------------- | ----------------------------------------- | ------------------------------------------------------------------------- |
+| `claude-code` | `.claude/skills/flow-<verb>/SKILL.md`     | the `AskUserQuestion` tool: 1 to 4 questions, 2 to 4 options, the recommended one first and labelled "(Recommended)", free text always possible |
+| `opencode`    | `.opencode/commands/flow-<verb>.md`       | its `question` tool, the same way                                         |
+| `copilot`     | `.github/prompts/flow-<verb>.prompt.md`   | the text table                                                            |
+| `cursor`      | `.cursor/commands/flow-<verb>.md`         | the text table                                                            |
+| `codex`       | `.agents/skills/flow-<verb>/SKILL.md`     | the text table                                                            |
+
+Where a tool's question tool is unavailable, the command still carries the text table to ask with. Every file has the
+provenance header and its digest in `.flow/lock.json`, and a tool removed from the list takes its unedited commands
+with it. Without `harnesses`, nothing changes: `--direct` renders Claude Code's and OpenCode's files and a plain `sync`
+the neutral `.agents/skills/` documents, both with the text table, byte for byte as before. A plain `sync` ignores
+`harnesses`: the repository's own projector places those documents. Answers are recorded in the spec, never only in a
+tool's chat; the MCP server's `fflow_clarification_record` (under Status) writes them the same way from any tool.
 
 ## Presets
 
@@ -628,12 +657,26 @@ verdicts) and approval latency (a merged spec's Draft line to its last approval)
 is computed from GitHub and the specs on each call; nothing is stored. `--json` writes the metrics as the document's
 `data`.
 
-`fflow mcp` is a read-only MCP server over stdio for agents. It offers five tools, each returning JSON:
-`fflow_status` (`repo?`, `offline?`), `fflow_spec` (`repo`, `key`: status, tier, session, approvals
-and gate problems), `fflow_trace` (`repo`, `key`: the FR, AC and property to task to test matrix),
-`fflow_worktrees` (`repo?`) and `fflow_metrics` (`since?` days). None writes, merges, lands, starts
-or cleans. Register it in your MCP client as the command `fflow mcp` (for example `pnpm exec fflow
-mcp` in a repository's MCP configuration); Figentra Flow never writes that configuration itself.
+`fflow mcp` is an MCP server over stdio for agents. It offers eight tools, each returning JSON. Seven read:
+
+| Tool                   | Arguments                    | What it returns                                                                       |
+| ---------------------- | ---------------------------- | ------------------------------------------------------------------------------------- |
+| `fflow_status`         | `repo?`, `offline?`          | what is in flight: specs, worktrees, open PRs with their gate and review, sessions    |
+| `fflow_spec`           | `repo`, `key`                | one spec's status, tier, session, approvals and gate problems                         |
+| `fflow_trace`          | `repo`, `key`                | the FR, AC and property to task to test matrix                                        |
+| `fflow_worktrees`      | `repo?`                      | each repository's worktrees                                                           |
+| `fflow_metrics`        | `since?` (days)              | delivery metrics                                                                      |
+| `fflow_questions_list` | `repo`, `key`                | each live `[NEEDS CLARIFICATION: …]` marker and unanswered Clarifications question    |
+| `fflow_docs_lookup`    | `repo`, `query`, `limit?`    | matching lines of `.agents/specs`, `docs/` and `.flow/` text (at most 100; no links)  |
+
+One writes: `fflow_clarification_record` (`repo`, `key`, `question`, `answer?`, `marker?`) records one answer in the
+spec, the record of every question: a `- Q: <question> → A: <answer>` bullet under `## Clarifications` →
+`### Session <today>`, and the `[NEEDS CLARIFICATION]` marker whose text is `marker` (else the question) replaced by
+the answer. It writes only `.agents/specs/<key>-<slug>/spec.md`, by its real path (a symbolic link is refused).
+Without `answer`, it asks the user with an MCP elicitation form, and only when the client declared `elicitation` when
+it connected; otherwise the answer must come in the arguments. No tool merges, lands, starts or cleans; each carries
+MCP's `readOnlyHint`. Register it in your MCP client as the command `fflow mcp` (for example `pnpm exec fflow mcp` in
+a repository's MCP configuration); Figentra Flow never writes that configuration itself.
 
 ## Release trains
 
