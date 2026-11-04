@@ -1,9 +1,10 @@
 ---
-"@figentra-oss/flow": major
+"@figentra-oss/flow": minor
 ---
 
-Figentra Flow 1.0: spec-driven development for agent teams, for any repository (owner, 2026-11-04). The breaking
-changes since 0.2.3, each described in its own changeset:
+Figentra Flow 0.4: spec-driven development for agent teams, for any repository. 1.0 follows once the 12 repositories
+run the preset package and the GitHub Actions gate (leader, 2026-11-04). The breaking changes since 0.2.3, each
+described in its own changeset:
 
 - `fflow land` asks main's land lane (label `fflow:land`) and waits when the base's approval workflow has the event
   lane; the dispatch and auto-merge path remains for one release.
