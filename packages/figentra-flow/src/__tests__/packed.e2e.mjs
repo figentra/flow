@@ -31,7 +31,7 @@ import { join } from "node:path";
 
 const PKG = new URL("../..", import.meta.url).pathname;
 const VERSION = JSON.parse(readFileSync(join(PKG, "package.json"), "utf8")).version;
-const REGISTRY = "https://npm.stackra.figentra.com/";
+const REGISTRY = "https://registry.figentra.com/";
 
 /** The outsider's environment: no npm or pnpm setting inherited from the workspace, the runner or the machine. */
 const OUTSIDE = {
@@ -90,7 +90,7 @@ test(
     const lock = JSON.parse(readFileSync(join(repo, "package-lock.json"), "utf8")).packages;
     assert.match(
       lock["node_modules/@stackra/console"]?.resolved ?? "",
-      /^https:\/\/npm\.stackra\.figentra\.com\//,
+      /^https:\/\/registry\.figentra\.com\//,
       "@stackra/console resolves from the Stackra registry",
     );
     for (const f of ["src/__tests__", "assets/specify"])

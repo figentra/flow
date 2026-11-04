@@ -9,8 +9,8 @@ still works for one release). It is published on the Figentra registry, which an
 
 ```ini
 # .npmrc
-@figentra-oss:registry=https://npm.stackra.figentra.com/
-@stackra:registry=https://npm.stackra.figentra.com/
+@figentra-oss:registry=https://registry.figentra.com/
+@stackra:registry=https://registry.figentra.com/
 ```
 
 ```sh
@@ -38,7 +38,7 @@ ported: `adr`, `app`, `clean`, `gate`, `guard`, `hooks`, `init`, `land`, `linear
 
 `@stackra/console` and `@stackra/validation` (0.7.1) are runtime dependencies of Flow (ADR 0506 decision 8, owner
 2026-11-03; this replaces STA-1945 NFR-1's "no runtime dependency, an optional peer"). They come from the Stackra
-registry, read without a token, so map the scope first (`@stackra:registry=https://npm.stackra.figentra.com/` in
+registry, read without a token, so map the scope first (`@stackra:registry=https://registry.figentra.com/` in
 `.npmrc`), never npmjs. Only the CLI layer loads them: the governance core (gate, approve, land, record, lock,
 baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, dispatches before the engine loads.
 `pnpm-lock.yaml` is regenerated on the box with this dependency change.

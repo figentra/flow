@@ -3,7 +3,7 @@
 #          On a push to main with pending changesets it opens or updates the "version packages" PR; when that PR
 #          merges it publishes `@figentra-oss/flow` to the Figentra registry's open scope with provenance, a tag and a GitHub release,
 #          then the signed SBOM and checksums. All of it is Stackra core's Runway npm provider, called, not copied.
-# Boundary: publishes only to https://npm.stackra.figentra.com/ (ADR 0453; the owner's decision of 2026-10-31: npmjs
+# Boundary: publishes only to https://registry.figentra.com/ (ADR 0453; the owner's decision of 2026-10-31: npmjs
 #           comes later, as `figentra-flow`, and its trusted-publishing workflow is in git history at 8f6e797). An
 #           agent never dispatches it. The `release` environment is restricted to main; required reviewers are not
 #           available on our plan, so the owner's merge of the version PR is the control.
@@ -70,7 +70,7 @@ jobs:
       environment: release
       build-args: --filter=@figentra-oss/flow
       dry-run: ${{ inputs.dry_run == true }}
-      registry: https://npm.stackra.figentra.com/
+      registry: https://registry.figentra.com/
     secrets:
       app-id: ${{ secrets.STACKRA_BOT_APP_ID }}
       app-private-key: ${{ secrets.STACKRA_BOT_PRIVATE_KEY }}
