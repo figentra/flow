@@ -452,7 +452,10 @@ configured runner, or on `--box <ssh host>`. `<check>` is the configuration's
 `gate.check`, else `pnpm verify`, then `fflow gate ci` where Figentra Flow is installed. On the box, the
 poster posts the `fflow/gate` commit status and one PR comment as the gate App the configuration names. Its key reaches only
 the box, through the secrets port (for us, a dedicated Infisical project only the box identity reads). The poster posts only while that commit is still the branch tip, and never `success` unless the
-check exited 0. Nothing secret reaches the comment or the log. Exit codes: 0 green, 1 red, 2 refused, 4 not posted,
+check exited 0. Nothing secret reaches the comment or the log. The poster reads `FFLOW_GATE_APP_ID` and
+`FFLOW_GATE_PRIVATE_KEY`; while a store still holds the names from before 0.2.2 (`FIGENTRA_FLOW_GATE_*`), it reads
+those when the new ones are unset, and the OIDC mint asks Infisical for them after a 404 on the new names. Rename them
+in the store: the fallback goes with the other old names. Exit codes: 0 green, 1 red, 2 refused, 4 not posted,
 5 stale, 73 every box busy, 75 no healthy box.
 
 ### The github-actions runner's verdict

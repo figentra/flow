@@ -22,8 +22,8 @@
      before choosing. Worked example:
      - **Trade-off: the record lives on the task's branch**, not in a central store: no service to run, and
        `--workspace` reads every repository's records; the cost is reading branches while a task is open.
-     - **Research**: `tools/scripts/adr-reserve.mjs` (reservation by a PR whose loser conflicts), Vellum's task
-       markers (tag `legacy-2026-10-30`), the 0.2.3 gate (`checkStage`, `parseTasks`). -->
+     - **Research**: `tools/scripts/adr-reserve.mjs` (reservation by a PR whose loser conflicts), Flow's task
+       markers from before the rename (tag `legacy-2026-10-30`), the 0.2.3 gate (`checkStage`, `parseTasks`). -->
 
 - **Trade-off**: [the choice, the option not taken, and the cost of the one taken]
 - **Research**: [the code, ADRs, prior specs and outside work read before choosing, by path or link, and what each showed]

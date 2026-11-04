@@ -1,7 +1,7 @@
 # Figentra Flow: agent guide
 
-One pnpm workspace, one package: `packages/figentra-flow` (`fflow`, binaries `fflow` and `fflow`). Published publicly on npmjs as
-`fflow` from `.github/workflows/release.yml` (the owner's decision of 2026-10-31).
+One pnpm workspace, one package: `packages/figentra-flow` (`@figentra-oss/flow`, binary `fflow`; `figentra-flow` is its
+deprecated alias). Published from `.github/workflows/release.yml` (the owner's decision of 2026-10-31).
 
 | Path                                   | What                                                                                                                                                                                                                                                                                                                                                                                                             |
 | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

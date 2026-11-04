@@ -53,7 +53,7 @@ pnpm linear start STA-<n>
 ## 4. Build and trace
 
 - Tests tag what they prove: `// @covers sta-<n>:FR-003`. Done requires every FR covered by a test.
-- `figentra-flow gate ci` and `figentra-flow trace ci` run inside `pnpm validate`.
+- `fflow gate ci` and `fflow trace ci` run inside `pnpm validate`.
 
 ## 5. Commit, PR, review, merge
 

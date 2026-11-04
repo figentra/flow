@@ -14,7 +14,12 @@ import assert from "node:assert/strict";
 import { createVerify, generateKeyPairSync } from "node:crypto";
 
 import { appJwt, post, redact } from "../lib/gate-post.mjs";
-import { ENV_PREFIX, GATE_MARKER as MARKER, STATUS_CONTEXT as CONTEXT } from "../lib/product.mjs";
+import {
+  ENV_PREFIX,
+  GATE_MARKER as MARKER,
+  LEGACY_ENV_PREFIX,
+  STATUS_CONTEXT as CONTEXT,
+} from "../lib/product.mjs";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", {
   modulusLength: 2048,
@@ -146,6 +151,24 @@ test("post: nothing is posted when the branch moved, or when no token can be min
 
   const unset = await post({ job: JOB, exit: 0, env: {}, fetch: denied.fetch, now: NOW });
   assert.equal(unset.code, 4);
+});
+
+test("post: the App id and key are read under the old prefix while the new names are unset", async () => {
+  const legacy = {
+    [`${LEGACY_ENV_PREFIX}GATE_APP_ID`]: "4242",
+    [`${LEGACY_ENV_PREFIX}GATE_PRIVATE_KEY`]: privateKey,
+  };
+  const job = { ...JOB, legacyEnvPrefix: LEGACY_ENV_PREFIX };
+  const { calls, fetch } = github();
+  const result = await post({ job, exit: 0, env: legacy, fetch, now: NOW });
+  assert.equal(result.code, 0);
+  assert.equal(calls.find((c) => c.url.endsWith(`/statuses/${SHA}`))?.body.state, "success");
+  assertNoSecret(calls, result.lines);
+
+  // A job file written before the fallback names no old prefix, so it reads only the new names.
+  const old = github();
+  const unread = await post({ job: JOB, exit: 0, env: legacy, fetch: old.fetch, now: NOW });
+  assert.equal(unread.code, 4);
 });
 
 test("post: a branch with no open PR still gets its status", async () => {

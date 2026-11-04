@@ -24,7 +24,12 @@ import {
   ROLES,
   withToken,
 } from "../lib/app-token.mjs";
-import { APPROVE_WORKFLOW, ENV_PREFIX, OIDC_IDENTITY_VARIABLE } from "../lib/product.mjs";
+import {
+  APPROVE_WORKFLOW,
+  ENV_PREFIX,
+  LEGACY_ENV_PREFIX,
+  OIDC_IDENTITY_VARIABLE,
+} from "../lib/product.mjs";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", {
   modulusLength: 2048,
@@ -386,6 +391,31 @@ test("Infisical and GitHub failures carry the named messages, mint nothing, and 
     ),
     /^Error: app-token: app jwt: FFLOW_GATE_PRIVATE_KEY does not sign$/,
   );
+});
+
+test("mint: a 404 on the new secret names reads the pre-0.2.2 names, new name first", async () => {
+  const { fetch } = world();
+  /** @type {string[]} */
+  const asked = [];
+  /** @type {import("../lib/app-token.mjs").Fetch} */
+  const legacy = async (url, init) => {
+    const key = new URL(url).pathname.split("/api/v3/secrets/raw/")[1];
+    if (key) asked.push(key);
+    if (key?.startsWith(ENV_PREFIX))
+      return { ok: false, status: 404, json: async () => ({ message: "Not Found" }) };
+    if (key === `${LEGACY_ENV_PREFIX}GATE_APP_ID`)
+      return { ok: true, status: 200, json: async () => ({ secret: { secretValue: "4242" } }) };
+    return fetch(url, init);
+  };
+  const minted = await mint("approve", options({ fetch: legacy }));
+  assert.equal(minted.token, TOKEN);
+  assert.deepEqual(asked, [
+    `${ENV_PREFIX}GATE_APP_ID`,
+    `${LEGACY_ENV_PREFIX}GATE_APP_ID`,
+    `${ENV_PREFIX}GATE_PRIVATE_KEY`,
+    `${LEGACY_ENV_PREFIX}GATE_PRIVATE_KEY`,
+  ]);
+  await minted.revoke();
 });
 
 test("a 2xx answer without its value, or with no JSON, fails at its step and mints nothing", async () => {

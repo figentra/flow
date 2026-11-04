@@ -17,7 +17,13 @@ import { join } from "node:path";
 
 import { secretsPort } from "../adapters/secrets.mjs";
 import { boxCommand, checkCommand, gateRun, slugOf } from "../commands/gate-run.mjs";
-import { CONFIG_FILE, ENV_PREFIX, GATE_MARKER, STATUS_CONTEXT } from "../lib/product.mjs";
+import {
+  CONFIG_FILE,
+  ENV_PREFIX,
+  GATE_MARKER,
+  LEGACY_ENV_PREFIX,
+  STATUS_CONTEXT,
+} from "../lib/product.mjs";
 import { commit, repo, sh } from "./__fixtures__/repo.mjs";
 
 const GITHUB = "git@github.com:figentra/flow.git";
@@ -86,6 +92,7 @@ test("gate run: the job is a clean clone at the head, with the poster and the jo
     context: STATUS_CONTEXT,
     marker: GATE_MARKER,
     envPrefix: ENV_PREFIX,
+    legacyEnvPrefix: LEGACY_ENV_PREFIX,
   });
   assert.match(seen.label, /^fflow gate figentra\/flow@[0-9a-f]{12}$/);
   assert.equal(existsSync(seen.dir), false);

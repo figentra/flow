@@ -53,6 +53,7 @@ import {
   ENV_PREFIX,
   GATE_DIR,
   GATE_MARKER,
+  LEGACY_ENV_PREFIX,
   NAME,
   PACKAGE,
   STATUS_CONTEXT,
@@ -238,6 +239,7 @@ export async function gateRun(options) {
       context: STATUS_CONTEXT,
       marker: GATE_MARKER,
       envPrefix: ENV_PREFIX,
+      legacyEnvPrefix: LEGACY_ENV_PREFIX,
     };
     const writeJob = () =>
       writeFileSync(join(dir, GATE_DIR, "job.json"), `${JSON.stringify(job, null, 2)}\n`);
