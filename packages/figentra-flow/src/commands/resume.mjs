@@ -122,7 +122,7 @@ export function resume({ cwd, key, run: runCommand = runStep }) {
       ok: false,
       problem: `${k.toUpperCase()} has no record in ${at.path}; \`${NAME} next ${k.toUpperCase()}\` names its stage`,
     };
-  const step = nextStep(record, specFacts(at.path, k));
+  const step = nextStep(record, specFacts(at.path, k, undefined, record));
   const base = { ok: /** @type {const} */ (true), path: at.path, made: at.made, ...step };
   const halfDone = step.stage === record.stage && ["active", "failed"].includes(record.state);
   if (!halfDone || !RERUNNABLE.includes(step.stage) || !step.command.startsWith(`${NAME} `))

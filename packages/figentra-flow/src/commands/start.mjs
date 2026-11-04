@@ -6,11 +6,14 @@
  *   move the issue to In Progress through the tracker port, naming the branch. With a roster (AC-049), the role is
  *   `--role` or the spec's `**Role**` on the default branch; the issue gets its `role:<id>` label and the agent app as
  *   delegate, and a comment records the builder's role and session (`--session`, else the spec's `**Session**`).
+ *   The stage ends with Flow's record (STA-1945 FR-14): `start` done (`worktree` when the spec there is Tasked or
+ *   later, so `next` names the build), committed on the new branch and pushed.
  * Boundary: writes one branch and one worktree, or nothing: an existing folder or branch (local or remote) is refused.
+ *   The record's commit and push only warn when they fail.
  *   Works from the main checkout or from inside any of its worktrees. Runs `pnpm install` only with `--install` (the
  *   Mac runs only oxfmt and oxlint). A tracker failure is a warning after the worktree exists (ADR 0065 rule 7).
  * Runtime: node
- * Governing contract: Stackra ADR 0503 (decision 6); ADR 0502; STA-1729.
+ * Governing contract: Stackra ADR 0503 (decision 6); ADR 0502; STA-1729; STA-1945 (FR-13, FR-14, AC-18, P-019).
  * Secrets: the Linear token only from the environment the calling wrapper sets; never read or printed.
  */
 import { spawnSync } from "node:child_process";
@@ -21,8 +24,10 @@ import { trackerFor } from "../adapters/tracker/index.mjs";
 import { SPECS_DIR } from "./gate.mjs";
 import { defaultBranch, fetch, git, mainCheckout } from "../lib/git.mjs";
 import { NAME } from "../lib/product.mjs";
+import { endStage } from "../lib/record.mjs";
 import { pathProblems, roleOf } from "../lib/roles.mjs";
 import { parseTasks } from "../lib/spec-parse.mjs";
+import { atLeast, statusOf } from "../lib/spec-status.mjs";
 import { slugOf as repoSlug } from "./gate-run.mjs";
 import { loadTeam } from "../lib/team.mjs";
 
@@ -117,6 +122,11 @@ export async function start(options) {
   const added = git(root, ["worktree", "add", "-q", "-b", branch, path, `origin/${base}`]);
   if (!added.ok) return { ok: false, problem: `git worktree add failed: ${added.err}` };
   log(`${NAME} start: ${branch} at ${path} (from origin/${base})`);
+  const specFile = join(path, SPECS_DIR, name, "spec.md");
+  const tasked =
+    existsSync(specFile) && atLeast(statusOf(readFileSync(specFile, "utf8")), "tasked");
+  const unrecorded = endStage(path, key, tasked ? "worktree" : "start");
+  if (unrecorded) warn(`${NAME} start: warning: the record was not saved (${unrecorded})`);
   try {
     if (!issues) throw new Error(problem);
     await issues.inProgress(shown, branch);

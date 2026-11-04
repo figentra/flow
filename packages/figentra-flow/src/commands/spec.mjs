@@ -6,7 +6,9 @@
  *     (was `check-prerequisites.sh`): `FEATURE_DIR` and `AVAILABLE_DOCS`, or with `--paths-only` `REPO_ROOT`,
  *     `BRANCH`, `FEATURE_DIR`, `FEATURE_SPEC`, `IMPL_PLAN`, `TASKS`; `--template` adds `TEMPLATE_CONTENT`.
  *   - `setup-plan [--json]` (was `setup-plan.sh`): runs the plan gate first, then copies the plan template into the
- *     spec folder when it has no plan.md; prints `FEATURE_SPEC`, `IMPL_PLAN`, `FEATURE_DIR`, `BRANCH`.
+ *     spec folder when it has no plan.md; prints `FEATURE_SPEC`, `IMPL_PLAN`, `FEATURE_DIR`, `BRANCH`. The spec
+ *     stage ends there (STA-1945 FR-14): Flow's record says `spec` done, with the spec's approvals bound to its
+ *     content (A-3), committed on the task's branch and pushed.
  *   - `setup-tasks [--json]` (was `setup-tasks.sh`): `FEATURE_DIR`, `AVAILABLE_DOCS`, `TASKS_TEMPLATE`,
  *     `TASKS_TEMPLATE_CONTENT`.
  *   - `template <name>`: the resolved template's text.
@@ -18,10 +20,11 @@
  *     question is answered, and prints what was recorded and what remains open.
  *   The spec folder is `.flow/current.json` (written by `gate dir`), else the branch's issue key, else the one
  *   folder named for the branch's slug (FR-31).
- * Boundary: reads the repository; `setup-plan` writes only plan.md, and only when it is missing; `ask --async` and
+ * Boundary: reads the repository; `setup-plan` writes only plan.md, and only when it is missing, and the record (a
+ *   failed commit or push only warns; on the default branch nothing is recorded); `ask --async` and
  *   `resume` write only spec.md, and talk to the tracker through its adapter.
  * Runtime: node
- * Governing contract: ADR 0510; STA-1729 (F2); STA-2098.
+ * Governing contract: ADR 0510; STA-1729 (F2); STA-2098; STA-1945 (FR-14, P-019).
  * Secrets: none.
  */
 import {
@@ -32,7 +35,7 @@ import {
   readFileSync,
   writeFileSync,
 } from "node:fs";
-import { join, relative } from "node:path";
+import { basename, join, relative } from "node:path";
 
 import { schemeFor, trackerFor } from "../adapters/tracker/index.mjs";
 import { gate, specDir } from "./gate.mjs";
@@ -50,6 +53,7 @@ import {
 import { readCurrent, resolveTemplate } from "../lib/flow-dir.mjs";
 import { git } from "../lib/git.mjs";
 import { NAME } from "../lib/product.mjs";
+import { bindApprovals, docsIn, endStage } from "../lib/record.mjs";
 
 /** A refusal: printed to stderr, exit 1. */
 class SpecError extends Error {}
@@ -156,6 +160,11 @@ export function setupPlan(at, { planGate = gate, log = (s) => console.error(s) }
     copyFileSync(templateText(at.root, "plan-template").file, at.plan);
     log(`Copied plan template to ${at.plan}`);
   }
+  const key = schemeFor(at.root).folderKey(basename(at.featureDir));
+  const unrecorded =
+    key &&
+    endStage(at.root, key, "spec", { change: (r) => bindApprovals(r, docsIn(at.featureDir)) });
+  if (unrecorded) log(`${NAME} spec setup-plan: warning: the record was not saved (${unrecorded})`);
   return {
     FEATURE_SPEC: at.spec,
     IMPL_PLAN: at.plan,

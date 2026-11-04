@@ -44,7 +44,9 @@ import {
   LAND_LABEL,
   LAND_MARKER,
 } from "../lib/product.mjs";
-import { recordPath, updateRecord } from "../lib/record.mjs";
+import { readRecord, recordPath, updateRecord } from "../lib/record.mjs";
+import { allRecords } from "../lib/records.mjs";
+import { ledger } from "../commands/ledger.mjs";
 
 /** The gate App login the configuration names. */
 const GATE_APP = "figentra-gate[bot]";
@@ -208,6 +210,31 @@ test("land: a green PR squash-merges on its head, then Done, the record, the wor
       "POST /repos/figentra/flow/issues/7/comments",
     ],
   );
+});
+
+// @covers sta-1945:FR-14 sta-1945:AC-42 sta-1945:P-019
+test("land: the merge records land done with the PR in the worktree, committed there and never pushed", async (t) => {
+  const w = world();
+  t.after(w.r.dispose);
+  // Work left in the worktree keeps it (clean's rules), so the record can be read after the land.
+  writeFileSync(join(w.path, "notes.txt"), "x\n");
+  const result = await landOne({
+    root: w.r.root,
+    repo: "figentra/flow",
+    base: "main",
+    number: 7,
+    gateApp: GATE_APP,
+    deps: { api: w.api, done: async () => {}, ...quiet },
+  });
+  assert.equal(result.code, 0, JSON.stringify(result));
+  const record = readRecord(w.path, "sta-5");
+  assert.deepEqual([record?.stage, record?.state, record?.prs], ["land", "done", [7]]);
+  assert.equal(sh(w.path, "rev-parse", "HEAD^"), w.head);
+  assert.equal(sh(w.path, "show", "--name-only", "--format=", "HEAD"), ".flow/record/sta-5.json");
+  assert.equal(existsSync(join(w.path, "notes.txt")), true);
+  // AC-42: the ledger reads the landing from the record.
+  const rows = ledger(allRecords([w.r.root])).rows.map((r) => [r.what, r.key, r.prs]);
+  assert.deepEqual(rows, [["landed", "sta-5", [7]]]);
 });
 
 test("land: a reviewed tier without an AI review PASS, or with a FAIL, lands with a warning and records the verdict (ADR 0523 decision 6)", async (t) => {

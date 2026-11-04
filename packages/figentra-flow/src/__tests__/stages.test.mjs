@@ -96,3 +96,13 @@ test("stages: the build names the wave its markers leave; with every wave done t
     command: "fflow gate run",
   });
 });
+
+// @covers sta-1945:FR-30 sta-1945:AC-34 sta-1945:P-034
+test("nextStep: an approval whose documents changed sends any stage back to approval", () => {
+  for (const stage of /** @type {const} */ (["plan", "build", "review"]))
+    assert.deepEqual(nextStep(at(stage, "active"), { specDir: "d", reapprove: "planned" }), {
+      stage: "approval",
+      command: "fflow gate check d",
+      reapprove: "planned",
+    });
+});

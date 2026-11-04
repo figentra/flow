@@ -58,7 +58,9 @@ test("start: one branch and one worktree in .claude/worktrees, and the issue In 
     sh(path, "branch", "--show-current"),
     "figentra/sta-12-add-the-pay-connector-stripe",
   );
-  assert.equal(sh(path, "rev-parse", "HEAD"), sh(r.root, "rev-parse", "origin/main"));
+  // STA-1945 FR-14: the branch starts from origin/main with one commit, the record, pushed.
+  assert.equal(sh(path, "rev-parse", "HEAD^"), sh(r.root, "rev-parse", "origin/main"));
+  assert.equal(sh(path, "show", "--name-only", "--format=", "HEAD"), ".flow/record/sta-12.json");
   assert.deepEqual(moved, [["STA-12", "figentra/sta-12-add-the-pay-connector-stripe"]]);
 });
 
