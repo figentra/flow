@@ -53,6 +53,14 @@
       "types": "./dist/src/lib/spec-parse.d.mts",
       "default": "./src/lib/spec-parse.mjs"
     },
+    "./guard": {
+      "types": "./dist/src/guard/index.d.mts",
+      "default": "./src/guard/index.mjs"
+    },
+    "./guard/neutral": {
+      "types": "./dist/src/guard/neutral.d.mts",
+      "default": "./src/guard/neutral.mjs"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {

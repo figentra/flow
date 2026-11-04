@@ -11,7 +11,7 @@ const has =
   (/** @type {string} */ p) =>
     ws.some((w) => p.includes(w));
 
-/** @type {import("../../../../../src/guard/prompt-hints.mjs").PromptTable} */
+/** @type {import("@figentra-oss/flow/guard").PromptTable} */
 export const PROMPT = {
   title: "[STACKRA HINTS]",
   hints: [
@@ -69,7 +69,7 @@ export const PROMPT = {
   ],
 };
 
-/** @type {import("../../../../../src/guard/session-context.mjs").SessionTable} */
+/** @type {import("@figentra-oss/flow/guard").SessionTable} */
 export const SESSION = {
   title: "STACKRA SESSION",
   invariants: [

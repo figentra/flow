@@ -2482,7 +2482,7 @@ export function payloadOptions(cwd, payload) {
  * Core's decision as the engine's rules: one rule for its deny, one for its ask, deciding once per call. `extra`
  * overrides `decideBash`'s options (the differential test lifts `deadlineMs` and names the scratchpad, as core's did).
  * @param {{ deadlineMs?: number, scratchpad?: string, role?: string }} [extra]
- * @returns {import("../../../../../src/guard/bash.mjs").BashRule[]}
+ * @returns {import("@figentra-oss/flow/guard").BashRule[]}
  */
 export function bashRules(extra = {}) {
   /** @type {{ command: string, cwd: string, how: unknown, d: { decision: string, reason: string } } | undefined} */
@@ -2522,5 +2522,5 @@ export function bashRules(extra = {}) {
   ];
 }
 
-/** @type {import("../../../../../src/guard/bash.mjs").BashRule[]} */
+/** @type {import("@figentra-oss/flow/guard").BashRule[]} */
 export const BASH_RULES = bashRules();
