@@ -2,13 +2,14 @@
 # servers from flow.config.json. Only servers that need no credential and no repository script live here: remote
 # (http) servers authenticate with OAuth on first use. A server that needs a token is the repository's own (its
 # launcher injects the secret), and its `env` names the secret (`$NAME`), never a value.
+# An `npx -y` server is pinned to an exact version, never `@latest` (STA-2097): bump it like any dependency.
 mcpServers:
   heroui-react:
     command: npx
-    args: [-y, "@heroui/react-mcp@latest"]
+    args: [-y, "@heroui/react-mcp@1.1.4"]
   heroui-native:
     command: npx
-    args: [-y, "@heroui/native-mcp@latest"]
+    args: [-y, "@heroui/native-mcp@1.1.4"]
   uniwind:
     type: http
     url: https://docs.uniwind.dev/mcp
@@ -42,4 +43,4 @@ mcpServers:
     url: https://mcp.posthog.com/mcp?readonly=true
   playwright:
     command: npx
-    args: [-y, "@playwright/mcp@latest"]
+    args: [-y, "@playwright/mcp@0.0.84"]
