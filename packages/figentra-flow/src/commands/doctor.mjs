@@ -1,7 +1,8 @@
 /**
  * Figentra Flow file contract:
  * Purpose: `fflow doctor [--json] [--offline]`: whether this machine and repository can run Flow: Node, git,
- *   the configuration, the `.flow/` install, the ignored worktree folder, the roster and the GitHub credentials, each
+ *   the configuration, the `.flow/` install, the machine-only skills to install from source (STA-1945 FR-8), the
+ *   ignored worktree folder, the roster and the GitHub credentials, each
  *   reported as passed or failed with its fix. Two warnings never fail the run (STA-1871): more linked worktrees than
  *   `clean.budget`, and under 10 GB or 10 % free on the disk that holds the repository; nor does no `credentials`
  *   block in a repository with no `origin` yet, which is information (FR-31). `doctor` writes the checks as the grouped
@@ -9,17 +10,19 @@
  * Boundary: reads only, reusing the checks the other commands make (`loadConfig`, `installProblems`, `loadTeam`,
  *   `connect`); one GitHub call (`GET /repos/{repo}`) unless `--offline`. Exit 0 when no check fails, 1 otherwise.
  * Runtime: node
- * Governing contract: STA-1729 (FR-13, AC-055); STA-1846; STA-1945 FR-31 (AC-37).
+ * Governing contract: STA-1729 (FR-13, AC-055); STA-1846; STA-1945 (FR-8, AC-10; FR-31, AC-37).
  * Secrets: none here; the token stays inside `gh` or the wrapper.
  */
 import { statfsSync } from "node:fs";
 
 import { BUDGET, ignoresWorktrees } from "./clean.mjs";
 import { connect } from "./land.mjs";
-import { loadConfig } from "../lib/config.mjs";
+import { ConfigError, loadConfig } from "../lib/config.mjs";
+import { presetDir } from "../lib/flow-dir.mjs";
 import { git, worktrees } from "../lib/git.mjs";
 import { CONFIG_FILE, NAME, NODE_RANGE } from "../lib/product.mjs";
 import { installProblems } from "../lib/render.mjs";
+import { loadThirdParty, THIRD_PARTY } from "../lib/skills.mjs";
 import { loadTeam } from "../lib/team.mjs";
 
 /**
@@ -56,6 +59,36 @@ export function meets(version, range) {
     if ((have[i] ?? 0) !== want) return (have[i] ?? 0) > want;
   }
   return true;
+}
+
+/**
+ * One row per machine-only skill the preset lists (STA-1945 FR-8, D1), naming where on this machine to install it
+ * (the user's Claude skills folder) and the source to install it from; a `third-party.yml` that is not valid fails.
+ * @param {string} root
+ * @returns {Check[]}
+ */
+export function machineOnlyRows(root) {
+  let skills;
+  try {
+    skills = loadThirdParty(presetDir(root));
+  } catch (error) {
+    if (!(error instanceof ConfigError)) throw error;
+    return [
+      {
+        id: "third-party",
+        ok: false,
+        detail: error.message,
+        fix: `correct the preset's ${THIRD_PARTY}`,
+      },
+    ];
+  }
+  return skills
+    .filter((s) => s.machineOnly)
+    .map((s) => ({
+      id: `machine-only:${s.id}`,
+      ok: true,
+      detail: `install it on this machine into ~/.claude/skills/${s.id}/ from ${s.source} (${s.licence}); ${NAME} sync never installs it and no repository carries it`,
+    }));
 }
 
 /**
@@ -111,6 +144,7 @@ export function checks(cwd, { offline = false, node = process.versions.node, dis
       ? { id: "install", ok: false, detail: install.join("; "), fix: `run \`${NAME} sync\`` }
       : { id: "install", ok: true, detail: ".flow/ matches the installed Flow" },
   );
+  if (!loaded.errors.length) out.push(...machineOnlyRows(root));
 
   out.push(
     ignoresWorktrees(root)
@@ -221,7 +255,9 @@ export function rowsOf(all) {
     status: c.ok ? "ok" : c.info ? "info" : c.warn ? "warn" : "fail",
     detail: c.detail,
     ...(c.fix ? { fix: c.fix } : {}),
-    group: GROUP_OF[/** @type {keyof typeof GROUP_OF} */ (c.id)] ?? "Flow",
+    group: c.id.startsWith("machine-only:")
+      ? "Machine"
+      : (GROUP_OF[/** @type {keyof typeof GROUP_OF} */ (c.id)] ?? "Flow"),
     id: c.id,
     ok: c.ok,
   }));

@@ -241,8 +241,10 @@ setting you have not made refuses and names it.
   declares (`profiles: { <name>: { agents, skills, hooks } }`, `"*"` for all); `.flow/lock.json` records it. Without
   it, the preset's `default` applies. `neutral` has one profile, `default`; `stackra` has `framework` (the default),
   `platform`, `product`, `brand` and `starter`, which all select everything for now. `validate`, `check` and `sync`
-  refuse an unknown name, and `check` names a profile changed without a `sync`. Narrowing a profile does not yet
-  delete the agents and skills it drops: remove them by hand until a later release does.
+  refuse an unknown name, and `check` names a profile changed without a `sync`. A third-party skill from the preset's
+  `third-party.yml` is selected by its id in `skills`, and `sync` removes one a profile drops from
+  `.agents/skills/.vendor/`. Narrowing a profile does not yet delete the rendered agents and skills it drops: remove
+  them by hand until a later release does.
 
 - `specs` sets where specs live: `dir` (default `.agents/specs`) and `bugsDir` (default `.agents/specs/bugs`).
 
