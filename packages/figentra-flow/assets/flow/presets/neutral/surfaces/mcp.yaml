@@ -1,0 +1,8 @@
+# The neutral preset's MCP servers, rendered into `.mcp.yaml` with the repository's own `mcp` servers
+# from flow.config.json. Only Flow's own server: `fflow mcp` over stdio, run from the installed package with node, so
+# starting it installs nothing. Add any other server in flow.config.json's `mcp`; its `env` names a secret (`$NAME`),
+# never a value.
+mcpServers:
+  fflow:
+    command: node
+    args: ["node_modules/@figentra-oss/flow/bin/fflow.mjs", mcp]

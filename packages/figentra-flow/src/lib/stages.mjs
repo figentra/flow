@@ -2,10 +2,11 @@
  * Figentra Flow file contract:
  * Purpose: the lifecycle's stage table (FR-13): every task runs `start` → `spec` → `approval` → `plan` → `worktree`
  *   → `build` → `gate` → `review` → `land` → `release` → `ship`, and `nextStep` names, for any record, the one stage
- *   it is at and the command that moves it on (P-017).
+ *   it is at and the command that moves it on (P-017); an approved document edited since sends it back to the
+ *   approval stage (A-3, AC-34).
  * Boundary: pure: reads nothing, writes nothing.
  * Runtime: node
- * Governing contract: STA-1945 (FR-13, FR-24, AC-13, AC-26, P-017, P-029).
+ * Governing contract: STA-1945 (FR-13, FR-24, FR-30, AC-13, AC-26, AC-34, P-017, P-029, P-034).
  * Secrets: none.
  */
 import { NAME } from "./product.mjs";
@@ -57,13 +58,23 @@ const BY_STATUS = {
  * failed (an owner ask's command while waiting on one), else the stage after it; never earlier than the spec's
  * status proves. A shipped record names `status`. The build continues from tasks.md's markers (FR-24): with a wave
  * left it names that wave, so a dead session's restarts at its first unfinished task; with every wave done it is the
- * gate's turn.
+ * gate's turn. Whatever the stage, an approval whose documents changed since (`facts.reapprove`, the approval stop
+ * that `staleApprovals` names) sends the task back to the approval stage (AC-34).
  * @param {import("./record.mjs").FlowRecord} record
- * @param {{ specStatus?: string, specDir?: string, wave?: import("./waves.mjs").Wave, built?: boolean }} [facts]
- *   `wave` is `nextWave` of the spec's tasks; `built` says tasks.md has tasks and no wave is left
- * @returns {{ stage: Stage, command: string, wave?: import("./waves.mjs").Wave }}
+ * @param {{ specStatus?: string, specDir?: string, wave?: import("./waves.mjs").Wave, built?: boolean,
+ *   reapprove?: string }} [facts] `wave` is `nextWave` of the spec's tasks; `built` says tasks.md has tasks and no
+ *   wave is left
+ * @returns {{ stage: Stage, command: string, wave?: import("./waves.mjs").Wave, reapprove?: string }}
  */
 export function nextStep(record, facts = {}) {
+  const pr = record.prs.at(-1);
+  const commandOf = (/** @type {Stage} */ stage) =>
+    STAGE_COMMANDS[stage]
+      .replace("{KEY}", record.key.toUpperCase())
+      .replace("{DIR}", facts.specDir ?? "<spec folder>")
+      .replace(" {PR}", pr ? ` ${pr}` : "");
+  if (facts.reapprove)
+    return { stage: "approval", command: commandOf("approval"), reapprove: facts.reapprove };
   let at = STAGES.indexOf(record.stage);
   if (record.state === "done") {
     if (at === STAGES.length - 1) return { stage: "ship", command: `${NAME} status` };
@@ -76,11 +87,7 @@ export function nextStep(record, facts = {}) {
   const stage = STAGES[Math.max(at, floor)];
   if (!moved && record.state === "waiting" && record.asks.length)
     return { stage, command: record.asks[0].command };
-  const pr = record.prs.at(-1);
-  const command = STAGE_COMMANDS[stage]
-    .replace("{KEY}", record.key.toUpperCase())
-    .replace("{DIR}", facts.specDir ?? "<spec folder>")
-    .replace(" {PR}", pr ? ` ${pr}` : "");
+  const command = commandOf(stage);
   return stage === "build" && facts.wave
     ? { stage, command, wave: facts.wave }
     : { stage, command };

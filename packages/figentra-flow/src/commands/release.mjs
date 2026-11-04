@@ -1,24 +1,29 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `fflow release [--json] [--offline]`: what the next release would publish and what stands in its
- *   way: the pending changesets with each package's next version, the open version pull request, the Release
+ * Purpose: `fflow release [--json] [--offline] [--preflight]`: what the next release would publish and what stands in
+ *   its way: the pending changesets with each package's next version, the open version pull request, the Release
  *   workflow's last run on the default branch with its notices (a skipped publish says why there), and each package's
- *   published versions on its registry.
+ *   published versions on its registry. `--preflight` answers instead whether the owner may merge the version PR now
+ *   (STA-1945): one row per item, each failed one with its fix, exit 1 when any fails; offline, the network rows are
+ *   skipped, never passed.
  * Boundary: reads only. It never runs `changeset version`, publishes, tags, dispatches a workflow or merges: the
  *   repository's Release workflow does all of that in CI, where the registry's trusted-publisher exchange takes the
  *   job's GitHub ID token (no registry token exists), and an agent never dispatches it. GitHub is reached only through
  *   the configured credentials; the registry only by anonymous GET.
  * Runtime: node
- * Governing contract: Stackra ADR 0453, ADR 0503 decision 4; STA-1729 (FR-8, AC-013, AC-054); STA-1845.
+ * Governing contract: Stackra ADR 0453, ADR 0503 decision 4; STA-1729 (FR-8, AC-013, AC-054); STA-1845; STA-1945.
  * Secrets: none here; the token stays inside `gh` or the wrapper.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { connect } from "./land.mjs";
 import { say } from "../lib/cli.mjs";
-import { defaultBranch, git } from "../lib/git.mjs";
-import { NAME } from "../lib/product.mjs";
+import { gateLogins, loadConfig } from "../lib/config.mjs";
+import { defaultBranch, git, isClean } from "../lib/git.mjs";
+import { CONFIG_FILE, NAME, REGISTRY, STATUS_CONTEXT } from "../lib/product.mjs";
+import { requiredCheckState, requiredContexts } from "../lib/required-checks.mjs";
+import { parseYaml } from "../lib/yaml.mjs";
 
 /** The Release workflow, under `.github/workflows/`. */
 export const RELEASE_WORKFLOW = "release.yml";
@@ -78,7 +83,8 @@ export function scopeRegistries(root) {
  * Every `package.json` git tracks, by package name, with the registry it publishes to: its `publishConfig.registry`,
  * else its scope's `.npmrc` registry, else the Release workflow's `registry:` input.
  * @param {string} root
- * @returns {Map<string, { path: string, version: string, private: boolean, registry?: string }>}
+ * `declared` is its own `publishConfig.registry`.
+ * @returns {Map<string, { path: string, version: string, private: boolean, registry?: string, declared?: string }>}
  */
 export function packagesOf(root) {
   const files = git(root, ["ls-files", "--", "package.json", "**/package.json"])
@@ -96,6 +102,7 @@ export function packagesOf(root) {
           version: m.version ?? "0.0.0",
           private: m.private === true,
           registry: m.publishConfig?.registry ?? scopes[m.name.split("/")[0]] ?? fallback,
+          declared: m.publishConfig?.registry,
         });
     } catch {
       // a broken package.json is the build's finding, not the release report's
@@ -236,6 +243,361 @@ export async function published(registry, name, get = fetch) {
   }
 }
 
+/** The Quality Gate check runs the preflight requires on main and on the version PR, besides the ruleset's own. */
+export const RELEASE_CHECKS = ["verify", "test"];
+
+/** The login GitHub Actions posts check runs as. */
+const ACTIONS = "github-actions[bot]";
+
+/** @typedef {{ id: string, status: "pass" | "fail" | "skip", detail: string, fix?: string }} Row */
+
+/** @returns {Row} */
+const row = (
+  /** @type {string} */ id,
+  /** @type {Row["status"]} */ status,
+  /** @type {string} */ detail,
+  /** @type {string | undefined} */ fix = undefined,
+) => ({ id, status, detail, ...(fix && status === "fail" ? { fix } : {}) });
+
+const short = (/** @type {string | undefined} */ sha) => (sha ?? "?").slice(0, 12);
+
+const parsed = (/** @type {string | undefined} */ text) => {
+  try {
+    return JSON.parse(text ?? "");
+  } catch {
+    return undefined;
+  }
+};
+
+const slash = (/** @type {string | undefined} */ url) => url?.replace(/\/?$/, "/");
+
+/**
+ * Reads a file as of commit `sha`: from the local object store when it has the commit, else through GitHub's contents
+ * API. Undefined when neither has it.
+ * @param {string} root
+ * @param {import("../lib/github.mjs").Api | undefined} api
+ * @param {string | undefined} repo
+ * @param {string} sha
+ * @returns {(path: string) => string | undefined}
+ */
+export const reader = (root, api, repo, sha) => (path) => {
+  const local = git(root, ["show", `${sha}:${path}`]);
+  if (local.ok) return local.out;
+  const r = api && repo ? api("GET", `/repos/${repo}/contents/${path}?ref=${sha}`) : undefined;
+  const content = r?.ok ? r.json?.content : undefined;
+  return typeof content === "string" && content
+    ? Buffer.from(content, "base64").toString("utf8")
+    : undefined;
+};
+
+/**
+ * Where `pnpm-lock.yaml`'s importers disagree with the `package.json` files they stand for (a stale importer fails the
+ * Release job's frozen install), and each released package's folder that has no importer. Read without installing.
+ * @param {string} lock
+ * @param {(path: string) => string | undefined} read
+ * @param {string[]} released  the released packages' folders ("." for the root)
+ * @returns {string[]}
+ */
+export function lockfileProblems(lock, read, released) {
+  const section = /^importers:[ \t]*\n((?:[ \t].*\n|[ \t]*\n)*)/m.exec(`${lock}\n`)?.[1];
+  if (section === undefined) return ["pnpm-lock.yaml has no importers"];
+  /** @type {Record<string, any>} */
+  let importers;
+  try {
+    importers = parseYaml(`importers:\n${section}`)?.importers ?? {};
+  } catch (error) {
+    return [`pnpm-lock.yaml's importers not read: ${/** @type {Error} */ (error).message}`];
+  }
+  const problems = released
+    .filter((dir) => !(dir in importers))
+    .map((dir) => `pnpm-lock.yaml has no importer for ${dir}`);
+  for (const [dir, importer] of Object.entries(importers)) {
+    const file = dir === "." ? "package.json" : `${dir}/package.json`;
+    const manifest = parsed(read(file));
+    if (!manifest) {
+      problems.push(`pnpm-lock.yaml's importer ${dir} has no readable ${file}`);
+      continue;
+    }
+    for (const kind of ["dependencies", "devDependencies", "optionalDependencies"]) {
+      const locked = importer?.[kind] ?? {};
+      const wanted = manifest[kind] ?? {};
+      for (const name of new Set([...Object.keys(locked), ...Object.keys(wanted)]))
+        if (locked[name]?.specifier !== wanted[name])
+          problems.push(
+            `${dir} ${kind} ${name}: package.json has ${wanted[name] ?? "nothing"}, pnpm-lock.yaml ${locked[name]?.specifier ?? "nothing"}`,
+          );
+    }
+  }
+  return problems;
+}
+
+/**
+ * Whether the required checks are green on `sha`, each from its trusted source.
+ * @param {string} id
+ * @param {{ api: import("../lib/github.mjs").Api, repo: string, sha: string,
+ *           required: { context: string, integration_id?: number }[], trusted: Record<string, string | string[]>,
+ *           fix: string }} input
+ * @returns {Row}
+ */
+function checksRow(id, { api, repo, sha, required, trusted, fix }) {
+  const statuses = api("GET", `/repos/${repo}/commits/${sha}/statuses?per_page=100`).json;
+  const state = requiredCheckState({
+    required,
+    trusted,
+    statuses: Array.isArray(statuses) ? statuses : [],
+    checkRuns:
+      api("GET", `/repos/${repo}/commits/${sha}/check-runs?per_page=100`).json?.check_runs ?? [],
+  });
+  const bad = [
+    ...state.failed.map((c) => `${c} failed`),
+    ...state.pending.map((c) => `${c} is pending`),
+    ...state.untrusted,
+  ];
+  return bad.length
+    ? row(id, "fail", `at ${short(sha)}: ${bad.join("; ")}`, fix)
+    : row(id, "pass", `${state.passed.join(", ")} green at ${short(sha)}`);
+}
+
+/**
+ * The release preflight (STA-1945): whether the owner may merge the version PR now. Reads only: git, GitHub through
+ * `api` and the registry by anonymous GET; it never merges, dispatches or publishes.
+ * @param {{ root: string, branch: string, offline: boolean, api?: import("../lib/github.mjs").Api, repo?: string,
+ *           problem?: string, config?: any, get?: Parameters<typeof published>[2] }} input
+ *   `problem`: why GitHub cannot be read, when `api` is absent online.
+ * @returns {Promise<Row[]>}
+ */
+export async function preflight({ root, branch, offline, api, repo, problem, config = {}, get }) {
+  const changesets = changesetsOf(root);
+  const packages = packagesOf(root);
+  const next = nextVersions(changesets, packages);
+  const gh = !offline && api && repo ? { api, repo } : undefined;
+  /** A row GitHub must answer: skipped offline, failed when GitHub cannot be read. */
+  const remote = (/** @type {string} */ id, /** @type {(g: NonNullable<typeof gh>) => Row} */ f) =>
+    offline
+      ? row(id, "skip", "not checked offline")
+      : gh
+        ? f(gh)
+        : row(
+            id,
+            "fail",
+            `GitHub not read: ${problem}`,
+            `check the "credentials" block in ${CONFIG_FILE}`,
+          );
+  /** @type {Row[]} */
+  const rows = [];
+
+  const at = git(root, ["rev-parse", "--abbrev-ref", "HEAD"]).out;
+  rows.push(
+    at === branch
+      ? row("branch", "pass", `on ${branch}`)
+      : row("branch", "fail", `on ${at || "no branch"}, not ${branch}`, `git switch ${branch}`),
+    isClean(root)
+      ? row("clean", "pass", "no local changes")
+      : row(
+          "clean",
+          "fail",
+          "the checkout has uncommitted or untracked changes",
+          "commit, stash or remove them",
+        ),
+  );
+  const main = gh?.api("GET", `/repos/${gh.repo}/branches/${branch}`);
+  /** @type {string | undefined} */
+  const mainSha = main?.ok ? main.json?.commit?.sha : undefined;
+  const noMain = `${branch}'s head not read: ${main?.err}`;
+  rows.push(
+    remote("up-to-date", () => {
+      const head = git(root, ["rev-parse", "HEAD"]).out;
+      if (!mainSha) return row("up-to-date", "fail", noMain);
+      return head === mainSha
+        ? row("up-to-date", "pass", `at origin/${branch} (${short(mainSha)})`)
+        : row(
+            "up-to-date",
+            "fail",
+            `HEAD ${short(head)} is not origin/${branch} ${short(mainSha)}`,
+            `git pull --ff-only origin ${branch}`,
+          );
+    }),
+  );
+
+  const rules = gh?.api("GET", `/repos/${gh.repo}/rules/branches/${branch}`);
+  const contexts = requiredContexts(rules?.ok && Array.isArray(rules.json) ? rules.json : []);
+  const required = [
+    ...contexts,
+    ...RELEASE_CHECKS.filter((c) => !contexts.some((r) => r.context === c)).map((context) => ({
+      context,
+    })),
+  ];
+  const gate = gateLogins(config.apps);
+  const trusted = {
+    ...Object.fromEntries(RELEASE_CHECKS.map((c) => [c, ACTIONS])),
+    ...(gate ? { [STATUS_CONTEXT]: gate } : {}),
+    ...config.approve?.checks,
+  };
+  /** Checks on `sha` when the ruleset was read; a ruleset that cannot be read fails closed. */
+  const checks = (
+    /** @type {string} */ id,
+    /** @type {NonNullable<typeof gh>} */ g,
+    /** @type {string} */ sha,
+    /** @type {string} */ fix,
+  ) =>
+    rules?.ok
+      ? checksRow(id, { ...g, sha, required, trusted, fix })
+      : row(id, "fail", `${branch}'s ruleset not read: ${rules?.err}`);
+  rows.push(
+    remote("main-checks", (g) =>
+      mainSha
+        ? checks(
+            "main-checks",
+            g,
+            mainSha,
+            `wait for the Quality Gate on ${branch} (a failed one is fixed by a PR, then re-run)`,
+          )
+        : row("main-checks", "fail", noMain),
+    ),
+  );
+
+  const unknown = changesets.flatMap(({ file, bumps }) =>
+    Object.keys(bumps)
+      .filter((n) => !packages.has(n))
+      .map((n) => `${file} names ${n}, which this repository does not have`),
+  );
+  const plan = [...next].map(([n, { from, to }]) => `${n} ${from || "?"} -> ${to ?? "?"}`);
+  rows.push(
+    unknown.length
+      ? row("changesets", "fail", unknown.join("; "), "correct or remove those changesets")
+      : next.size
+        ? row("changesets", "pass", `${changesets.length} pending: ${plan.join(", ")}`)
+        : row(
+            "changesets",
+            "fail",
+            "no pending changesets: nothing to release",
+            "land a change with a changeset first",
+          ),
+  );
+
+  /** @type {any} */
+  let pr;
+  rows.push(
+    remote("version-pr", (g) => {
+      const owner = g.repo.split("/")[0];
+      const r = g.api(
+        "GET",
+        `/repos/${g.repo}/pulls?state=open&head=${owner}:changeset-release/${branch}`,
+      );
+      if (!r.ok) return row("version-pr", "fail", `not read: ${r.err}`);
+      pr = Array.isArray(r.json) ? r.json[0] : undefined;
+      if (!pr)
+        return row(
+          "version-pr",
+          "fail",
+          `no open version PR from changeset-release/${branch}`,
+          `the next Release run on ${branch} opens it`,
+        );
+      const problems = [];
+      if (pr.base?.ref !== branch) problems.push(`it targets ${pr.base?.ref}, not ${branch}`);
+      const cmp = mainSha
+        ? g.api("GET", `/repos/${g.repo}/compare/${mainSha}...${pr.head?.sha}`)
+        : undefined;
+      if (!cmp?.ok) problems.push(`its base not read: ${cmp ? cmp.err : noMain}`);
+      else if (cmp.json?.behind_by !== 0)
+        problems.push(
+          `it is ${cmp.json?.behind_by} commits behind ${branch} (merge base ${short(cmp.json?.merge_base_commit?.sha)})`,
+        );
+      const atHead = reader(root, g.api, g.repo, pr.head?.sha);
+      for (const [name, { to }] of next) {
+        const pkg = packages.get(name);
+        if (!pkg || !to) continue;
+        const has = parsed(atHead(pkg.path))?.version;
+        if (has !== to) problems.push(`it has ${name}@${has ?? "?"}, the changesets imply ${to}`);
+      }
+      return problems.length
+        ? row(
+            "version-pr",
+            "fail",
+            `#${pr.number}: ${problems.join("; ")}`,
+            `wait for the Release run on ${branch}'s head to update it (if that run failed, the owner re-runs it)`,
+          )
+        : row(
+            "version-pr",
+            "pass",
+            `#${pr.number} is on ${branch} ${short(mainSha)} and bumps ${plan.join(", ")}`,
+          );
+    }),
+    remote("version-pr-checks", (g) =>
+      pr?.head?.sha
+        ? checks("version-pr-checks", g, pr.head.sha, `wait for the Quality Gate on #${pr.number}`)
+        : row("version-pr-checks", "fail", "no version PR to check"),
+    ),
+  );
+
+  const expected = workflowRegistry(root) ?? REGISTRY;
+  const publishing = [...next].flatMap(([name, { to }]) => {
+    const pkg = packages.get(name);
+    return pkg && !pkg.private ? [{ name, to, pkg }] : [];
+  });
+  const wrong = publishing.filter(({ pkg }) => slash(pkg.declared) !== slash(expected));
+  rows.push(
+    wrong.length
+      ? row(
+          "publish-config",
+          "fail",
+          wrong
+            .map(
+              ({ name, pkg }) =>
+                `${name} publishes to ${pkg.declared ?? "no publishConfig.registry"}, not ${expected}`,
+            )
+            .join("; "),
+          `set publishConfig.registry to ${expected} in ${wrong.map(({ pkg }) => pkg.path).join(", ")}`,
+        )
+      : row("publish-config", "pass", `${publishing.length} packages publish to ${expected}`),
+  );
+  if (offline) rows.push(row("registry", "skip", "not checked offline"));
+  else {
+    const problems = [];
+    for (const { name, to, pkg } of publishing) {
+      if (!to || !pkg.registry) continue;
+      const got = await published(pkg.registry, name, get);
+      if (got.err) problems.push(got.err);
+      else if (got.versions.includes(to))
+        problems.push(`${name}@${to} is already on ${pkg.registry}`);
+    }
+    rows.push(
+      problems.length
+        ? row(
+            "registry",
+            "fail",
+            problems.join("; "),
+            "a version on the registry cannot be published again: add a changeset that bumps past it",
+          )
+        : row("registry", "pass", `${plan.join(", ") || "nothing"} not yet published`),
+    );
+  }
+
+  // At the version PR's head when there is one: that is what the Release job installs.
+  const where = pr?.head?.sha ? `the version PR's head ${short(pr.head.sha)}` : "HEAD";
+  const read = reader(root, gh?.api, gh?.repo, pr?.head?.sha ?? "HEAD");
+  const lock = read("pnpm-lock.yaml");
+  if (lock === undefined) rows.push(row("lockfile", "skip", `no pnpm-lock.yaml at ${where}`));
+  else {
+    const problems = lockfileProblems(
+      lock,
+      read,
+      publishing.map(({ pkg }) => dirname(pkg.path)),
+    );
+    rows.push(
+      problems.length
+        ? row(
+            "lockfile",
+            "fail",
+            `at ${where}: ${problems.join("; ")}`,
+            "regenerate pnpm-lock.yaml (`pnpm install --lockfile-only`) where the version PR is made",
+          )
+        : row("lockfile", "pass", `pnpm-lock.yaml's importers match package.json at ${where}`),
+    );
+  }
+  return rows;
+}
+
 /** @param {string[]} args */
 export async function run(args = []) {
   const json = args.includes("--json");
@@ -245,6 +607,7 @@ export async function run(args = []) {
     console.error(`${NAME} release: not inside a git repository`);
     return 2;
   }
+  if (args.includes("--preflight")) return reportPreflight(root, { json, offline });
 
   const changesets = changesetsOf(root);
   const packages = packagesOf(root);
@@ -337,4 +700,46 @@ export async function run(args = []) {
   if (!problems.length && next.size)
     console.error("  the Release workflow publishes once the owner merges the version PR");
   return problems.length ? 1 : 0;
+}
+
+/**
+ * `fflow release --preflight`: the rows, each failed one with its fix; exit 1 when any fails. A skipped row does not
+ * fail the run, but the run says the answer is incomplete.
+ * @param {string} root
+ * @param {{ json: boolean, offline: boolean }} options
+ */
+async function reportPreflight(root, { json, offline }) {
+  const gh = offline ? undefined : connect(root);
+  const rows = await preflight({
+    root,
+    branch: defaultBranch(root),
+    offline,
+    api: gh?.api,
+    repo: gh?.repo,
+    problem: gh?.problem,
+    config: loadConfig(root).config,
+  });
+  const failed = rows.filter((r) => r.status === "fail");
+  const skipped = rows.filter((r) => r.status === "skip");
+  if (json) {
+    const ok = !failed.length && !skipped.length;
+    console.log(JSON.stringify({ schema: `${NAME}.release-preflight/1`, ok, rows }, null, 2));
+    return failed.length ? 1 : 0;
+  }
+  for (const r of rows) {
+    say(
+      r.status === "pass" ? "approved" : r.status === "skip" ? "waiting" : "blocked",
+      `${r.id}: ${r.detail}`,
+    );
+    if (r.fix) console.error(`  fix: ${r.fix}`);
+  }
+  if (failed.length)
+    say("blocked", `${NAME} release --preflight: not yet: ${failed.map((r) => r.id).join(", ")}`);
+  else if (skipped.length)
+    say(
+      "waiting",
+      `${NAME} release --preflight: ${skipped.map((r) => r.id).join(", ")} not checked; run it online before merging`,
+    );
+  else say("approved", `${NAME} release --preflight: the owner may merge the version PR`);
+  return failed.length ? 1 : 0;
 }

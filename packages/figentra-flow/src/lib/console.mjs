@@ -278,6 +278,7 @@ class StatusCommand extends Command({
     `${NAME} status --metrics --since 30d`,
     `${NAME} status --by role --role reviewer`,
     `${NAME} status --web --port 4747`,
+    `${NAME} status --divergence --json`,
   ],
 }) {
   /** @type {string | undefined} */
@@ -291,6 +292,7 @@ class StatusCommand extends Command({
   role = undefined;
   web = false;
   port = 4747;
+  divergence = false;
 
   /** @param {CommandIo} io */
   async handle(io) {
@@ -321,6 +323,10 @@ Str()(StatusCommand.prototype, "role");
 Option({ description: "Serve the status page on 127.0.0.1" })(StatusCommand.prototype, "web");
 Option({ description: "The status page's port (with --web)" })(StatusCommand.prototype, "port");
 Int({ min: 0, max: 65535 })(StatusCommand.prototype, "port");
+Option({
+  description:
+    "Each repository's lock (Flow and preset versions), preset lag, overrides and drift from the lock",
+})(StatusCommand.prototype, "divergence");
 
 /**
  * Runs a `task` command, turning its refusal (a `TaskError`) into a usage error (exit 2) and a record that fails its
@@ -637,13 +643,15 @@ export const COMMANDS = [
   passthrough({
     name: "spec",
     description:
-      "The spec folder, its documents and the resolved templates, for the flow-* commands",
+      "The spec folder, its documents and the resolved templates, for the flow-* commands; async questions",
     group: GROUPS.specs,
     examples: [
       `${NAME} spec paths --json`,
       `${NAME} spec setup-plan --json`,
       `${NAME} spec setup-tasks --json`,
       `${NAME} spec template plan-template`,
+      `${NAME} spec ask STA-12 --async`,
+      `${NAME} spec resume STA-12`,
     ],
     repository: true,
   }),
@@ -747,7 +755,11 @@ export const COMMANDS = [
     name: "release",
     description: "What the next release would publish and what stands in its way",
     group: GROUPS.land,
-    examples: [`${NAME} release`, `${NAME} release --offline --json`],
+    examples: [
+      `${NAME} release`,
+      `${NAME} release --offline --json`,
+      `${NAME} release --preflight`,
+    ],
   }),
   LedgerCommand,
   passthrough({

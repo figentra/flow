@@ -1,26 +1,33 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `fflow land [<pr>] [--stack] [--dry-run] [--manual-ok]`, the lander's checklist as code: squash-merge a PR
- *   only when it is open, clean, based on the default branch, green on `fflow/gate` from the gate App on its exact
- *   head, conventionally titled, its spec's approvals are recorded, its recorded review confirmed no blocking finding
+ * Purpose: `fflow land [<pr>] [--stack] [--dry-run] [--manual-ok] [--wait <minutes>] [--no-wait]`, the lander's
+ *   checklist as code: squash-merge a PR only when it is open, clean, based on the default branch, green on
+ *   `fflow/gate` from the gate App on its exact head, conventionally titled, its spec's approvals are recorded, its recorded review confirmed no blocking finding
  *   (STA-1945 AC-40) and it changes no owner-only path (with the globs an `extend` of `owner-only` adds, STA-1945
  *   FR-5). The rules are `lib/land-rules.mjs`'s, re-exported here. The AI review is advisory (ADR 0523 decision 6):
  *   a missing, stale or FAIL verdict only warns, and the squash message records it (`AI-Review: PASS <sha>`,
- *   `FAIL <sha>` or `none`). Then set Linear Done, record the merge commit, remove the worktree through `clean`'s
- *   rules, delete the branch and comment. When the base's ruleset requires an approving review the head lacks, it
- *   dispatches the approval workflow and turns on auto-merge at the head instead, never an admin path; `land` on a
- *   merged PR runs the steps after the merge (STA-1856). `--stack` lands a stack bottom-up: after each squash it
+ *   `FAIL <sha>` or `none`). Then set Linear Done, record the merge commit, record `land` done with the PR in Flow's
+ *   record in the task's worktree (STA-1945 FR-14; committed there, never pushed, since the branch is landed), remove
+ *   the worktree through `clean`'s rules, delete the branch (a branch GitHub already deleted counts as deleted) and comment. When the base's own
+ *   approval workflow (read through the contents API) takes `LAND_LABEL`, `land` only asks main's land lane (the L2
+ *   design): it adds the label, or comments `/fflow land` when the label is already there, then waits up to `--wait`
+ *   minutes (default 10; `--no-wait` returns at once) for the merge or the lane's verdict on the head (`LAND_CONTEXT`,
+ *   from a gate login only). Otherwise, when the base's ruleset requires an approving review the head lacks, it
+ *   dispatches the approval workflow and turns on auto-merge at the head instead, never an admin path (deprecated, one
+ *   release); `land` on a merged PR runs the steps after the merge (STA-1856). `--stack` lands a stack bottom-up: after each squash it
  *   merges the default branch into the next PR, resolves each conflict that is only the landed parent's own change
  *   (`lib/stack.mjs`), retargets the PR, gates it and lands it; a re-run after a stop picks the stack up where it
  *   stopped (STA-1945 FR-16).
  * Boundary: every rule is read from GitHub's live state and the spec at the PR's head; nothing changes until all
- *   pass. The merge carries `sha`, so GitHub refuses it if the head moved. Waiting on required checks exits 4. Steps
- *   after the merge only warn (exit 3)
+ *   pass. The merge carries `sha`, so GitHub refuses it if the head moved. Waiting on required checks exits 4. On the
+ *   label path it never dispatches, turns on auto-merge or merges: a merge finishes (0, or 3 on warnings), a refusal
+ *   prints the lane's reasons (1), the owner's review or a timeout exits 4, a moved head 1. Steps after the merge only
+ *   warn (exit 3)
  *   and never undo it. A stack is brought up to date by a merge commit and a normal push, never a rewrite; any other
  *   conflict stops the stack with the merge aborted and the files named.
  * Runtime: node
  * Governing contract: Stackra ADR 0503 (decision 5), ADR 0502; ADR 0523 (decision 6); STA-1729 phase 3 (the leader's
- *   plan stop of 2026-10-31); STA-1856 (FR-1 to FR-3); STA-1945 (FR-16, AC-14).
+ *   plan stop of 2026-10-31); STA-1856 (FR-1 to FR-3); STA-1945 (FR-14, FR-16, AC-14, AC-42); the L2 design (PR E).
  * Secrets: none here. GitHub calls go through `gh` (or the repository's `bot:gh`), Linear through the environment's
  *   token, which is never read into output.
  */
@@ -32,7 +39,7 @@ import { clean } from "./clean.mjs";
 import { gateRun, slugOf } from "./gate-run.mjs";
 import { trackerFor } from "../adapters/tracker/index.mjs";
 import { github } from "../lib/github.mjs";
-import { readRecordAt, RecordError } from "../lib/record.mjs";
+import { endStage, readRecordAt, RecordError } from "../lib/record.mjs";
 import { aiReview } from "../lib/review.mjs";
 import { pathProblems, reviewerProblems, roleOf } from "../lib/roles.mjs";
 import { loadTeam } from "../lib/team.mjs";
@@ -52,6 +59,10 @@ import { ownerOnlyExtra } from "../lib/render.mjs";
 import { requiredCheckState, requiredContexts } from "../lib/required-checks.mjs";
 import {
   APPROVE_WORKFLOW,
+  LAND_COMMAND,
+  LAND_CONTEXT,
+  LAND_LABEL,
+  LAND_MARKER,
   LANDED_KEY,
   NAME,
   STACK_PARENT_KEY,
@@ -145,19 +156,43 @@ const refPath = (/** @type {string} */ branch) =>
 /**
  * @typedef {{ api: import("../lib/github.mjs").Api, done: (key: string, url: string) => Promise<void>,
  *             log: (s: string) => void, warn: (s: string) => void,
- *             scheme?: import("../adapters/tracker/index.mjs").KeyScheme }} LandDeps
+ *             scheme?: import("../adapters/tracker/index.mjs").KeyScheme,
+ *             sleep?: (ms: number) => Promise<void> }} LandDeps
  */
+
+/** How often the label path reads the PR and the lane's status while it waits. */
+const POLL_MS = 10_000;
+
+/**
+ * Whether the base's own approval workflow takes a land request by `LAND_LABEL` (the L2 design's event lane), read
+ * through the contents API rather than the checkout, which may be on another render.
+ * @param {import("../lib/github.mjs").Api} api
+ * @param {string} repo
+ * @param {string} base
+ */
+export function takesLabel(api, repo, base) {
+  const r = api(
+    "GET",
+    `/repos/${repo}/contents/.github/workflows/${APPROVE_WORKFLOW}?ref=${encodeURIComponent(base)}`,
+  );
+  return (
+    r.ok &&
+    typeof r.json?.content === "string" &&
+    Buffer.from(r.json.content, "base64").toString("utf8").includes(LAND_LABEL)
+  );
+}
 
 /**
  * Lands one PR.
  * @param {{ root: string, repo: string, base: string, number: number, dry?: boolean, manualOk?: boolean,
  *           gateApp?: string | string[], reviewer?: string | string[], owner?: string, refs?: string,
- *           deps: LandDeps }} options
+ *           wait?: number, deps: LandDeps }} options `wait`: on the label path, the minutes to wait for the
+ *   lane (0 returns once asked)
  *   `refs`: the issue the squash's `Refs:` names when the branch is not a key branch (`<prefix>/<key>-<slug>`); then a
  *   slug that only looks like a key (`adr/0008-sta-12-x`) neither names the squash, picks a spec nor moves to Done,
  *   and `refs` is not moved to Done either. A key branch keeps its key, its spec gate and its Done.
  * @returns {Promise<{ code: number, problems?: string[], merged?: string, head?: string,
- *   queued?: boolean, waiting?: string[] }>}
+ *   queued?: boolean, waiting?: string[], requested?: boolean, owner?: boolean }>}
  */
 export async function landOne({
   root,
@@ -170,6 +205,7 @@ export async function landOne({
   reviewer,
   owner,
   refs,
+  wait = 10,
   deps,
 }) {
   const { api, log } = deps;
@@ -305,12 +341,96 @@ export async function landOne({
   }
   if (problems.length) return { code: 1, problems };
   const queue = needsReview && !approved;
+  const label = takesLabel(api, repo, base);
   if (dry) {
     log(
-      `${NAME} land: would ${queue ? "request the approval and auto-merge" : "squash-merge"} #${number} (${branch} at ${head.slice(0, 12)}) into ${base}`,
+      `${NAME} land: would ${label ? `request the land with ${LAND_LABEL}, for main's land lane to approve and merge,` : queue ? "request the approval and auto-merge" : "squash-merge"} #${number} (${branch} at ${head.slice(0, 12)}) into ${base}`,
     );
     return { code: 0 };
   }
+  // The L2 design: main's land lane approves and merges; land only asks and waits.
+  if (label) {
+    const checks = requiredCheckState({
+      required: requiredContexts(rules.ok ? (rules.json ?? []) : []),
+      statuses,
+      checkRuns:
+        api("GET", `/repos/${repo}/commits/${head}/check-runs?per_page=100`).json?.check_runs ?? [],
+      trusted: { ...(gateApp ? { [STATUS_CONTEXT]: gateApp } : {}), ...config.approve?.checks },
+    });
+    const bad = [...checks.failed.map((c) => `${c} failed`), ...checks.untrusted];
+    if (bad.length) return { code: 1, problems: bad.map((b) => `required check: ${b}`) };
+    const logins = [gateApp ?? []].flat().filter(Boolean);
+    const verdictOf = (/** @type {any[]} */ list) =>
+      list.find((s) => s.context === LAND_CONTEXT && logins.includes(s.creator?.login ?? ""));
+    // A verdict already on the head is the last request's; only a newer one answers this request.
+    const before = verdictOf(statuses);
+    // Re-adding a label fires no event, so a labelled PR is asked again by one comment.
+    const asked = (pr.json.labels ?? []).some((/** @type {any} */ l) => l.name === LAND_LABEL)
+      ? api("POST", `/repos/${repo}/issues/${number}/comments`, { body: LAND_COMMAND })
+      : api("POST", `/repos/${repo}/issues/${number}/labels`, { labels: [LAND_LABEL] });
+    if (!asked.ok) return { code: 1, problems: [`the land request was refused: ${asked.err}`] };
+    log(`${NAME} land: #${number}: land requested at ${head.slice(0, 12)}`);
+    if (wait <= 0) return { code: 0, queued: true, requested: true };
+    const sleep =
+      deps.sleep ??
+      ((/** @type {number} */ ms) =>
+        new Promise((resolve) => {
+          setTimeout(resolve, ms);
+        }));
+    const polls = Math.ceil((wait * 60_000) / POLL_MS);
+    /** @type {Set<string>} */
+    const shown = new Set();
+    for (let i = 0; ; i++) {
+      const now = api("GET", `/repos/${repo}/pulls/${number}`).json ?? {};
+      if (now.merged && now.merge_commit_sha) {
+        log(`${NAME} land: #${number} merged as ${now.merge_commit_sha.slice(0, 12)}; finishing`);
+        return finish({
+          root,
+          repo,
+          number,
+          branch,
+          head,
+          key,
+          sha: now.merge_commit_sha,
+          scheme,
+          deps,
+        });
+      }
+      if (now.head?.sha !== head)
+        return {
+          code: 1,
+          problems: [`the head moved to ${now.head?.sha ?? "nothing"}; land again`],
+        };
+      const last = i >= polls;
+      const verdict = verdictOf(
+        list(api("GET", `/repos/${repo}/commits/${head}/statuses?per_page=100`)),
+      );
+      if (verdict && (verdict.id !== before?.id || last)) {
+        const text = String(verdict.description ?? "");
+        if (verdict.state === "failure")
+          return { code: 1, problems: landReasons(api, repo, number, logins, text) };
+        if (verdict.state === "pending" && text.startsWith("owner:")) {
+          log(`${NAME} land: #${number}: the owner reviews it (${text})`);
+          return { code: 4, queued: true, requested: true, owner: true };
+        }
+        if (!shown.has(text)) {
+          shown.add(text);
+          log(`${NAME} land: #${number}: ${text}`);
+        }
+      }
+      if (last) {
+        log(
+          `${NAME} land: #${number}: still queued after ${wait} min; \`${NAME} land ${number}\` again finishes it`,
+        );
+        return { code: 4, queued: true, requested: true };
+      }
+      await sleep(POLL_MS);
+    }
+  }
+  if (queue)
+    deps.warn(
+      `${NAME} land: warning: ${base}'s ${APPROVE_WORKFLOW} takes no ${LAND_LABEL} request yet, so land dispatches it (deprecated: \`${NAME} sync\` with secrets.oidc renders the land lane)`,
+    );
 
   const commits = api("GET", `/repos/${repo}/pulls/${number}/commits?per_page=100`).json ?? [];
   // STA-1856 FR-2: a required review comes from the approval workflow; auto-merge waits for it and every check.
@@ -373,8 +493,27 @@ export async function landOne({
 }
 
 /**
- * The steps after a merge: tracker Done, the merge commit recorded, the worktree removed, the branch deleted and a
- * comment. Each only warns (exit 3); none undoes the merge.
+ * The reasons the land lane's comment lists (its `- ` lines), or the status's description when there is no comment.
+ * @param {import("../lib/github.mjs").Api} api
+ * @param {string} repo
+ * @param {number} number
+ * @param {string[]} logins the gate App's logins
+ * @param {string} description
+ */
+function landReasons(api, repo, number, logins, description) {
+  const body = list(api("GET", `/repos/${repo}/issues/${number}/comments?per_page=100`))
+    .filter((c) => logins.includes(c.user?.login) && String(c.body ?? "").startsWith(LAND_MARKER))
+    .at(-1)?.body;
+  const reasons = String(body ?? "")
+    .split("\n")
+    .filter((l) => l.startsWith("- "))
+    .map((l) => l.slice(2));
+  return reasons.length ? reasons : [description];
+}
+
+/**
+ * The steps after a merge: tracker Done, the merge commit recorded, `land` done in Flow's record, the worktree
+ * removed, the branch deleted and a comment. Each only warns (exit 3); none undoes the merge.
  * @param {{ root: string, repo: string, number: number, branch: string, head: string, key: string | undefined,
  *           sha: string, scheme: import("../adapters/tracker/index.mjs").KeyScheme, manualOk?: boolean,
  *           deps: LandDeps }} options
@@ -415,6 +554,15 @@ async function finish({
     );
   await step("fetch", () => fetch(root).ok);
   const tree = worktrees(root).find((t) => t.branch === branch);
+  // FR-14: committed in the worktree only; a push would move the branch off the landed head the delete checks.
+  if (tree && key)
+    await step("record the land", () => {
+      const problem = endStage(tree.path, key, "land", {
+        change: (r) => ({ ...r, prs: r.prs.includes(number) ? r.prs : [...r.prs, number] }),
+        push: false,
+      });
+      if (problem) throw new Error(problem);
+    });
   if (tree)
     await step("remove the worktree", async () => {
       const r = await clean({
@@ -425,12 +573,17 @@ async function finish({
       for (const k of r.kept)
         log(`${NAME} land: kept ${k.path}: ${k.reason} (${NAME} clean takes it later)`);
     });
-  // Only the branch as it was landed: a push after the merge is someone's work.
+  // Only the branch as it was landed: a push after the merge is someone's work. A branch GitHub's auto-delete already
+  // removed (404) is deleted.
+  const gone = (/** @type {{ ok: boolean, err: string }} */ r) => !r.ok && /\b404\b/.test(r.err);
   await step("delete the branch", () => {
-    const now = api("GET", `/repos/${repo}/git/ref/heads/${refPath(branch)}`).json?.object?.sha;
+    const ref = api("GET", `/repos/${repo}/git/ref/heads/${refPath(branch)}`);
+    if (gone(ref)) return true;
+    const now = ref.json?.object?.sha;
     if (now !== head)
       throw new Error(`${branch} is at ${now ?? "nothing"}, not the landed ${head}; kept`);
-    return api("DELETE", `/repos/${repo}/git/refs/heads/${refPath(branch)}`).ok;
+    const deleted = api("DELETE", `/repos/${repo}/git/refs/heads/${refPath(branch)}`);
+    return deleted.ok || gone(deleted);
   });
   await step(
     "comment",
@@ -541,8 +694,9 @@ async function bringUp({ root, repo, base, pr, parent, gateApp, dry, deps }) {
  * (`bringUp`), then landed in turn. Stops at the first that cannot go, naming it; run again, it resumes there. With
  * `dry`, prints the plan and checks only the bottom PR's rules, since the others change on the way.
  * @param {{ root: string, repo: string, base: string, number: number, dry?: boolean, manualOk?: boolean,
- *           gateApp?: string | string[], reviewer?: string | string[], owner?: string,
- *           deps: LandDeps & { gate: (cwd: string) => Promise<number> } }} options
+ *           gateApp?: string | string[], reviewer?: string | string[], owner?: string, wait?: number,
+ *           deps: LandDeps & { gate: (cwd: string) => Promise<number> } }} options `wait`: as `landOne`'s, for each
+ *   PR, so the stack goes on after each merge
  * @returns {Promise<{ code: number, problems?: string[], waiting?: string[] }>}
  */
 export async function landStack({
@@ -555,6 +709,7 @@ export async function landStack({
   gateApp,
   reviewer,
   owner,
+  wait,
   deps,
 }) {
   const { log } = deps;
@@ -593,6 +748,7 @@ export async function landStack({
       gateApp,
       reviewer,
       owner,
+      wait,
       deps,
     });
     if (result.code === 1 || result.code === 2)
@@ -614,7 +770,7 @@ export async function landStack({
   return { code: 0 };
 }
 
-/** `fflow land [<pr>] [--stack] [--dry-run] [--manual-ok]`. */
+/** `fflow land [<pr>] [--stack] [--dry-run] [--manual-ok] [--wait <minutes>] [--no-wait]`. */
 export async function run(/** @type {string[]} */ args) {
   const cwd = process.cwd();
   const root = mainCheckout(cwd);
@@ -627,7 +783,16 @@ export async function run(/** @type {string[]} */ args) {
     console.error(`${NAME} land: ${refusal}`);
     return 2;
   }
-  let number = Number.parseInt(args.find((a) => /^#?\d+$/.test(a))?.replace("#", "") ?? "", 10);
+  const at = args.indexOf("--wait");
+  const wait = args.includes("--no-wait") ? 0 : at >= 0 ? Number(args[at + 1]) : 10;
+  if (!Number.isFinite(wait) || wait < 0) {
+    console.error(`${NAME} land: --wait takes the minutes to wait, e.g. --wait 10`);
+    return 2;
+  }
+  let number = Number.parseInt(
+    args.find((a, i) => /^#?\d+$/.test(a) && (at < 0 || i !== at + 1))?.replace("#", "") ?? "",
+    10,
+  );
   if (Number.isNaN(number)) {
     const branch = git(cwd, ["branch", "--show-current"]).out;
     number = (api(
@@ -660,6 +825,7 @@ export async function run(/** @type {string[]} */ args) {
     // Not apps.gate.slug yet: its key is reachable outside main's OIDC job until ADR 0523's migration (L2 PR B/D/F).
     reviewer: apps.review?.slug,
     owner: apps.owner,
+    wait,
     deps,
   };
   const dry = args.includes("--dry-run");
@@ -667,7 +833,16 @@ export async function run(/** @type {string[]} */ args) {
     ? await landStack({ ...options, dry })
     : await landOne({ ...options, dry });
   for (const p of result.problems ?? []) console.error(`${NAME} land: ${p}`);
-  if ("waiting" in result && result.waiting)
+  if ("owner" in result && result.owner)
+    say(
+      "blocked",
+      `${NAME} land: the owner reviews it; once approved, \`${NAME} land ${number}\` again`,
+    );
+  else if ("requested" in result && result.requested && result.code === 4)
+    say("blocked", `${NAME} land: queued; \`${NAME} land ${number}\` again finishes it`);
+  else if ("requested" in result && result.requested)
+    say("approved", `${NAME} land: requested; main's land lane approves and merges it`);
+  else if ("waiting" in result && result.waiting)
     say("blocked", `${NAME} land: required checks still running; land again once green`);
   else if ("queued" in result && result.queued)
     say(

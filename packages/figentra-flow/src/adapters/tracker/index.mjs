@@ -22,9 +22,13 @@ import { linearTracker } from "./linear.mjs";
  *             isBranch: (branch: string) => boolean, branchShape: string }} KeyScheme
  * @typedef {{ title: (key: string) => Promise<string | undefined>, state: (key: string) => Promise<string | undefined>,
  *             inProgress: (key: string, branch: string) => Promise<void>, done: (key: string, url: string) => Promise<void>,
- *             comment: (key: string, body: string) => Promise<void>,
+ *             comment: (key: string, body: string) => Promise<string | void>,
+ *             comments?: (key: string) => Promise<TrackerComment[]>,
  *             role?: (key: string, label: string) => Promise<void>,
  *             missingLabels?: (labels: string[]) => Promise<string[]> }} Tracker
+ * `comment` resolves to the comment's link when the tracker gives one.
+ * @typedef {{ body: string, url?: string, createdAt: string }} TrackerComment an issue comment, `comments` lists them
+ *   oldest first
  */
 
 /** A configuration value as a literal inside a regular expression. */
