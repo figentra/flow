@@ -44,7 +44,7 @@ test("renderMcp: the preset's servers plus the config's; a configured server rep
   const { mcpServers } = parseYaml(out.get(MCP_FILE) ?? "");
   assert.deepEqual(mcpServers.playwright, {
     command: "npx",
-    args: ["-y", "@playwright/mcp@latest"],
+    args: ["-y", "@playwright/mcp@0.0.84"],
   });
   assert.equal(mcpServers.posthog.url, "https://mcp.posthog.com/mcp?readonly=true");
   assert.deepEqual(mcpServers.context7, {
@@ -119,4 +119,12 @@ test("renderMcp: a preset without surfaces/mcp.yaml renders nothing", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "flow-mcp-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   assert.equal(renderMcp(ctx({ mcp: { x: { command: "x" } } }, dir)).size, 0);
+});
+
+test("the stackra preset pins every npx server to an exact version, never @latest (STA-2097)", () => {
+  const { mcpServers } = parseYaml(renderMcp(ctx({})).get(MCP_FILE) ?? "");
+  for (const [name, server] of Object.entries(mcpServers))
+    for (const arg of server.args ?? [])
+      if (typeof arg === "string" && arg.startsWith("@"))
+        assert.match(arg, /^@[\w.-]+\/[\w.-]+@\d+\.\d+\.\d+$/, name);
 });
