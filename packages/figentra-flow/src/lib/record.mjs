@@ -5,14 +5,15 @@
  *   history. `readRecord` and `updateRecord` read and write it against `RECORD_SCHEMA` (shipped as
  *   `schema/record.schema.json`), `updateRecord` dating each change of stage or state in `history` (FR-21);
  *   `readRecordAt` reads it from a branch with no checkout; `commitRecord` commits it (with the tracked changes for a
- *   session's stop) and pushes the branch through the credentials port (FR-19).
+ *   session's stop) and pushes the branch through the credentials port (FR-19); `endStage` is what each stage command
+ *   calls when its stage ends (T015): the stage and state written, then the record committed and pushed.
  * Boundary: writes only the record file, one commit on the task's branch and a push of that branch. Never commits on
  *   or pushes to the default branch, never rebases or force-pushes: a rejected push is merged once (never into a
  *   worktree holding uncommitted work) and retried, then reported as `pushed: false`. Never stages an untracked file
  *   but the record, or a file named like a secret; the hooks always run (FR-18), `LEFTHOOK` and `LEFTHOOK_EXCLUDE`
  *   stripped from their environment.
  * Runtime: node
- * Governing contract: STA-1945 (FR-14, FR-19, AC-13, AC-18, P-019).
+ * Governing contract: STA-1945 (FR-13, FR-14, FR-19, AC-13, AC-18, AC-42, P-019).
  * Secrets: none; network git goes through `remote` and the configured credentials.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -366,6 +367,41 @@ export function commitRecord(root, key, { message, wip = false, push: send = tru
   if (!send) return { sha: head(), pushed: false, ...left };
   const problem = push(root, branch);
   return { sha: head(), pushed: !problem, ...(problem ? { problem } : {}), ...left };
+}
+
+/**
+ * Ends `stage` in the record of `key` (FR-14): `change` applied, the stage and state set, then the record committed on
+ * the task's branch and pushed (`commit: false` writes only, `push: false` commits only). Off a task's branch (the
+ * default branch, a detached HEAD) nothing is written: the record lives on the task's branch. A record that cannot be
+ * read or written, and a commit or push that failed, come back as the problem for the caller to warn: a stage's own
+ * outcome never hangs on its record.
+ * @param {string} root the task's checkout
+ * @param {string} key
+ * @param {Stage} stage
+ * @param {{ state?: FlowRecord["state"], change?: (r: FlowRecord) => FlowRecord, commit?: boolean,
+ *           push?: boolean }} [options]
+ * @returns {string | undefined} the problem
+ */
+export function endStage(
+  root,
+  key,
+  stage,
+  { state = "done", change = (r) => r, commit = true, push = true } = {},
+) {
+  const branch = git(root, ["branch", "--show-current"]).out;
+  if (!branch || branch === defaultBranch(root)) return undefined;
+  try {
+    updateRecord(root, key, (r) => ({ ...change(r), stage, state }));
+  } catch (error) {
+    if (!(error instanceof RecordError)) throw error;
+    return error.message;
+  }
+  if (!commit) return undefined;
+  const shown = key.toUpperCase();
+  return commitRecord(root, key, {
+    message: `chore(flow): ${shown} ${stage} ${state}\n\nRefs: ${shown}`,
+    push,
+  }).problem;
 }
 
 /**
