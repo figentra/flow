@@ -84,7 +84,7 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow task wave <key> [--json]`                                      | queues the build's next wave (`[ ]` → `[~]`) and prints it; a wave with a failed or unfinished task is printed again                                                                              |
 | `fflow session stop [--save-only]`                                    | the SessionEnd hook: commits and pushes the tracked work with the record; `--save-only`, the Stop hook, writes the record                                                                        |
 | `fflow init --runner github-actions [--force]`                        | writes the gate workflow for the `github-actions` runner, and a starter config when there is none                                                                                                |
-| `fflow readme [--check]`                                              | renders `README.md` from `.flow/readme.yml` through the preset's `readme-template` (stackra); `--check` exits 1 when it differs                                                                  |
+| `fflow readme [--check]`                                              | renders `README.md` from `.flow/readme.yml` through the preset's `readme-template`; `--check` exits 1 when it differs                                                                          |
 
 A repository keeps one-line aliases: `"spec:gate": "fflow gate"`, `"spec:trace": "fflow trace"`,
 `"spec:sync": "fflow sync"`, and `"spec:linear": "infisical run --env=dev --path=/agents --silent -- fflow linear"`.
@@ -98,7 +98,9 @@ Figentra repository has the same layout and its own content. The sections are: b
 Status, Quick start, Architecture at a glance, Development, Docs and playground, Release and changelog, Security,
 Licence, and the footer. `fflow readme` writes it, `readme --check` fails when it was edited by hand, and
 `sync` renders it too and records it in `.flow/lock.json`. A repository can override the layout with
-`.flow/overrides/readme-template.md`.
+`.flow/overrides/readme-template.md`. The `neutral` preset ships a layout that names no brand: the same sections
+without the footer, a generic Development section (the data's `development`, or "install, then run CI's checks")
+with the `fflow` steps, a Contributing section, Docs, and a licence line with no holder.
 
 ```yaml
 name: Figentra Pay # required: the product's name
@@ -698,8 +700,10 @@ spec, the record of every question: a `- Q: <question> → A: <answer>` bullet u
 the answer. It writes only `.agents/specs/<key>-<slug>/spec.md`, by its real path (a symbolic link is refused).
 Without `answer`, it asks the user with an MCP elicitation form, and only when the client declared `elicitation` when
 it connected; otherwise the answer must come in the arguments. No tool merges, lands, starts or cleans; each carries
-MCP's `readOnlyHint`. Register it in your MCP client as the command `fflow mcp` (for example `pnpm exec fflow mcp` in
-a repository's MCP configuration); Figentra Flow never writes that configuration itself.
+MCP's `readOnlyHint`. Register it in your MCP client as the command `fflow mcp` (for example
+`node node_modules/@figentra-oss/flow/bin/fflow.mjs mcp` in a repository's MCP configuration). The neutral preset's
+`surfaces/mcp.yaml` lists only this server, and its `surfaces/agents-md/agents.md` gives `AGENTS.md` and `CLAUDE.md`
+brand-free shared blocks.
 
 ## Release trains
 

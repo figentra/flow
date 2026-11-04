@@ -2,8 +2,8 @@
  * Figentra Flow file contract:
  * Purpose: hold AGENTS.md and CLAUDE.md to STA-1945 FR-7: the stackra preset's shared blocks filled with the
  *   repository's facts (`.flow/readme.yml`, the configuration's preset, spec folder, tracker and `agentsMd.facts`);
- *   a fact the repository lacks drops its block; CLAUDE.md imports AGENTS.md; a preset without the surface renders
- *   nothing.
+ *   a fact the repository lacks drops its block; CLAUDE.md imports AGENTS.md; the neutral preset's blocks name no
+ *   brand; a preset without the surface renders nothing.
  * Boundary: temporary folders; no process, no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
@@ -79,6 +79,19 @@ test("renderAgentsMd: agentsMd.facts that is not one string is a ConfigError", (
   );
 });
 
+test("renderAgentsMd: the neutral preset's blocks name no brand and no third-party tool", (t) => {
+  const root = temp(t);
+  const config = { tracker: { kind: "github-issues", branchPrefix: "work" } };
+  const out = renderAgentsMd({ root, config, presetDir: NEUTRAL });
+  assert.deepEqual([...out.keys()], ["AGENTS.md", "CLAUDE.md"]);
+  const text = out.get("AGENTS.md") ?? "";
+  assert.match(text, new RegExp(`^# ${basename(root)}\n\n## How work flows\n`));
+  assert.match(text, /the neutral preset\)\. Specs live in `\.agents\/specs\/`\./);
+  assert.match(text, /a github-issues key; branches are\n {2}`work\/<key>-<slug>`\./);
+  assert.match(text, /^## Rules$/m);
+  assert.doesNotMatch(text, /figentra|stackra|STA-|linear|mise|\{\{|\}\}|\n{3}/i);
+});
+
 test("renderAgentsMd: a preset without surfaces/agents-md renders nothing", (t) => {
-  assert.equal(renderAgentsMd({ root: temp(t), config: {}, presetDir: NEUTRAL }).size, 0);
+  assert.equal(renderAgentsMd({ root: temp(t), config: {}, presetDir: temp(t) }).size, 0);
 });
