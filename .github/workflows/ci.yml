@@ -2,7 +2,8 @@
 # Purpose: the Quality Gate: install, format check, lint, typecheck and build on every PR and push to main (`verify`,
 #          the required check), and the package's tests (`test`, owner default O4, 2026-11-04: Flow's tests run in
 #          its own CI). On a pull request typecheck and build run for the members the change affects, against the base
-#          commit; the tests always run in full.
+#          commit; the tests always run in full. `e2e` (STA-1945 T121, not required) packs the package and installs the
+#          tarball from the public registries into a scratch repository, as an outsider would, then runs `fflow`.
 # Owner: release-operations
 # Secrets: none; the @stackra scope's registry is read-only and public for this job.
 name: Quality Gate
@@ -51,3 +52,18 @@ jobs:
           install_args: node pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @figentra-oss/flow test
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+        with:
+          install_args: node pnpm
+      # No install: the test packs the package and installs the tarball from the registries itself.
+      - run: pnpm --filter @figentra-oss/flow test:e2e

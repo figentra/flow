@@ -10,15 +10,19 @@
  *   range the installed Flow is outside (STA-2097). It installs the preset's third-party skills the profile selects
  *   (FR-6) into `.agents/skills/.vendor/`, pinned in the lock, and refuses one it may not or
  *   cannot install (FR-8). It applies the repository's overrides and names each one it skips: an invalid one, or one
- *   that breaks a mandatory policy (FR-4, FR-5).
- * Boundary: writes only the rendered files, `.agents/skills/.vendor/`, `.flow/lock.json`, and what the repository's
- *   own `agents:sync` writes; fetches third-party skills from their public sources.
+ *   that breaks a mandatory policy (FR-4, FR-5). It renders the preset's surfaces (`.claude/settings.json`, the
+ *   OpenCode projection, `.mcp.yaml`, `AGENTS.md` and `CLAUDE.md`, `lefthook.yml`), removes each owned file it no
+ *   longer renders that nobody edited, never touches `.agents/specs/`, and, with `lefthook.yml` rendered, pins
+ *   `mise.toml`'s oxfmt and oxlint at the catalog's versions (FR-7).
+ * Boundary: writes only the rendered files, `mise.toml`'s two pins, `.agents/skills/.vendor/`, `.flow/lock.json`,
+ *   and what the repository's own `agents:sync` writes; fetches third-party skills from their public sources.
  * Runtime: node
- * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-1, FR-2, FR-4, FR-5, FR-6, FR-8, P-002); STA-2097.
+ * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-1, FR-2, FR-4, FR-5, FR-6, FR-7, FR-8, AC-8, P-002);
+ *   STA-2097.
  * Secrets: none.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -27,6 +31,7 @@ import { ConfigError } from "../lib/config.mjs";
 import { presetSource } from "../lib/flow-dir.mjs";
 import { LockError, NewerLockError, readLock } from "../lib/lock.mjs";
 import { incompatibility } from "../lib/preset-package.mjs";
+import { catalogPins, LEFTHOOK_FILE, pinTools } from "../lib/render-lefthook.mjs";
 import {
   appliedOverrides,
   legacyConflict,
@@ -104,8 +109,27 @@ export function sync(root, { direct = false, log = console.log, adopt = false, f
   const files = render(root, { direct, overrides });
   const removed = writeRendered(root, files, overrides);
   for (const p of removed) log(`${NAME} sync: removed ${p}`);
+  if (files.has(LEFTHOOK_FILE) && pinMise(root))
+    log(`${NAME} sync: pinned npm:oxfmt and npm:oxlint in mise.toml at the catalog's versions`);
   log(`${NAME} sync: rendered ${files.size} file(s); .flow/lock.json written`);
   return { files: [...files.keys()], removed };
+}
+
+/**
+ * Sets `mise.toml`'s `npm:oxfmt` and `npm:oxlint` pins to the versions `pnpm-workspace.yaml`'s catalog pins, which
+ * the rendered hooks run (STA-1945 FR-7, AC-8); a repository whose catalog pins neither is left alone.
+ * @param {string} root
+ * @returns {boolean} whether `mise.toml` changed
+ */
+export function pinMise(root) {
+  const workspace = join(root, "pnpm-workspace.yaml");
+  const pins = existsSync(workspace) ? catalogPins(readFileSync(workspace, "utf8")) : undefined;
+  if (!pins) return false;
+  const file = join(root, "mise.toml");
+  const before = existsSync(file) ? readFileSync(file, "utf8") : "";
+  const after = pinTools(before, pins);
+  if (after !== before) writeFileSync(file, after);
+  return after !== before;
 }
 
 /**

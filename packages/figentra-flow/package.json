@@ -73,6 +73,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "oxlint .",
     "test": "node --test 'src/**/__tests__/*.test.mjs'",
+    "test:e2e": "node --test src/__tests__/packed.e2e.mjs",
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {

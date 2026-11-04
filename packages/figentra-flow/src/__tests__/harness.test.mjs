@@ -126,8 +126,13 @@ test("harness: OpenCode asks with its question tool; without --direct, harnesses
   assert.ok(clarify.includes(`    ${OPENCODE_ASK}\n    - Present EXACTLY ONE question at a time.`));
   assert.match(OPENCODE_ASK, /the `question` tool/);
   assert.ok(String(files.get(".claude/skills/flow-clarify/SKILL.md")).includes(CLAUDE_CODE_ASK));
-  const neutral = render(root, { direct: false });
-  assert.deepEqual(neutral, render(governed(t), { direct: false }));
+  // AGENTS.md names each repository by its own folder, so the two differ there only.
+  const named = (/** @type {Map<string, string>} */ files) => {
+    files.delete("AGENTS.md");
+    return files;
+  };
+  const neutral = named(render(root, { direct: false }));
+  assert.deepEqual(neutral, named(render(governed(t), { direct: false })));
 });
 
 test("harness: harnesses must be a non-empty list of known tools", () => {

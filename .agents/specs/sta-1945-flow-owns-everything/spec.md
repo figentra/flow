@@ -38,7 +38,7 @@ detectable hand edits, reviewed overrides and policies no repository can switch 
 - **Secrets**: none read. The guard's secret rules and `.mcp.yaml`'s secret references move by name only.
 - **ADR needed**: yes. Stackra ADR 0503 and ADR 0510 are amended (the agent layer moves from core into Flow's preset),
   and a Flow ADR covers the governance model (lock, provenance, overrides, mandatory policies).
-- **New dependencies**: none at runtime
+- **New dependencies**: `@stackra/console` and `@stackra/validation` at runtime (ADR 0506 decision 8, NFR-1)
 - **Deploy modes**: same everywhere (a developer tool)
 - **Licence tier**: free. Third-party skills keep their own licences (FR-8).
 - **Docs to update**: `packages/figentra-flow/README.md`, `AGENTS.md`, the preset docs, the changesets, core's ADRs
@@ -87,9 +87,15 @@ detectable hand edits, reviewed overrides and policies no repository can switch 
   `apps/docs/src/docs/adr/`.
 - Issues: STA-1945, STA-2038 (A-1), STA-1942 and os#114 (the baseline, FR-22), STA-1865 and os#112 (lefthook, FR-7),
   STA-1936 (the 401 on `pnpm exec`), STA-1966 (the console engine, FR-31).
+- A-4 to A-7 (2026-11-04): Stackra ADR 0523 (`apps/docs/src/docs/adr/0523-humans-approve-policy-not-instances.mdx`)
+  and ADR 0506 decision 8; notes `plans/flow-e2e/L2-DESIGN.md` (with the owner's answers 5 to 11),
+  `plans/flow-e2e/PLAN.md` sections 3, 9 and 10, `plans/day1-2026-11-04/PLAN.md` (owner defaults O4 and O9),
+  `handover/gap-scan-2026-11-04.md` section 3 and `plans/infisical-2026-11-04/PLAN.md` (K7); Flow PRs #100, #104,
+  #116, #117, #121 to #127 and the open #128; issues STA-2097 and STA-2098.
 - Per requirement: FR-1 to FR-12 rest on the census, the audit and the external review; FR-13 to FR-22 on A-1's
   source; FR-23 to FR-25 on A-2's (Vellum, tag `legacy-2026-10-30`); FR-26 to FR-30 on A-3's; FR-31 on plan PR 9
-  and the after-freeze backlog.
+  and the after-freeze backlog; FR-32 to FR-36 on ADR 0523 and the L2 design; FR-37 to FR-40 on PLAN section 9 and
+  O9; FR-41 to FR-44 on PLAN section 10; FR-45 and FR-46 on O4 and the gap scan.
 
 ## Requirements
 
@@ -190,8 +196,8 @@ detectable hand edits, reviewed overrides and policies no repository can switch 
     output appears only under `--verbose`; a command checks for the repository before anything else;
   - `fflow` alone prints a banner, the version and the grouped commands; `--help` prints a command's usage and never
     runs it; an unknown command names the closest match and exits non-zero;
-  - the brand theme comes from `@stackra/console`, loaded as an optional peer; without it, under `NO_COLOR` or in a
-    pipe, the same tables print as plain text;
+  - the brand theme comes from `@stackra/console`, a runtime dependency (ADR 0506 decision 8, NFR-1); under
+    `NO_COLOR` or in a pipe, the same tables print as plain text;
   - `--json` on `doctor`, `status` and `spec`, with the same data in a stable shape;
   - `init` writes a starter `flow.config.json` and syncs, and says what it rendered; `spec paths` and `gate dir`
     fall back to the spec folder of the branch's slug, and neither suggests the other in a loop.
@@ -211,8 +217,8 @@ the owner approves A-1.
   `fflow start <issue>` → `spec` → approval → `plan` → worktree → build → `gate` → `review` → `land` → `release` →
   `ship`. `fflow next [<key>]` prints the task's current stage and the command that moves it on; `fflow resume <key>`
   re-enters a stage a dead session left half done. No side doors: the guard (FR-7) refuses `git worktree add` outside
-  `.claude/worktrees/`, a push to the default branch, `gh pr merge` and `LEFTHOOK=0`; on GitHub the one required check
-  is `fflow/gate`.
+  `.claude/worktrees/`, a push to the default branch, `gh pr merge` and `LEFTHOOK=0`; on GitHub the required checks
+  are the ones A-4 names.
 - **FR-14**: _Flow's record._ Each stage writes `.flow/record/<key>.json` on the task's branch: stage, state, approvals
   (who, when, the stage approved), sessions (name, kind, start and end), commits, PRs, gate and review results, and
   open owner asks. A stage that ends, and any session that stops, commits and pushes the record and the work with it
@@ -353,11 +359,158 @@ templates (not copied beside them), scaled by tier, and Flow enforces it.
 
 AC-28 to AC-34, listed under `## Acceptance criteria`.
 
+## Amendment A-4 (2026-11-04): ADR 0523 and the L2 lane
+
+**Source:** Stackra ADR 0523 (accepted 2026-11-03, "humans approve policy, not instances", decisions 3, 5, 6 and 9);
+the L2 design (notes `plans/flow-e2e/L2-DESIGN.md`, design "d") and the owner's answers 5 to 11 to it, relayed by
+the leader session on 2026-11-04; notes `plans/infisical-2026-11-04/PLAN.md` K7. Built by PRs #116 (A), #117 (B),
+#125 (C), #127 (D) and #123 (F), merged, and #128 (E), open. A-4 records what merged; it replaces FR-13's
+required-check clause and SC-4, and changes no other requirement.
+
+### Requirements added by A-4
+
+- **FR-32**: _Approval is policy, not an instance._ Main's own `.github/workflows/fflow-approve.yml` approves and
+  merges, as the Figentra Flow App, on events (`pull_request_target`, `status`, `issue_comment`, `schedule`, and the
+  gate's `workflow_run`), never from a PR's code and never on a dispatch. Its jobs:
+  - `cancel` withdraws a request when its PR is pushed, frozen or not;
+  - `route` (no key) finds the open PRs labelled `fflow:land`;
+  - `approve` runs every land rule again on the server (`decide`, then `landRules`), approves at most once per head,
+    and keeps one sticky comment and a `fflow/land` status;
+  - `merge` squash-merges in number order, pinned to the head SHA, on Flow's approval at that head or, for an
+    owner-only PR, the owner's;
+  - `verdict` (a `github-actions` runner only) posts `fflow/gate` from the gate run's `check` job conclusion, never
+    from an artifact, and leaves a PR that changes `.github/workflows/**` pending until the owner approves at its head.
+
+  The event lane renders only when the config sets `secrets.oidc`; without it `fflow-approve.yml` renders as before.
+  Required checks (replacing FR-13's clause): Quality Gate's `verify` is the one required check today; `fflow/gate`
+  becomes required once the owner pins it in the ruleset to the Figentra Flow App's integration id (5555587). ADR
+  0523 decision 3 adds `fflow/render-equivalent` where it applies.
+
+- **FR-33**: _Narrowed tokens over OIDC._ Each job mints its own Figentra Flow installation token in process
+  (`src/lib/app-token.mjs`): the job's OIDC token logs in to Infisical, which returns the App key from `/ci/gate`; the
+  token covers this one repository and only the permissions of its role (`approve`, `merge`, `merge-workflows` for an
+  owner-approved workflow change only, `verdict`). A wider grant is revoked before the job fails, and every token is
+  revoked when its job ends. The mint refuses before any network call unless the job runs main's `fflow-approve.yml`
+  at `refs/heads/<default>` on a GitHub-hosted runner for one of FR-32's events. The config's `secrets.oidc` names
+  the `audience`; the identity's id comes from the Actions variable `FFLOW_OIDC_IDENTITY_ID`, or from
+  `secrets.oidc.identityId`, which wins (#129). Moving Flow and each consumer onto it and retiring `FFLOW_APPROVER_*`
+  is the Infisical plan's K7.
+- **FR-34**: _AI review is advisory_ (ADR 0523 decision 6). A missing, stale or FAIL AI-REVIEW verdict never refuses
+  a land: `land` prints a warning, and the squash body records `AI-Review: PASS <sha>`, `AI-Review: FAIL <sha>` or
+  `AI-Review: none`. A verdict counts only from a listed reviewer App (`apps.review.slug`, one slug or a list). A
+  confirmed blocking finding of the review workflow (FR-15, AC-40) still refuses.
+- **FR-35**: _The freeze switch_ (ADR 0523 decision 9). The org Actions variable `FIGENTRA_AUTOMATION` is `on`
+  (every job runs), `merge-only` (the `verdict` and `merge` jobs run; nothing new is approved) or `frozen`; missing,
+  unreadable or any other value is frozen. Frozen, the jobs post nothing and exit 0. The App never gets Variables
+  write.
+- **FR-36**: _Builders request; the fallback stays one release._ `fflow land` asks for a land with stackra-bot's
+  existing rights, by the `fflow:land` label or a `/fflow land` comment, and waits for the head-bound `fflow/land`
+  status; builders need no Actions write (PR E). The old `approve-dispatch` job, with the `FFLOW_APPROVER_*`
+  secrets, stays in `fflow-approve.yml` for one release as the fallback. Release N+1 removes it, `approveSecrets()`,
+  the presets' approver secret names and land's dispatch and auto-merge code (the L2 design's PR G).
+
+### Acceptance criteria added by A-4
+
+AC-44 to AC-50, listed under `## Acceptance criteria`.
+
+## Amendment A-5 (2026-11-04): Flow as a general product
+
+**Source:** the owner, 2026-11-04: Flow is sold to anyone, so the Stackra preset moves out of Flow into a
+Stackra-owned package (notes `plans/flow-e2e/PLAN.md` section 9, STA-2097); owner default O9 (notes
+`plans/day1-2026-11-04/PLAN.md`): third-party skills are not vendored. Built so far by PRs #124 (P1) and #100;
+#121 gave Flow its pitch for any team, `SECURITY.md` and `CONTRIBUTING.md` (P4). A-5 settles FR-8 for the skills
+core vendored and corrects FR-12's counts.
+
+### Requirements added by A-5
+
+- **FR-37**: _A preset is an npm package._ `flow.config.json` `preset` takes, in this order, a built-in name
+  (`neutral`, and `stackra` until FR-39 lands), an installed package name (`@stackra/flow-preset`) or a repository
+  path. A package names its preset folder in `package.json` (`"flow": { "preset": "./preset" }`), laid out as a
+  built-in preset; Flow refuses a folder whose real path leaves the package. A preset states the Flow versions it
+  supports in `peerDependencies["@figentra-oss/flow"]` and `preset.yml` `requires.flow`; `sync` and `update` refuse
+  a Flow version outside either range, and `doctor` names it. `fflow preset add <pkg> [--dry-run]` installs the
+  package with the repository's package manager and writes `preset`, keeping the rest of the config. Flow adds no
+  postinstall and patches nothing on install: it loads code only from the preset the config names. The lock and the
+  provenance headers record the package's version.
+- **FR-38**: _Guard exports._ Flow exports, as package entry points, the guard modules a preset's `guard/*.mjs`
+  imports (`src/guard/io.mjs` and the rest), so a package preset carries `guard/` with no relative path into Flow's
+  source.
+- **FR-39**: _The stackra preset moves to Stackra._ `@stackra/flow-preset`, at core's
+  `packages/developer/flow-preset`, carries what `assets/flow/presets/stackra/` holds today, the shared files `init`
+  and `sync` install included. ADR 0510 is amended first (presets are packages, no auto-patching, the marketplace
+  path). The Stackra repositories then switch `"preset": "stackra"` to `"@stackra/flow-preset"`, and Flow keeps only
+  `neutral`.
+- **FR-40**: _Third-party skills are not vendored_ (O9). `third-party.yml` lists each upstream skill by source and
+  licence. Until a skill is pinned by commit and tree digest (computed on the testbed) it is `machineOnly`; once
+  pinned, `sync` installs it into `.agents/skills/.vendor/` (FR-8). The preset carries only Figentra's own skills:
+  on main, FR-12's "core's 48 skills" are 16 of Figentra's own beside the `flow-*` ones, with the 20 upstream skills
+  core vendored listed in `third-party.yml`; the preset's role agents are 27 and core's rules 14, not 28 and 15.
+
+### Acceptance criteria added by A-5
+
+AC-51 to AC-55, listed under `## Acceptance criteria`.
+
+## Amendment A-6 (2026-11-04): harness adapters
+
+**Source:** the owner, 2026-11-04: Flow asks its questions through each tool's own question UI and works the same in
+Claude Code, OpenCode, VS Code and the rest (notes `plans/flow-e2e/PLAN.md` section 10, STA-2098). Built so far by
+PR #126 (H1 to H4).
+
+### Requirements added by A-6
+
+- **FR-41**: _Capability markers._ A command text marks a step by capability, not by tool: the question step sits
+  between `<!-- flow:ask -->` and `<!-- /flow:ask -->` (clarify and specify, both presets). `flow.config.json`
+  `harnesses` lists the tools a repository renders for, and a harness adapter per tool fills each marked step in when
+  `sync` renders. With no harness listed, the markers are dropped and the text table stays, so the render is
+  unchanged.
+- **FR-42**: _Adapters._
+  - `claude-code`: the ask step instructs `AskUserQuestion` (1 to 4 questions, 2 to 4 options, the recommended one
+    first), with the text table as fallback; `opencode`: its `question` tool, in the same shape.
+  - `copilot` (`.github/prompts/flow-<verb>.prompt.md`), `cursor` (`.cursor/commands/flow-<verb>.md`) and `codex`
+    (`.agents/skills/flow-<verb>/SKILL.md`): prompt files with the text table, provenance headers and lock digests.
+  - Dropping a harness drops its unedited files.
+  - Last (H6, after FR-39): Flow's render replaces core's own `.agents` sync script in every repository.
+- **FR-43**: _`fflow mcp` question tools._ Two read tools, `fflow_questions_list` and `fflow_docs_lookup` (bounded,
+  no symlink, no path outside the repository), and one writer, `fflow_clarification_record`: it writes a Q/A bullet
+  under `## Clarifications` → `### Session <date>` only in `<repo>/.agents/specs/<folder>/spec.md`, and uses MCP
+  elicitation only when the client declared it. Every tool carries `readOnlyHint`. The spec is the record: an answer
+  lives in the spec, never only in a chat.
+- **FR-44**: _Asynchronous questions_ (H5). An agent that runs unattended posts its question on the task's tracker
+  issue (Linear or GitHub Issues), marks the spec as needing clarification, and resumes once the answer is recorded in
+  the spec.
+
+### Acceptance criteria added by A-6
+
+AC-56 to AC-60, listed under `## Acceptance criteria`.
+
+## Amendment A-7 (2026-11-04): tests run in CI, and the gate's fan-out
+
+**Source:** owner default O4 (notes `plans/day1-2026-11-04/PLAN.md`: Flow's tests run in a GitHub Actions job in
+Flow's CI), built by PR #122; the gap scan (notes `handover/gap-scan-2026-11-04.md` section 3: AC-41's fan-out
+across boxes conflicts with box 1's retirement); `gate run --shards` as PR #104 built it. FR-46 is a default that
+stands until the owner decides otherwise.
+
+### Requirements added by A-7
+
+- **FR-45**: _Flow's tests run in its own CI._ The Quality Gate workflow's `test` job runs
+  `pnpm --filter @figentra-oss/flow test` on every pull request and every push to the default branch. It is not a
+  required check (making it one is the owner's ruleset change), so a red `test` blocks no merge, but work counts as
+  done only once it is green. For Flow this replaces STA-2064's "GitHub runs no tests".
+- **FR-46**: _The gate's fan-out_ (AC-41; a default, pending the owner). Box fan-out stays an option:
+  `fflow gate run --shards <n>` deals the workspace's packages across testbed boxes, as FR-15 says, on a `command`
+  runner (the testbed). With box 1 retired, a `github-actions` runner runs the check set as one job and never shards;
+  `--shards` on any runner other than `command` is refused.
+
+### Acceptance criteria added by A-7
+
+AC-61 and AC-62, listed under `## Acceptance criteria`.
+
 ## Acceptance criteria
 
 AC-1 to AC-12 restate FR-1 to FR-12 as checkable criteria; AC-13 to AC-34 are the amendments' (A-1 to A-3,
 approved 2026-11-03); AC-35 to AC-42 restate FR-31 and the parts of FR-13, FR-15 and FR-21 that no criterion covered;
-AC-43 restates the template part of FR-26 and FR-27 (P-031). None adds a decision.
+AC-43 restates the template part of FR-26 and FR-27 (P-031). None adds a decision. AC-44 to AC-62 are A-4's to
+A-7's (2026-11-04).
 
 - **AC-1**: WHEN `fflow check`, `diff` or `validate` runs THE command SHALL write no file; `check` SHALL exit non-zero
   and name each cause (an owned file that differs from the lock, with or without a provenance header; the preset
@@ -449,8 +602,11 @@ AC-43 restates the template part of FR-26 and FR-27 (P-031). None adds a decisio
 - **AC-38**: WHEN an agent tries one of FR-13's side doors THE guard SHALL deny it and name the Flow command to use
   instead; the side doors are `git worktree add` outside `.claude/worktrees/`, a push to the default branch,
   `gh pr merge` and a command with `LEFTHOOK=0` (FR-13).
-- **AC-39**: WHEN `fflow release` runs with pending changesets THE command SHALL open or update the version PR, and
-  SHALL dispatch the publish only after the owner's GitHub Environment approval (FR-13, D6 Q4).
+- **AC-39**: WHEN `fflow release --preflight` runs with pending changesets THE command SHALL report, reading only,
+  whether the owner may merge the version PR (branch, main's and the version PR's required checks, the versions the
+  changesets imply, the registry, the lockfile), each failed row with its fix and exit 1; `fflow release` SHALL never
+  open, merge, dispatch or publish anything, the Release workflow publishing in CI when the owner merges the version
+  PR (FR-13; this replaces D6 Q4's dispatch).
 - **AC-40**: WHEN the review workflow confirms a blocking finding THE `land` command SHALL refuse the PR and name the
   finding (FR-15).
 - **AC-41**: WHEN the gate workflow fans the check set out across testbed boxes THE gate SHALL post one `fflow/gate`
@@ -460,25 +616,81 @@ AC-43 restates the template part of FR-26 and FR-27 (P-031). None adds a decisio
 - **AC-43**: WHEN either preset's spec and plan templates are read THE asset test SHALL find every section A-3 names
   for each tier: Discovery and Sources, the plan's components with their trees and interfaces, and the small tier's
   one-page design with its tree and interfaces (FR-26, FR-27).
+- **AC-44**: WHEN a PR carries the `fflow:land` label from a writer or a bot listed in `approve.requesters` and passes
+  every land rule at its head THE `approve` job of main's `fflow-approve.yml` SHALL approve it as Figentra Flow at
+  most once for that head, and THE `merge` job SHALL squash-merge it pinned to that head's SHA (FR-32).
+- **AC-45**: WHEN the gate run of a `github-actions` runner completes THE `verdict` job SHALL post `fflow/gate` from
+  the run's `check` job conclusion, a missing conclusion counting as a failure, and SHALL post `pending` for a PR that
+  changes `.github/workflows/**` until the owner approves at its head (FR-32).
+- **AC-46**: IF a token is minted outside main's `fflow-approve.yml` at `refs/heads/<default>`, on a
+  `workflow_dispatch` event, or for a role `ROLES` does not hold THEN THE mint SHALL refuse before any network call;
+  a granted token that covers more than its role's permissions on this one repository SHALL be revoked and the mint
+  SHALL fail (FR-33).
+- **AC-47**: WHEN `fflow land` finds no, a stale or a FAIL AI-REVIEW verdict THE command SHALL warn and land, the
+  squash body recording `AI-Review: none` or the verdict with its SHA; a confirmed blocking finding from
+  `fflow review --record` SHALL still refuse the PR (FR-34).
+- **AC-48**: IF `FIGENTRA_AUTOMATION` is missing or is neither `on` nor `merge-only` THEN THE `approve`, `merge` and
+  `verdict` jobs SHALL post nothing and exit 0; while it is `merge-only` the `approve` job SHALL post nothing (FR-35).
+- **AC-49**: WHEN a builder runs `fflow land` in a repository whose base renders the event lane THE command SHALL
+  request the land by the `fflow:land` label or a `/fflow land` comment and wait for the `fflow/land` status, and
+  SHALL dispatch no workflow (FR-36).
+- **AC-50**: WHEN release N+1 renders `fflow-approve.yml` THE file SHALL hold no `approve-dispatch` job and name no
+  `FFLOW_APPROVER_*` secret (FR-36).
+- **AC-51**: WHEN `flow.config.json` `preset` names an installed package THE `sync` command SHALL render the folder
+  its `package.json` `flow.preset` names and record the package's version in the lock; it SHALL refuse, writing
+  nothing, a folder whose real path leaves the package, a package that is not installed (naming
+  `fflow preset add <pkg>`), and a Flow version outside the package's `peerDependencies` range or its `preset.yml`
+  `requires.flow` (FR-37).
+- **AC-52**: WHEN `fflow preset add <pkg>` runs THE command SHALL install the package with the package manager the
+  repository's lockfile names and set `preset` in `flow.config.json` with every other key unchanged; under
+  `--dry-run` it SHALL change nothing (FR-37).
+- **AC-53**: WHEN a package preset's `guard/*.mjs` imports Flow's guard code THE import SHALL resolve through
+  `@figentra-oss/flow`'s package exports, and no preset module SHALL import a path inside Flow's `src/` (FR-38).
+- **AC-54**: WHEN the Stackra repositories have switched THE config of each SHALL name `@stackra/flow-preset`, and the
+  `@figentra-oss/flow` package SHALL carry only the `neutral` preset (FR-39).
+- **AC-55**: WHILE a skill listed in `third-party.yml` has no commit and tree-digest pin THE `sync` command SHALL
+  treat it as machine-only; once it is pinned, `sync` SHALL install it into `.agents/skills/.vendor/` at that pin,
+  and no preset SHALL carry an upstream skill's files (FR-40).
+- **AC-56**: WHERE `flow.config.json` lists no harness THE `sync` command SHALL render each command with its
+  `flow:ask` markers dropped and its text table, byte for byte as before A-6 (FR-41).
+- **AC-57**: WHERE `harnesses` lists `claude-code` or `opencode` THE rendered ask step SHALL instruct that tool's
+  question tool (1 to 4 questions, 2 to 4 options, the recommended first) with the text table as fallback; where it
+  lists `copilot`, `cursor` or `codex`, `sync` SHALL write that tool's prompt files with provenance headers and lock
+  digests (FR-42).
+- **AC-58**: WHEN a client calls `fflow_clarification_record` THE server SHALL write one Q/A bullet under
+  `## Clarifications` → `### Session <date>` of `.agents/specs/<folder>/spec.md` inside the repository and nowhere
+  else, and the other question tools SHALL write nothing (FR-43).
+- **AC-59**: WHEN an unattended run reaches an ask step THE question SHALL go to the task's tracker issue, the spec
+  SHALL carry the needs-clarification marker, and the run SHALL resume from the answer once the spec records it
+  (FR-44).
+- **AC-60**: WHEN a repository adopts Flow's harness rendering THE same PR SHALL delete that repository's `.agents`
+  sync script (FR-42).
+- **AC-61**: WHEN a pull request opens or updates, or the default branch is pushed, THE Quality Gate workflow SHALL run
+  Flow's package tests in its `test` job (FR-45).
+- **AC-62**: IF `fflow gate run --shards <n>` runs with a runner that is not a `command` runner THEN THE gate SHALL
+  exit 2 and name the runner, running and posting nothing (FR-46).
 
 ## Success criteria
 
 The exit criteria of `path-to-100.md`, measurable:
 
-- **SC-1**: every FR and AC of this spec is covered by a task with passing evidence and by a test (`fflow trace ci`
-  clean) — verified by: `trace ci` in the gate.
+- **SC-1**: verified by: trace ci, in the gate. Every FR and AC of this spec is covered by a task with passing
+  evidence and by a test (`fflow trace ci` clean).
 - **SC-2**: `passthroughCommands(fflow)` is empty and the round-4 owner try-out has no finding — verified by: unit
   test and the owner's scripted checklist.
-- **SC-3**: every repository's `fflow check` is green on the 0.3.0 preset and `fflow status --divergence` reports
-  nothing unreviewed — verified by: `fflow check --workspace`.
-- **SC-4**: on every repository `fflow/gate` is the only required check and per-PR workflows are off — verified by:
-  `fflow doctor` on each repository.
+- **SC-3**: verified by: fflow check --workspace. Every repository's `fflow check` is green on the 0.3.0 preset and
+  `fflow status --divergence` reports nothing unreviewed.
+- **SC-4**: verified by: gh api on each repository's rulesets (`gh api repos/<owner>/<repo>/rulesets`). On every
+  repository the ruleset requires Quality Gate's `verify` and, once the owner has pinned it to the Figentra Flow App's
+  integration id, `fflow/gate` (A-4, ADR 0523 decision 3), and no other context.
 - **SC-5**: `fflow todo` and `fflow ledger` replace the hand-kept state file — verified by: manual (the owner).
 
 ## Non-functional requirements
 
-- **NFR-1**: THE `@figentra-oss/flow` package SHALL add no runtime dependency (Impact; `@stackra/console` is an
-  optional peer loaded dynamically).
+- **NFR-1**: THE `@figentra-oss/flow` package SHALL have no runtime dependency beyond `@stackra/console` and
+  `@stackra/validation`, pinned exactly through Flow's strict catalog and served by the public Figentra registry
+  (ADR 0506 decision 8, which replaces "no runtime dependency"; the CLI layer imports them, the governance core and
+  `fflow guard` never do), and `undici`, which `src/lib/net.mjs` loads for its connect timeout.
 - **NFR-2**: THE guard SHALL run on each tool call as `node node_modules/@figentra-oss/flow/bin/fflow-guard.mjs
 <event>`, never through `pnpm exec`, so pnpm's start-up stays off every call.
 - **NFR-3**: THE preset and overrides digests SHALL be identical on every machine for the same content (paths sorted,
@@ -531,7 +743,8 @@ The exit criteria of `path-to-100.md`, measurable:
 ## Not now
 
 `sync --workspace` opening one PR per changed repository through `land` (the owner opens PRs until `land` covers it);
-test-level baseline inventory (STA-1942 v2).
+test-level baseline inventory (STA-1942 v2); from PLAN section 9, P5 (a proof on a repository outside Stackra, with the
+`neutral` preset, GitHub Issues and GitHub Actions) and P6 (a Claude Code plugin marketplace for the neutral skills).
 
 ## Status history
 
@@ -565,3 +778,15 @@ test-level baseline inventory (STA-1942 v2).
   templates' part of FR-26 and FR-27 (P-031), which T038 to T041 now cover instead of AC-28 and AC-29; T128 (FR-27's
   small-tier design) and T129 (FR-30's task trees) added; T052 to T059's tests sit in `src/__tests__/`; T100 waits for
   T091 (PR 14)
+- 2026-11-04: spec and tasks.md brought in line with what merged (#81 to #127), with no stage change. A-4 (ADR 0523
+  and the L2 lane: FR-32 to FR-36, AC-44 to AC-50), A-5 (Flow as a general product: FR-37 to FR-40, AC-51 to AC-55),
+  A-6 (harness adapters: FR-41 to FR-44, AC-56 to AC-60) and A-7 (tests in CI and the gate's fan-out: FR-45 and
+  FR-46, AC-61 and AC-62) record the owner's decisions and defaults of 2026-11-03 and 2026-11-04, relayed by the
+  leader session; FR-46 is a default pending the owner. FR-13's required-check clause, FR-31's console line, SC-4,
+  NFR-1 and the Impact's dependencies follow ADR 0523 and ADR 0506 decision 8. tasks.md ticks the 99 tasks whose work
+  merged, each with its PR, and adds T130 to T151 (12 of them merged)
+- 2026-11-04: after #128 to #134, no stage change: SC-1, SC-3 and SC-4 name their method first, in a form `trace`
+  reads; AC-39 (and plan.md's P-036) say what `fflow release` does on main: it only reads, `--preflight` answers
+  whether the owner may merge the version PR, and the Release workflow publishes on that merge. tasks.md ticks T015,
+  T024, T047, T048, T116, T135, T140 and T148, and T120 to T122 name the per-command tests, `packed.e2e.mjs` and
+  `origin/main`
