@@ -4,10 +4,11 @@
  *   tool, as a block `<!-- flow:<capability> -->` … `<!-- /flow:<capability> -->` on lines of their own
  *   (`CAPABILITIES`: `ask`, `todo`, `docs`, `subagent`). A harness adapter says where one tool reads a command and
  *   fills each block in for it. The fallback fill keeps the block's own words, today's text table, so a repository
- *   with no harness configured renders byte for byte what it rendered before the blocks.
+ *   with no harness configured renders byte for byte what it rendered before the blocks. Claude Code (`AskUserQuestion`)
+ *   and OpenCode (`question`) ask through their own question tool, the text table kept for when it is unavailable.
  * Boundary: pure text functions; `render.mjs` writes nothing through here, it only asks for paths and texts.
  * Runtime: node
- * Governing contract: STA-2098 (PLAN section 10, H1).
+ * Governing contract: STA-2098 (PLAN section 10, H1, H2).
  * Secrets: none.
  */
 import { CONFIG_FILE } from "../../lib/product.mjs";
@@ -41,6 +42,34 @@ export function fillCapabilities(text, fill) {
 /** @type {Fill} Today's text: the block's own words, the marker lines dropped. */
 export const fallbackFill = (_capability, inner) => inner;
 
+/**
+ * A fill that asks through a tool's own question UI: the `ask` block opens with `how`, at the block's indent, and
+ * keeps its text table as the way to ask when the tool is unavailable. Every other capability keeps its words.
+ * @param {string} how
+ * @returns {Fill}
+ */
+const askThrough = (how) => (capability, inner) =>
+  capability === "ask" ? `${inner.match(/^[ \t]*(?=\S)/m)?.[0] ?? ""}${how}\n${inner}` : inner;
+
+/**
+ * Claude Code's `AskUserQuestion` (its tools reference; the limits are the tool's own input schema): 1 to 4
+ * questions a call, 2 to 4 options each, and an "Other" answer the tool always adds itself.
+ */
+export const CLAUDE_CODE_ASK =
+  "Ask with the `AskUserQuestion` tool: 1 to 4 questions per call, each with a short header and 2 to 4 options; " +
+  'put the recommended option first and end its label with "(Recommended)"; never add an "Other" option, ' +
+  "since the tool always lets the user type their own answer. Record that answer as given. Only when the tool is " +
+  "unavailable, ask in text as below.";
+
+/**
+ * OpenCode's built-in `question` tool (opencode.ai/docs/tools: a header, the question and its options, and a custom
+ * answer the user can always type; its docs state no limits, so Claude Code's are kept).
+ */
+export const OPENCODE_ASK =
+  "Ask with the `question` tool: each question with a short header, its text and 2 to 4 options; put the " +
+  'recommended option first and end its label with "(Recommended)"; the user can always type their own answer ' +
+  "instead. Record that answer as given. Only when the tool is unavailable, ask in text as below.";
+
 /** @param {Command} c the command as a skill document (`SKILL.md`). */
 const skill = (c) =>
   [
@@ -72,7 +101,7 @@ export const HARNESSES = {
   "claude-code": {
     path: (name) => `.claude/skills/${name}/SKILL.md`,
     file: skill,
-    fill: fallbackFill,
+    fill: askThrough(CLAUDE_CODE_ASK),
   },
   opencode: {
     path: (name) => `.opencode/commands/${name}.md`,
@@ -80,7 +109,7 @@ export const HARNESSES = {
       ["---", `description: ${c.description}`, "---", "", provenanceComment(c), "", c.body].join(
         "\n",
       ),
-    fill: fallbackFill,
+    fill: askThrough(OPENCODE_ASK),
   },
 };
 
