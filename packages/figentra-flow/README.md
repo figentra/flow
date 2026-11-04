@@ -537,7 +537,8 @@ checkout) takes the `fflow:land` label, `land` only asks main's land lane (see "
 | `--no-wait`             | exits 0 right after asking                                                    |
 
 `--dry-run` names the path it would take, and `--stack` waits on each PR before it brings up the next. When the
-base's workflow does not take the label, `land` works as before and warns that the dispatch path is deprecated.
+base's workflow does not take the label and its ruleset requires a review the head lacks, `land` refuses (next
+section).
 
 Otherwise it squash-merges with GitHub's `sha` guard, so the merge fails if the head moved. A
 `Refs:` line, the AI review's verdict (`AI-Review: PASS <head>`, `AI-Review: FAIL <head>` or `AI-Review: none`) and the
@@ -555,22 +556,11 @@ co-author trailers go into the squash commit. After the merge it:
 
 When the base's ruleset requires an approving review and the head has none, `land` does not merge.
 
-- If a required check is still running, `land` waits and asks for nothing. Run it again once the checks are green.
-- If a required check failed, or came from an untrusted source, `land` refuses.
-- If every required check is green, `land` dispatches `.github/workflows/fflow-approve.yml`, which `sync`
-  installs, with the PR and its head. It then turns on auto-merge (squash) at that head. It never uses an admin
-  path.
-
-The workflow runs `approve-check.mjs` from this package, at the version `sync` pinned. It runs in the
-`fflow-approve` environment and refuses unless that environment allows only the default branch. It reads
-everything at the checked head: the files from the merge base, and each required check from its trusted source. A
-trusted source is the App the ruleset pins (`integration_id`), or the login `approve.checks` or the gate App names.
-The author must not be the approving App.
-
-The workflow then either approves at that head or comments the reasons. After approving, it re-reads the PR and
-dismisses its own review if the head moved. The App's id and key are secrets of that environment, under names of
-their own: `FFLOW_APPROVER_APP_ID` and `FFLOW_APPROVER_PRIVATE_KEY`, unless the preset's `approve`
-names others.
+`land` asks main's land lane when the base's `fflow-approve.yml` takes the `fflow:land` label (above). Otherwise it
+refuses and says to add `secrets.oidc` and run `fflow sync`, or to have the owner review the PR. It never dispatches a
+workflow, never turns on auto-merge and never uses an admin path. The dispatched approval job and its
+`FFLOW_APPROVER_APP_ID` and `FFLOW_APPROVER_PRIVATE_KEY` secrets were the one-release fallback; they are retired
+(the L2 design's PR G), and without `secrets.oidc` `sync` writes no approval workflow.
 
 The approval path needs an owner. Without `apps.owner`, `sync` writes neither the workflow nor CODEOWNERS. With it,
 `sync` writes `.github/CODEOWNERS`, which maps every owner-only glob and the root `package.json` to the owner, so
@@ -580,13 +570,7 @@ review and the base has that file.
 GitHub matches CODEOWNERS case-sensitively. A path in another case reaches only `land` and the check, which match
 case-insensitively.
 
-The workflow runs only the tarball whose sha512 matches the integrity that the repository's lockfile recorded for
-this Flow version when `sync` ran. Without that integrity it refuses to run.
-
-GitHub merges once the approval and every required check are in. After that, `land <n>` on the merged PR runs steps 1
-to 5.
-
-With `secrets.oidc`, main's land lane approves and merges instead (next section).
+With `secrets.oidc`, main's land lane approves and merges (next section).
 
 
 ### Main's land lane: approve and merge on events
@@ -638,8 +622,9 @@ The owner sets it up once, as for the verdict (see "The github-actions runner's 
 (contents, pull requests, statuses and workflows write; issues, checks and actions read), the Infisical OIDC identity
 bound to `job_workflow_ref` `<owner>/<repo>/.github/workflows/fflow-approve.yml@refs/heads/<default branch>` and
 `ref=refs/heads/<default branch>`, `secrets.oidc`, `approve.requesters` and `approve.workflows`, then `fflow sync` and
-landing the re-rendered, owner-only workflow. The dispatched `approve-dispatch` job with `FFLOW_APPROVER_*` stays for
-one release as the fallback.
+landing the re-rendered, owner-only workflow. Afterwards the owner deletes `FFLOW_APPROVER_APP_ID` and
+`FFLOW_APPROVER_PRIVATE_KEY` from the `fflow-approve` environment, which stays: the OIDC subject and the branch policy
+use it.
 
 ### When main is red: the baseline gate
 

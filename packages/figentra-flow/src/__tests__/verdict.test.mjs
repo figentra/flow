@@ -5,8 +5,8 @@
  *     nothing, exits 0) another path, event or repository, a fork, an unfinished run, a moved head, a bad run id or a
  *     frozen automation variable; a missing `check` job is a failure; it never calls an artifacts endpoint; a PR that
  *     changes `.github/workflows/**` is pending unless the owner approved that head; an API or mint failure exits 1;
- *   - the approval workflow without `verdict` is today's file byte for byte; with it, it adds only the gate's
- *     `workflow_run`, every job's `if:` carries the default ref and the automation guard, `id-token: write` is only in
+ *   - the approval workflow with neither `verdict` nor the lane refuses (the dispatched fallback is retired, the L2
+ *     design's PR G); with `verdict` alone it holds only the gate's `workflow_run` and the verdict job, every job's `if:` carries the default ref and the automation guard, `id-token: write` is only in
  *     the verdict job, which runs in the approval environment with a per-head concurrency group that never cancels,
  *     the pinned integrity, no checkout, artifact download or cache, and no event text in a `run:` block;
  *   - `sync` renders the verdict job only for a `github-actions` runner with `secrets.oidc`.
@@ -16,7 +16,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -294,8 +294,6 @@ test("verdict: decide reads the run, its PR, its latest jobs, files and nothing 
 const BASE = {
   version: "9.9.9",
   integrity: "sha512-AbC+/9==",
-  appId: "A_ID",
-  privateKey: "A_KEY",
   trusted: { [STATUS_CONTEXT]: "figentra-gate[bot]" },
   ownerOnly: ["it's/**"],
 };
@@ -311,12 +309,8 @@ const jobsOf = (/** @type {string} */ yaml) =>
       .map((b) => [b.trim().split(":")[0], b]),
   );
 
-test("approval workflow: without verdict it is today's file, byte for byte", () => {
-  const today = readFileSync(
-    new URL("./__fixtures__/approve-workflow-today.txt", import.meta.url),
-    "utf8",
-  );
-  assert.equal(approveWorkflow(BASE), today);
+test("approval workflow: without the verdict or the lane there is nothing to render (PR G)", () => {
+  assert.throws(() => approveWorkflow(BASE), /the dispatched fallback is retired/);
 });
 
 test("approval workflow: the verdict job's triggers, guards, permissions, environment and concurrency", () => {
@@ -324,15 +318,14 @@ test("approval workflow: the verdict job's triggers, guards, permissions, enviro
   const on = yaml.split(/^on:$/m)[1].split(/^permissions:/m)[0];
   assert.deepEqual(
     [...on.matchAll(/^ {2}(\w+):/gm)].map((m) => m[1]),
-    ["workflow_dispatch", "workflow_run"],
+    ["workflow_run"],
   );
   assert.match(on, new RegExp(`workflows: \\["${STATUS_CONTEXT}"\\]\\n {4}types: \\[completed\\]`));
   assert.match(yaml, /^permissions: \{\}$/m);
   assert.doesNotMatch(yaml, /^concurrency:/m, "no workflow-wide group to starve verdicts");
   const jobs = jobsOf(yaml);
-  assert.deepEqual(Object.keys(jobs), ["approve", "verdict"]);
+  assert.deepEqual(Object.keys(jobs), ["verdict"]);
   const guard = `github.ref == 'refs/heads/main' && (vars.${AUTOMATION_VARIABLE} == 'on' || vars.${AUTOMATION_VARIABLE} == 'merge-only')`;
-  assert.match(jobs.approve, /^ {4}if: github\.event_name == 'workflow_dispatch' && /m);
   assert.match(jobs.verdict, /^ {4}if: github\.event_name == 'workflow_run' && /m);
   for (const [name, block] of Object.entries(jobs)) {
     assert.ok(block.includes(guard), `${name} carries the ref and automation guard`);
@@ -340,7 +333,6 @@ test("approval workflow: the verdict job's triggers, guards, permissions, enviro
     assert.match(block, /INTEGRITY: 'sha512-AbC\+\/9=='/, name);
     assert.ok(block.indexOf('"$INTEGRITY" ]') < block.indexOf("node flow/"), name);
   }
-  assert.equal(/id-token: write/.test(jobs.approve), false);
   assert.match(
     jobs.verdict,
     /^ {4}permissions:\n {6}actions: read\n {6}contents: read\n {6}pull-requests: read\n {6}id-token: write\n {4}steps:/m,
@@ -351,7 +343,6 @@ test("approval workflow: the verdict job's triggers, guards, permissions, enviro
       `concurrency:\\n {6}group: ${NAME}-verdict-\\$\\{\\{ github\\.event\\.workflow_run\\.head_sha \\}\\}\\n {6}cancel-in-progress: false`,
     ),
   );
-  assert.match(jobs.approve, new RegExp(`group: ${NAME}-approve-\\$\\{\\{ inputs\\.pr \\}\\}`));
   assert.match(jobs.verdict, /node flow\/package\/src\/lib\/verdict\.mjs/);
   assert.match(jobs.verdict, /RUN_ID: \$\{\{ github\.event\.workflow_run\.id \}\}/);
   assert.ok(jobs.verdict.includes(`OIDC: '${JSON.stringify(OIDC)}'`));
@@ -414,7 +405,9 @@ test("sync renders the verdict job only for a github-actions runner with secrets
       JSON.stringify({ version: 1, preset: "neutral", apps: { owner: "figentra-usr" }, ...extra }),
     );
     sync(root, { direct: true, log: () => {} });
-    const text = readFileSync(join(root, ".github/workflows", APPROVE_WORKFLOW), "utf8");
+    const file = join(root, ".github/workflows", APPROVE_WORKFLOW);
+    // Without secrets.oidc there is no approval workflow at all (PR G).
+    const text = existsSync(file) ? readFileSync(file, "utf8") : "";
     assert.equal(/^ {2}verdict:$/m.test(text), rendered, name);
     if (rendered) {
       assert.ok(text.includes(`OIDC: '${JSON.stringify(OIDC)}'`), name);

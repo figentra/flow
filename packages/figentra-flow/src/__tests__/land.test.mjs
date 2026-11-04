@@ -6,9 +6,9 @@
  *   removed though its squash has a new patch id, the branch deleted and a comment; a refused merge changes nothing after it; a
  *   failed Linear call only warns; `--stack` lands bottom-up and stops at a red gate, the next PR updated by a merge
  *   commit and a normal push. STA-1856: an owner-only path refuses, one an override's `extend` of `owner-only` adds
- *   among them (STA-1945); a ruleset that requires a review gets the
- *   approval workflow dispatched and auto-merge turned on at the head instead of a merge, or a refusal when the
- *   workflow is not installed; `land` on a merged PR runs only the steps after the merge. STA-1945 FR-16: a three-PR
+ *   among them (STA-1945); a ruleset that requires a review the head lacks, on a base with no land
+ *   lane, refuses and dispatches nothing (the L2 design's PR G); `land` on a merged PR runs only the steps after the
+ *   merge. STA-1945 FR-16: a three-PR
  *   stack lands with no human step; a conflict that is only the landed parent's change is resolved, any other stops
  *   the stack with the file named; a PR GitHub did not retarget is retargeted, and a refused retarget stops; a re-run
  *   after a stop resumes from the record, also after a run that died right after a merge; a missing worktree, a
@@ -19,11 +19,11 @@
  *   approval workflow takes `LAND_LABEL`, `land` adds the label (or comments `/fflow land` once on a labelled PR) and
  *   never dispatches, auto-merges or merges; it waits for the merge (then finishes), a refusal (exit 1 with the lane's
  *   reasons), the owner (4), a moved head (1) or a timeout (4), ignoring a verdict from another login or an earlier
- *   request; `--no-wait` returns once asked; `--dry-run` names the path; a base without it dispatches with a
- *   deprecation warning; a branch GitHub already deleted counts as deleted; `--stack` waits on each PR.
+ *   request; `--no-wait` returns once asked; `--dry-run` names the path; a branch GitHub already deleted counts as deleted; `--stack` waits on each PR.
  * Boundary: temporary repositories with a local bare origin; GitHub, Linear and the gate injected; no network.
  * Runtime: node
- * Governing contract: ADR 0022; Stackra ADR 0503; ADR 0523 (decision 6); STA-1729 phase 3; the L2 design (PR E).
+ * Governing contract: ADR 0022; Stackra ADR 0503; ADR 0523 (decision 6); STA-1729 phase 3; the L2 design (PR E,
+ *   PR G).
  */
 // @covers sta-1729:FR-6 sta-1729:AC-010 sta-1729:AC-011 sta-1729:AC-017 sta-1729:AC-029 sta-1729:AC-030 sta-1729:P-006
 // @covers sta-1856:FR-1 sta-1856:FR-2 sta-1856:FR-3 sta-1856:FR-6
@@ -486,45 +486,30 @@ test("land --stack: lands the bottom, updates the next by a merge commit and a p
   assert.equal(sh(w.r.origin, "rev-parse", `refs/heads/${top}`), sh(topPath, "rev-parse", "HEAD"));
 });
 
-test("land: a required review dispatches the approval workflow and turns on auto-merge at the head, never a merge", async (t) => {
+test("land: a required review with no land lane on the base refuses, naming secrets.oidc; nothing is dispatched or merged", async (t) => {
   const w = world({ review: true });
   t.after(w.r.dispose);
-  const land = () =>
-    landOne({
-      root: w.r.root,
-      repo: "figentra/flow",
-      base: "main",
-      number: 7,
-      gateApp: GATE_APP,
-      deps: { api: w.api, done: async () => {}, ...quiet },
-    });
-  const missing = await land();
-  assert.equal(missing.code, 1);
-  assert.match(
-    missing.problems?.join() ?? "",
-    /requires an approving review.*fflow-approve\.yml is not installed/,
-  );
-
+  // Even with an approval workflow of the retired dispatched kind installed, land never dispatches it.
   mkdirSync(join(w.r.root, ".github/workflows"), { recursive: true });
   writeFileSync(join(w.r.root, ".github/workflows/fflow-approve.yml"), "name: x\n");
-  const queued = await land();
-  assert.deepEqual(queued, { code: 0, queued: true });
-  const writes = w.calls.filter((c) => c.method !== "GET");
-  assert.deepEqual(
-    writes.map((c) => `${c.method} ${c.path}`),
-    ["POST /repos/figentra/flow/actions/workflows/fflow-approve.yml/dispatches", "POST /graphql"],
-  );
-  assert.deepEqual(writes[0].body, { ref: "main", inputs: { pr: "7", head: w.head } });
-  assert.match(
-    writes[1].body.query,
-    /enablePullRequestAutoMerge.*mergeMethod: SQUASH, expectedHeadOid: \$head/s,
-  );
-  assert.deepEqual(writes[1].body.variables, {
-    id: "PR_7",
-    head: w.head,
-    title: "feat(flow): land (#7)",
-    body: "Refs: STA-5\nAI-Review: none",
+  const refused = await landOne({
+    root: w.r.root,
+    repo: "figentra/flow",
+    base: "main",
+    number: 7,
+    gateApp: GATE_APP,
+    deps: { api: w.api, done: async () => {}, ...quiet },
   });
+  assert.equal(refused.code, 1);
+  assert.match(
+    refused.problems?.join() ?? "",
+    /requires an approving review the head lacks.*takes no fflow:land request: add secrets\.oidc/,
+  );
+  assert.deepEqual(
+    w.calls.filter((c) => c.method !== "GET"),
+    [],
+  );
+  assert.ok(!w.calls.some((c) => /dispatches|graphql/.test(c.path)));
   assert.equal(existsSync(w.path), true, "nothing after the merge ran");
 });
 
@@ -551,37 +536,6 @@ test("land: a merged PR only finishes: Done, the worktree, the branch and a comm
       "POST /repos/figentra/flow/issues/7/comments",
     ],
   );
-});
-
-test("land: required checks still running wait, without asking for the approval; an unpinned one refuses", async (t) => {
-  const w = world({ review: true, required: [{ context: "verify", integration_id: 15368 }] });
-  t.after(w.r.dispose);
-  mkdirSync(join(w.r.root, ".github/workflows"), { recursive: true });
-  writeFileSync(join(w.r.root, ".github/workflows/fflow-approve.yml"), "name: x\n");
-  const deps = { api: w.api, done: async () => {}, ...quiet };
-  const base = {
-    root: w.r.root,
-    repo: "figentra/flow",
-    base: "main",
-    number: 7,
-    gateApp: GATE_APP,
-    deps,
-  };
-  const waiting = await landOne(base);
-  assert.deepEqual(waiting, { code: 4, queued: true, waiting: ["verify"] });
-  assert.deepEqual(
-    w.calls.filter((c) => c.method !== "GET"),
-    [],
-    "nothing dispatched",
-  );
-
-  const loose = world({ review: true, required: [{ context: "ci" }] });
-  t.after(loose.r.dispose);
-  mkdirSync(join(loose.r.root, ".github/workflows"), { recursive: true });
-  writeFileSync(join(loose.r.root, ".github/workflows/fflow-approve.yml"), "name: x\n");
-  const refused = await landOne({ ...base, root: loose.r.root, deps: { ...deps, api: loose.api } });
-  assert.equal(refused.code, 1);
-  assert.match(refused.problems?.join() ?? "", /required check: ci is pinned to no App/);
 });
 
 test("land: a merged PR finishes only on its base, and keeps a branch that moved after the merge", async (t) => {
@@ -1274,7 +1228,7 @@ test("land: a verdict from an earlier request does not answer this one; --no-wai
   assert.equal(q.prReads(), 1, "no wait: the PR is read only before the request");
 });
 
-test("land: --dry-run names the label path; a base without it dispatches with a deprecation warning", async (t) => {
+test("land: --dry-run names the label path and changes nothing", async (t) => {
   const w = world();
   t.after(w.r.dispose);
   const { result, logs } = await landVia(w, onLane(w).api, { dry: true });
@@ -1283,26 +1237,6 @@ test("land: --dry-run names the label path; a base without it dispatches with a 
   assert.deepEqual(
     w.calls.filter((c) => c.method !== "GET"),
     [],
-  );
-
-  const old = world({ review: true });
-  t.after(old.r.dispose);
-  mkdirSync(join(old.r.root, ".github/workflows"), { recursive: true });
-  writeFileSync(join(old.r.root, ".github/workflows/fflow-approve.yml"), "name: x\n");
-  /** @type {string[]} */
-  const warned = [];
-  const queued = await landOne({
-    root: old.r.root,
-    repo: "figentra/flow",
-    base: "main",
-    number: 7,
-    gateApp: GATE_APP,
-    deps: { api: old.api, done: async () => {}, log: () => {}, warn: (s) => void warned.push(s) },
-  });
-  assert.deepEqual(queued, { code: 0, queued: true });
-  assert.match(
-    warned.join(),
-    /takes no fflow:land request yet, so land dispatches it \(deprecated/,
   );
 });
 

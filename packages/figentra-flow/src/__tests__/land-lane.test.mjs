@@ -21,7 +21,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -633,8 +633,6 @@ test("comments: every comment the lane writes starts with LAND_MARKER", async ()
 const BASE_OPTIONS = {
   version: "0.2.3",
   integrity: "sha512-AbC+/9==",
-  appId: "FFLOW_APPROVER_APP_ID",
-  privateKey: "FFLOW_APPROVER_PRIVATE_KEY",
   trusted: { [STATUS_CONTEXT]: FLOW },
   ownerOnly: ["it's/**"],
 };
@@ -669,7 +667,6 @@ const triggers = (/** @type {string} */ yaml) =>
 test("lane render: the triggers are exactly the listed set", () => {
   const yaml = approveWorkflow({ ...BASE_OPTIONS, lane: LANE });
   assert.deepEqual(triggers(yaml), [
-    "workflow_dispatch",
     "pull_request_target",
     "status",
     "issue_comment",
@@ -692,17 +689,21 @@ test("lane render: the triggers are exactly the listed set", () => {
     verdict: { gatePath: `.github/workflows/${NAME}-gate.yml`, defaultBranch: "main", oidc: OIDC },
   });
   assert.match(both, new RegExp(`workflows: \\["Quality Gate", "${STATUS_CONTEXT}"\\]`));
-  assert.deepEqual(Object.keys(jobsOf(both)), [
-    "approve-dispatch",
-    "cancel",
-    "route",
-    "approve",
-    "merge",
-    "verdict",
-  ]);
+  assert.deepEqual(Object.keys(jobsOf(both)), ["cancel", "route", "approve", "merge", "verdict"]);
   assert.doesNotMatch(
     yaml,
-    /^ {2}(?:pull_request|pull_request_review|push|workflow_call|repository_dispatch):/m,
+    /^ {2}(?:pull_request|pull_request_review|push|workflow_call|workflow_dispatch|repository_dispatch):/m,
+  );
+});
+
+// @covers sta-1945:FR-36 sta-1945:AC-50
+test("lane render: no approve-dispatch job, no App secret, and no file without the lane or the verdict (PR G)", () => {
+  const yaml = approveWorkflow({ ...BASE_OPTIONS, lane: LANE });
+  assert.doesNotMatch(yaml, /approve-dispatch|APPROVER|create-github-app-token|secrets\./);
+  assert.doesNotMatch(yaml, /workflow_dispatch|inputs\./);
+  assert.throws(
+    () => approveWorkflow(BASE_OPTIONS),
+    /needs secrets\.oidc \(the event lane or the verdict job\); the dispatched fallback is retired/,
   );
 });
 
@@ -710,7 +711,7 @@ test("lane render: permissions, environment, guards, concurrency and integrity",
   const yaml = approveWorkflow({ ...BASE_OPTIONS, lane: LANE });
   assert.match(yaml, /^permissions: \{\}$/m);
   const jobs = jobsOf(yaml);
-  assert.deepEqual(Object.keys(jobs), ["approve-dispatch", "cancel", "route", "approve", "merge"]);
+  assert.deepEqual(Object.keys(jobs), ["cancel", "route", "approve", "merge"]);
   const ref = "github.ref == 'refs/heads/main'";
   const runs = `(vars.${AUTOMATION_VARIABLE} == 'on' || vars.${AUTOMATION_VARIABLE} == 'merge-only')`;
   for (const [name, block] of Object.entries(jobs)) {
@@ -790,7 +791,7 @@ test("lane render: inputs that are not plain names refuse", () => {
     assert.throws(() => approveWorkflow({ ...BASE_OPTIONS, lane: { ...LANE, ...bad } }), /lane:/);
 });
 
-test("sync renders the lane only with secrets.oidc, from approve.workflows and approve.requesters", (t) => {
+test("sync renders the approval workflow only with secrets.oidc, from approve.workflows and approve.requesters", (t) => {
   const secrets = {
     kind: "infisical",
     projectId: OIDC.projectId,
@@ -817,10 +818,13 @@ test("sync renders the lane only with secrets.oidc, from approve.workflows and a
       }),
     );
     sync(root, { direct: true, log: () => {} });
-    const text = readFileSync(join(root, ".github/workflows", APPROVE_WORKFLOW), "utf8");
-    assert.equal(/^ {2}merge:$/m.test(text), rendered, name);
-    assert.equal(/^ {2}verdict:$/m.test(text), false, `${name}: no verdict for a command runner`);
+    const file = join(root, ".github/workflows", APPROVE_WORKFLOW);
+    // PR G: without secrets.oidc there is no approval workflow at all.
+    assert.equal(existsSync(file), rendered, name);
     if (rendered) {
+      const text = readFileSync(file, "utf8");
+      assert.match(text, /^ {2}merge:$/m, name);
+      assert.doesNotMatch(text, /^ {2}verdict:$/m, `${name}: no verdict for a command runner`);
       assert.ok(text.includes(`REQUESTERS: '["stackra-bot"]'`), name);
       assert.match(text, /workflows: \["Quality Gate"\]/, name);
     }

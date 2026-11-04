@@ -4,10 +4,9 @@
  *   - the owner-only list takes each category in any letter case and leaves ordinary code alone;
  *   - a package.json's root scripts and a dependency moved off its catalog are findings;
  *   - CODEOWNERS maps every owner-only glob to the owner, with no catch-all;
- *   - the rendered workflow runs the pinned check in its environment with the approver's own secret names, and holds
- *     no value;
+ *   - the rendered workflow runs the pinned check in its environment and names no secret (the L2 design's PR G);
  *   - `sync` renders each preset's stewards (neutral: git, ci, tracker; stackra: git, ci, linear), CODEOWNERS only
- *     with an owner, and refuses a secret name that is not one;
+ *     with an owner, and the approval workflow only with `secrets.oidc`;
  *   - the gate status's trusted source is the gate App's login as a string, or with its aliases (a rename, ADR 0523)
  *     the list of logins;
  *   - a repository override wins.
@@ -27,7 +26,7 @@ import { join } from "node:path";
 import { sync } from "../commands/sync.mjs";
 import { approveWorkflow } from "../lib/approve-workflow.mjs";
 import { codeowners, OWNER_ONLY, ownerOnlyPaths, packageFindings } from "../lib/owner-only.mjs";
-import { approveSecrets, lockedIntegrity } from "../lib/render.mjs";
+import { lockedIntegrity } from "../lib/render.mjs";
 
 const OWNER = [
   ".github/workflows/ci.yml",
@@ -138,19 +137,34 @@ test("CODEOWNERS: every owner-only glob to the owner, anchored at the root unles
   );
 });
 
-test("approval workflow: the pinned check, in its environment, with the approver's secret names and no value", () => {
+/** The Infisical coordinates the approval workflow's event jobs mint with. */
+const OIDC = {
+  identityId: "0b5c1a2e-3d4f-4a5b-8c6d-7e8f9a0b1c2d",
+  audience: "fflow-ci",
+  domain: "https://eu.infisical.com",
+  projectId: "86c297d4-ce42-4e94-b4b3-810a715812f2",
+  env: "prod",
+  path: "/ci/gate",
+};
+const SECRETS = {
+  kind: "infisical",
+  projectId: OIDC.projectId,
+  env: OIDC.env,
+  domain: OIDC.domain,
+  paths: { gate: OIDC.path },
+  oidc: { identityId: OIDC.identityId, audience: OIDC.audience },
+};
+
+test("approval workflow: the pinned check, in its environment, naming no secret", () => {
   const text = approveWorkflow({
     version: "9.9.9",
     integrity: "sha512-AbC+/9==",
-    appId: "A_ID",
-    privateKey: "A_KEY",
     trusted: { "fflow/gate": "figentra-gate[bot]" },
     ownerOnly: ["it's/**"],
+    lane: { defaultBranch: "main", oidc: OIDC, owner: "figentra-usr" },
   });
   assert.match(text, /^ {4}environment: fflow-approve$/m);
-  assert.match(text, /app-id: \$\{\{ secrets\.A_ID \}\}/);
-  assert.match(text, /private-key: \$\{\{ secrets\.A_KEY \}\}/);
-  assert.match(text, /permission-pull-requests: write/);
+  assert.doesNotMatch(text, /secrets\.|app-id:|private-key:|create-github-app-token/);
   assert.match(text, /@figentra-oss\/flow@9\.9\.9/);
   assert.match(text, /node flow\/package\/src\/lib\/approve-check\.mjs/);
   // The tarball is checked against the lockfile's integrity before anything in it runs.
@@ -160,20 +174,20 @@ test("approval workflow: the pinned check, in its environment, with the approver
   assert.ok(text.indexOf('"$INTEGRITY" ]') < text.indexOf("node flow/"));
   assert.doesNotMatch(text, /npm install/);
   assert.throws(
-    () => approveWorkflow({ version: "1", integrity: "sha1-x", appId: "A", privateKey: "B" }),
+    () =>
+      approveWorkflow({
+        version: "1",
+        integrity: "sha1-x",
+        lane: { defaultBranch: "main", oidc: OIDC },
+      }),
     /not a sha512 integrity/,
   );
   assert.match(text, /TRUSTED: '\{"fflow\/gate":"figentra-gate\[bot\]"\}'/);
   assert.match(text, /OWNER_ONLY_EXTRA: '\["it''s\/\*\*"\]'/);
-  assert.doesNotMatch(text, /actions\/checkout|pull_request_target|--admin/);
-  assert.doesNotMatch(
-    text,
-    /^\s+sha:/m,
-    "the dispatch input is `head`: a `sha` field reads as a deploy",
-  );
+  assert.doesNotMatch(text, /actions\/checkout|--admin/);
 });
 
-test("sync renders each preset's stewards, the workflow with the approver's names, and CODEOWNERS only with an owner", (t) => {
+test("sync renders each preset's stewards, CODEOWNERS only with an owner, and no approval workflow without secrets.oidc", (t) => {
   /** @type {[string, string[], string | undefined][]} */
   const presets = [
     ["neutral", ["ci-steward", "git-steward", "tracker-steward"], undefined],
@@ -200,12 +214,9 @@ test("sync renders each preset's stewards, the workflow with the approver's name
         readFileSync(join(root, `.claude/agents/${id}.md`), "utf8"),
         new RegExp(`^name: ${id}$`, "m"),
       );
-    assert.equal(approveSecrets(root).appId, "FFLOW_APPROVER_APP_ID");
-    // No owner, no approval path: neither the workflow nor CODEOWNERS.
-    const workflow = join(root, ".github/workflows/fflow-approve.yml");
-    assert.equal(existsSync(workflow), Boolean(owner));
+    // No owner, no CODEOWNERS; no secrets.oidc, no approval workflow (the dispatched fallback is retired, PR G).
+    assert.equal(existsSync(join(root, ".github/workflows/fflow-approve.yml")), false);
     assert.equal(existsSync(join(root, ".github/CODEOWNERS")), Boolean(owner));
-    if (owner) assert.match(readFileSync(workflow, "utf8"), /secrets\.FFLOW_APPROVER_APP_ID /);
   }
 });
 
@@ -223,27 +234,17 @@ test("sync trusts the gate status from the gate App's login, or from each of its
     t.after(() => rmSync(root, { recursive: true }));
     writeFileSync(
       join(root, "flow.config.json"),
-      JSON.stringify({ version: 1, preset: "neutral", apps: { gate, owner: "figentra-usr" } }),
+      JSON.stringify({
+        version: 1,
+        preset: "neutral",
+        apps: { gate, owner: "figentra-usr" },
+        secrets: SECRETS,
+      }),
     );
     sync(root, { direct: true, log: () => {} });
     const text = readFileSync(join(root, ".github/workflows/fflow-approve.yml"), "utf8");
     assert.ok(text.includes(`          TRUSTED: ${trusted}\n`), JSON.stringify(gate));
   }
-});
-
-test("sync refuses a preset whose approval secret name is not a secret name", (t) => {
-  const root = mkdtempSync(join(tmpdir(), "flow-secret-name-"));
-  t.after(() => rmSync(root, { recursive: true }));
-  mkdirSync(join(root, "presets/ours"), { recursive: true });
-  writeFileSync(
-    join(root, "presets/ours/preset.yml"),
-    'preset:\n  id: "ours"\napprove:\n  app_id: "bad name"\n',
-  );
-  writeFileSync(
-    join(root, "flow.config.json"),
-    JSON.stringify({ version: 1, preset: "presets/ours" }),
-  );
-  assert.throws(() => approveSecrets(root), /approve names "bad name", not a secret name/);
 });
 
 test("a repository's own agent overrides the preset's", (t) => {

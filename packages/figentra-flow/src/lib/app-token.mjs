@@ -22,7 +22,7 @@ import { APPROVE_WORKFLOW, ENV_PREFIX, OIDC_IDENTITY_VARIABLE } from "./product.
 
 const API = "https://api.github.com";
 
-/** The events main's approval workflow mints for; `workflow_dispatch` is not one (the fallback holds its own key). */
+/** The events main's approval workflow mints for; `workflow_dispatch` is not one (nothing dispatches it). */
 export const EVENTS = Object.freeze([
   "pull_request_target",
   "status",

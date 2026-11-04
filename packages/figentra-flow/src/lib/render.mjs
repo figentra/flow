@@ -70,7 +70,6 @@ import {
   APPROVE_WORKFLOW,
   BASELINE_WORKFLOW,
   CONFIG_FILE,
-  ENV_PREFIX,
   LEGACY_CONFIG_FILE,
   LEGACY_NAME,
   NAME,
@@ -278,40 +277,38 @@ function renderPreset(root, direct, overrides) {
           path: secrets.paths.gate,
         }
       : undefined;
-  out.set(
-    `.github/workflows/${APPROVE_WORKFLOW}`,
-    approveWorkflow({
-      version: VERSION,
-      integrity: lockedIntegrity(root, PACKAGE, VERSION),
-      ...approveSecrets(root),
-      // The gate's status counts only from the gate App; a repository adds its own sources in `approve.checks`.
-      trusted: { ...(gate ? { [STATUS_CONTEXT]: gate } : {}), ...approve?.checks },
-      ownerOnly,
-      ...(oidc
-        ? {
-            lane: {
-              defaultBranch: defaultBranch(root),
-              oidc,
-              owner: apps.owner,
-              workflows: approve?.workflows ?? [],
-              requesters: approve?.requesters ?? [],
-              // Not apps.gate.slug yet, as in `land` (ADR 0523's migration).
-              reviewers: [apps.review?.slug].filter((x) => x !== undefined),
-            },
-          }
-        : {}),
-      ...(oidc && runner?.kind === "github-actions"
-        ? {
-            verdict: {
-              gatePath: `.github/workflows/${runner.workflow ?? GATE_WORKFLOW}`,
-              owner: apps.owner,
-              defaultBranch: defaultBranch(root),
-              oidc,
-            },
-          }
-        : {}),
-    }),
-  );
+  // The L2 design's PR G: without `secrets.oidc` there is no approval workflow (the dispatched fallback is retired),
+  // so a review the ruleset requires comes from a person.
+  if (oidc)
+    out.set(
+      `.github/workflows/${APPROVE_WORKFLOW}`,
+      approveWorkflow({
+        version: VERSION,
+        integrity: lockedIntegrity(root, PACKAGE, VERSION),
+        // The gate's status counts only from the gate App; a repository adds its own sources in `approve.checks`.
+        trusted: { ...(gate ? { [STATUS_CONTEXT]: gate } : {}), ...approve?.checks },
+        ownerOnly,
+        lane: {
+          defaultBranch: defaultBranch(root),
+          oidc,
+          owner: apps.owner,
+          workflows: approve?.workflows ?? [],
+          requesters: approve?.requesters ?? [],
+          // Not apps.gate.slug yet, as in `land` (ADR 0523's migration).
+          reviewers: [apps.review?.slug].filter((x) => x !== undefined),
+        },
+        ...(runner?.kind === "github-actions"
+          ? {
+              verdict: {
+                gatePath: `.github/workflows/${runner.workflow ?? GATE_WORKFLOW}`,
+                owner: apps.owner,
+                defaultBranch: defaultBranch(root),
+                oidc,
+              },
+            }
+          : {}),
+      }),
+    );
   // GitHub asks the owner for owner-only paths itself (with `require_code_owner_review`); no owner, no file.
   out.set(".github/CODEOWNERS", codeowners(apps.owner, ownerOnly));
   return out;
@@ -494,30 +491,6 @@ const REFERENCE_FILES = ["routing.yaml", "models.yaml"];
 export function selectedSkills(root) {
   const profile = selectedProfile(root);
   return loadThirdParty(presetDir(root)).filter((s) => selects(profile, "skills", s.id));
-}
-
-/** A secret name GitHub accepts. */
-const SECRET_NAME = /^[A-Z_][A-Z0-9_]*$/;
-
-/**
- * The approving App's secret names: `preset.yml`'s `approve.app_id` and `approve.private_key`, else
- * `<PREFIX>APPROVER_APP_ID` and `<PREFIX>APPROVER_PRIVATE_KEY`. They name an App of their own, never a bot that pushes.
- * @param {string} root
- */
-export function approveSecrets(root) {
-  const file = join(presetDir(root), "preset.yml");
-  /** @type {{ app_id?: string, private_key?: string } | undefined} */
-  const approve = presetManifest(root)?.approve;
-  const names = {
-    appId: approve?.app_id ?? `${ENV_PREFIX}APPROVER_APP_ID`,
-    privateKey: approve?.private_key ?? `${ENV_PREFIX}APPROVER_PRIVATE_KEY`,
-  };
-  for (const name of Object.values(names))
-    if (!SECRET_NAME.test(name))
-      throw new Error(
-        `${file}: approve names "${name}", not a secret name (${SECRET_NAME.source})`,
-      );
-  return names;
 }
 
 /**
