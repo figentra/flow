@@ -7,7 +7,8 @@
  *   - `configure` sets `values` in a parameter block the preset declares (`parameters:` in `preset.yml`); no bundled
  *     preset declares one yet, so `validate` refuses every `configure` until one does and its reader applies it;
  *   - `replace` swaps a whole rendered output, or a preset source (`commands/`, `agents/`, `rules/` or `templates/`
- *     `<name>.md`) before it is rendered, for the text of `file` (relative to `.flow/overrides/`);
+ *     `<name>.md`, a file of `skills/<name>/` or `reference/`, `routing.yaml` or `models.yaml`) before it is
+ *     rendered, for the text of `file` (relative to `.flow/overrides/`);
  *   - `disable` drops a rendered output.
  *   `replace` and `disable` need `reason`, `owner` and `review` (a date); `reviewState` is `due` from 14 days before
  *   the review date and `expired` after it. Today's whole-file overrides (`.flow/overrides/{commands,agents,rules}/
@@ -77,7 +78,8 @@ export const OVERRIDE_SCHEMA = {
 /** The preset sources a whole-file override replaces, by their folder under `.flow/overrides/`. */
 const LEGACY_FOLDERS = ["commands", "agents", "rules"];
 /** A preset source `replace` may target. */
-const SOURCE = /^(commands|agents|rules|templates)\/[^/]+\.md$/;
+const SOURCE =
+  /^(?:(?:commands|agents|rules|templates)\/[^/]+\.md|(?:skills\/[^/]+|reference)\/.+|routing\.yaml|models\.yaml)$/;
 
 /**
  * Whether `s` is a real calendar date `YYYY-MM-DD`.
@@ -297,17 +299,21 @@ export function targetProblems(overrides, outputs, { params = {}, sources = new 
 }
 
 /**
- * The preset source a rendered output comes from (`commands/`, `agents/` or `rules/` `<name>.md`, or the README's
- * template), or undefined.
+ * The preset source a rendered output comes from (`commands/`, `agents/` or `rules/` `<name>.md`, a preset skill's
+ * or reference file, `routing.yaml`, `models.yaml`, or the README's template), or undefined.
  * @param {string} path
  */
 function sourceOf(path) {
   if (path === "README.md") return "templates/readme-template.md";
   const command =
-    path.match(/^\.(?:claude|agents)\/skills\/([^/]+)\/SKILL\.md$/) ??
+    path.match(/^\.(?:claude|agents)\/skills\/(flow-[^/]+)\/SKILL\.md$/) ??
     path.match(/^\.opencode\/commands\/([^/]+)\.md$/);
   if (command) return `commands/${command[1]}.md`;
-  return path.match(/^\.(?:claude|agents)\/((?:agents|rules)\/[^/]+\.md)$/)?.[1];
+  return (
+    path.match(/^\.(?:claude|agents)\/((?:agents|rules)\/[^/]+\.md)$/)?.[1] ??
+    path.match(/^\.(?:claude|agents)\/(skills\/.+)$/)?.[1] ??
+    path.match(/^\.agents\/(reference\/.+|routing\.yaml|models\.yaml)$/)?.[1]
+  );
 }
 
 /**

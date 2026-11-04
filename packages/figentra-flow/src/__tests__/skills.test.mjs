@@ -438,15 +438,16 @@ test("sync installs and pins only the third-party skills the profile selects", (
 });
 
 // @covers sta-1945:FR-8 sta-1945:AC-10 sta-1945:P-013
-test("stackra's third-party.yml: D1's machine-only skills, none pinned or refused", () => {
+test("stackra's third-party.yml: D1's and O9's machine-only skills, none pinned or refused", () => {
   const skills = loadThirdParty(join(FLOW_ASSETS, "presets", "stackra"));
   const only = skills.filter((s) => s.machineOnly).map((s) => s.id);
   assert.deepEqual(
     only.filter((id) => id.startsWith("heroui")),
-    ["heroui-react-pro", "heroui-pro-design-taste"],
+    ["heroui-react-pro", "heroui-pro-design-taste", "heroui-react", "heroui-native"],
   );
   assert.equal(only.filter((id) => id.startsWith("remotion-")).length, 6);
-  assert.equal(only.length, 2 + 6 + 13);
+  // D1's 21, then the 20 upstream skills core used to vendor (O9), until G7 pins them.
+  assert.equal(only.length, 2 + 6 + 13 + 20);
   const pins = pinsOf(skills);
   for (const s of skills) {
     assert.equal(licenceProblem(s), undefined, s.id);

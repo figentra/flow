@@ -1,11 +1,12 @@
 /**
  * Figentra Flow file contract:
  * Purpose: `fflow validate [--workspace <dir>]` (STA-1945 FR-1, FR-4, FR-5, FR-6, AC-1, AC-4, AC-5): checks
- *   `flow.config.json` against its schema and names each field that breaks it, and a `profile` the preset lacks
- *   (FR-6); a repository without the file is a problem too. It checks each override in `.flow/overrides/` against the
- *   override schema (a `replace` or `disable` without `reason`, `owner` and `review` is refused), against what `sync`
- *   renders for the profile (an unknown target is refused), and against the mandatory policies (one that disables,
- *   replaces or loosens one is refused, naming it); a whole-file override without its `.yml` is a warning.
+ *   `flow.config.json` against its schema and names each field that breaks it, a `profile` the preset lacks (FR-6),
+ *   and each agent or skill that profile names but the preset does not carry (C6); a repository without the file is
+ *   a problem too. It checks each override in `.flow/overrides/` against the override schema (a `replace` or
+ *   `disable` without `reason`, `owner` and `review` is refused), against what `sync` renders for the profile (an
+ *   unknown target is refused), and against the mandatory policies (one that disables, replaces or loosens one is
+ *   refused, naming it); a whole-file override without its `.yml` is a warning.
  * Boundary: reads only; writes nothing.
  * Runtime: node
  * Governing contract: STA-1945 (FR-1, FR-4, FR-5, FR-6, P-001, P-007, P-008).
@@ -16,7 +17,13 @@ import { LockError, readLock } from "../lib/lock.mjs";
 import { legacyWarnings, loadOverrides, targetProblems } from "../lib/overrides.mjs";
 import { policyProblems } from "../lib/policies.mjs";
 import { CONFIG_FILE, NAME } from "../lib/product.mjs";
-import { presetTargets, profileProblem, render, syncedDirect } from "../lib/render.mjs";
+import {
+  presetTargets,
+  profileGaps,
+  profileProblem,
+  render,
+  syncedDirect,
+} from "../lib/render.mjs";
 import { runIn } from "../lib/workspace-run.mjs";
 
 /**
@@ -68,7 +75,7 @@ export function validateRepo(root) {
   const unresolved = profileProblem(root);
   const o = overridesReport(root);
   return {
-    problems: [...errors, ...(unresolved ? [unresolved] : []), ...o.problems],
+    problems: [...errors, ...(unresolved ? [unresolved] : profileGaps(root)), ...o.problems],
     warnings: [...warnings, ...o.warnings],
   };
 }

@@ -10,8 +10,12 @@ queues:
   adr: "apps/docs/adr/numbers.yaml"
 
 # What each repository gets (STA-1945 FR-6, D3): the config's `profile` names one, else `default`; `"*"` selects
-# all. Every profile selects all until core's content arrives and splits them (STA-1945 PR 6); stackra-pro uses
-# `framework` unless its needs come to differ.
+# all, and a skill name covers the `flow-*` skills, the preset's own and its `third-party.yml` ones. The splits of core's content
+# (STA-1945 PR 6): `framework` (core, and stackra-pro while its needs match) gets everything. `platform` (os,
+# figentra), `product` (the products) and `starter` (the template) build the same kinds of members (apps, services,
+# packages, infra, store launches), so they get every skill and every agent but `compiler-engineer`, which builds
+# core's own `stackra gen`. `brand` writes no app or service code: the stewards, review, specs, ADRs and the design
+# side, plus the agents the trust routes and the secrets rule name (security, secrets, incidents).
 default: framework
 profiles:
   framework:
@@ -19,18 +23,134 @@ profiles:
     skills: ["*"]
     hooks: ["*"]
   platform:
-    agents: ["*"]
+    agents:
+      - accessibility-reviewer
+      - api-contract-reviewer
+      - architecture-guardian
+      - ci-steward
+      - code-reviewer
+      - code-standards-steward
+      - data-engineer
+      - dependency-steward
+      - design-brand-reviewer
+      - desktop-pwa-builder
+      - docs-adr-steward
+      - docs-changesets-steward
+      - frontend-builder
+      - git-steward
+      - i18n-steward
+      - incident-commander
+      - infra-engineer
+      - linear-steward
+      - mobile-builder
+      - package-builder
+      - performance-reviewer
+      - release-operations
+      - releaser
+      - secret-manager
+      - security-tenancy-reviewer
+      - service-builder
+      - spec-writer
+      - test-engineer
+      - vault-keeper
     skills: ["*"]
     hooks: ["*"]
   product:
-    agents: ["*"]
+    agents:
+      - accessibility-reviewer
+      - api-contract-reviewer
+      - architecture-guardian
+      - ci-steward
+      - code-reviewer
+      - code-standards-steward
+      - data-engineer
+      - dependency-steward
+      - design-brand-reviewer
+      - desktop-pwa-builder
+      - docs-adr-steward
+      - docs-changesets-steward
+      - frontend-builder
+      - git-steward
+      - i18n-steward
+      - incident-commander
+      - infra-engineer
+      - linear-steward
+      - mobile-builder
+      - package-builder
+      - performance-reviewer
+      - release-operations
+      - releaser
+      - secret-manager
+      - security-tenancy-reviewer
+      - service-builder
+      - spec-writer
+      - test-engineer
+      - vault-keeper
     skills: ["*"]
     hooks: ["*"]
   brand:
-    agents: ["*"]
-    skills: ["*"]
+    agents:
+      - accessibility-reviewer
+      - ci-steward
+      - code-reviewer
+      - dependency-steward
+      - design-brand-reviewer
+      - docs-adr-steward
+      - git-steward
+      - incident-commander
+      - linear-steward
+      - secret-manager
+      - security-tenancy-reviewer
+      - spec-writer
+    skills:
+      - accessibility
+      - archify
+      - docs-adr
+      - docs-spec-flow
+      - expo-design-system
+      - flow-analyze
+      - flow-checklist
+      - flow-clarify
+      - flow-converge
+      - flow-implement
+      - flow-plan
+      - flow-review
+      - flow-specify
+      - frontend-design
+      - heroui-native
+      - heroui-react
+      - pnpm
     hooks: ["*"]
   starter:
-    agents: ["*"]
+    agents:
+      - accessibility-reviewer
+      - api-contract-reviewer
+      - architecture-guardian
+      - ci-steward
+      - code-reviewer
+      - code-standards-steward
+      - data-engineer
+      - dependency-steward
+      - design-brand-reviewer
+      - desktop-pwa-builder
+      - docs-adr-steward
+      - docs-changesets-steward
+      - frontend-builder
+      - git-steward
+      - i18n-steward
+      - incident-commander
+      - infra-engineer
+      - linear-steward
+      - mobile-builder
+      - package-builder
+      - performance-reviewer
+      - release-operations
+      - releaser
+      - secret-manager
+      - security-tenancy-reviewer
+      - service-builder
+      - spec-writer
+      - test-engineer
+      - vault-keeper
     skills: ["*"]
     hooks: ["*"]

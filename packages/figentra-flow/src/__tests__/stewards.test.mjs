@@ -187,10 +187,14 @@ test("sync renders each preset's stewards, the workflow with the approver's name
       JSON.stringify({ version: 1, preset, ...(owner ? { apps: { owner } } : {}) }),
     );
     const { files } = sync(root, { direct: true, log: () => {} });
-    assert.deepEqual(
-      files.filter((f) => f.startsWith(".claude/agents/")),
-      ids.map((id) => `.claude/agents/${id}.md`),
-    );
+    const agents = files.filter((f) => f.startsWith(".claude/agents/"));
+    // The stackra preset also carries core's role agents (STA-1945, preset-content.test.mjs); neutral only its stewards.
+    if (preset === "neutral")
+      assert.deepEqual(
+        agents,
+        ids.map((id) => `.claude/agents/${id}.md`),
+      );
+    for (const id of ids) assert.ok(agents.includes(`.claude/agents/${id}.md`), id);
     for (const id of ids)
       assert.match(
         readFileSync(join(root, `.claude/agents/${id}.md`), "utf8"),

@@ -1,0 +1,213 @@
+# Stackra file contract:
+# Purpose: who does what — maps a task type to an executor (claude = the lead, opencode = Kimi K3 on Bedrock),
+#          model and agent, plus the daily OpenCode spend cap. Read by `pnpm delegate` and `pnpm ai:spend`.
+# Scope: delegation (`figentra delegate`, `figentra ai spend`)
+# Owner: the lead (ADR 0258)
+# Secrets: forbidden
+# Override: `--executor claude|opencode` on the command line, or STACKRA_EXECUTOR in the environment.
+# Format: one block mapping per task (a small parser reads it; no flow maps, no deeper nesting).
+budget:
+  dailyUsd: 150
+  warnAt: 0.8
+
+tasks:
+  # --- OpenCode / Kimi K3: mechanical, machine-verifiable, low/medium risk ---
+  tests:
+    executor: opencode
+    model: amazon-bedrock/global.moonshotai.kimi-k3
+    agent: test-engineer
+  test-stewardship:
+    executor: opencode
+    model: amazon-bedrock/global.moonshotai.kimi-k3
+    agent: test-engineer
+  steward-docblocks:
+    executor: opencode
+    model: amazon-bedrock/global.moonshotai.kimi-k3
+    agent: code-standards-steward
+  steward-code-standards:
+    executor: opencode
+    model: amazon-bedrock/global.moonshotai.kimi-k3
+    agent: code-standards-steward
+  steward-i18n:
+    executor: opencode
+    model: amazon-bedrock/global.moonshotai.kimi-k3
+    agent: i18n-steward
+  steward-changesets:
+    executor: opencode
+    model: amazon-bedrock/global.moonshotai.kimi-k3
+    agent: docs-changesets-steward
+  steward-docs:
+    executor: opencode
+    model: amazon-bedrock/global.moonshotai.kimi-k3
+    agent: docs-adr-steward
+  verify-fix:
+    executor: opencode
+    model: amazon-bedrock/global.moonshotai.kimi-k3
+    agent: build
+  renovate-fixup:
+    executor: opencode
+    model: amazon-bedrock/global.moonshotai.kimi-k3
+    agent: dependency-steward
+  os-port:
+    executor: opencode
+    model: amazon-bedrock/global.moonshotai.kimi-k3
+    agent: build
+  spec-task:
+    executor: opencode
+    model: amazon-bedrock/global.moonshotai.kimi-k3
+    agent: package-builder
+  codegen-drift:
+    executor: opencode
+    model: amazon-bedrock/global.moonshotai.kimi-k3
+    agent: build
+  scan:
+    executor: opencode
+    model: amazon-bedrock/global.moonshotai.kimi-k3
+    agent: plan
+  e2e:
+    executor: opencode
+    model: amazon-bedrock/global.moonshotai.kimi-k3
+    agent: test-engineer
+  linear:
+    executor: opencode
+    model: amazon-bedrock/global.moonshotai.kimi-k3
+    agent: build
+
+  # --- Claude: judgement, contracts, anything touching trust or money ---
+  clarify:
+    executor: claude
+    model: opus
+    agent: claude
+  spec:
+    executor: claude
+    model: opus
+    agent: claude
+  design:
+    executor: claude
+    model: opus
+    agent: claude
+  adr:
+    executor: claude
+    model: opus
+    agent: docs-adr-steward
+  contract:
+    executor: claude
+    model: opus
+    agent: api-contract-reviewer
+  auth:
+    executor: claude
+    model: opus
+    agent: security-tenancy-reviewer
+  tenancy:
+    executor: claude
+    model: opus
+    agent: security-tenancy-reviewer
+  iam:
+    executor: claude
+    model: opus
+    agent: security-tenancy-reviewer
+  money:
+    executor: claude
+    model: opus
+    agent: security-tenancy-reviewer
+  pii:
+    executor: claude
+    model: opus
+    agent: security-tenancy-reviewer
+  secrets:
+    executor: claude
+    model: opus
+    agent: security-tenancy-reviewer
+  ci-permissions:
+    executor: claude
+    model: opus
+    agent: security-tenancy-reviewer
+  review:
+    executor: claude
+    model: sonnet
+    agent: code-reviewer
+  merge:
+    executor: claude
+    model: opus
+    agent: claude
+  release:
+    executor: claude
+    model: opus
+    agent: claude
+  incident:
+    executor: claude
+    model: opus
+    agent: incident-commander
+  # --- Claude: roster v2 roles (ADR 0258). Claude-only agents never route to OpenCode. ---
+  architecture:
+    executor: claude
+    model: opus
+    agent: architecture-guardian
+  release-check:
+    executor: claude
+    model: opus
+    agent: release-operations
+  package:
+    executor: claude
+    model: sonnet
+    agent: package-builder
+  gen:
+    executor: claude
+    model: sonnet
+    agent: compiler-engineer
+  service:
+    executor: claude
+    model: sonnet
+    agent: service-builder
+  data:
+    executor: claude
+    model: sonnet
+    agent: data-engineer
+  migration:
+    executor: claude
+    model: sonnet
+    agent: data-engineer
+  frontend:
+    executor: claude
+    model: sonnet
+    agent: frontend-builder
+  desktop:
+    executor: claude
+    model: sonnet
+    agent: desktop-pwa-builder
+  pwa:
+    executor: claude
+    model: sonnet
+    agent: desktop-pwa-builder
+  mobile:
+    executor: claude
+    model: sonnet
+    agent: mobile-builder
+  infra:
+    executor: claude
+    model: sonnet
+    agent: infra-engineer
+  spec-draft:
+    executor: claude
+    model: opus
+    agent: spec-writer
+  secrets-import:
+    executor: claude
+    model: sonnet
+    agent: secret-manager
+  code-review:
+    executor: claude
+    model: sonnet
+    agent: code-reviewer
+  a11y-review:
+    executor: claude
+    model: sonnet
+    agent: accessibility-reviewer
+  perf-review:
+    executor: claude
+    model: sonnet
+    agent: performance-reviewer
+  dependencies:
+    executor: opencode
+    model: amazon-bedrock/global.moonshotai.kimi-k3
+    agent: dependency-steward

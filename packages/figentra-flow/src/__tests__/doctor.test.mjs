@@ -156,7 +156,8 @@ test("doctor: names each machine-only skill's source; a third-party.yml it canno
   const rows = checks(r.root, { offline: true, disk }).filter((c) =>
     c.id.startsWith("machine-only:"),
   );
-  assert.equal(rows.length, 2 + 6 + 13);
+  // D1's HeroUI Pro, Remotion and owner's skills, then O9's upstream skills core used to vendor.
+  assert.equal(rows.length, 2 + 6 + 13 + 20);
   assert.ok(rows.every((c) => c.ok));
   assert.ok(rowsOf(rows).every((row) => row.group === "Machine" && row.status === "ok"));
   assert.match(
