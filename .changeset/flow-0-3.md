@@ -2,7 +2,7 @@
 "@figentra-oss/flow": minor
 ---
 
-Figentra Flow 0.4: spec-driven development for agent teams, for any repository. 1.0 follows once the 12 repositories
+Figentra Flow 0.3: spec-driven development for agent teams, for any repository. 1.0 follows once the 12 repositories
 run the preset package and the GitHub Actions gate (leader, 2026-11-04). The breaking changes since 0.2.3, each
 described in its own changeset:
 
