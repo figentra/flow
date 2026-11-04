@@ -23,7 +23,7 @@ pnpm install        # .npmrc maps the @figentra-oss and @stackra scopes to the F
 pnpm verify         # format check, lint, typecheck, tests and build
 ```
 
-The repository is one pnpm workspace with one package, `packages/figentra-flow`. It is plain ESM JavaScript with JSDoc
+The repository is one pnpm workspace with one package, `packages/flow`. It is plain ESM JavaScript with JSDoc
 types, checked by `tsc`.
 
 | Command                                 | What it does              |
@@ -38,7 +38,7 @@ types, checked by `tsc`.
 ## Making a change
 
 1. **Branch from `main`.** Name the branch `<topic>/<short-slug>`, for example `fix/land-refs`.
-2. **Write the test first.** Tests live in `packages/figentra-flow/src/__tests__/` and use `node:test`. They create
+2. **Write the test first.** Tests live in `packages/flow/src/__tests__/` and use `node:test`. They create
    temporary git repositories and never reach the network.
 3. **Keep the file contract.** Every source file starts with a `Figentra Flow file contract:` comment: its purpose,
    boundary, runtime, governing contract and secrets. Update it when the file's job changes.

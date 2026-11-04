@@ -16,7 +16,7 @@
   <a href="https://github.com/figentra/flow/releases/latest"><img alt="Release" src="https://img.shields.io/badge/release-%40figentra--oss%2Fflow-blue" /></a>
   <a href="https://github.com/figentra/flow/blob/main/LICENSE"><img alt="Licence: MIT" src="https://img.shields.io/badge/licence-MIT-green" /></a>
   <a href="https://github.com/figentra/flow#status"><img alt="Status: In progress" src="https://img.shields.io/badge/status-In%20progress-orange" /></a>
-  <a href="https://github.com/figentra/flow/blob/main/packages/figentra-flow/README.md"><img alt="Docs" src="https://img.shields.io/badge/docs-read-0a7bd6" /></a>
+  <a href="https://github.com/figentra/flow/blob/main/packages/flow/README.md"><img alt="Docs" src="https://img.shields.io/badge/docs-read-0a7bd6" /></a>
 </p>
 
 ## What it is
@@ -59,21 +59,21 @@ pnpm exec fflow init      # flow.config.json, .flow/ and the flow-* commands
 pnpm exec fflow doctor    # checks Node, git, the configuration and the credentials
 ```
 
-Every command is in the [command reference](packages/figentra-flow/README.md#commands).
+Every command is in the [command reference](packages/flow/README.md#commands).
 
 ## Architecture at a glance
 
-One pnpm workspace with one package, `packages/figentra-flow`: plain ESM JavaScript with JSDoc. Its runtime
+One pnpm workspace with one package, `packages/flow`: plain ESM JavaScript with JSDoc. Its runtime
 dependencies are `undici` and the console engine (`@stackra/console`, `@stackra/validation`), which only the CLI layer
 loads.
 
-| Path                                  | What                                                                         |
-| ------------------------------------- | ---------------------------------------------------------------------------- |
-| `packages/figentra-flow/bin`          | the `fflow` dispatcher                                               |
-| `packages/figentra-flow/src/commands` | one module per command (`init`, `sync`, `gate`, `land`, `train`, `release`…) |
-| `packages/figentra-flow/src/adapters` | the tracker and runner adapters                                              |
-| `packages/figentra-flow/assets/flow`  | the `neutral` and `stackra` presets and the base templates                   |
-| `packages/figentra-flow/schema`       | the `flow.config.json` schema                                       |
+| Path                         | What                                                                         |
+| ---------------------------- | ---------------------------------------------------------------------------- |
+| `packages/flow/bin`          | the `fflow` dispatcher                                                       |
+| `packages/flow/src/commands` | one module per command (`init`, `sync`, `gate`, `land`, `train`, `release`…) |
+| `packages/flow/src/adapters` | the tracker and runner adapters                                              |
+| `packages/flow/assets/flow`  | the `neutral` and `stackra` presets and the base templates                   |
+| `packages/flow/schema`       | the `flow.config.json` schema                                                |
 
 ## Development
 
@@ -99,7 +99,7 @@ Every branch and pull request carries a Linear `STA-` key.
 
 ## Docs and playground
 
-- **Docs**: <https://github.com/figentra/flow/blob/main/packages/figentra-flow/README.md>
+- **Docs**: <https://github.com/figentra/flow/blob/main/packages/flow/README.md>
 
 ## Release and changelog
 

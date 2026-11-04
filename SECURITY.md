@@ -46,7 +46,7 @@ in the advisory unless you ask us not to.
 
 In scope:
 
-- the `fflow` CLI and everything in `packages/figentra-flow`;
+- the `fflow` CLI and everything in `packages/flow`;
 - the files Flow renders into a repository: `.github/workflows/fflow-*.yml`, `CODEOWNERS`, `lefthook.yml`, the agent
   guard hooks and settings, and the `.flow/` folder;
 - the approval and merge lane: how it mints, narrows and revokes the GitHub App token, and every rule that decides
