@@ -2,11 +2,12 @@
  * Figentra Flow file contract:
  * Purpose: the `.flow/` folder a repository owns (ADR 0510): its paths, the current-spec pointer that `gate dir`
  *   writes and every `spec` subcommand reads, the spec folders from the configuration (`specs.dir`, `specs.bugsDir`),
- *   template resolution: the repository's `.flow/overrides/`, then its preset, then Flow's base templates; and the
- *   preset's surface files (`surfaces/`) read as YAML.
+ *   the preset (bundled, an installed npm package or a folder of the repository, STA-2097), template resolution: the
+ *   repository's `.flow/overrides/`, then its preset, then Flow's base templates; and the preset's surface files
+ *   (`surfaces/`) read as YAML.
  * Boundary: reads the configuration and files; `writeCurrent` is the only write.
  * Runtime: node
- * Governing contract: ADR 0510; STA-1729.
+ * Governing contract: ADR 0510; STA-1729; STA-2097.
  * Secrets: none.
  */
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
@@ -14,6 +15,8 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ConfigError, loadConfig } from "./config.mjs";
+import { resolvePackagePreset } from "./preset-package.mjs";
+import { VERSION } from "./product.mjs";
 import { parseYaml, YamlError } from "./yaml.mjs";
 
 /** The folder a repository owns. */
@@ -69,13 +72,33 @@ export function writeCurrent(root, dir) {
 }
 
 /**
- * The preset folder `root` uses: a bundled preset by name, or the repository's own folder (`preset` as a path).
+ * The preset folder `root` uses (`presetSource`).
  * @param {string} root
+ * @throws {ConfigError} as `presetSource` does
  */
 export function presetDir(root) {
+  return presetSource(root).dir;
+}
+
+/**
+ * The preset `root` uses: a bundled preset by name; else an installed npm package by name (its package.json
+ * `flow.preset` folder, at the package's version, STA-2097); else the repository's own folder (`preset` as a path).
+ * Bundled and path presets carry Flow's version.
+ * @param {string} root
+ * @returns {import("./preset-package.mjs").PresetSource}
+ * @throws {ConfigError} when a package name is not installed, or its package names no preset folder inside it
+ */
+export function presetSource(root) {
   const preset = loadConfig(root).config.preset ?? "neutral";
   const bundled = join(FLOW_ASSETS, "presets", preset);
-  return existsSync(bundled) ? bundled : resolve(root, preset);
+  if (existsSync(bundled)) return { name: preset, dir: bundled, version: VERSION };
+  return (
+    resolvePackagePreset(root, preset) ?? {
+      name: preset,
+      dir: resolve(root, preset),
+      version: VERSION,
+    }
+  );
 }
 
 /**

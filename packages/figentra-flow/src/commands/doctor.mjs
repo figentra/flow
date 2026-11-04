@@ -1,25 +1,27 @@
 /**
  * Figentra Flow file contract:
  * Purpose: `fflow doctor [--json] [--offline]`: whether this machine and repository can run Flow: Node, git,
- *   the configuration, the `.flow/` install, the machine-only skills to install from source (STA-1945 FR-8), the
- *   ignored worktree folder, the roster and the GitHub credentials, each
- *   reported as passed or failed with its fix. Two warnings never fail the run (STA-1871): more linked worktrees than
- *   `clean.budget`, and under 10 GB or 10 % free on the disk that holds the repository; nor does no `credentials`
- *   block in a repository with no `origin` yet, which is information (FR-31). `doctor` writes the checks as the grouped
- *   checklist (Machine, Repo, Flow, GitHub) on the console engine, whose summary sets the exit code.
+ *   the configuration, the preset (installed, and the installed Flow inside its declared range, STA-2097), the
+ *   `.flow/` install, the machine-only skills to install from source (STA-1945 FR-8), the ignored worktree folder,
+ *   the roster and the GitHub credentials, each reported as passed or failed with its fix. Two warnings never fail
+ *   the run (STA-1871): more linked worktrees than `clean.budget`, and under 10 GB or 10 % free on the disk that holds
+ *   the repository; nor does no `credentials` block in a repository with no `origin` yet, which is information
+ *   (FR-31). `doctor` writes the checks as the grouped checklist (Machine, Repo, Flow, GitHub) on the console engine,
+ *   whose summary sets the exit code.
  * Boundary: reads only, reusing the checks the other commands make (`loadConfig`, `installProblems`, `loadTeam`,
  *   `connect`); one GitHub call (`GET /repos/{repo}`) unless `--offline`. Exit 0 when no check fails, 1 otherwise.
  * Runtime: node
- * Governing contract: STA-1729 (FR-13, AC-055); STA-1846; STA-1945 (FR-8, AC-10; FR-31, AC-37).
+ * Governing contract: STA-1729 (FR-13, AC-055); STA-1846; STA-1945 (FR-8, AC-10; FR-31, AC-37); STA-2097.
  * Secrets: none here; the token stays inside `gh` or the wrapper.
  */
-import { statfsSync } from "node:fs";
+import { existsSync, statfsSync } from "node:fs";
 
 import { BUDGET, ignoresWorktrees } from "./clean.mjs";
 import { connect } from "./land.mjs";
 import { ConfigError, loadConfig } from "../lib/config.mjs";
-import { presetDir } from "../lib/flow-dir.mjs";
+import { presetDir, presetSource } from "../lib/flow-dir.mjs";
 import { git, worktrees } from "../lib/git.mjs";
+import { incompatibility, isPackageName } from "../lib/preset-package.mjs";
 import { CONFIG_FILE, NAME, NODE_RANGE } from "../lib/product.mjs";
 import { installProblems } from "../lib/render.mjs";
 import { loadThirdParty, THIRD_PARTY } from "../lib/skills.mjs";
@@ -59,6 +61,41 @@ export function meets(version, range) {
     if ((have[i] ?? 0) !== want) return (have[i] ?? 0) > want;
   }
   return true;
+}
+
+/**
+ * The preset row (STA-2097): the preset the config names resolves (a package preset is installed and names its folder),
+ * and the installed Flow is inside the range its package and its `preset.yml` declare.
+ * @param {string} root
+ * @returns {Check}
+ */
+export function presetRow(root) {
+  let source, problem;
+  try {
+    source = presetSource(root);
+    problem = incompatibility(source);
+  } catch (error) {
+    if (!(error instanceof ConfigError)) throw error;
+    const preset = loadConfig(root).config.preset ?? "";
+    return {
+      id: "preset",
+      ok: false,
+      detail: error.message,
+      fix: isPackageName(preset)
+        ? `run \`${NAME} preset add ${preset}\`, or correct the package it names`
+        : `fix \`preset\` in ${CONFIG_FILE}`,
+    };
+  }
+  if (!existsSync(source.dir))
+    return {
+      id: "preset",
+      ok: false,
+      detail: `the preset ${source.name} has no folder at ${source.dir}`,
+      fix: `fix \`preset\` in ${CONFIG_FILE}`,
+    };
+  return problem
+    ? { id: "preset", ok: false, ...problem }
+    : { id: "preset", ok: true, detail: `${source.name} ${source.version}` };
 }
 
 /**
@@ -138,13 +175,16 @@ export function checks(cwd, { offline = false, node = process.versions.node, dis
         },
   );
 
+  const preset = loaded.errors.length ? undefined : presetRow(root);
+  if (preset) out.push(preset);
+
   const install = installProblems(root);
   out.push(
     install.length
       ? { id: "install", ok: false, detail: install.join("; "), fix: `run \`${NAME} sync\`` }
       : { id: "install", ok: true, detail: ".flow/ matches the installed Flow" },
   );
-  if (!loaded.errors.length) out.push(...machineOnlyRows(root));
+  if (preset?.ok) out.push(...machineOnlyRows(root));
 
   out.push(
     ignoresWorktrees(root)
@@ -239,6 +279,7 @@ const GROUP_OF = {
   worktrees: "Repo",
   "worktree-budget": "Repo",
   config: "Flow",
+  preset: "Flow",
   install: "Flow",
   team: "Flow",
   credentials: "GitHub",

@@ -12,9 +12,10 @@
  *   records the profile, and `profileGaps` names what a profile selects that the preset lacks (STA-1945 FR-6). Then
  *   the repository's overrides apply (FR-4, `overrides.mjs`), except one that breaks a mandatory policy (FR-5), which
  *   `validate` and `check` name instead. Each written file carries its provenance header, naming the overrides that
- *   shaped it, and `.flow/lock.json` v2 records the Flow version, the preset with its digest, the profile, the
- *   overrides' digest and each written file's digest (STA-1945 FR-2, FR-3); `installProblems`, reading a v1 or v2
- *   lock, is the check that replaces spec-kit's tripwire: no hand edit, no forgotten `sync`, and no spec-kit leftover.
+ *   shaped it, and `.flow/lock.json` v2 records the Flow version, the preset with its digest and version (a package
+ *   preset's own, STA-2097), the profile, the overrides' digest and each written file's digest (STA-1945 FR-2,
+ *   FR-3); `installProblems`, reading a v1 or v2 lock, is the check that replaces spec-kit's tripwire: no hand edit,
+ *   no forgotten `sync`, and no spec-kit leftover.
  *   With a `.flow/readme.yml`, `README.md` is rendered too (STA-1879). The lock pins the third-party skills the profile
  *   selects, which `sync` installs into the git-ignored `.agents/skills/.vendor/` (STA-1945 FR-8).
  * Boundary: `render` and `installProblems` read; `writeRendered` writes the rendered files and the lock and removes
@@ -23,7 +24,7 @@
  *   deletes `.specify/` (that is `migrate`), nor, yet, another owned file (an agent, rule, surface or hook) a
  *   narrower profile or preset no longer renders (STA-1945 T068).
  * Runtime: node
- * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-2, FR-3, FR-4, FR-5, FR-6, FR-8).
+ * Governing contract: ADR 0510; STA-1729 (F3); STA-1945 (FR-2, FR-3, FR-4, FR-5, FR-6, FR-8); STA-2097.
  * Secrets: none.
  */
 import {
@@ -41,7 +42,7 @@ import { GATE_WORKFLOW } from "../adapters/runner/github-actions.mjs";
 import { approveWorkflow } from "./approve-workflow.mjs";
 import { baselineWorkflow } from "./baseline-workflow.mjs";
 import { ConfigError, gateLogins, loadConfig } from "./config.mjs";
-import { FLOW_ASSETS, LOCK, OVERRIDES, presetDir } from "./flow-dir.mjs";
+import { FLOW_ASSETS, LOCK, OVERRIDES, presetDir, presetSource } from "./flow-dir.mjs";
 import { defaultBranch } from "./git.mjs";
 import {
   digestOf,
@@ -643,13 +644,14 @@ export function removable(root) {
 }
 
 /**
- * The provenance of what `sync` renders in `root`: the configured preset, at the installed Flow's version (the preset
- * version is Flow's version).
+ * The provenance of what `sync` renders in `root`: the configured preset at its version, a package preset's own
+ * (STA-2097), else the installed Flow's.
  * @param {string} root
  * @returns {import("./provenance.mjs").Provenance}
  */
 export function provenanceOf(root) {
-  return { preset: loadConfig(root).config.preset ?? "neutral", version: VERSION };
+  const { name, version } = presetSource(root);
+  return { preset: name, version };
 }
 
 /**

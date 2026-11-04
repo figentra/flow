@@ -5,7 +5,7 @@
  * Boundary: reads the spec folders, git and, through the tracker port, comments on the issue (best-effort); writes no spec
  *           file.
  * Runtime: node
- * Governing contract: ADR 0120 (SDLC spec location, lanes and change risk); ADR 0121; ADR 0065 (rule 7).
+ * Governing contract: ADR 0120 (SDLC spec location, lanes and change risk); ADR 0121; ADR 0065 (rule 7); STA-2097.
  *
  *   run [--ref b] [--box host] [--shards n] [-- flags]  the checks through the runner (or on `--box`), fanned out by
  *                               package shard with `--shards`; one `fflow/gate` status is posted
@@ -65,6 +65,7 @@ import { installProblems } from "../lib/render.mjs";
 import { BUNDLED } from "./sync.mjs";
 import { loadConfig } from "../lib/config.mjs";
 import { presetDir, resolveTemplate, specsDirs, writeCurrent } from "../lib/flow-dir.mjs";
+import { isPackageName, packagePreset } from "../lib/preset-package.mjs";
 import { ENV_PREFIX, LEGACY_ENV_PREFIX, NAME } from "../lib/product.mjs";
 import { outsideTrees, scopeDrift, treePaths } from "../lib/scope-drift.mjs";
 import { parseYaml } from "../lib/yaml.mjs";
@@ -127,13 +128,20 @@ export const presetOf = (root = ROOT) => loadConfig(root).config.preset ?? "neut
 
 /**
  * The id a preset declares: a bundled one's name, or the `id:` in a preset folder's `preset.yml` (a repository's own
- * copy of `stackra` keeps Stackra's rules). Undefined when the folder declares none.
+ * copy of `stackra`, or an installed preset package's folder, STA-2097, keeps Stackra's rules). Undefined when the
+ * folder declares none.
  * @param {string} preset
  * @param {string} [root]
  */
 export function presetId(preset, root = ROOT) {
   if (BUNDLED.includes(preset)) return preset;
-  const yml = readIf(join(resolve(root, preset), "preset.yml"));
+  let dir = resolve(root, preset);
+  try {
+    if (isPackageName(preset)) dir = packagePreset(root, preset)?.dir ?? dir;
+  } catch {
+    // A package that names no preset folder declares no id; `doctor` names the problem.
+  }
+  const yml = readIf(join(dir, "preset.yml"));
   return yml.match(/^\s+id:\s*["']?([\w-]+)["']?\s*$/m)?.[1];
 }
 

@@ -3,9 +3,9 @@
  * Purpose: `fflow` on the one CLI engine, `@stackra/console` (STA-1966, FR-31): the Flow theme and every command,
  *   grouped, so `fflow` alone prints the banner, the version and the grouped commands, `<command> --help` prints its
  *   usage and runs nothing, an unknown command names the closest match and exits 2, and a failure is one error block.
- *   `doctor`, `status`, `next`, `resume`, `task start|done|wave`, `todo`, `ledger`, `session stop`, the governance
- *   commands (`update`, `check`, `diff`, `validate`, STA-1945 FR-1) and the stage commands (`plan`, `review`, FR-15)
- *   declare their arguments and options; every other command is passthrough (migration only, ADR 0500 decision 7): it
+ *   `doctor`, `preset add` (STA-2097), `status`, `next`, `resume`, `task start|done|wave`, `todo`, `ledger`,
+ *   `session stop`, the governance commands (`update`, `check`, `diff`, `validate`, STA-1945 FR-1) and the stage
+ *   commands (`plan`, `review`, FR-15) declare their arguments and options; every other command is passthrough (migration only, ADR 0500 decision 7): it
  *   still parses its own flags from `io.rest`, and `PASSTHROUGH` in the tests pins that list.
  * Boundary: the registry and the repository check, in the CLI layer only: the governance core (gate, approve, land,
  *   record, lock, baseline) imports nothing from `@stackra/*`. A command's module is imported when it runs, never for
@@ -14,7 +14,7 @@
  *   emit applies them.
  * Runtime: node
  * Governing contract: STA-1945 FR-1, FR-15, FR-31 (AC-35, AC-36, AC-37), FR-13, FR-19, FR-21, FR-23, FR-24; STA-1966
- *   (FR-024, FR-031).
+ *   (FR-024, FR-031); STA-2097.
  * Secrets: none.
  */
 import { Argument, Command, CommandError, Option, UsageError } from "@stackra/console";
@@ -236,6 +236,36 @@ class DoctorCommand extends Command({
   }
 }
 Option({ description: "Make no GitHub call" })(DoctorCommand.prototype, "offline");
+
+class PresetAddCommand extends Command({
+  name: "preset:add",
+  description: `Install a preset package and name it as the preset in ${CONFIG_FILE}`,
+  group: GROUPS.setup,
+  docs: DOCS,
+  examples: [
+    `${NAME} preset add @acme/flow-preset`,
+    `${NAME} preset add @acme/flow-preset --dry-run`,
+  ],
+}) {
+  /** @type {string} */
+  pkg;
+  dryRun = false;
+
+  /** @param {CommandIo} io */
+  async handle(io) {
+    const root = requireRepository(io.cwd);
+    const { add } = await import("../commands/preset.mjs");
+    return refusing(() => add(io, root, this));
+  }
+}
+Argument({ description: "The preset's npm package, as @scope/name" })(
+  PresetAddCommand.prototype,
+  "pkg",
+);
+Option({ description: "Print the install command and the config change; run nothing" })(
+  PresetAddCommand.prototype,
+  "dryRun",
+);
 
 class StatusCommand extends Command({
   name: "status",
@@ -582,6 +612,7 @@ export const COMMANDS = [
     examples: [`${NAME} validate`, `${NAME} validate --workspace ~/code`],
   }),
   DoctorCommand,
+  PresetAddCommand,
   passthrough({
     name: "migrate",
     description: "Move a spec-kit repository onto .flow/",
