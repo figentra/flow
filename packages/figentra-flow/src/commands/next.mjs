@@ -5,10 +5,11 @@
  *   record and the spec's `**Status**`, and at the build stage the wave tasks.md's markers leave (FR-24); the key
  *   defaults to the branch's. The record is read where the task lives: its checkout, else its branch (the newer of
  *   the local and the last fetched pushed one), and the spec and its wave from the same place. It warns when the
- *   record has commits origin does not.
+ *   record has commits origin does not, and names the approval to give again when an approved document changed
+ *   since (A-3, AC-34).
  * Boundary: reads the record, the spec and git; writes nothing and never fetches.
  * Runtime: node
- * Governing contract: STA-1945 (FR-13, AC-13, P-017).
+ * Governing contract: STA-1945 (FR-13, FR-30, AC-13, AC-34, P-017, P-034).
  * Secrets: none.
  */
 import { existsSync, readFileSync } from "node:fs";
@@ -19,7 +20,14 @@ import { specDir, statusOf } from "./gate.mjs";
 import { specsDirs } from "../lib/flow-dir.mjs";
 import { git, mainCheckout, worktrees } from "../lib/git.mjs";
 import { NAME } from "../lib/product.mjs";
-import { emptyRecord, readRecord, readRecordAt, RecordError, unpushed } from "../lib/record.mjs";
+import {
+  emptyRecord,
+  readRecord,
+  readRecordAt,
+  RecordError,
+  staleApprovals,
+  unpushed,
+} from "../lib/record.mjs";
 import { parseTasks } from "../lib/spec-parse.mjs";
 import { nextStep } from "../lib/stages.mjs";
 import { nextWave, WaveError } from "../lib/waves.mjs";
@@ -27,13 +35,16 @@ import { nextWave, WaveError } from "../lib/waves.mjs";
 /**
  * What the spec of `key` says: its folder and declared status, when the folder exists, and the build's next wave
  * from tasks.md's markers (`built` once tasks.md has tasks and none is owed; neither on a dependency cycle). With
- * `ref`, the spec is read from that commit, as the record is, rather than from the checkout at `root`.
+ * `ref`, the spec is read from that commit, as the record is, rather than from the checkout at `root`. With the
+ * task's `record`, `reapprove` is the first approval stop whose documents changed since it was approved.
  * @param {string} root
  * @param {string} key
  * @param {string} [ref]
- * @returns {{ specDir?: string, specStatus?: string, wave?: import("../lib/waves.mjs").Wave, built?: boolean }}
+ * @param {import("../lib/record.mjs").FlowRecord} [record]
+ * @returns {{ specDir?: string, specStatus?: string, wave?: import("../lib/waves.mjs").Wave, built?: boolean,
+ *   reapprove?: string }}
  */
-export function specFacts(root, key, ref) {
+export function specFacts(root, key, ref, record) {
   const keys = schemeFor(root);
   /** @type {(file: string) => string | undefined} */
   const read = ref
@@ -45,7 +56,12 @@ export function specFacts(root, key, ref) {
   const dir = ref ? specDirAt(root, ref, key, keys) : specDir({ root, key, keys }).dir;
   const spec = dir === undefined ? undefined : read(`${dir}/spec.md`);
   if (spec === undefined) return {};
-  const facts = { specDir: dir, specStatus: statusOf(spec) };
+  const stale = record && staleApprovals(record, (name) => read(`${dir}/${name}`))[0];
+  const facts = {
+    specDir: dir,
+    specStatus: statusOf(spec),
+    ...(stale ? { reapprove: stale.stage } : {}),
+  };
   const text = read(`${dir}/tasks.md`);
   if (text === undefined) return facts;
   const tasks = parseTasks(text);
@@ -126,7 +142,8 @@ function newest(root, branch, local) {
  * itself, else (no branch, a landed task) this checkout.
  * @param {{ cwd: string, key?: string }} options
  * @returns {{ ok: true, key: string, recorded: boolean, state: string, stage: import("../lib/stages.mjs").Stage,
- *             command: string, wave?: import("../lib/waves.mjs").Wave, unpushed: boolean } | { ok: false, problem: string }}
+ *             command: string, wave?: import("../lib/waves.mjs").Wave, reapprove?: string,
+ *             unpushed: boolean } | { ok: false, problem: string }}
  */
 export function next({ cwd, key }) {
   const top = git(cwd, ["rev-parse", "--show-toplevel"]);
@@ -149,7 +166,7 @@ export function next({ cwd, key }) {
   }
   const step = nextStep(
     record ?? emptyRecord(k),
-    ref ? specFacts(task.root, k, ref) : specFacts(root, k),
+    ref ? specFacts(task.root, k, ref, record) : specFacts(root, k, undefined, record),
   );
   return {
     ok: true,
@@ -181,6 +198,10 @@ export function show(io, result) {
   if (result.wave)
     io.output.info(
       `wave ${result.wave.wave} ${result.wave.restarts ? "restarts" : "starts"} at ${result.wave.ids[0]}: ${result.wave.ids.join(", ")}`,
+    );
+  if (result.reapprove)
+    io.output.warn(
+      `the documents changed since the ${result.reapprove} approval: approve it again ("Approved by <who> <YYYY-MM-DD>" on that stage)`,
     );
   if (result.unpushed)
     io.output.warn(

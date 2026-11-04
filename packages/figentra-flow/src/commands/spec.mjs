@@ -7,7 +7,8 @@
  *     `BRANCH`, `FEATURE_DIR`, `FEATURE_SPEC`, `IMPL_PLAN`, `TASKS`; `--template` adds `TEMPLATE_CONTENT`.
  *   - `setup-plan [--json]` (was `setup-plan.sh`): runs the plan gate first, then copies the plan template into the
  *     spec folder when it has no plan.md; prints `FEATURE_SPEC`, `IMPL_PLAN`, `FEATURE_DIR`, `BRANCH`. The spec
- *     stage ends there (STA-1945 FR-14): Flow's record says `spec` done, committed on the task's branch and pushed.
+ *     stage ends there (STA-1945 FR-14): Flow's record says `spec` done, with the spec's approvals bound to its
+ *     content (A-3), committed on the task's branch and pushed.
  *   - `setup-tasks [--json]` (was `setup-tasks.sh`): `FEATURE_DIR`, `AVAILABLE_DOCS`, `TASKS_TEMPLATE`,
  *     `TASKS_TEMPLATE_CONTENT`.
  *   - `template <name>`: the resolved template's text.
@@ -52,7 +53,7 @@ import {
 import { readCurrent, resolveTemplate } from "../lib/flow-dir.mjs";
 import { git } from "../lib/git.mjs";
 import { NAME } from "../lib/product.mjs";
-import { endStage } from "../lib/record.mjs";
+import { bindApprovals, docsIn, endStage } from "../lib/record.mjs";
 
 /** A refusal: printed to stderr, exit 1. */
 class SpecError extends Error {}
@@ -160,7 +161,9 @@ export function setupPlan(at, { planGate = gate, log = (s) => console.error(s) }
     log(`Copied plan template to ${at.plan}`);
   }
   const key = schemeFor(at.root).folderKey(basename(at.featureDir));
-  const unrecorded = key && endStage(at.root, key, "spec");
+  const unrecorded =
+    key &&
+    endStage(at.root, key, "spec", { change: (r) => bindApprovals(r, docsIn(at.featureDir)) });
   if (unrecorded) log(`${NAME} spec setup-plan: warning: the record was not saved (${unrecorded})`);
   return {
     FEATURE_SPEC: at.spec,

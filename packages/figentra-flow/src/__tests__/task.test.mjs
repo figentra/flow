@@ -2,6 +2,8 @@
  * Figentra Flow file contract:
  * Purpose: hold `fflow task start|done` to STA-1945 FR-23: a task starts only on a Tasked spec and records its start,
  *   `task start` first resets a task whose documents changed with the reason and restarts a hand-ticked one (T024),
+ *   binds the spec's approvals to its content and refuses once an approved document changed, which `next` sends back
+ *   to approval (A-3, T048),
  *   `done` keeps every attempt and sets `[x]` only on exit 0 at a clean HEAD, a secret-looking command never runs, a
  *   changed document resets a started task with the reason, a hand tick is named, and `task wave` queues the next wave
  *   and holds it while one of its tasks failed.
@@ -28,6 +30,7 @@ import {
   startTask,
   TaskError,
 } from "../commands/task.mjs";
+import { next } from "../commands/next.mjs";
 import { CONSOLE } from "../lib/console.mjs";
 import { readRecord, recordPath } from "../lib/record.mjs";
 import { repo, sh } from "./__fixtures__/repo.mjs";
@@ -254,4 +257,25 @@ test("task wave: the console refuses a missing key, prints the wave, and the emp
     tasks: [],
   });
   assert.match((await fflow(s.root, "task", "wave", "STA-7")).out, /every wave of STA-7 is done/);
+});
+
+// @covers sta-1945:FR-30 sta-1945:AC-34 sta-1945:P-034
+test("task start: binds the approvals, then refuses once an approved document changed; next goes back to approval", (t) => {
+  const s = setup(t);
+  const spec = (/** @type {string} */ body) =>
+    `# x\n\n**Status**: Tasked\n\n${body}\n\n## Status history\n\n- 2026-11-03: Draft → Clarified — Approved by owner 2026-11-03\n`;
+  writeFileSync(join(s.dir, "spec.md"), spec("Body."));
+  assert.deepEqual(startTask(s.root, "STA-7", "T001"), []);
+  assert.deepEqual(
+    readRecord(s.root, "sta-7")?.approvals.map((a) => [a.stage, a.who, a.when]),
+    [["clarified", "owner", "2026-11-03"]],
+  );
+  writeFileSync(join(s.dir, "spec.md"), spec("Body, edited."));
+  assert.match(
+    startTask(s.root, "STA-7", "T002").join(),
+    /spec\.md changed since the clarified approval \(owner 2026-11-03\): approve it again/,
+  );
+  assert.equal(s.marker("T002"), " ");
+  const step = next({ cwd: s.root, key: "STA-7" });
+  assert.deepEqual(step.ok && [step.stage, step.reapprove], ["approval", "clarified"]);
 });

@@ -9,14 +9,15 @@
  *   warns from 14 days before a review date (STA-1945 FR-4, FR-5, AC-4). Against each Flow record of the checkout
  *   (FR-23, T024) it fails on a task ticked `[x]` without passing evidence (AC-22) and on a task in progress whose
  *   spec, plan or tasks changed since it started (AC-24), each named with its fix; `fflow task start` resets such a
- *   task, since `check` writes nothing.
+ *   task, since `check` writes nothing. It fails on an approval whose documents changed since (A-3, AC-34), naming
+ *   the stage to approve again.
  * Boundary: reads only (`git ls-files` and the records among it); writes nothing.
  * Runtime: node
- * Governing contract: STA-1945 (FR-1, FR-3, FR-4, FR-5, FR-6, FR-8, FR-23, AC-22, AC-24, P-001, P-005, P-007,
- *   P-013, P-028).
+ * Governing contract: STA-1945 (FR-1, FR-3, FR-4, FR-5, FR-6, FR-8, FR-23, FR-30, A-3, AC-22, AC-24, AC-34,
+ *   P-001, P-005, P-007, P-013, P-028, P-034).
  * Secrets: none.
  */
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
 
 import { schemeFor } from "../adapters/tracker/index.mjs";
@@ -25,7 +26,7 @@ import { presetDir } from "../lib/flow-dir.mjs";
 import { LockError, readLock } from "../lib/lock.mjs";
 import { REVIEW_NOTICE_DAYS, reviewState } from "../lib/overrides.mjs";
 import { NAME } from "../lib/product.mjs";
-import { readRecord, RECORD_DIR, RecordError } from "../lib/record.mjs";
+import { docsIn, readRecord, RECORD_DIR, RecordError, staleApprovals } from "../lib/record.mjs";
 import { installProblems, presetDrift, profileProblem } from "../lib/render.mjs";
 import { loadThirdParty, machineOnlyProblems } from "../lib/skills.mjs";
 import { runIn } from "../lib/workspace-run.mjs";
@@ -71,9 +72,10 @@ export function check(root, now = new Date()) {
 }
 
 /**
- * What each Flow record of `root` says against its spec's tasks.md (FR-23): a task ticked `[x]` with no passing
- * evidence (AC-22), and a task in progress whose documents changed since it started (AC-24), each with the command that
- * fixes it. A record that cannot be read is its own problem; a record whose spec folder is gone is skipped.
+ * What each Flow record of `root` says against its spec folder: a task ticked `[x]` with no passing evidence (AC-22),
+ * a task in progress whose documents changed since it started (AC-24), each with the command that fixes it, and an
+ * approval whose documents changed since (AC-34), naming the stage to approve again. A record that cannot be read is
+ * its own problem; a record whose spec folder is gone is skipped.
  * @param {string} root
  * @returns {string[]}
  */
@@ -94,8 +96,9 @@ function recordedTasks(root) {
         return [error.message];
       }
       const found = specDir({ root, key: k, keys }).dir;
-      if (!record || !found || !existsSync(join(root, found, "tasks.md"))) return [];
-      const text = readFileSync(join(root, found, "tasks.md"), "utf8");
+      if (!record || !found || !existsSync(join(root, found, "spec.md"))) return [];
+      const read = docsIn(join(root, found));
+      const text = read("tasks.md") ?? "";
       const started = record.started ?? {};
       const shown = keys.display(k);
       return [
@@ -106,6 +109,10 @@ function recordedTasks(root) {
         ...changedTasks(text, record, docsDigest(join(root, found))).map(
           (t) =>
             `${found}: the spec, plan or tasks changed since ${t.id} started (${started[t.id]?.at}); \`${NAME} task start ${shown} ${t.id}\` resets and restarts it`,
+        ),
+        ...staleApprovals(record, read).map(
+          (a) =>
+            `${found}: ${a.docs.join(" and ")} changed since the ${a.stage} approval (${a.who} ${a.when}): the stage is back at approval; approve it again ("Approved by <who> <YYYY-MM-DD>" on the ${a.stage} stage)`,
         ),
       ];
     });

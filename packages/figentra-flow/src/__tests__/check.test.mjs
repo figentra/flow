@@ -7,7 +7,8 @@
  *   tracked files (it fails closed); it warns from 14 days before an override's review date, fails after it, fails on
  *   a mandatory policy that is off, and on an override changed without a sync (FR-2, FR-4, FR-5); against Flow's
  *   records it fails on a task ticked `[x]` by hand and on a task in progress whose documents changed since it started,
- *   naming the task and `fflow task start` (FR-23, T024).
+ *   naming the task and `fflow task start` (FR-23, T024); an approval is bound to its documents' content, so an edit
+ *   fails naming the stage to approve again while a status move does not, and a new approval clears it (A-3, T048).
  * Boundary: temporary folders and scratch git repositories; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
@@ -24,7 +25,7 @@ import { sync } from "../commands/sync.mjs";
 import { docsDigest } from "../commands/task.mjs";
 import { LOCK } from "../lib/flow-dir.mjs";
 import { digestOf, readLock, writeLock } from "../lib/lock.mjs";
-import { updateRecord } from "../lib/record.mjs";
+import { approvalDigest, bindApprovals, docsIn, readRecord, updateRecord } from "../lib/record.mjs";
 import { THIRD_PARTY } from "../lib/skills.mjs";
 import { changePreset, governed, OWN_PRESET, snapshot } from "./__fixtures__/governed.mjs";
 
@@ -229,4 +230,46 @@ test("check: a hand tick and a task whose documents changed since its start fail
   ]);
   writeFileSync(join(root, ".flow/record/sta-7.json"), "{}");
   assert.match(problems(root), /sta-7\.json: .*is required/);
+});
+
+// @covers sta-1945:FR-30 sta-1945:AC-34 sta-1945:P-034
+test("check: an approval binds its documents; an edit fails naming the stage, a status move does not", (t) => {
+  const root = governed(t);
+  sync(root, { ...quiet, direct: true });
+  const dir = join(root, ".agents/specs/sta-8-x");
+  mkdirSync(dir, { recursive: true });
+  const history =
+    "## Status history\n\n- 2026-11-03: Clarified → Planned — Approved by owner 2026-11-03\n";
+  writeFileSync(join(dir, "spec.md"), `# x\n\n**Status**: Planned\n\nThe body.\n\n${history}`);
+  writeFileSync(join(dir, "plan.md"), "# plan\n");
+  updateRecord(root, "sta-8", (r) => bindApprovals(r, docsIn(dir)));
+  assert.deepEqual(readRecord(root, "sta-8")?.approvals, [
+    {
+      who: "owner",
+      when: "2026-11-03",
+      stage: "planned",
+      digest: approvalDigest("planned", docsIn(dir)),
+    },
+  ]);
+  assert.equal(problems(root), "");
+  // moving the status on changes nothing approved
+  writeFileSync(
+    join(dir, "spec.md"),
+    `# x\n\n**Status**: Tasked\n\nThe body.\n\n${history}- 2026-11-04: Planned → Tasked\n`,
+  );
+  assert.equal(problems(root), "");
+  writeFileSync(join(dir, "plan.md"), "# plan, edited\n");
+  assert.equal(
+    problems(root),
+    '.agents/specs/sta-8-x: spec.md and plan.md changed since the planned approval (owner 2026-11-03): the stage is back at approval; approve it again ("Approved by <who> <YYYY-MM-DD>" on the planned stage)',
+  );
+  // a new approval is of the documents as they are: no longer stale, and the next stage binds it
+  writeFileSync(
+    join(dir, "spec.md"),
+    `# x\n\n**Status**: Tasked\n\nThe body.\n\n${history}- 2026-11-04: Planned → Tasked\n- 2026-11-05: Tasked → Planned — Approved by owner 2026-11-05\n`,
+  );
+  assert.equal(problems(root), "");
+  updateRecord(root, "sta-8", (r) => bindApprovals(r, docsIn(dir)));
+  assert.equal(readRecord(root, "sta-8")?.approvals.length, 2);
+  assert.equal(problems(root), "");
 });
