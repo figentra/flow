@@ -2,7 +2,7 @@
   "name": "@figentra-oss/flow",
   "version": "0.2.3",
   "private": false,
-  "description": "Figentra Flow: spec-driven development from spec to landed change. Spec gates and traceability on spec-kit, worktrees, the gate on a box, land, and adapters for your tracker, runner, credentials and secrets",
+  "description": "Spec-driven development for agent teams: specs, approval stops, tasks, the gate, landing and releases, with presets and adapters for your tracker, runner, credentials and secrets",
   "keywords": [
     "linear",
     "sdlc",
