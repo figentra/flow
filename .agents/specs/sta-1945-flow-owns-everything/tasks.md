@@ -7,7 +7,7 @@
 order, and each is one reviewable change. Every test carries `@covers sta-1945:<id>` for the ids its task covers.
 
 **Ticks**: `[x]` marks a task whose work has merged on main, with the merging PR at the end of its line (#N); a task
-built only in part stays `[ ]` (2026-11-04, from the merged PRs #81 to #134). The ticks are hand-set records, not
+built only in part stays `[ ]` (2026-11-04, from the merged PRs #81 to #136). The ticks are hand-set records, not
 `task done` evidence (FR-23), which the tester lane adds when it runs the tests.
 
 **Not here**: Phase 1.4 of `path-to-100.md` (baseline "newly reached", os#114) is built outside this spec; PR 16 depends
@@ -101,14 +101,14 @@ on it. The owner's stops (Phase 0) and the try-out (Phase 4.3) are the owner's.
 
 ## Wave C · PR 5: Surfaces
 
-- [ ] T061 `.claude/settings.json` (guard via `node`, the Stop hook) in `packages/figentra-flow/src/lib/render-settings.mjs` and `packages/figentra-flow/assets/flow/presets/stackra/surfaces/settings.json` with `packages/figentra-flow/src/__tests__/render-settings.test.mjs` — covers: FR-7, FR-19, AC-7, AC-18, P-010 — route: spec-task — deps: T060, T017
-- [ ] T062 The OpenCode projection and guard plugin in `packages/figentra-flow/src/lib/render-opencode.mjs`, `packages/figentra-flow/assets/flow/presets/stackra/surfaces/opencode.jsonc` and `packages/figentra-flow/assets/flow/presets/stackra/surfaces/opencode/plugins/fflow-guard.mjs` with `packages/figentra-flow/src/__tests__/render-opencode.test.mjs` — covers: FR-7, AC-7, P-010 — route: spec-task — deps: T060
+- [x] T061 `.claude/settings.json` (guard via `node`, the Stop hook) in `packages/figentra-flow/src/lib/render-settings.mjs` and `packages/figentra-flow/assets/flow/presets/stackra/surfaces/settings.json` with `packages/figentra-flow/src/__tests__/render-settings.test.mjs` — covers: FR-7, FR-19, AC-7, AC-18, P-010 — route: spec-task — deps: T060, T017 — (#135)
+- [x] T062 The OpenCode projection and guard plugin in `packages/figentra-flow/src/lib/render-opencode.mjs`, `packages/figentra-flow/assets/flow/presets/stackra/surfaces/opencode.jsonc` and `packages/figentra-flow/assets/flow/presets/stackra/surfaces/opencode/plugins/fflow-guard.mjs` with `packages/figentra-flow/src/__tests__/render-opencode.test.mjs` — covers: FR-7, AC-7, P-010 — route: spec-task — deps: T060 — (#135)
 - [x] T063 `.mcp.yaml` from the preset's servers plus the config's, secrets by name, in `packages/figentra-flow/src/lib/render-mcp.mjs` and `packages/figentra-flow/assets/flow/presets/stackra/surfaces/mcp.yaml` with `packages/figentra-flow/src/__tests__/render-mcp.test.mjs` — covers: FR-7, AC-7, P-010 — route: spec-task — (#112)
 - [x] T064 `lefthook.yml` mise first with `--no-error-on-unmatched-pattern` (all ignored passes, exit 2 on a parse error fails), and `pinTools` for `mise.toml`, in `packages/figentra-flow/src/lib/render-lefthook.mjs` and `packages/figentra-flow/assets/flow/presets/stackra/surfaces/lefthook.yml` with `packages/figentra-flow/src/__tests__/render-lefthook.test.mjs` — covers: FR-7, AC-8, P-011 — route: spec-task — (#112, #113)
 - [x] T065 The lefthook skips (commitlint absent, pre-push on the registry 401 only, oxlint without the workspace install) in `packages/figentra-flow/src/lib/render-lefthook.mjs` with `packages/figentra-flow/src/__tests__/render-lefthook.test.mjs` — covers: FR-7, AC-8, P-011 — route: spec-task — deps: T064 — (#112)
 - [x] T066 AGENTS.md and CLAUDE.md from shared blocks plus the repository's facts in `packages/figentra-flow/src/lib/render-agents-md.mjs` and `packages/figentra-flow/assets/flow/presets/stackra/surfaces/agents-md/agents.md` with `packages/figentra-flow/src/__tests__/render-agents-md.test.mjs` — covers: FR-7, AC-7, P-010 — route: spec-task — (#112)
-- [ ] T067 The neutral preset's surfaces in `packages/figentra-flow/assets/flow/presets/neutral/surfaces/settings.json` and `packages/figentra-flow/assets/flow/presets/neutral/surfaces/lefthook.yml` — covers: FR-7, AC-7, P-010 — route: spec-task — deps: T061, T064
-- [ ] T068 Render calls the surfaces, deletes dropped owned files and never touches `.agents/specs/`; the config gains `mcp`, `lefthook`, `agentsMd`; in `packages/figentra-flow/src/lib/render.mjs`, `packages/figentra-flow/src/lib/config.mjs` and `packages/figentra-flow/schema/flow.config.schema.json` — covers: FR-7, AC-7, P-010 — route: spec-task — deps: T037, T061, T062, T063, T065, T066, T067
+- [x] T067 The neutral preset's surfaces in `packages/figentra-flow/assets/flow/presets/neutral/surfaces/settings.json` and `packages/figentra-flow/assets/flow/presets/neutral/surfaces/lefthook.yml` — covers: FR-7, AC-7, P-010 — route: spec-task — deps: T061, T064 — (#135)
+- [x] T068 Render calls the surfaces, deletes dropped owned files and never touches `.agents/specs/`; the config gains `mcp`, `lefthook`, `agentsMd`; in `packages/figentra-flow/src/lib/render.mjs`, `packages/figentra-flow/src/lib/config.mjs` and `packages/figentra-flow/schema/flow.config.schema.json` — covers: FR-7, AC-7, P-010 — route: spec-task — deps: T037, T061, T062, T063, T065, T066, T067 — (#135)
 
 ## Wave C · PR 6: Core's content into the preset
 
