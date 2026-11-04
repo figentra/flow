@@ -10,14 +10,17 @@
  *   n groups, one `run … --json` call per group with `gate.shard`'s `{filters}`, all at once, and one `fflow/gate`
  *   status, green only when every shard exited 0 (AC-41), red when one failed; a shard with still no slot or healthy
  *   box (73, 75) and no failed shard posts nothing, since that is never a test failure. The spec gate runs on the first
- *   shard only.
- * Boundary: runs no check on the caller's machine (FR-9). Refuses a dirty tree, a detached head without `--ref`, a
+ *   shard only. A run that reached a verdict ends the gate stage in Flow's record on the task's branch (`recordGate`,
+ *   STA-1945 FR-14): the verdict on the sha, `gate` done or failed, written but not committed, since a commit would
+ *   move the head off the gated sha; the next commit (the review's, a session's stop) carries it.
+ * Boundary: runs no check on the caller's machine (FR-9). Refuses a dirty tree (Flow's record aside: it is never part of
+ *   the gated commit), a detached head without `--ref`, a
  *   head that is not the remote branch tip, a missing runner and, with `--shards`, a workspace pattern or package
  *   folder it cannot read, before any box is claimed; a runner program that
  *   is not installed is refused after. Removes its temporary
  *   folder when the run ends.
  * Runtime: node
- * Governing contract: Stackra ADR 0503 (decision 4), ADR 0484 (the testbed); STA-1729 phase 2.
+ * Governing contract: Stackra ADR 0503 (decision 4), ADR 0484 (the testbed); STA-1729 phase 2; STA-1945 (FR-14).
  * Secrets: the gate App's key is read through the secrets port's `gate` scope (`infisical run`, `/ci/gate`) by the
  *   poster process only: on the box for `ssh` and `local`, on this side for a `command` runner. It never reaches a
  *   testbed box, and this process never reads it.
@@ -32,7 +35,9 @@ import { secretsPort } from "../adapters/secrets.mjs";
 import { artifactProblems } from "../lib/artifacts.mjs";
 import { say } from "../lib/cli.mjs";
 import { loadConfig } from "../lib/config.mjs";
-import { defaultBranch, git, isClean, remoteTip } from "../lib/git.mjs";
+import { schemeFor } from "../adapters/tracker/index.mjs";
+import { defaultBranch, git, remoteTip } from "../lib/git.mjs";
+import { endStage, RECORD_DIR } from "../lib/record.mjs";
 import {
   combine,
   MAX_SHARDS,
@@ -147,7 +152,17 @@ export async function gateRun(options) {
   const top = git(cwd, ["rev-parse", "--show-toplevel"]);
   if (!top.ok) return { code: 2, problem: `${cwd} is not in a git repository` };
   const root = top.out;
-  if (!isClean(root))
+  // Flow's record is bookkeeping a gate run itself leaves uncommitted (`recordGate`); the clone takes only the head.
+  // Untracked files are listed by name, so the record inside an untracked `.flow/` is not reported as the folder.
+  const dirty = git(root, [
+    "status",
+    "--porcelain",
+    "--untracked-files=all",
+    "--",
+    ".",
+    `:(exclude)${RECORD_DIR}`,
+  ]);
+  if (!dirty.ok || dirty.out)
     return {
       code: 2,
       problem: "the tree has uncommitted or untracked changes; commit and push first",
@@ -276,6 +291,27 @@ export async function gateRun(options) {
   }
 }
 
+/**
+ * Records a gate verdict on `sha` (exit `code`) in the record of the issue `root`'s branch names (FR-14): the gate
+ * stage done on green, failed otherwise. Written only, never committed: a commit would move the head off `sha`.
+ * @param {string} root
+ * @param {string} sha
+ * @param {number} code
+ * @returns {string | undefined} why the record was not written
+ */
+export function recordGate(root, sha, code) {
+  const key = schemeFor(root).keys(git(root, ["branch", "--show-current"]).out)[0];
+  if (!key) return undefined;
+  return endStage(root, key, "gate", {
+    state: code === 0 ? "done" : "failed",
+    change: (r) => ({
+      ...r,
+      gate: [...r.gate, { sha, state: code === 0 ? "success" : "failure" }],
+    }),
+    commit: false,
+  });
+}
+
 /** `fflow gate run [--ref <branch>] [--box <ssh host>] [--shards <n>] [-- <runner flags>]`. */
 export async function run(/** @type {string[]} */ all) {
   // Everything after `--` is the runner's own (a command runner's `{flags}`, e.g. the testbed's `--no-wait`).
@@ -289,7 +325,7 @@ export async function run(/** @type {string[]} */ all) {
     console.error(`${NAME} gate run: --shards takes 1 to ${MAX_SHARDS}`);
     return 2;
   }
-  /** @type {{ code: number, problem?: string }} */
+  /** @type {{ code: number, problem?: string, sha?: string }} */
   let result;
   say("checking", `${NAME} gate run: checking ${opt("ref") ?? "HEAD"}`);
   try {
@@ -305,6 +341,14 @@ export async function run(/** @type {string[]} */ all) {
     result = { code: 2, problem: /** @type {Error} */ (error).message };
   }
   if (result.problem) console.error(`${NAME} gate run: ${result.problem}`);
+  // A verdict on the checkout's own branch (not another `--ref`) ends the gate stage.
+  const root = git(process.cwd(), ["rev-parse", "--show-toplevel"]).out;
+  const here = root && git(root, ["branch", "--show-current"]).out;
+  if (result.sha && !result.problem && here && (opt("ref") ?? here) === here) {
+    const unrecorded = recordGate(root, result.sha, result.code);
+    if (unrecorded)
+      console.error(`${NAME} gate run: warning: the record was not saved (${unrecorded})`);
+  }
   say(result.code ? "blocked" : "approved", `${NAME} gate run: ${result.code ? "red" : "green"}`);
   return result.code;
 }

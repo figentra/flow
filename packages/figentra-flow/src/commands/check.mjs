@@ -6,20 +6,32 @@
  *   the preset lacks, the profile differs from the lock's (FR-6), a spec-kit file is left, an override is invalid
  *   (what `validate` refuses, a mandatory policy off among it), the overrides differ from the lock's digest (changed
  *   without a `sync`), an override's review date has passed, or a machine-only skill is committed (FR-8, D1). It
- *   warns from 14 days before a review date (STA-1945 FR-4, FR-5, AC-4).
- * Boundary: reads only (`git ls-files` among it); writes nothing.
+ *   warns from 14 days before a review date (STA-1945 FR-4, FR-5, AC-4). Against each Flow record of the checkout
+ *   (FR-23, T024) it fails on a task ticked `[x]` without passing evidence (AC-22) and on a task in progress whose
+ *   spec, plan or tasks changed since it started (AC-24), each named with its fix; `fflow task start` resets such a
+ *   task, since `check` writes nothing. It fails on an approval whose documents changed since (A-3, AC-34), naming
+ *   the stage to approve again.
+ * Boundary: reads only (`git ls-files` and the records among it); writes nothing.
  * Runtime: node
- * Governing contract: STA-1945 (FR-1, FR-3, FR-4, FR-5, FR-6, FR-8, P-001, P-005, P-007, P-013).
+ * Governing contract: STA-1945 (FR-1, FR-3, FR-4, FR-5, FR-6, FR-8, FR-23, FR-30, A-3, AC-22, AC-24, AC-34,
+ *   P-001, P-005, P-007, P-013, P-028, P-034).
  * Secrets: none.
  */
+import { existsSync, readdirSync } from "node:fs";
+import { basename, join } from "node:path";
+
+import { schemeFor } from "../adapters/tracker/index.mjs";
 import { ConfigError, loadConfig } from "../lib/config.mjs";
 import { presetDir } from "../lib/flow-dir.mjs";
 import { LockError, readLock } from "../lib/lock.mjs";
 import { REVIEW_NOTICE_DAYS, reviewState } from "../lib/overrides.mjs";
 import { NAME } from "../lib/product.mjs";
+import { docsIn, readRecord, RECORD_DIR, RecordError, staleApprovals } from "../lib/record.mjs";
 import { installProblems, presetDrift, profileProblem } from "../lib/render.mjs";
 import { loadThirdParty, machineOnlyProblems } from "../lib/skills.mjs";
 import { runIn } from "../lib/workspace-run.mjs";
+import { specDir } from "./gate.mjs";
+import { changedTasks, docsDigest, handTicks } from "./task.mjs";
 import { overridesReport } from "./validate.mjs";
 
 /**
@@ -55,8 +67,55 @@ export function check(root, now = new Date()) {
     // installProblems already names an unreadable lock.
     if (!(error instanceof LockError)) throw error;
   }
-  if (!config.errors.length) problems.push(...machineOnlyCommitted(root));
+  if (!config.errors.length) problems.push(...machineOnlyCommitted(root), ...recordedTasks(root));
   return { problems, warnings };
+}
+
+/**
+ * What each Flow record of `root` says against its spec folder: a task ticked `[x]` with no passing evidence (AC-22),
+ * a task in progress whose documents changed since it started (AC-24), each with the command that fixes it, and an
+ * approval whose documents changed since (AC-34), naming the stage to approve again. A record that cannot be read is
+ * its own problem; a record whose spec folder is gone is skipped.
+ * @param {string} root
+ * @returns {string[]}
+ */
+function recordedTasks(root) {
+  const dir = join(root, RECORD_DIR);
+  if (!existsSync(dir)) return [];
+  const keys = schemeFor(root);
+  return readdirSync(dir)
+    .filter((n) => n.endsWith(".json"))
+    .flatMap((name) => {
+      const k = keys.parse(basename(name, ".json"));
+      if (!k) return [];
+      let record;
+      try {
+        record = readRecord(root, k);
+      } catch (error) {
+        if (!(error instanceof RecordError)) throw error;
+        return [error.message];
+      }
+      const found = specDir({ root, key: k, keys }).dir;
+      if (!record || !found || !existsSync(join(root, found, "spec.md"))) return [];
+      const read = docsIn(join(root, found));
+      const text = read("tasks.md") ?? "";
+      const started = record.started ?? {};
+      const shown = keys.display(k);
+      return [
+        ...handTicks(text, record).map(
+          (id) =>
+            `${found}/tasks.md: ${id} is ticked [x] with no passing evidence in the record (\`${NAME} task start ${shown} ${id}\`, then \`${NAME} task done ${shown} ${id} --command <check>\`)`,
+        ),
+        ...changedTasks(text, record, docsDigest(join(root, found))).map(
+          (t) =>
+            `${found}: the spec, plan or tasks changed since ${t.id} started (${started[t.id]?.at}); \`${NAME} task start ${shown} ${t.id}\` resets and restarts it`,
+        ),
+        ...staleApprovals(record, read).map(
+          (a) =>
+            `${found}: ${a.docs.join(" and ")} changed since the ${a.stage} approval (${a.who} ${a.when}): the stage is back at approval; approve it again ("Approved by <who> <YYYY-MM-DD>" on the ${a.stage} stage)`,
+        ),
+      ];
+    });
 }
 
 /**
