@@ -5,18 +5,20 @@
  *   locked digest, the lock is unreadable or names another Flow version, the config is invalid or names a profile
  *   the preset lacks, the profile differs from the lock's (FR-6), a spec-kit file is left, an override is invalid
  *   (what `validate` refuses, a mandatory policy off among it), the overrides differ from the lock's digest (changed
- *   without a `sync`) or an override's review date has passed. It warns from 14 days before a review date (STA-1945
- *   FR-4, FR-5, AC-4).
- * Boundary: reads only; writes nothing.
+ *   without a `sync`), an override's review date has passed, or a machine-only skill is committed (FR-8, D1). It
+ *   warns from 14 days before a review date (STA-1945 FR-4, FR-5, AC-4).
+ * Boundary: reads only (`git ls-files` among it); writes nothing.
  * Runtime: node
- * Governing contract: STA-1945 (FR-1, FR-3, FR-4, FR-5, FR-6, P-001, P-005, P-007).
+ * Governing contract: STA-1945 (FR-1, FR-3, FR-4, FR-5, FR-6, FR-8, P-001, P-005, P-007, P-013).
  * Secrets: none.
  */
-import { loadConfig } from "../lib/config.mjs";
+import { ConfigError, loadConfig } from "../lib/config.mjs";
+import { presetDir } from "../lib/flow-dir.mjs";
 import { LockError, readLock } from "../lib/lock.mjs";
 import { REVIEW_NOTICE_DAYS, reviewState } from "../lib/overrides.mjs";
 import { NAME } from "../lib/product.mjs";
 import { installProblems, presetDrift, profileProblem } from "../lib/render.mjs";
+import { loadThirdParty, machineOnlyProblems } from "../lib/skills.mjs";
 import { runIn } from "../lib/workspace-run.mjs";
 import { overridesReport } from "./validate.mjs";
 
@@ -53,7 +55,31 @@ export function check(root, now = new Date()) {
     // installProblems already names an unreadable lock.
     if (!(error instanceof LockError)) throw error;
   }
+  if (!config.errors.length) problems.push(...machineOnlyCommitted(root));
   return { problems, warnings };
+}
+
+/**
+ * The machine-only skills committed to `root` (STA-1945 FR-8, D1), each with its source, whatever the profile (a
+ * licence rule, not a selection); a `third-party.yml` that is not valid, or a git that cannot list the tracked files,
+ * is its own problem.
+ * @param {string} root
+ * @returns {string[]}
+ */
+function machineOnlyCommitted(root) {
+  let skills, found;
+  try {
+    skills = loadThirdParty(presetDir(root));
+    found = machineOnlyProblems(root, skills);
+  } catch (error) {
+    if (!(error instanceof ConfigError)) throw error;
+    return [error.message];
+  }
+  const sources = new Map(skills.map((s) => [s.id, s.source]));
+  return found.map(
+    ({ dir, id }) =>
+      `${dir} is the machine-only skill ${id}, which no repository carries (remove it from git; install it on the machine from ${sources.get(id)}, as \`${NAME} doctor\` lists)`,
+  );
 }
 
 /**

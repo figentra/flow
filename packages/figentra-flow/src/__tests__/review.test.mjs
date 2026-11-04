@@ -3,9 +3,10 @@
  * Purpose: hold the AI review reader to ADR 0230: a PASS counts only from the reviewer App (by App identity, not a
  *   login), unedited, naming the head and the PR's base; the change's own authors cannot review it; an edit voids
  *   earlier verdicts; a FAIL for the head (even a sloppy one) beats a PASS; a verdict for an older commit does not
- *   count; the owner's APPROVED review with `owner-approval` on the head counts. And `fflow review` (STA-1945 FR-15):
- *   `--input` hands the review workflow its input; `--record` refuses invalid findings and records the verdict and the
- *   confirmed blocking findings that `land` refuses on.
+ *   count; the owner's APPROVED review with `owner-approval` on the head counts; a verdict counts from any listed
+ *   reviewer App, and an edit to any listed App's comment, the gate's marker comment included, voids earlier verdicts.
+ *   And `fflow review` (STA-1945 FR-15): `--input` hands the review workflow its input; `--record` refuses invalid
+ *   findings and records the verdict and the confirmed blocking findings that `land` refuses on.
  * Boundary: the reader is pure, REST-shaped comments and reviews built here; the command runs in temporary
  *   repositories with a local bare origin; no network.
  * Runtime: node
@@ -29,6 +30,7 @@ import {
 } from "../commands/review.mjs";
 import { readRecord } from "../lib/record.mjs";
 import { actor, aiReview } from "../lib/review.mjs";
+import { GATE_MARKER } from "../lib/product.mjs";
 import { commit, repo, sh } from "./__fixtures__/repo.mjs";
 
 const DIR = ".agents/specs/sta-7-x";
@@ -259,4 +261,78 @@ test("review --record: output that is not a list of findings is refused, each pr
     "finding 1 (correctness-1): `blocking` is not true or false",
   ]);
   assert.equal(readRecord(root, "sta-7"), undefined);
+});
+
+const FLOW = "figentra-flow";
+const LISTED = { reviewer: [REVIEWER, FLOW], owner: OWNER };
+/** A comment by the Flow App, the second listed reviewer. */
+const byFlow = (/** @type {string} */ body, /** @type {Record<string, unknown>} */ over = {}) =>
+  comment(body, {
+    user: { login: `${FLOW}[bot]`, type: "Bot" },
+    performed_via_github_app: { slug: FLOW },
+    ...over,
+  });
+
+test("review: with a list of reviewer Apps a verdict from either listed slug counts", () => {
+  const pass = `AI-REVIEW: PASS ${SHA} base=main`;
+  assert.equal(aiReview(PR, [comment(pass)], [], [], LISTED).verdict, "PASS");
+  assert.equal(aiReview(PR, [byFlow(pass)], [], [], LISTED).verdict, "PASS");
+  assert.equal(aiReview(PR, [byFlow(`AI-REVIEW: FAIL ${SHA}`)], [], [], LISTED).verdict, "FAIL");
+});
+
+test("review: an unlisted App, a User and a verdict below the first line are ignored", () => {
+  const pass = `AI-REVIEW: PASS ${SHA} base=main`;
+  const other = comment(pass, {
+    user: { login: "stackra-bot[bot]", type: "Bot" },
+    performed_via_github_app: { slug: "stackra-bot" },
+  });
+  const user = byFlow(pass, { user: { login: `${FLOW}[bot]`, type: "User" } });
+  for (const c of [other, user]) {
+    const result = aiReview(PR, [c], [], [], LISTED);
+    assert.equal(result.verdict, null);
+    assert.match(result.ignored.join(), /is not the stackra-reviewer or figentra-flow app/);
+  }
+  assert.deepEqual(aiReview(PR, [byFlow(`Looks right.\n${pass}`)], [], [], LISTED), {
+    verdict: null,
+    ignored: [],
+    passes: [],
+  });
+});
+
+test("review: an edit to any listed App's comment voids earlier verdicts, the gate's marker comment too", () => {
+  const pass = byFlow(`AI-REVIEW: PASS ${SHA} base=main`);
+  const later = { created_at: "2026-10-31T10:01:00Z", updated_at: "2026-10-31T10:02:00Z" };
+  for (const body of ["note", `${GATE_MARKER}\n**fflow/gate** passed`]) {
+    const result = aiReview(PR, [pass, byFlow(body, later)], [], [], LISTED);
+    assert.equal(result.verdict, null);
+    assert.match(result.ignored.join(), /edited after this verdict/);
+  }
+  const edited = byFlow(`AI-REVIEW: PASS ${SHA} base=main`, { updated_at: "2026-10-31T10:05:00Z" });
+  assert.match(aiReview(PR, [edited], [], [], LISTED).ignored.join(), /was edited/);
+});
+
+test("review: a FAIL edited to open with the gate marker does not bring back an earlier PASS", () => {
+  const pass = comment(`AI-REVIEW: PASS ${SHA} base=main`);
+  const fail = comment(`${GATE_MARKER}\nok`, {
+    created_at: "2026-10-31T10:01:00Z",
+    updated_at: "2026-10-31T10:02:00Z",
+  });
+  assert.notEqual(aiReview(PR, [pass, fail], [], [], LISTED).verdict, "PASS");
+  assert.notEqual(review([pass, fail], []).verdict, "PASS");
+});
+
+test("review: a marker comment never parses as a verdict", () => {
+  const none = { verdict: null, ignored: [], passes: [] };
+  for (const verdict of [`AI-REVIEW: PASS ${SHA} base=main`, `AI-REVIEW: FAIL ${SHA}`])
+    for (const body of [`${GATE_MARKER} ${verdict}`, `${GATE_MARKER}\n${verdict}`])
+      assert.deepEqual(aiReview(PR, [byFlow(body)], [], [], LISTED), none);
+});
+
+test("review: an empty list of reviewer Apps means none is configured", () => {
+  const pass = comment(`AI-REVIEW: PASS ${SHA} base=main`);
+  for (const reviewer of [[], [undefined, ""]]) {
+    const result = aiReview(PR, [pass], [], [], { reviewer });
+    assert.equal(result.verdict, null);
+    assert.match(result.ignored.join(), /no review App is configured/);
+  }
 });

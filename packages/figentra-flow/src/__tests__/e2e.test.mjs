@@ -20,6 +20,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -52,7 +53,8 @@ const run = (cwd, cmd, args) => {
 };
 
 test("e2e: the packed package installs .flow/ and carries one spec from gate dir to tasks; gate ci holds the install", (t) => {
-  const top = mkdtempSync(join(tmpdir(), "flow-e2e-"));
+  // The real path: git and the CLI report /private/var on macOS where tmpdir() says /var.
+  const top = realpathSync(mkdtempSync(join(tmpdir(), "flow-e2e-")));
   t.after(() => rmSync(top, { recursive: true, force: true }));
   const packed = run(PKG, "npm", ["pack", "--silent", "--pack-destination", top]);
   assert.equal(packed.status, 0, packed.err);

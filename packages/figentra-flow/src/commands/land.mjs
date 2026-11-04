@@ -109,7 +109,7 @@ export function connect(root) {
 /**
  * Every reason the PR may not land; empty means it may.
  * @param {{ pr: any, statuses: any[], base: string, spec?: string, gateApp?: string | string[],
- *           reviewer?: string, required: boolean, files?: string[],
+ *           reviewer?: string | string[], required: boolean, files?: string[],
  *           manualOk?: boolean, stack?: boolean, review?: { verdict: string | null, ignored: string[] },
  *           artifacts?: string[], reviewTiers?: string[], ownerOnly?: string[],
  *           ownerFindings?: string[], blocking?: string[] }} input `blocking`: the review workflow's confirmed
@@ -164,7 +164,7 @@ export function landRules({
     review?.verdict !== "PASS"
   )
     problems.push(
-      `no AI review PASS for ${pr.head?.sha} (counted verdict: ${review?.verdict ?? "none"}): a different agent posts "AI-REVIEW: PASS ${pr.head?.sha} base=${pr.base?.ref}" as the ${reviewer ?? "(unconfigured, apps.review.slug)"} app${review?.ignored.length ? `; ignored: ${[...new Set(review.ignored)].join("; ")}` : ""}`,
+      `no AI review PASS for ${pr.head?.sha} (counted verdict: ${review?.verdict ?? "none"}): a different agent posts "AI-REVIEW: PASS ${pr.head?.sha} base=${pr.base?.ref}" as the ${[reviewer ?? []].flat().filter(Boolean).join(" or ") || "(unconfigured, apps.review.slug)"} app${review?.ignored.length ? `; ignored: ${[...new Set(review.ignored)].join("; ")}` : ""}`,
     );
   if (spec !== undefined) {
     problems.push(...checkApproval(spec).map((p) => `spec: ${p}`));
@@ -279,8 +279,11 @@ function specAt(
 /**
  * Lands one PR.
  * @param {{ root: string, repo: string, base: string, number: number, dry?: boolean, manualOk?: boolean,
- *           gateApp?: string | string[], reviewer?: string, owner?: string, refs?: string, deps: LandDeps }} options
- *   `refs`: the issue the squash's `Refs:` names when the branch names none (it is not moved to Done).
+ *           gateApp?: string | string[], reviewer?: string | string[], owner?: string, refs?: string,
+ *           deps: LandDeps }} options
+ *   `refs`: the issue the squash's `Refs:` names when the branch is not a key branch (`<prefix>/<key>-<slug>`); then a
+ *   slug that only looks like a key (`adr/0008-sta-12-x`) neither names the squash, picks a spec nor moves to Done,
+ *   and `refs` is not moved to Done either. A key branch keeps its key, its spec gate and its Done.
  * @returns {Promise<{ code: number, problems?: string[], merged?: string, head?: string,
  *   queued?: boolean, waiting?: string[] }>}
  */
@@ -303,7 +306,8 @@ export async function landOne({
   const head = pr.json.head.sha;
   const branch = pr.json.head.ref;
   const scheme = deps.scheme ?? trackerFor(root, { warn: () => {} }).scheme;
-  const key = scheme.parse(branch);
+  // With `refs`, only a `<prefix>/<key>-<slug>` branch's key counts: an ADR slug may merely look like one.
+  const key = refs && !scheme.isBranch(branch) ? undefined : scheme.parse(branch);
   // STA-1856 FR-3: an auto-merged PR comes back here to finish.
   if (pr.json.merged && pr.json.merge_commit_sha) {
     if (pr.json.base?.ref !== base)
@@ -660,7 +664,7 @@ async function bringUp({ root, repo, base, pr, parent, gateApp, dry, deps }) {
  * (`bringUp`), then landed in turn. Stops at the first that cannot go, naming it; run again, it resumes there. With
  * `dry`, prints the plan and checks only the bottom PR's rules, since the others change on the way.
  * @param {{ root: string, repo: string, base: string, number: number, dry?: boolean, manualOk?: boolean,
- *           gateApp?: string | string[], reviewer?: string, owner?: string,
+ *           gateApp?: string | string[], reviewer?: string | string[], owner?: string,
  *           deps: LandDeps & { gate: (cwd: string) => Promise<number> } }} options
  * @returns {Promise<{ code: number, problems?: string[], waiting?: string[] }>}
  */
@@ -776,6 +780,7 @@ export async function run(/** @type {string[]} */ args) {
     number,
     manualOk: args.includes("--manual-ok"),
     gateApp: gateLogins(apps),
+    // Not apps.gate.slug yet: its key is reachable outside main's OIDC job until ADR 0523's migration (L2 PR B/D/F).
     reviewer: apps.review?.slug,
     owner: apps.owner,
     deps,

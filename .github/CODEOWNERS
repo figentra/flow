@@ -18,6 +18,7 @@
 **/.npmrc @figentra-usr
 /flow.config.json @figentra-usr
 /figentra-flow.config.json @figentra-usr
+**/third-party.yml @figentra-usr
 **/.infisical.* @figentra-usr
 /.gitleaks.toml @figentra-usr
 **/.env* @figentra-usr
