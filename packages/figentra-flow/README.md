@@ -368,6 +368,19 @@ preset/
   reference/, routing.yaml, models.yaml   # agent reference, routing and models, rendered under .agents/
 ```
 
+The guard files are imported in place, from the installed package, so they may import only Node's built-ins
+(`node:*`), other files of their own `guard/` folder (`./inbox.mjs`), and Flow's public entry points, which resolve
+through the package's `peerDependencies` on Flow:
+
+- `@figentra-oss/flow/guard`: `collectStrings` (every string in a tool input), `CONFIG_FILE` and `LEGACY_CONFIG_FILE`,
+  and the types `BashRule`, `PathRule`, `PromptTable`, `SessionTable` and `Decision` for JSDoc
+  (`/** @type {import("@figentra-oss/flow/guard").BashRule[]} */`).
+- `@figentra-oss/flow/guard/neutral`: the neutral preset's `PATH_RULES`, `BASH_RULES` and `isSecretPath`, for a preset
+  that extends them. The engine checks the neutral path rules after every preset's own table anyway.
+
+Never a relative path into Flow's own files (`../../src/guard/io.mjs`): it does not exist in a package, and Flow's
+tests hold the bundled presets to the same rule.
+
 `preset.yml` can also declare the Flow range it needs, so a preset copied into a repository folder keeps the check.
 Quote the range, since a YAML value cannot start with `>`:
 
