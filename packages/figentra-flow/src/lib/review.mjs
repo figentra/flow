@@ -4,11 +4,13 @@
  *   head from a listed reviewer App (one slug or a list; matched by App identity, never a login string), unedited,
  *   first line `AI-REVIEW: PASS <40-hex head> base=<base>`, never from the PR's author or the head commit's author or
  *   committer; or the owner's APPROVED review on the head with the `owner-approval` token. A FAIL for the head beats
- *   any PASS.
+ *   any PASS. The verdict is advisory (ADR 0523 decision 6): `land` warns on a missing, stale or FAIL one and records
+ *   it in the squash commit, but never refuses on it.
  * Boundary: pure; ported from Stackra core's `tools/scripts/pr-merge.mjs` (`aiReview`, `byReviewerApp`, `actor`,
  *   `ownerApproves`), without its patch-id survival: `land` merges the exact head, so a verdict must name that head.
  * Runtime: node
- * Governing contract: Stackra ADR 0230 (reviewer identity), ADR 0285; STA-1729 phase 3 (AC-031).
+ * Governing contract: Stackra ADR 0230 (reviewer identity), ADR 0285; ADR 0523 (decision 6); STA-1729 phase 3
+ *   (AC-031).
  * Secrets: none.
  */
 

@@ -4,28 +4,30 @@
  *   only when it is open, clean, based on the default branch, green on `fflow/gate` from the gate App on its exact
  *   head, conventionally titled, its spec's approvals are recorded, its recorded review confirmed no blocking finding
  *   (STA-1945 AC-40) and it changes no owner-only path (with the globs an `extend` of `owner-only` adds, STA-1945
- *   FR-5); then set Linear
- *   Done, record the merge commit, remove the worktree through `clean`'s rules, delete the branch and comment. When the
- *   base's ruleset requires an approving review the head lacks, it dispatches the approval workflow and turns on
- *   auto-merge at the head instead, never an admin path; `land` on a merged PR runs the steps after the merge
- *   (STA-1856). `--stack` lands a stack bottom-up: after each squash it merges the default branch into the next PR,
- *   resolves each conflict that is only the landed parent's own change (`lib/stack.mjs`), retargets the PR, gates it
- *   and lands it; a re-run after a stop picks the stack up where it stopped (STA-1945 FR-16).
+ *   FR-5). The rules are `lib/land-rules.mjs`'s, re-exported here. The AI review is advisory (ADR 0523 decision 6):
+ *   a missing, stale or FAIL verdict only warns, and the squash message records it (`AI-Review: PASS <sha>`,
+ *   `FAIL <sha>` or `none`). Then set Linear Done, record the merge commit, remove the worktree through `clean`'s
+ *   rules, delete the branch and comment. When the base's ruleset requires an approving review the head lacks, it
+ *   dispatches the approval workflow and turns on auto-merge at the head instead, never an admin path; `land` on a
+ *   merged PR runs the steps after the merge (STA-1856). `--stack` lands a stack bottom-up: after each squash it
+ *   merges the default branch into the next PR, resolves each conflict that is only the landed parent's own change
+ *   (`lib/stack.mjs`), retargets the PR, gates it and lands it; a re-run after a stop picks the stack up where it
+ *   stopped (STA-1945 FR-16).
  * Boundary: every rule is read from GitHub's live state and the spec at the PR's head; nothing changes until all
  *   pass. The merge carries `sha`, so GitHub refuses it if the head moved. Waiting on required checks exits 4. Steps
  *   after the merge only warn (exit 3)
  *   and never undo it. A stack is brought up to date by a merge commit and a normal push, never a rewrite; any other
  *   conflict stops the stack with the merge aborted and the files named.
  * Runtime: node
- * Governing contract: Stackra ADR 0503 (decision 5), ADR 0502; STA-1729 phase 3 (the leader's plan stop of
- *   2026-10-31); STA-1856 (FR-1 to FR-3); STA-1945 (FR-16, AC-14).
+ * Governing contract: Stackra ADR 0503 (decision 5), ADR 0502; ADR 0523 (decision 6); STA-1729 phase 3 (the leader's
+ *   plan stop of 2026-10-31); STA-1856 (FR-1 to FR-3); STA-1945 (FR-16, AC-14).
  * Secrets: none here. GitHub calls go through `gh` (or the repository's `bot:gh`), Linear through the environment's
  *   token, which is never read into output.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { checkApproval, ownerApprovalProblems, statusOf, tierOf } from "./gate.mjs";
+import { ownerApprovalProblems } from "./gate.mjs";
 import { clean } from "./clean.mjs";
 import { gateRun, slugOf } from "./gate-run.mjs";
 import { trackerFor } from "../adapters/tracker/index.mjs";
@@ -37,7 +39,15 @@ import { loadTeam } from "../lib/team.mjs";
 import { artifactProblems } from "../lib/artifacts.mjs";
 import { say } from "../lib/cli.mjs";
 import { gateLogins, loadConfig } from "../lib/config.mjs";
-import { ownerOnlyPaths, packageFindings } from "../lib/owner-only.mjs";
+import {
+  gateProblems,
+  landRules,
+  MAX_FILES,
+  reviewWarnings,
+  specAt,
+  squashMessage,
+} from "../lib/land-rules.mjs";
+import { packageFindings } from "../lib/owner-only.mjs";
 import { ownerOnlyExtra } from "../lib/render.mjs";
 import { requiredCheckState, requiredContexts } from "../lib/required-checks.mjs";
 import {
@@ -50,44 +60,17 @@ import {
 import { mergeUp } from "../lib/stack.mjs";
 import { defaultBranch, fetch, git, mainCheckout, remote, worktrees } from "../lib/git.mjs";
 
-/** The tiers whose changes need the AI review when the configuration's `review.required` names none. */
-export const REVIEW_TIERS = ["small", "feature", "big"];
-
-/** A conventional commit header (the squash commit's title). */
-export const CONVENTIONAL =
-  /^(?:build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(?:\([\w./-]+\))?!?: \S/;
-
-/**
- * Why `statuses` (a commit's, newest first) do not make that commit green: `fflow/gate` must be `success`,
- * posted by the configured gate App (any of its logins, `gateLogins`). Shared by `land` and `train`.
- * @param {any[]} statuses
- * @param {string | undefined} sha  the commit, for the message
- * @param {string | string[] | undefined} gateApp
- * @returns {string[]}
- */
-export function gateProblems(statuses, sha, gateApp) {
-  const problems = [];
-  // The trusted gate status creator comes only from the configuration (defence in depth; the ruleset is the
-  // guarantee).
-  // An empty login trusts no one (a deleted poster has no login either).
-  const logins = [gateApp ?? []].flat().filter(Boolean);
-  if (!logins.length)
-    problems.push("no gate App is configured: set apps.gate.login in the configuration");
-  const head = String(sha ?? "").slice(0, 12);
-  // GitHub lists a commit's statuses newest first; the newest of the context counts.
-  const gate = statuses.find((s) => s.context === STATUS_CONTEXT);
-  if (!gate)
-    problems.push(
-      `no ${STATUS_CONTEXT} on the head ${head} (run \`${NAME} gate run\`; an older commit's gate does not count)`,
-    );
-  else if (gate.state !== "success")
-    problems.push(`${STATUS_CONTEXT} is ${gate.state} on the head ${head}`);
-  else if (!logins.includes(gate.creator?.login ?? ""))
-    problems.push(
-      `${STATUS_CONTEXT} on the head was posted by ${gate.creator?.login ?? "nobody"}, not ${logins.join(" or ")}`,
-    );
-  return problems;
-}
+// The land rules live in lib/land-rules.mjs, so main's approve job imports nothing from commands/ (ADR 0523).
+export {
+  CONVENTIONAL,
+  gateProblems,
+  landRules,
+  MAX_FILES,
+  REVIEW_TIERS,
+  reviewWarnings,
+  specAt,
+  squashMessage,
+} from "../lib/land-rules.mjs";
 
 /**
  * The GitHub `owner/name` of `root`'s origin and the API with the configured credentials, or why there is none
@@ -107,84 +90,6 @@ export function connect(root) {
 }
 
 /**
- * Every reason the PR may not land; empty means it may.
- * @param {{ pr: any, statuses: any[], base: string, spec?: string, gateApp?: string | string[],
- *           reviewer?: string | string[], required: boolean, files?: string[],
- *           manualOk?: boolean, stack?: boolean, review?: { verdict: string | null, ignored: string[] },
- *           artifacts?: string[], reviewTiers?: string[], ownerOnly?: string[],
- *           ownerFindings?: string[], blocking?: string[] }} input `blocking`: the review workflow's confirmed
- *   blocking findings (`blockingFindings`)
- * @returns {string[]}
- */
-export function landRules({
-  pr,
-  statuses,
-  base,
-  spec,
-  gateApp,
-  reviewer,
-  required,
-  files = [],
-  ownerOnly = [],
-  ownerFindings = [],
-  manualOk = false,
-  stack = false,
-  review,
-  artifacts = [],
-  reviewTiers = REVIEW_TIERS,
-  blocking = [],
-}) {
-  const problems = [...artifacts];
-  // AC-40: a confirmed blocking finding stops the PR until a new review clears it.
-  for (const b of blocking)
-    problems.push(
-      `the review confirmed a blocking finding: ${b} (fix it, then review the new head: /flow-review)`,
-    );
-  // STA-1856 FR-1: what only the owner approves never lands through an agent.
-  const owned = ownerOnlyPaths(files, ownerOnly);
-  if (owned.length)
-    problems.push(`owner-only paths, so the owner lands it: ${owned.slice(0, 20).join(", ")}`);
-  for (const f of ownerFindings) problems.push(`owner-only change, so the owner lands it: ${f}`);
-  if (pr.state !== "open") problems.push(`the PR is ${pr.merged ? "already merged" : pr.state}`);
-  if (pr.draft) problems.push("the PR is a draft");
-  if (pr.mergeable_state === "dirty") problems.push(`the PR conflicts with ${pr.base?.ref}`);
-  if (pr.base?.ref !== base && !stack)
-    problems.push(`stacked on \`${pr.base?.ref}\`: land that first, or use --stack`);
-  problems.push(...gateProblems(statuses, pr.head?.sha, gateApp));
-  const title = String(pr.title ?? "");
-  if (!CONVENTIONAL.test(title) || title.length > 100)
-    problems.push(
-      `the title is not a conventional commit header of at most 100 characters: "${title}"`,
-    );
-  // ADR 0230 (AC-031): a change whose spec's tier is in `review.required` (default small, feature, big) needs the
-  // independent AI review on its head; a spec with no tier counts as small, and work with no spec is exempt.
-  if (
-    spec !== undefined &&
-    reviewTiers.includes(tierOf(spec) ?? "small") &&
-    review?.verdict !== "PASS"
-  )
-    problems.push(
-      `no AI review PASS for ${pr.head?.sha} (counted verdict: ${review?.verdict ?? "none"}): a different agent posts "AI-REVIEW: PASS ${pr.head?.sha} base=${pr.base?.ref}" as the ${[reviewer ?? []].flat().filter(Boolean).join(" or ") || "(unconfigured, apps.review.slug)"} app${review?.ignored.length ? `; ignored: ${[...new Set(review.ignored)].join("; ")}` : ""}`,
-    );
-  if (spec !== undefined) {
-    problems.push(...checkApproval(spec).map((p) => `spec: ${p}`));
-    const tier = tierOf(spec);
-    if (
-      (tier === "feature" || tier === "big") &&
-      !["tasked", "implementing", "done"].includes(statusOf(spec))
-    )
-      problems.push(
-        `spec: a ${tier} spec lands from Tasked or later; it is ${statusOf(spec) || "unset"}`,
-      );
-  }
-  if (!required && !manualOk)
-    problems.push(
-      `${base}'s ruleset does not require ${STATUS_CONTEXT} yet (phase 6); until then only the tester lands, with --manual-ok`,
-    );
-  return problems;
-}
-
-/**
  * The confirmed blocking findings of every review recorded on the newest review's commit, each as
  * `<id> in <file>: <text>`; none without a record or a review (AC-40). Only a review of a new head clears a finding:
  * another review of the same commit cannot.
@@ -197,16 +102,6 @@ export function blockingFindings(record) {
     .flatMap((r) => r.blocking ?? [])
     .map((f) => `${f.id} in ${f.file}: ${f.text}`);
   return [...new Set(found)];
-}
-
-/** The squash commit's message: one `Refs:` line and the co-author trailers of the PR's commits. */
-export function squashMessage(/** @type {string | undefined} */ key, /** @type {any[]} */ commits) {
-  const coauthors = new Set();
-  for (const c of commits)
-    for (const line of String(c.commit?.message ?? "").split("\n"))
-      if (/^Co-authored-by: /i.test(line.trim()))
-        coauthors.add(line.trim().replace(/^co-authored-by/i, "Co-Authored-By"));
-  return [...(key ? [`Refs: ${key.toUpperCase()}`] : []), ...coauthors].join("\n");
 }
 
 /** A list response's items; none when the call failed or answered something else. */
@@ -243,32 +138,9 @@ function changedFiles(api, repo, number) {
   return { files, entries, listed };
 }
 
-/** At this many changed files the approval check refuses, so `land` does too: the owner reviews it. */
-export const MAX_FILES = 300;
-
 /** A branch name as an API path: each segment encoded, the slashes kept. */
 const refPath = (/** @type {string} */ branch) =>
   branch.split("/").map(encodeURIComponent).join("/");
-
-/** The spec text at `sha` for the branch's key, read through the API; undefined when there is none. */
-function specAt(
-  /** @type {import("../lib/github.mjs").Api} */ api,
-  /** @type {string} */ repo,
-  /** @type {string} */ sha,
-  /** @type {string | undefined} */ key,
-) {
-  if (!key) return undefined;
-  const dirs = api("GET", `/repos/${repo}/contents/.agents/specs?ref=${sha}`);
-  const dir =
-    dirs.ok && Array.isArray(dirs.json)
-      ? dirs.json.find((d) => d.type === "dir" && d.name.startsWith(`${key}-`))
-      : undefined;
-  if (!dir) return undefined;
-  const file = api("GET", `/repos/${repo}/contents/.agents/specs/${dir.name}/spec.md?ref=${sha}`);
-  return file.ok
-    ? Buffer.from(String(file.json?.content ?? ""), "base64").toString("utf8")
-    : undefined;
-}
 
 /**
  * @typedef {{ api: import("../lib/github.mjs").Api, done: (key: string, url: string) => Promise<void>,
@@ -399,7 +271,8 @@ export async function landOne({
       ownerFindings.push(`${f.filename} cannot be read at the head`);
     else ownerFindings.push(...packageFindings(f.filename, before, after));
   }
-  const problems = landRules({
+  /** @type {import("../lib/land-rules.mjs").LandInput} */
+  const input = {
     pr: pr.json,
     statuses,
     base,
@@ -415,7 +288,11 @@ export async function landOne({
     required,
     manualOk,
     reviewTiers: config.review?.required,
-  });
+  };
+  const problems = landRules(input);
+  // ADR 0523 decision 6: the AI review is advisory; land warns and records the verdict in the squash message.
+  for (const w of reviewWarnings(input)) deps.warn(`${NAME} land: warning: ${w}`);
+  const verdict = { verdict: review.verdict, sha: head };
   // AC-051 to AC-053: with a roster, the reviewer is not the builder, the builder's role stays in its paths, and an
   // owner-kept spec's approvals are the owner's.
   const team = loadTeam(root);
@@ -472,7 +349,7 @@ export async function landOne({
         id: pr.json.node_id,
         head,
         title: `${pr.json.title} (#${number})`,
-        body: squashMessage(key ?? refs, commits),
+        body: squashMessage(key ?? refs, commits, verdict),
       },
     });
     const error = auto.json?.errors?.[0]?.message;
@@ -487,7 +364,7 @@ export async function landOne({
     merge_method: "squash",
     sha: head,
     commit_title: `${pr.json.title} (#${number})`,
-    commit_message: squashMessage(key ?? refs, commits),
+    commit_message: squashMessage(key ?? refs, commits, verdict),
   });
   if (!merge.ok) return { code: 1, problems: [`GitHub refused the merge: ${merge.err}`] };
   const sha = merge.json.sha;
