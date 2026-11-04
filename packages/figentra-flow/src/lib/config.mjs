@@ -99,7 +99,7 @@ export const SCHEMA = {
           oidc: {
             type: "object",
             additionalProperties: false,
-            required: ["identityId", "audience"],
+            required: ["audience"],
             properties: {
               identityId: {
                 type: "string",
