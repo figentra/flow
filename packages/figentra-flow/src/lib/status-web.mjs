@@ -4,7 +4,9 @@
  *   serves one self-contained HTML page (no external script, style or font); `/status.json` rebuilds and returns the
  *   snapshot on each request.
  * Boundary: read-only and local: it listens on 127.0.0.1 only, answers GET and HEAD only (405 otherwise), and writes
- *   nothing. The page renders every value through `textContent`, so a spec title or PR title is never markup.
+ *   nothing. A request whose Host is not `127.0.0.1:<port>` or `localhost:<port>` is 421, and one whose Origin is
+ *   another site is 403, so a page that rebinds its own name to 127.0.0.1 cannot read the snapshot. The page renders
+ *   every value through `textContent`, so a spec title or PR title is never markup.
  * Runtime: node
  * Governing contract: STA-1729 phase 4 (the leader's `status --web`, 2026-11-01).
  * Secrets: none; the snapshot carries no token or environment value.
@@ -70,6 +72,19 @@ setInterval(() => draw().catch(() => {}), 30000);
  */
 export function statusServer(read) {
   return createServer((req, res) => {
+    res.setHeader("cache-control", "no-store");
+    res.setHeader("x-content-type-options", "nosniff");
+    // DNS rebinding: the browser sends the attacker's name as Host, and its page as Origin.
+    const hosts = [`127.0.0.1:${req.socket.localPort}`, `localhost:${req.socket.localPort}`];
+    if (!hosts.includes(req.headers.host ?? "")) {
+      res.writeHead(421).end();
+      return;
+    }
+    const origin = req.headers.origin;
+    if (origin !== undefined && !hosts.some((h) => origin === `http://${h}`)) {
+      res.writeHead(403).end();
+      return;
+    }
     if (req.method !== "GET" && req.method !== "HEAD") {
       res.writeHead(405, { allow: "GET, HEAD" }).end();
       return;
@@ -79,7 +94,6 @@ export function statusServer(read) {
       res
         .writeHead(200, {
           "content-type": type,
-          "cache-control": "no-store",
           // Self-contained page: its own inline script and style, data from this server only.
           "content-security-policy":
             "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'",
