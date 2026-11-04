@@ -160,7 +160,8 @@ setting you have not made refuses and names it.
   value.
   `oidc` (`identityId`, the uuid of an Infisical OIDC machine identity, and `audience`, e.g. `"fflow-ci"`) names the
   identity main's approval job logs in as with its own OIDC token, to mint a narrowed Figentra Flow App token in
-  process (`src/lib/app-token.mjs`); that path reads the App's key, in memory only. Nothing uses it yet.
+  process (`src/lib/app-token.mjs`); that path reads the App's key, in memory only. The `github-actions` runner's
+  verdict uses it (see "The github-actions runner's verdict").
 - `gate.check` is the check command (default `pnpm verify`). `gate.shard` is the check one shard of
   `gate run --shards <n>` runs, with `{filters}` for its packages as `--filter=./<folder>` flags, e.g.
   `pnpm format:check && pnpm turbo run lint typecheck test build {filters}`.
@@ -216,10 +217,10 @@ setting you have not made refuses and names it.
     `local` do.
 
   - `github-actions`, optionally with `workflow` (default `fflow-gate.yml`), for repositories with no box.
-    `fflow init --runner github-actions` writes the workflow, and a starter config when there is none. Set
-    the repository secrets `FFLOW_GATE_APP_ID` and `FFLOW_GATE_PRIVATE_KEY`. `gate run` dispatches it
-    on the default branch, follows the run and passes its result through. The change's code runs in a `check` job
-    with no secret; a separate `post` job, which never checks out the repository, posts the status.
+    `fflow init --runner github-actions` writes the workflow, and a starter config when there is none. It runs on
+    every push to a PR, in one `check` job with a read-only token and no secret, and posts nothing. Main's approval
+    workflow posts `fflow/gate` from it (see "The github-actions runner's verdict"). `gate run` dispatches
+    nothing: it follows the PR's run of the workflow and passes through the status the gate App posted.
 
   Without a runner, `gate run` refuses, naming the key (or pass `--box <ssh host>`).
 
@@ -365,6 +366,39 @@ poster posts the `fflow/gate` commit status and one PR comment as the gate App t
 the box, through the secrets port (for us, a dedicated Infisical project only the box identity reads). The poster posts only while that commit is still the branch tip, and never `success` unless the
 check exited 0. Nothing secret reaches the comment or the log. Exit codes: 0 green, 1 red, 2 refused, 4 not posted,
 5 stale, 73 every box busy, 75 no healthy box.
+
+### The github-actions runner's verdict
+
+With the `github-actions` runner, the PR's own workflow runs the check but cannot post the status: it holds only
+a read-only token. When its run completes, GitHub starts `fflow-approve.yml` on `workflow_run`, from the default
+branch's copy. Its `verdict` job runs `verdict.mjs` from the integrity-checked Figentra Flow tarball. That script
+does the following:
+
+1. It refuses unless the run is this repository's, of the gate workflow's path, for a `pull_request`, complete, and
+   from a head in this repository that an open PR still points at.
+2. It reads the `check` job's conclusion from the API (never an artifact or a log). A missing job is a failure.
+3. If the PR changes `.github/workflows/**`, it posts `pending` ("the gate workflow changed: the owner reviews
+   it") until `apps.owner` approves that head, because the PR controls its own copy of the gate workflow.
+4. It mints a `statuses: write` Figentra Flow App token over the job's OIDC token (`secrets.oidc`) and posts
+   `fflow/gate`.
+
+The job has `id-token: write` and no App secret. It runs in the `fflow-approve` environment, one at a time for each
+head. Like every job in that file, it runs only on the default branch and only while the organisation variable
+`FIGENTRA_AUTOMATION` is `on` or `merge-only`. Unset or any other value is the freeze. The verdict job is rendered
+only when `apps.owner` is set, the runner is `github-actions`, and `secrets` is `infisical` with `oidc` and `paths.gate`. Otherwise
+the file is unchanged.
+
+The owner sets it up once:
+
+- Give the Figentra Flow App the `statuses: write` repository permission, and accept it on the installation.
+- Create an Infisical OIDC machine identity that can read only `paths.gate`. Set issuer
+  `https://token.actions.githubusercontent.com` and the audience in `secrets.oidc.audience`. Write the subject in
+  GitHub's id form, `repo:<owner>@<owner id>/<repo>@<repo id>:environment:fflow-approve`. Bind `job_workflow_ref`
+  to exactly `<owner>/<repo>/.github/workflows/fflow-approve.yml@refs/heads/<default branch>`, plus
+  `ref=refs/heads/<default branch>`. Put its id in `secrets.oidc.identityId`.
+- Keep the `fflow-approve` environment's deployment branches at the default branch only.
+- Set `FIGENTRA_AUTOMATION` to `on`, then run `fflow sync` and land the re-rendered `fflow-approve.yml`. The
+  repository secrets `FFLOW_GATE_APP_ID` and `FFLOW_GATE_PRIVATE_KEY` are no longer used.
 
 ## Landing
 

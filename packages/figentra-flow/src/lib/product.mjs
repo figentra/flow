@@ -1,8 +1,8 @@
 /**
  * Figentra Flow file contract:
  * Purpose: the one place the product's name lives (AC-042): the CLI name, the config file, the gate's status context
- *   and comment marker, the gate job folder, the environment prefix and the user folder. The product is being renamed;
- *   a rename changes this module, `package.json` and the docs.
+ *   and comment marker, the gate job folder, the environment prefix, the user folder and the automation freeze
+ *   variable. The product is being renamed; a rename changes this module, `package.json` and the docs.
  * Boundary: constants only.
  * Runtime: node
  * Governing contract: STA-1729 phase A (the leader's plan stop of 2026-10-31).
@@ -83,3 +83,12 @@ export const BASELINE_WORKFLOW = `${NAME}-baseline.yml`;
 
 /** The baseline workflow's job name, and so the check a red-main repository requires instead of its full gate. */
 export const BASELINE_CHECK = "Baseline";
+
+/**
+ * The organisation's Actions variable that freezes automation (ADR 0523; the owner, 2026-11-04): `on`, `merge-only`
+ * or `frozen`. Missing or unreadable is frozen; the approval workflow's event jobs run only on `AUTOMATION_RUNS`.
+ */
+export const AUTOMATION_VARIABLE = "FIGENTRA_AUTOMATION";
+
+/** The `AUTOMATION_VARIABLE` values the verdict runs on; any other value, or none, is the freeze. */
+export const AUTOMATION_RUNS = Object.freeze(["on", "merge-only"]);

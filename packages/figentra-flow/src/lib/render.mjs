@@ -4,7 +4,8 @@
  *   documents either as neutral skill documents for the repository's own projector (`.agents/skills/flow-<verb>/`) or,
  *   with `direct`, as Claude Code skills and OpenCode commands; the preset's agent definitions (`agents/`, as
  *   `.agents/agents/<id>.md` or, with `direct`, `.claude/agents/<id>.md`), the approval workflow (its secret names
- *   from `preset.yml`'s `approve`) and, with `apps.owner`, a CODEOWNERS for the owner-only paths (STA-1856); the
+ *   from `preset.yml`'s `approve`; with a `github-actions` runner and `secrets.oidc`, its `verdict` job, the L2
+ *   design's PR F) and, with `apps.owner`, a CODEOWNERS for the owner-only paths (STA-1856); the
  *   preset's own skills (`skills/<name>/**`, beside the `flow-*` ones) and, with `renderReference`, its agent
  *   reference, routing and models under `.agents/` (STA-1945, C6); a preset skill folder named `flow-*` or a preset
  *   file that is not UTF-8 is refused. Only the skills and agents the config's profile selects are rendered, the lock
@@ -37,10 +38,12 @@ import {
 } from "node:fs";
 import { dirname, join, sep } from "node:path";
 
+import { GATE_WORKFLOW } from "../adapters/runner/github-actions.mjs";
 import { approveWorkflow } from "./approve-workflow.mjs";
 import { baselineWorkflow } from "./baseline-workflow.mjs";
 import { ConfigError, gateLogins, loadConfig } from "./config.mjs";
 import { FLOW_ASSETS, LOCK, OVERRIDES, presetDir, presetSource } from "./flow-dir.mjs";
+import { defaultBranch } from "./git.mjs";
 import {
   digestOf,
   driftOf,
@@ -242,7 +245,7 @@ function renderPreset(root, direct, overrides) {
     out.set(path, text);
   const readme = renderReadme(root);
   if (readme !== undefined) out.set("README.md", readme);
-  const { apps, approve, baseline } = loadConfig(root).config;
+  const { apps, approve, baseline, runner, secrets } = loadConfig(root).config;
   // STA-1942: only a repository whose main is red asks for the baseline gate.
   if (baseline) out.set(`.github/workflows/${BASELINE_WORKFLOW}`, baselineWorkflow(baseline));
   const ownerOnly = ownerOnlyExtra(root, overrides);
@@ -258,6 +261,26 @@ function renderPreset(root, direct, overrides) {
       // The gate's status counts only from the gate App; a repository adds its own sources in `approve.checks`.
       trusted: { ...(gate ? { [STATUS_CONTEXT]: gate } : {}), ...approve?.checks },
       ownerOnly,
+      // The L2 design's PR F: main posts the github-actions runner's verdict, over OIDC.
+      ...(runner?.kind === "github-actions" &&
+      secrets?.kind === "infisical" &&
+      secrets.oidc &&
+      secrets.paths?.gate
+        ? {
+            verdict: {
+              gatePath: `.github/workflows/${runner.workflow ?? GATE_WORKFLOW}`,
+              owner: apps.owner,
+              defaultBranch: defaultBranch(root),
+              oidc: {
+                ...secrets.oidc,
+                domain: secrets.domain,
+                projectId: secrets.projectId,
+                env: secrets.env,
+                path: secrets.paths.gate,
+              },
+            },
+          }
+        : {}),
     }),
   );
   // GitHub asks the owner for owner-only paths itself (with `require_code_owner_review`); no owner, no file.

@@ -6,7 +6,8 @@
  *   (Figentra's is `stackra testbed run`); its `start` runs one gate shard alongside others and keeps its stdout (the
  *   testbed's JSON line under `--json`). `runnerFor(root, config)` builds it from `flow.config.json`'s
  *   `runner`. Without one, config file or not, it is refused, naming the key (AC-036, AC-045).
- *   `github-actions` dispatches the repository's gate workflow and follows it (`./github-actions.mjs`).
+ *   `github-actions` follows the gate workflow's run on the PR and reads the verdict main's workflow posts
+ *   (`./github-actions.mjs`), trusting it only from the gate App's logins (`apps.gate`).
  * Boundary: spawns the runner's processes and returns their exit code; 127 when the program is not installed.
  * Runtime: node
  * Governing contract: STA-1729 phase A (A3); Stackra ADR 0484 (the testbed).
@@ -19,7 +20,7 @@
 import { spawn as spawnAsync, spawnSync } from "node:child_process";
 import { basename } from "node:path";
 
-import { ConfigError } from "../../lib/config.mjs";
+import { ConfigError, gateLogins } from "../../lib/config.mjs";
 import { CONFIG_FILE, NAME } from "../../lib/product.mjs";
 import { githubActionsRunner } from "./github-actions.mjs";
 
@@ -40,10 +41,11 @@ const exitOf = (/** @type {import("node:child_process").SpawnSyncReturns<any>} *
 /**
  * The runner a block names.
  * @param {any} block the configuration's `runner`
- * @param {{ spawn?: typeof spawnSync, root?: string }} [options]
+ * @param {{ spawn?: typeof spawnSync, root?: string, gate?: string | string[] }} [options] `gate`: the gate App's
+ *   logins, whose status the `github-actions` runner trusts
  * @returns {Runner}
  */
-export function runnerPort(block, { spawn = spawnSync, root } = {}) {
+export function runnerPort(block, { spawn = spawnSync, root, gate } = {}) {
   if (block?.kind === "ssh") {
     if (!HOST.test(block.host))
       throw new ConfigError(`runner "ssh": host is not a host: ${block.host}`);
@@ -122,7 +124,7 @@ export function runnerPort(block, { spawn = spawnSync, root } = {}) {
       },
     };
   }
-  if (block?.kind === "github-actions") return githubActionsRunner(block, { root });
+  if (block?.kind === "github-actions") return githubActionsRunner(block, { root, gate });
   throw new ConfigError(`runner: unknown kind ${block?.kind}`);
 }
 
@@ -135,6 +137,7 @@ export function runnerPort(block, { spawn = spawnSync, root } = {}) {
  */
 export function runnerFor(root, config, { box, spawn } = {}) {
   if (box !== undefined) return { runner: runnerPort({ kind: "ssh", host: box }, { spawn }) };
-  if (config.runner) return { runner: runnerPort(config.runner, { spawn, root }) };
+  if (config.runner)
+    return { runner: runnerPort(config.runner, { spawn, root, gate: gateLogins(config.apps) }) };
   return { problem: `gate run needs "runner" in ${CONFIG_FILE} (or --box <ssh host>)` };
 }
