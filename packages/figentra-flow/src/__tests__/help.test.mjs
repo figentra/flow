@@ -5,10 +5,10 @@
  *   command names the closest match and exits 2; and the passthrough list (commands not yet ported, STA-1966 FR-031)
  *   is pinned, so porting one is a deliberate change here; and only src/lib/console.mjs (with bin/fflow.mjs) imports
  *   `@stackra/*`, so the governance core stays free of the engine; and the governance commands' `--help` lists their
- *   options (STA-1945 FR-1).
+ *   options (STA-1945 FR-1), and `preset add` its `--dry-run` (STA-2097).
  * Boundary: the engine's in-process test harness and the text of src/; no command runs.
  * Runtime: node
- * Governing contract: ADR 0022; STA-1945 FR-1, FR-31; STA-1966 FR-031.
+ * Governing contract: ADR 0022; STA-1945 FR-1, FR-31; STA-1966 FR-031; STA-2097.
  */
 // @covers sta-1945:FR-31 sta-1945:AC-36 sta-1945:P-035
 import { test } from "node:test";
@@ -77,6 +77,11 @@ test("help: <command> --help prints its usage and runs nothing", async () => {
   const todo = await runCommandForTest(CONSOLE, ["todo", "--help"]);
   assert.equal(todo.exitCode, 0);
   assert.match(todo.stdout, /--repo/);
+  // STA-2097: declared, not passthrough.
+  const preset = await runCommandForTest(CONSOLE, ["preset", "add", "--help"]);
+  assert.equal(preset.exitCode, 0);
+  assert.match(preset.stdout, /--dry-run/);
+  assert.match(preset.stdout, /preset add @acme\/flow-preset/);
 });
 
 test("help: task refuses an id that is not T###, and done a missing --command, running nothing", async () => {

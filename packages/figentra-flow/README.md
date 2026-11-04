@@ -63,7 +63,8 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow train <open\|add\|close\|build\|eject\|depart\|status>`        | the release train: board green PRs, cut off, build `train/<version>` by merge commits with bisect ejection, depart by fast-forward (see [Release trains](#release-trains))                       |
 | `fflow ship <dev\|staging> [--workflow f] [--dry-run]`                | dispatches the product's Runway deploy workflow (`deploy.yml`, input `environment`) on main; production is refused: the owner promotes                                                           |
 | `fflow release [--json] [--offline]`                                  | what the next release would publish: pending changesets and next versions, the version PR, the Release workflow's last run and its notices, the registry's versions; it publishes nothing        |
-| `fflow doctor [--json] [--offline]`                                   | checks Node, git, the configuration, the `.flow/` install, the ignored worktree folder, the roster and the credentials, grouped (Machine, Repo, Flow, GitHub), each with its fix                 |
+| `fflow preset add <pkg> [--dry-run]`                                  | installs a preset package as a dev dependency with the package manager whose lockfile the repository has (pnpm when none), then sets `"preset": "<pkg>"` in `flow.config.json`; run `fflow sync` after. `--dry-run` prints both and runs nothing |
+| `fflow doctor [--json] [--offline]`                                   | checks Node, git, the configuration, the preset (installed, and this Flow inside its declared range), the `.flow/` install, the ignored worktree folder, the roster and the credentials, grouped (Machine, Repo, Flow, GitHub), each with its fix                 |
 | `fflow gate plan <spec.md>`                                           | exits 1 until the spec may be planned (run by `fflow spec setup-plan`)                                                                                                                           |
 | `fflow gate check <dir>` / `tasks <tasks.md>`                         | the stage rules for the spec's `**Status**`; the tasks lint                                                                                                                                      |
 | `fflow gate lane` / `branch` / `ci` / `dir`                           | the lane check, the branch warning, the CI gate with the install check, the spec folder                                                                                                          |
@@ -228,7 +229,10 @@ setting you have not made refuses and names it.
     clarifications marker, statuses, tiers, approvals, EARS criteria and the design sections.
   - `stackra`: Stackra's preset, which adds the Impact questionnaire, the Constitution Check, deploy modes,
     correctness properties, task routes and the path floors of the tier check.
-  - a path to the repository's own preset folder, held to the neutral rules.
+  - an npm package name such as `@acme/flow-preset`: a preset package installed in the repository (see
+    [Presets](#presets)).
+  - a path to the repository's own preset folder, held to the neutral rules (or to `stackra`'s when its
+    `preset.yml` declares `id: "stackra"`).
 
   Without a config file the preset is `neutral`. A repository changes what `sync` renders without forking a preset
   with overrides, owner-only files at `.flow/overrides/<surface>/<id>.yml` (schema: `schema/override.schema.json`):
@@ -261,6 +265,95 @@ setting you have not made refuses and names it.
 
 Only
 `flow.config.json` is read; no other file stands in for it.
+
+## Presets
+
+A preset is the content `sync` renders and the gate reads: the `flow-*` command texts, templates, agents, rules, guard
+tables and surfaces. Flow bundles `neutral`; any other preset is an npm package that the repository installs and
+names.
+
+### Using a preset package
+
+```sh
+pnpm exec fflow preset add @acme/flow-preset   # install it as a dev dependency and name it in flow.config.json
+pnpm exec fflow sync                           # render it; .flow/lock.json records its name, version and digest
+```
+
+`preset add` runs `pnpm add -D` (`-w` at a pnpm workspace root), `npm install -D` or `yarn add -D`, chosen by the
+lockfile (`pnpm-lock.yaml`, `package-lock.json`, `yarn.lock`; pnpm when there is none), then writes the config line and
+keeps the rest of the file. Installing by hand and writing `"preset": "@acme/flow-preset"` yourself is the same thing.
+Nothing runs on install: there is no postinstall, and Flow loads code (the preset's guard tables) only from the
+preset the configuration names.
+
+`preset` resolves in this order: a bundled name (`neutral`), then an installed package of that name (resolved from the
+repository root, as Node resolves `<pkg>/package.json`), then a folder of the repository at that path. A name that
+looks like a package but is neither installed nor a folder is an error naming `fflow preset add <pkg>`.
+
+Upgrading is a package upgrade (`pnpm up @acme/flow-preset`), then `fflow update`: `sync` refuses a preset whose
+content differs from the lock until `update` adopts it, and `update` prints the diff first.
+
+### Writing a preset package
+
+The package names its preset folder in `package.json`, and declares the Flow versions it works with:
+
+```json
+{
+  "name": "@acme/flow-preset",
+  "version": "1.0.0",
+  "files": ["preset"],
+  "flow": { "preset": "./preset" },
+  "peerDependencies": { "@figentra-oss/flow": ">=0.3.0 <1" }
+}
+```
+
+- `flow.preset` is the folder, relative to the package. It must stay inside the package once links are followed.
+- If the package has an `exports` map, it must export `./package.json`, or Flow cannot find the package.
+- The `peerDependencies` range on `@figentra-oss/flow` says which Flow versions can run the preset. Flow reads
+  `*`, exact and partial versions (`1.2`, `1.x`), `^`, `~`, and `>=`, `>`, `<=`, `<` comparators joined by spaces,
+  with `||` between alternatives. Hyphen ranges (`1 - 2`) are not read, and Flow never meets them.
+
+The folder has the bundled presets' layout (`assets/flow/presets/neutral` in this package is a complete example).
+Every part is optional: a missing file or folder means the preset has none of that kind, except that templates fall
+back to Flow's base ones and guard tables to the neutral ones:
+
+```text
+preset/
+  preset.yml          # id, name, version, profiles; optional requires.flow, approve, queues, parameters
+  commands/           # flow-<verb>.md: the command texts sync renders as the flow-* skills
+  templates/          # spec-template.md, plan-template.md, tasks-template.md, … (Flow's base templates otherwise)
+  agents/             # <id>.md: agent definitions rendered under .agents/agents/ (or .claude/agents/)
+  rules/              # <id>.md: agent rules rendered beside them
+  skills/<name>/      # the preset's own skills, rendered file for file (a folder may not be named flow-*)
+  guard/              # bash-rules.mjs, path-rules.mjs, hints.mjs: the guard engine's tables
+  surfaces/           # lefthook.yml, mcp.yaml, agents-md/agents.md: the repository files sync renders from them
+  quality-words.yml   # vague words the spec gate flags
+  third-party.yml     # third-party skills, each with its source and licence
+  reference/, routing.yaml, models.yaml   # agent reference, routing and models, rendered under .agents/
+```
+
+`preset.yml` can also declare the Flow range it needs, so a preset copied into a repository folder keeps the check.
+Quote the range, since a YAML value cannot start with `>`:
+
+```yaml
+preset:
+  id: "acme"
+  name: "Acme's workflow"
+  version: "1.0.0"
+requires:
+  flow: ">=0.3.0 <1"
+default: default
+profiles:
+  default:
+    agents: ["*"]
+    skills: ["*"]
+    hooks: ["*"]
+```
+
+When the installed Flow is outside either range, `fflow doctor` fails its `preset` row with the fix, and `sync` and
+`update` refuse to render. Guard tables are ES modules that Flow imports from the preset folder: import only `node:`
+built-ins and files inside the preset, since a relative path into Flow's own files does not reach it from another
+package. Flow's neutral secret-file and config rules always apply after a preset's own. Every rendered file that can
+carry a comment names the preset and its version (a package's own version) in its provenance header.
 
 ## The gate
 

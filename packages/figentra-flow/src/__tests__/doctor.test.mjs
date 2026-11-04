@@ -62,7 +62,7 @@ test("doctor: an initialised repository passes every offline check", (t) => {
   const all = checks(r.root, { offline: true, disk: () => ({ free: 100 * GB, total: 200 * GB }) });
   assert.deepEqual(
     all.map((c) => c.id),
-    ["node", "git", "config", "install", "worktrees", "worktree-budget", "disk"],
+    ["node", "git", "config", "preset", "install", "worktrees", "worktree-budget", "disk"],
   );
   assert.deepEqual(
     all.filter((c) => !c.ok),
@@ -132,6 +132,7 @@ test("doctor: the checks are grouped rows; a fresh local repository's missing cr
       ["Machine", "node", "ok"],
       ["Repo", "git", "ok"],
       ["Flow", "config", "ok"],
+      ["Flow", "preset", "ok"],
       ["Flow", "install", "ok"],
       ["Repo", "worktrees", "ok"],
       ["Repo", "worktree-budget", "ok"],
