@@ -58,7 +58,7 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow plan <key> --input \| --record <tasks.md>`                     | the plan workflow's input (FRs, ACs, documents, size budget), and its tasks.md written only when every FR and AC is covered within the budget and `gate tasks` passes                         |
 | `fflow review <pr> --input \| --record <findings.json>`               | the review workflow's input, and its verified findings recorded; `land` refuses a confirmed blocking one                                                                                         |
 | `fflow hooks run <pre-commit\|commit-msg\|pre-push>`                  | the stage's lefthook jobs here with the workspace install, else on the runner's box for the staged tree; the commit gets a `Hooks-Run:` trailer                                                  |
-| `fflow land [<pr>] [--stack] [--dry-run] [--manual-ok]`               | squash-merges a PR that is green on `fflow/gate` from the gate App on its head and has its approvals; Linear Done, worktree and branch removed                                                   |
+| `fflow land [<pr>] [--stack] [--dry-run] [--manual-ok] [--wait <m>] [--no-wait]` | squash-merges a PR that is green on `fflow/gate` from the gate App on its head and has its approvals, or asks main's land lane with `fflow:land` and waits for its merge; Linear Done, worktree and branch removed |
 | `fflow adr reserve <slug> --issue <key> [--owner <who>]`              | under the `adr` queue lock (`flow/queue/adr`, stale after 15 minutes), lands the next number of the preset's `queues.adr` file on the default branch, then prints only it on stdout; a reservation that does not land is withdrawn |
 | `fflow train <open\|add\|close\|build\|eject\|depart\|status>`        | the release train: board green PRs, cut off, build `train/<version>` by merge commits with bisect ejection, depart by fast-forward (see [Release trains](#release-trains))                       |
 | `fflow ship <dev\|staging> [--workflow f] [--dry-run]`                | dispatches the product's Runway deploy workflow (`deploy.yml`, input `environment`) on main; production is refused: the owner promotes                                                           |
@@ -465,14 +465,37 @@ authors (ADR 0230). When a change in a `review.required` tier has no PASS, becau
 a FAIL, `land` prints a warning and lands it anyway. The rules live in `src/lib/land-rules.mjs`, so the approval job
 can run the same ones.
 
-It lists every failing rule. Then it squash-merges with GitHub's `sha` guard, so the merge fails if the head moved. A
+It lists every failing rule. When the base's own `fflow-approve.yml` (read through the contents API, not your
+checkout) takes the `fflow:land` label, `land` only asks main's land lane (see "Main's land lane" below):
+
+1. It adds `fflow:land`, or comments `/fflow land` once when the label is already there, since re-adding a label
+   fires no event. It never dispatches, turns on auto-merge or merges, and needs only Issues and Pull requests write.
+   A required check that failed or came from an untrusted source still refuses here; a running one does not.
+2. It waits, reading the PR and the newest `fflow/land` status on the head every 10 seconds, for up to `--wait`
+   minutes (default 10). A status counts only from the gate App's login, and only once it is newer than the one the
+   head carried before this request. Each new step is printed once.
+
+| Outcome                 | `land`                                                                        |
+| ----------------------- | ----------------------------------------------------------------------------- |
+| merged                  | runs steps 1 to 5 below; exits 0, or 3 on a warning                           |
+| `failure`               | prints the reasons from the lane's comment; exits 1                           |
+| `pending`, `owner:`     | the owner reviews it; exits 4                                                 |
+| the head moved          | exits 1: a push removes the label, so land again                              |
+| the wait ran out        | exits 4: the request stays, and `fflow land <n>` again finishes it            |
+| `--no-wait`             | exits 0 right after asking                                                    |
+
+`--dry-run` names the path it would take, and `--stack` waits on each PR before it brings up the next. When the
+base's workflow does not take the label, `land` works as before and warns that the dispatch path is deprecated.
+
+Otherwise it squash-merges with GitHub's `sha` guard, so the merge fails if the head moved. A
 `Refs:` line, the AI review's verdict (`AI-Review: PASS <head>`, `AI-Review: FAIL <head>` or `AI-Review: none`) and the
 co-author trailers go into the squash commit. After the merge it:
 
 1. sets the Linear issue Done;
 2. records the merge commit on the branch, so `fflow clean` counts the squashed branch as saved;
 3. removes the worktree under `clean`'s rules;
-4. deletes the remote branch, only while it still points at the landed head;
+4. deletes the remote branch, only while it still points at the landed head (a branch GitHub already deleted
+   counts as deleted);
 5. comments on the PR.
 
 ### When the ruleset requires an approving review
