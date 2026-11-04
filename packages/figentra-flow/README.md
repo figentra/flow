@@ -1,10 +1,17 @@
 # Figentra Flow
 
-Figentra Flow is the spec CLI for Stackra repositories. It owns spec-driven development end to end (ADR 0510): the
-templates, the presets, the nine `flow-*` commands it renders for Claude Code and OpenCode, the `.flow/` folder, and
-the gates that keep each spec, its plan, its tasks and its tests in step. Its command texts and two templates derive
-from [GitHub spec-kit](https://github.com/github/spec-kit) 1.0.10 (MIT; see `THIRD_PARTY_NOTICES.md`); nothing runs
-spec-kit's `specify`. It is one package, `fflow`, with two binaries, `fflow` and its alias `fflow`, published on the Figentra registry (npmjs later, as `fflow`).
+Figentra Flow is spec-driven development for agent teams. It owns the path from a spec to a landed change: the
+templates, the presets, the `flow-*` commands it renders for Claude Code and OpenCode, the `.flow/` folder, and the
+gates that keep each spec, its plan, its tasks and its tests in step. Its command texts and two templates derive from
+[GitHub spec-kit](https://github.com/github/spec-kit) 1.0.10 (MIT; see `THIRD_PARTY_NOTICES.md`); nothing runs
+spec-kit's `specify`. It is one package, `@figentra-oss/flow`, with the binary `fflow` (the old name `figentra-flow`
+still works for one release). It is published on the Figentra registry, which anyone can read without a token:
+
+```ini
+# .npmrc
+@figentra-oss:registry=https://npm.stackra.figentra.com/
+@stackra:registry=https://npm.stackra.figentra.com/
+```
 
 ```sh
 pnpm add -D @figentra-oss/flow             # from the Figentra registry: @figentra-oss:registry in .npmrc
