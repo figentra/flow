@@ -1,7 +1,8 @@
 # Figentra Flow file contract:
-# Purpose: the Quality Gate: install, format check, lint, typecheck and build on every PR and push to main. No tests:
-#          they run on the box (owner decision 2026-11-03, STA-2064; AGENTS.md). On a pull request typecheck and build
-#          run for the members the change affects, against the base commit. The job id `verify` is the required check.
+# Purpose: the Quality Gate: install, format check, lint, typecheck and build on every PR and push to main (`verify`,
+#          the required check), and the package's tests (`test`, owner default O4, 2026-11-04: Flow's tests run in
+#          its own CI). On a pull request typecheck and build run for the members the change affects, against the base
+#          commit; the tests always run in full.
 # Owner: release-operations
 # Secrets: none; the @stackra scope's registry is read-only and public for this job.
 name: Quality Gate
@@ -37,3 +38,16 @@ jobs:
           AFFECTED: ${{ github.event_name == 'pull_request' && '1' || '' }}
           TURBO_SCM_BASE: HEAD~1 # a PR checks out its merge into main, so HEAD~1 is main and the diff is the PR's own
         run: pnpm exec turbo run typecheck build ${AFFECTED:+--affected}
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+        with:
+          install_args: node pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @figentra-oss/flow test
