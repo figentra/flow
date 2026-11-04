@@ -12,7 +12,8 @@
  *   workspace file (`~/.config/fflow/workspace.yaml`, or `FFLOW_WORKSPACE`).
  *   `fflow init --runner github-actions [--force]` writes only the gate workflow
  *   (`.github/workflows/fflow-gate.yml`) and, when the repository has no config file, a starter one naming
- *   that runner; it refuses an existing workflow unless `--force` and never edits an existing config file.
+ *   that runner; it refuses an existing workflow unless `--force` and never edits an existing config file. It names
+ *   the setup main's approval workflow needs to post the verdict (the L2 design, PR F).
  * Runtime: node
  * Governing contract: ADR 0120; ADR 0121.
  * Secrets: none.
@@ -27,7 +28,14 @@ import { hasProjector, sync } from "./sync.mjs";
 import { CONSTITUTION, FLOW_DIR, resolveTemplate } from "../lib/flow-dir.mjs";
 import { git } from "../lib/git.mjs";
 import { findRepos, workspaceFile, writeWorkspace } from "../lib/workspace.mjs";
-import { CONFIG_FILE, ENV_PREFIX, NAME, PACKAGE, VERSION } from "../lib/product.mjs";
+import {
+  APPROVE_WORKFLOW,
+  CONFIG_FILE,
+  NAME,
+  PACKAGE,
+  STATUS_CONTEXT,
+  VERSION,
+} from "../lib/product.mjs";
 
 /** What `.flow/README.md` says. */
 const README = `# .flow
@@ -117,8 +125,9 @@ export function initGithubActions(root, { force = false, version = VERSION } = {
   } else if (loadConfig(root).config.runner?.kind !== "github-actions") {
     lines.push(`set "runner": { "kind": "github-actions" } in ${CONFIG_FILE}`);
   }
+  // The L2 design's PR F: main's approval workflow posts the verdict; no repository secret.
   lines.push(
-    `set the repository secrets ${ENV_PREFIX}GATE_APP_ID and ${ENV_PREFIX}GATE_PRIVATE_KEY (the gate App), and "apps.gate" in ${CONFIG_FILE}`,
+    `set "apps.gate", "apps.owner" and "secrets.oidc" in ${CONFIG_FILE}, then run ${NAME} sync: main's ${APPROVE_WORKFLOW} posts ${STATUS_CONTEXT}`,
   );
   return { lines };
 }
