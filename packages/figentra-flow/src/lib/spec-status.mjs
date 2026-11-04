@@ -2,10 +2,11 @@
  * Figentra Flow file contract:
  * Purpose: a spec's declared status, tier and approval stops (ADR 0502): `STATUSES`, `statusOf`, `statusLine`,
  *   `TIERS`, `tierOf`, `approvedAt` and `checkApproval`, moved unchanged out of `commands/gate.mjs` (which re-exports
- *   them) so `lib/land-rules.mjs` imports nothing from `commands/` (ADR 0523, L2 PR C).
+ *   them) so `lib/land-rules.mjs` imports nothing from `commands/` (ADR 0523, L2 PR C); `approvalsAt` lists every
+ *   approval of a stage, re-approvals included, for the record's content-bound approvals (STA-1945 A-3).
  * Boundary: pure functions over the spec's text; no file or network access.
  * Runtime: node
- * Governing contract: ADR 0502 (tiers and approval stops); ADR 0120; ADR 0523.
+ * Governing contract: ADR 0502 (tiers and approval stops); ADR 0120; ADR 0523; STA-1945 (A-3, AC-34).
  * Secrets: none.
  */
 import { strip } from "./spec-parse.mjs";
@@ -52,22 +53,31 @@ export const tierOf = (text) => {
 };
 
 /**
- * Who approved a spec at `stage` and when: "Approved by <who> <YYYY-MM-DD>" on the Status line while the spec sits
- * there, or on the Status history line that moved it there.
+ * Every approval of a spec at `stage`, in document order: "Approved by <who> <YYYY-MM-DD>" on the Status line while
+ * the spec sits there, then on each Status history line that moved it there (a re-approval is a later line).
+ * @param {string} text
+ * @param {string} stage
+ * @returns {{ who: string, date: string }[]}
+ */
+export function approvalsAt(text, stage) {
+  const lines = statusOf(text) === stage ? [statusLine(text)] : [];
+  const history =
+    strip(text).match(/^## Status history\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
+  lines.push(...history.split("\n").filter((l) => new RegExp(`→\\s*${stage}\\b`, "i").test(l)));
+  return lines.flatMap((line) => {
+    const found = line.match(/Approved by ([^\n]+?) (\d{4}-\d{2}-\d{2})\b/);
+    return found ? [{ who: found[1] ?? "", date: found[2] ?? "" }] : [];
+  });
+}
+
+/**
+ * Who approved a spec at `stage` and when: the first of `approvalsAt`.
  * @param {string} text
  * @param {string} stage
  * @returns {{ who: string, date: string } | undefined}
  */
 export function approvedAt(text, stage) {
-  const lines = statusOf(text) === stage ? [statusLine(text)] : [];
-  const history =
-    strip(text).match(/^## Status history\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
-  lines.push(...history.split("\n").filter((l) => new RegExp(`→\\s*${stage}\\b`, "i").test(l)));
-  for (const line of lines) {
-    const found = line.match(/Approved by ([^\n]+?) (\d{4}-\d{2}-\d{2})\b/);
-    if (found) return { who: found[1] ?? "", date: found[2] ?? "" };
-  }
-  return undefined;
+  return approvalsAt(text, stage)[0];
 }
 
 /**

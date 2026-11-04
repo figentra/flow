@@ -341,7 +341,7 @@ export const DOCUMENT_GATES_SINCE = "2026-11-03";
 export const TREE_GATES_SINCE = "2026-11-04";
 
 /** A spec's `## Status history` section. */
-const historyOf = (/** @type {string} */ text) =>
+export const historyOf = (/** @type {string} */ text) =>
   strip(text).match(/^## Status history\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
 
 /**

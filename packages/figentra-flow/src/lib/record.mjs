@@ -5,22 +5,27 @@
  *   history. `readRecord` and `updateRecord` read and write it against `RECORD_SCHEMA` (shipped as
  *   `schema/record.schema.json`), `updateRecord` dating each change of stage or state in `history` (FR-21);
  *   `readRecordAt` reads it from a branch with no checkout; `commitRecord` commits it (with the tracked changes for a
- *   session's stop) and pushes the branch through the credentials port (FR-19).
+ *   session's stop) and pushes the branch through the credentials port (FR-19); `endStage` is what each stage command
+ *   calls when its stage ends (T015): the stage and state written, then the record committed and pushed. Approvals
+ *   are bound to the documents' content (A-3, T048): `bindApprovals` records each approval the spec carries with
+ *   `approvalDigest` of what it approves, and `staleApprovals` names each stage whose documents changed since.
  * Boundary: writes only the record file, one commit on the task's branch and a push of that branch. Never commits on
  *   or pushes to the default branch, never rebases or force-pushes: a rejected push is merged once (never into a
  *   worktree holding uncommitted work) and retried, then reported as `pushed: false`. Never stages an untracked file
  *   but the record, or a file named like a secret; the hooks always run (FR-18), `LEFTHOOK` and `LEFTHOOK_EXCLUDE`
  *   stripped from their environment.
  * Runtime: node
- * Governing contract: STA-1945 (FR-14, FR-19, AC-13, AC-18, P-019).
+ * Governing contract: STA-1945 (FR-13, FR-14, FR-19, FR-30, A-3, AC-13, AC-18, AC-34, AC-42, P-019, P-034).
  * Secrets: none; network git goes through `remote` and the configured credentials.
  */
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 
 import { validate } from "./config.mjs";
 import { FLOW_DIR } from "./flow-dir.mjs";
 import { defaultBranch, git, remote } from "./git.mjs";
+import { approvalsAt } from "./spec-status.mjs";
 import { STAGES } from "./stages.mjs";
 
 /** Where the records live, under the repository (or worktree) root. */
@@ -366,6 +371,117 @@ export function commitRecord(root, key, { message, wip = false, push: send = tru
   if (!send) return { sha: head(), pushed: false, ...left };
   const problem = push(root, branch);
   return { sha: head(), pushed: !problem, ...(problem ? { problem } : {}), ...left };
+}
+
+/**
+ * Ends `stage` in the record of `key` (FR-14): `change` applied, the stage and state set, then the record committed on
+ * the task's branch and pushed (`commit: false` writes only, `push: false` commits only). Off a task's branch (the
+ * default branch, a detached HEAD) nothing is written: the record lives on the task's branch. A record that cannot be
+ * read or written, and a commit or push that failed, come back as the problem for the caller to warn: a stage's own
+ * outcome never hangs on its record.
+ * @param {string} root the task's checkout
+ * @param {string} key
+ * @param {Stage} stage
+ * @param {{ state?: FlowRecord["state"], change?: (r: FlowRecord) => FlowRecord, commit?: boolean,
+ *           push?: boolean }} [options]
+ * @returns {string | undefined} the problem
+ */
+export function endStage(
+  root,
+  key,
+  stage,
+  { state = "done", change = (r) => r, commit = true, push = true } = {},
+) {
+  const branch = git(root, ["branch", "--show-current"]).out;
+  if (!branch || branch === defaultBranch(root)) return undefined;
+  try {
+    updateRecord(root, key, (r) => ({ ...change(r), stage, state }));
+  } catch (error) {
+    if (!(error instanceof RecordError)) throw error;
+    return error.message;
+  }
+  if (!commit) return undefined;
+  const shown = key.toUpperCase();
+  return commitRecord(root, key, {
+    message: `chore(flow): ${shown} ${stage} ${state}\n\nRefs: ${shown}`,
+    push,
+  }).problem;
+}
+
+/** A spec folder's document by name, undefined when it is missing. */
+export const docsIn = (/** @type {string} */ dir) => (/** @type {string} */ name) =>
+  existsSync(join(dir, name)) ? readFileSync(join(dir, name), "utf8") : undefined;
+
+/**
+ * The documents each approval stop approves (ADR 0502): the spec at Clarified, the spec and its plan at Planned.
+ * @type {Record<string, string[]>}
+ */
+export const APPROVED = { clarified: ["spec.md"], planned: ["spec.md", "plan.md"] };
+
+/** A spec without its `**Status**` line and Status history: every stage moves those, and an approval is of the rest. */
+const unstatused = (/** @type {string} */ text) =>
+  text
+    .replace(/^\*\*Status\*\*:.*$/m, "")
+    .replace(/^## Status history\b[\s\S]*?(?=^## |(?![\s\S]))/m, "");
+
+/**
+ * The digest an approval at `stage` binds (A-3): the text of the documents it approves, the spec's status left out.
+ * @param {string} stage
+ * @param {(name: string) => string | undefined} read the spec folder's document by name (`docsIn`)
+ */
+export function approvalDigest(stage, read) {
+  const hash = createHash("sha256");
+  for (const name of APPROVED[stage] ?? ["spec.md"]) {
+    const text = read(name) ?? "";
+    hash.update(`${name}\0${name === "spec.md" ? unstatused(text) : text}\0`);
+  }
+  return `sha256:${hash.digest("hex")}`;
+}
+
+/** Whether `record` holds the approval of `stage` by `who` on `date`. */
+const holds = (
+  /** @type {FlowRecord["approvals"]} */ approvals,
+  /** @type {string} */ stage,
+  /** @type {{ who: string, date: string }} */ a,
+) => approvals.some((r) => r.stage === stage && r.who === a.who && r.when === a.date);
+
+/**
+ * `record` with each approval the spec carries (`approvalsAt`, by who and day) that it does not hold yet, bound to
+ * the digest of what it approves as it is now (A-3). A re-approval is a new "Approved by <who> <YYYY-MM-DD>" line;
+ * shortcut: the same approver on the same day reads as the approval already held, so it needs another day or name.
+ * @param {FlowRecord} record
+ * @param {(name: string) => string | undefined} read the spec folder's document by name (`docsIn`)
+ * @returns {FlowRecord}
+ */
+export function bindApprovals(record, read) {
+  const spec = read("spec.md");
+  if (spec === undefined) return record;
+  /** @type {FlowRecord["approvals"]} */
+  const added = [];
+  for (const stage of Object.keys(APPROVED))
+    for (const a of approvalsAt(spec, stage))
+      if (!holds([...record.approvals, ...added], stage, a))
+        added.push({ who: a.who, when: a.date, stage, digest: approvalDigest(stage, read) });
+  return added.length ? { ...record, approvals: [...record.approvals, ...added] } : record;
+}
+
+/**
+ * Each approval stop whose newest recorded approval no longer matches its documents (A-3, AC-34), earliest first:
+ * the stage to approve again, the approval that no longer holds and the documents it covers. A stage whose spec
+ * carries an approval the record lacks is approved afresh (the next stage to end binds it), so it is not stale.
+ * @param {FlowRecord} record
+ * @param {(name: string) => string | undefined} read the spec folder's document by name (`docsIn`)
+ * @returns {{ stage: string, who: string, when: string, docs: string[] }[]}
+ */
+export function staleApprovals(record, read) {
+  const spec = read("spec.md");
+  if (spec === undefined) return [];
+  return Object.entries(APPROVED).flatMap(([stage, docs]) => {
+    const last = record.approvals.findLast((a) => a.stage === stage);
+    if (!last || last.digest === approvalDigest(stage, read)) return [];
+    if (approvalsAt(spec, stage).some((a) => !holds(record.approvals, stage, a))) return [];
+    return [{ stage, who: last.who, when: last.when, docs }];
+  });
 }
 
 /**

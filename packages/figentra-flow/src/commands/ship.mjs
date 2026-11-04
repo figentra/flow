@@ -4,17 +4,21 @@
  *   dev or staging by dispatching the product's Runway deploy workflow (`.github/workflows/deploy.yml`, input
  *   `environment`), so the deploy runs in CI from a commit of main, in that GitHub environment, as every Runway deploy
  *   does. Production is refused outright: it moves only by `runway promote <sha>`, behind the production
- *   environment's approval, which is the owner's.
+ *   environment's approval, which is the owner's. Run in a landed task's checkout (its record at `land`, `release` or
+ *   `ship`), a dispatch ends the ship stage in Flow's record there, committed and pushed (`recordShip`, STA-1945 FR-14).
  * Boundary: reads origin's tip, then makes one dispatch through the configured GitHub credentials; it builds and
  *   deploys nothing itself and never sends a `sha` (a promote's input). GitHub itself refuses an input the workflow
- *   does not declare, so the workflow is not parsed here.
+ *   does not declare, so the workflow is not parsed here. The record is written only on a task's branch, and a failed
+ *   commit or push only warns.
  * Runtime: node
- * Governing contract: Stackra ADR 0352 (decision 6), ADR 0170; STA-1729 (FR-8, AC-014, AC-015).
+ * Governing contract: Stackra ADR 0352 (decision 6), ADR 0170; STA-1729 (FR-8, AC-014, AC-015); STA-1945 (FR-14).
  * Secrets: none here; the token stays inside `gh` or the wrapper.
  */
+import { schemeFor } from "../adapters/tracker/index.mjs";
 import { connect } from "./land.mjs";
 import { NAME } from "../lib/product.mjs";
 import { defaultBranch, git, remoteTip } from "../lib/git.mjs";
+import { endStage, readRecord, RecordError } from "../lib/record.mjs";
 
 /** The environments `ship` deploys; anything else, production first, is refused. */
 export const SHIP_ENVIRONMENTS = ["dev", "staging"];
@@ -55,6 +59,26 @@ export function dispatchProblem(file, err) {
   return `the dispatch of ${path} failed: ${err}`;
 }
 
+/** The stages a task has landed by: only such a task's record takes the ship. */
+const LANDED = ["land", "release", "ship"];
+
+/**
+ * Ends the ship stage in the record of the issue `root`'s branch names, when that task has landed (FR-14).
+ * @param {string} root
+ * @returns {string | undefined} why the record was not saved
+ */
+export function recordShip(root) {
+  const key = schemeFor(root).keys(git(root, ["branch", "--show-current"]).out)[0];
+  if (!key) return undefined;
+  try {
+    if (!LANDED.includes(readRecord(root, key)?.stage ?? "")) return undefined;
+  } catch (error) {
+    if (!(error instanceof RecordError)) throw error;
+    return error.message;
+  }
+  return endStage(root, key, "ship");
+}
+
 /** @param {string[]} args */
 export async function run(args) {
   const dry = args.includes("--dry-run");
@@ -93,6 +117,8 @@ export async function run(args) {
     return 1;
   }
   console.log(`${NAME} ship: dispatched ${workflow} for ${target}`);
+  const unrecorded = recordShip(root);
+  if (unrecorded) console.error(`${NAME} ship: warning: the record was not saved (${unrecorded})`);
   console.log(
     `  follow it: gh run list --repo ${repo} --workflow ${workflow} --event workflow_dispatch`,
   );
