@@ -103,6 +103,7 @@ Execution steps:
     - If more than 5 categories remain unresolved, select the top 5 by (Impact * Uncertainty) heuristic.
 
 5. Sequential questioning loop (interactive):
+    <!-- flow:ask -->
     - Present EXACTLY ONE question at a time.
     - **Question writing quality (applies to every question, MC or short-answer):**
        - Lead with `**Question:**` followed by a full interrogative that ends with `?`. The question text before the `?` must make sense on its own.
@@ -132,6 +133,7 @@ Execution steps:
        - Provide your **suggested answer** based on best practices and context.
        - Format as: `**Suggested:** <your proposed answer> - <brief reasoning>`
        - Then output: `Format: Short answer (<=5 words). You can accept the suggestion by saying "yes" or "suggested", or provide your own answer.`
+    <!-- /flow:ask -->
     - After the user answers:
        - If the user replies with "yes", "recommended", or "suggested", use your previously stated recommendation/suggestion as the answer.
        - Otherwise, validate the answer maps to one option or fits the <=5 word constraint.
