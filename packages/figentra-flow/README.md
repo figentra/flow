@@ -431,7 +431,9 @@ The owner sets it up once:
   `https://token.actions.githubusercontent.com` and the audience in `secrets.oidc.audience`. Write the subject in
   GitHub's id form, `repo:<owner>@<owner id>/<repo>@<repo id>:environment:fflow-approve`. Bind `job_workflow_ref`
   to exactly `<owner>/<repo>/.github/workflows/fflow-approve.yml@refs/heads/<default branch>`, plus
-  `ref=refs/heads/<default branch>`. Put its id in `secrets.oidc.identityId`.
+  `ref=refs/heads/<default branch>`. Never bind `fflow-gate.yml`: it runs pull request code and needs no secret.
+  Put the identity's id in the Actions variable `FFLOW_OIDC_IDENTITY_ID` (repository or organisation), or in
+  `secrets.oidc.identityId`, which wins when both are set.
 - Keep the `fflow-approve` environment's deployment branches at the default branch only.
 - Set `FIGENTRA_AUTOMATION` to `on`, then run `fflow sync` and land the re-rendered `fflow-approve.yml`. The
   repository secrets `FFLOW_GATE_APP_ID` and `FFLOW_GATE_PRIVATE_KEY` are no longer used.

@@ -24,7 +24,7 @@ import {
   ROLES,
   withToken,
 } from "../lib/app-token.mjs";
-import { APPROVE_WORKFLOW, ENV_PREFIX } from "../lib/product.mjs";
+import { APPROVE_WORKFLOW, ENV_PREFIX, OIDC_IDENTITY_VARIABLE } from "../lib/product.mjs";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", {
   modulusLength: 2048,
@@ -177,6 +177,12 @@ test("mint: every refusal before the network makes no call and mints nothing", a
     options({ defaultBranch: undefined }),
     options({ oidc: undefined }),
     options({ oidc: { ...OIDC, identityId: "not-a-uuid" } }),
+    // K7: no config id and no (or a bad) Actions variable.
+    options({ oidc: { ...OIDC, identityId: undefined } }),
+    options({
+      oidc: { ...OIDC, identityId: undefined },
+      env: { ...ENV, [OIDC_IDENTITY_VARIABLE]: "x" },
+    }),
     options({ oidc: { ...OIDC, domain: "http://eu.infisical.com" } }),
     options({ oidc: { ...OIDC, projectId: undefined } }),
     options({ oidc: { ...OIDC, path: "ci/gate" } }),
@@ -515,4 +521,19 @@ test("logs: only ::add-mask:: lines, and only in Actions; no console line, env w
   assert.deepEqual(oneLine, [
     "::add-mask::-----BEGIN PRIVATE KEY----- MIIEabc -----END PRIVATE KEY-----\n",
   ]);
+});
+
+test("mint: without a config identityId, the id comes from the Actions variable; a config id wins (K7)", async () => {
+  const fromVariable = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+  for (const [oidc, expected] of /** @type {const} */ ([
+    [{ ...OIDC, identityId: undefined }, fromVariable],
+    [OIDC, OIDC.identityId],
+  ])) {
+    const { calls, fetch } = world();
+    await mint(
+      "verdict",
+      options({ oidc, fetch, env: { ...ENV, [OIDC_IDENTITY_VARIABLE]: fromVariable } }),
+    );
+    assert.equal(calls[1].body.identityId, expected);
+  }
 });
