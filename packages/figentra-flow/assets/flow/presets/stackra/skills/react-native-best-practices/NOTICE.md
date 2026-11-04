@@ -1,1 +1,0 @@
-Vendored from the skill author (Callstack (Ultimate Guide to React Native Optimization)). The skill declares `license: MIT` in its SKILL.md frontmatter; no separate license file was shipped upstream. Redistributed under MIT.

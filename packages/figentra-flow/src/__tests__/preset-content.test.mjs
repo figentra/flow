@@ -1,7 +1,7 @@
 /**
  * Figentra Flow file contract:
  * Purpose: hold STA-1945's C6 to its contract: the stackra preset carries core's content (27 role agents beside the
- *   three stewards, 15 rules, 38 skills, 29 reference files, routing and models) and `sync` renders it, the skills
+ *   three stewards, 15 rules, 16 skills, 29 reference files, routing and models) and `sync` renders it, the skills
  *   beside the `flow-*` ones and the reference, routing and models always under `.agents/`, as in the preset with
  *   the provenance header; each stackra profile renders its split (agents and skills, counted) and the lock records
  *   it; the neutral preset renders none of it; a preset skill named `flow-*` or a file that is not UTF-8 is refused;
@@ -27,6 +27,7 @@ import { readLock } from "../lib/lock.mjs";
 import { VERSION } from "../lib/product.mjs";
 import { withHeader } from "../lib/provenance.mjs";
 import { installProblems, renderReference } from "../lib/render.mjs";
+import { loadThirdParty } from "../lib/skills.mjs";
 import { parseYaml } from "../lib/yaml.mjs";
 import { governed, OWN_PRESET, snapshot } from "./__fixtures__/governed.mjs";
 
@@ -64,14 +65,13 @@ test("sync renders core's content from the stackra preset, file for file, and ho
   assert.equal(under(files, ".agents/rules/").length, 15);
   assert.ok(files.includes(".agents/rules/tenancy.md"));
   const skills = names(files, ".agents/skills/").filter((n) => !n.startsWith("flow-"));
-  assert.equal(skills.length, 38);
+  assert.equal(skills.length, 16);
   for (const skill of skills) assert.ok(files.includes(`.agents/skills/${skill}/SKILL.md`), skill);
   assert.equal(under(files, ".agents/reference/").length, 29);
   assert.ok(files.includes(".agents/reference/encore/encore-api/SKILL.md"));
-  // As in the preset, with the provenance header where the file can carry one (a shebang stays first).
+  // As in the preset, with the provenance header where the file can carry one.
   for (const path of [
-    "skills/archify/bin/archify.mjs",
-    "skills/tdd/SKILL.md",
+    "skills/docs-adr/SKILL.md",
     "reference/encore/encore-api/LICENSE",
     "routing.yaml",
     "models.yaml",
@@ -91,11 +91,11 @@ test("sync renders core's content from the stackra preset, file for file, and ho
 test("each stackra profile renders its split of agents and skills, and the lock records it", (t) => {
   /** [agents, skills]: everything for core; all but compiler-engineer where members are built; brand's design side. */
   const expected = {
-    framework: [30, 46],
-    platform: [29, 46],
-    product: [29, 46],
-    brand: [12, 17],
-    starter: [29, 46],
+    framework: [30, 26],
+    platform: [29, 26],
+    product: [29, 26],
+    brand: [12, 10],
+    starter: [29, 26],
   };
   for (const [profile, [agents, skills]] of Object.entries(expected)) {
     const root = repo(t, "stackra", profile);
@@ -109,8 +109,8 @@ test("each stackra profile renders its split of agents and skills, and the lock 
     assert.deepEqual(validateRepo(root).problems, [], profile);
   }
   const brand = names(sync(repo(t, "stackra", "brand"), quiet).files, ".agents/skills/");
-  assert.ok(brand.includes("archify") && brand.includes("flow-plan"));
-  assert.equal(brand.includes("tdd"), false);
+  assert.ok(brand.includes("docs-adr") && brand.includes("flow-plan"));
+  assert.equal(brand.includes("test-infra"), false);
 });
 
 test("a preset skill named flow-*, or a skill file that is not UTF-8, is refused and nothing is written", (t) => {
@@ -152,7 +152,7 @@ profiles:
 test("direct: the skills go to .claude/skills; reference, routing and models stay under .agents/", (t) => {
   const root = repo(t, "stackra");
   const { files } = sync(root, { direct: true, ...quiet });
-  assert.ok(files.includes(".claude/skills/tdd/SKILL.md"));
+  assert.ok(files.includes(".claude/skills/docs-adr/SKILL.md"));
   assert.deepEqual(under(files, ".agents/skills/"), []);
   assert.ok(files.includes(".agents/routing.yaml"));
   assert.ok(files.includes(".agents/models.yaml"));
@@ -189,19 +189,24 @@ test("the stackra profiles name only what the preset carries, with the counts ea
   /** @type {Record<"agents" | "skills", string[]>} */
   const all = {
     agents: readdirSync(join(STACKRA, "agents")).map(md),
-    // A profile's skills also select the eight `flow-*` skills rendered from the commands.
+    // A profile's skills also select the `flow-*` skills rendered from the commands.
     skills: [
       ...readdirSync(join(STACKRA, "skills")),
       ...readdirSync(join(STACKRA, "commands")).map(md),
     ],
   };
+  /** The `third-party.yml` skills: a profile may select one, though sync renders none of them. */
+  const listed = loadThirdParty(STACKRA).map((s) => s.id);
   /** @type {Record<string, number[]>} */
   const counts = {};
   for (const [name, profile] of Object.entries(manifest.profiles)) {
     for (const kind of /** @type {const} */ (["agents", "skills"]))
       for (const id of profile[kind])
         if (id !== "*")
-          assert.ok(all[kind].includes(id), `${name}: ${kind} ${id} is not in the preset`);
+          assert.ok(
+            all[kind].includes(id) || (kind === "skills" && listed.includes(id)),
+            `${name}: ${kind} ${id} is not in the preset`,
+          );
     assert.deepEqual(profile.hooks, ["*"], `${name}: the preset ships no hooks yet`);
     const size = (/** @type {"agents" | "skills"} */ kind) =>
       profile[kind].includes("*") ? all[kind].length : profile[kind].length;
@@ -215,11 +220,11 @@ test("the stackra profiles name only what the preset carries, with the counts ea
   }
   // [agents, skills]: everything for core; all but compiler-engineer where members are built; brand's design side.
   assert.deepEqual(counts, {
-    framework: [30, 46],
-    platform: [29, 46],
-    product: [29, 46],
+    framework: [30, 26],
+    platform: [29, 26],
+    product: [29, 26],
     brand: [12, 17],
-    starter: [29, 46],
+    starter: [29, 26],
   });
 });
 
@@ -245,7 +250,7 @@ test("a replace of a preset skill's file, a reference file or routing.yaml is a 
   const root = repo(t, "stackra");
   const governedBy = "reason: ours\nowner: o\nreview: 2099-01-31\n";
   const overrides = {
-    "skills.yml": `kind: replace\ntarget: skills/pnpm/SKILL.md\nfile: content/skill.md\n${governedBy}`,
+    "skills.yml": `kind: replace\ntarget: skills/docs-adr/SKILL.md\nfile: content/skill.md\n${governedBy}`,
     "reference.yml": `kind: replace\ntarget: reference/README.md\nfile: content/reference.md\n${governedBy}`,
     "routing.yml": `kind: replace\ntarget: routing.yaml\nfile: content/routing.txt\n${governedBy}`,
     // A replacement's own name: a `.yml` beside the overrides would be read as one.
@@ -261,7 +266,7 @@ test("a replace of a preset skill's file, a reference file or routing.yaml is a 
   assert.deepEqual(validateRepo(root).problems, []);
   sync(root, quiet);
   const read = (/** @type {string} */ path) => readFileSync(join(root, path), "utf8");
-  assert.match(read(".agents/skills/pnpm/SKILL.md"), /OUR SKILL/);
+  assert.match(read(".agents/skills/docs-adr/SKILL.md"), /OUR SKILL/);
   assert.match(read(".agents/reference/README.md"), /OUR REFERENCE/);
   assert.match(read(".agents/routing.yaml"), /routes: \[\]/);
   assert.match(read(".agents/routing.yaml"), /\.flow\/overrides\/content\/routing\.yml/);

@@ -35,7 +35,9 @@ SOFTWARE.
 
 ## The stackra preset's skills and reference
 
-`assets/flow/presets/stackra/skills/` and `assets/flow/presets/stackra/reference/` are copied from Stackra core
-(STA-1945). Some of them are vendored from upstream projects under MIT or Apache-2.0: each such folder keeps its
-upstream `LICENSE` (and `NOTICE`, where the upstream has one), and `fflow sync` renders those files with the rest of
-the folder. The others are Figentra's own, under this package's MIT licence.
+`assets/flow/presets/stackra/skills/` holds Figentra's own skills, copied from Stackra core (STA-1945), under this
+package's MIT licence. Upstream skills are not vendored: `assets/flow/presets/stackra/third-party.yml` lists each one
+by source and licence, and the repository installs it from there.
+
+`assets/flow/presets/stackra/reference/encore/` is Encore's agent reference, copied from Stackra core. Each of its
+folders keeps its upstream `LICENSE`, and `fflow sync` renders it with the rest of the folder.
