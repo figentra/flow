@@ -14,7 +14,7 @@
   },
   "runner": {
     "kind": "command",
-    "run": ["stackra", "testbed", "run", "{label}", "{dir}", "{command}", "{flags}"]
+    "run": ["testbed", "run", "{label}", "{dir}", "{command}", "{flags}"]
   },
   "secrets": {
     "kind": "infisical",
