@@ -4,14 +4,22 @@
  *   writes and every `spec` subcommand reads, the spec folders from the configuration (`specs.dir`, `specs.bugsDir`),
  *   the preset (bundled, an installed npm package or a folder of the repository, STA-2097), template resolution: the
  *   repository's `.flow/overrides/`, then its preset, then Flow's base templates; and the preset's surface files
- *   (`surfaces/`) read as YAML.
+ *   (`surfaces/`) read as YAML, and a preset folder's files as text (`presetTree`).
  * Boundary: reads the configuration and files; `writeCurrent` is the only write.
  * Runtime: node
  * Governing contract: ADR 0510; STA-1729; STA-2097.
  * Secrets: none.
  */
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ConfigError, loadConfig } from "./config.mjs";
@@ -149,4 +157,28 @@ export function surfaceYaml(dir, name) {
     if (error instanceof YamlError) throw new ConfigError(`${file}: ${error.message}`);
     throw error;
   }
+}
+
+/**
+ * Every file under `dir`, its `/`-separated path relative to `dir` and its text, sorted by path; none when `dir` is
+ * missing.
+ * @param {string} dir
+ * @param {(path: string) => string} [from] the file a path's text is read from (its replacement's, FR-4)
+ * @returns {[string, string][]}
+ * @throws {ConfigError} on a file that is not UTF-8 text: rendered as text it would be corrupted, and the lock with it
+ */
+export function presetTree(dir, from = (path) => join(dir, path)) {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { recursive: true, encoding: "utf8" })
+    .filter((path) => statSync(join(dir, path)).isFile())
+    .map((path) => path.split(sep).join("/"))
+    .toSorted()
+    .map((path) => {
+      const file = from(path);
+      const bytes = readFileSync(file);
+      const text = bytes.toString("utf8");
+      if (!Buffer.from(text, "utf8").equals(bytes))
+        throw new ConfigError(`${file} is not UTF-8 text; a preset ships text files only`);
+      return /** @type {[string, string]} */ ([path, text]);
+    });
 }
