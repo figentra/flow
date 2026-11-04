@@ -63,7 +63,7 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow adr reserve <slug> --issue <key> [--owner <who>]`              | under the `adr` queue lock (`flow/queue/adr`, stale after 15 minutes), lands the next number of the preset's `queues.adr` file on the default branch, then prints only it on stdout; a reservation that does not land is withdrawn |
 | `fflow train <open\|add\|close\|build\|eject\|depart\|status>`        | the release train: board green PRs, cut off, build `train/<version>` by merge commits with bisect ejection, depart by fast-forward (see [Release trains](#release-trains))                       |
 | `fflow ship <dev\|staging> [--workflow f] [--dry-run]`                | dispatches the product's Runway deploy workflow (`deploy.yml`, input `environment`) on main; production is refused: the owner promotes                                                           |
-| `fflow release [--json] [--offline]`                                  | what the next release would publish: pending changesets and next versions, the version PR, the Release workflow's last run and its notices, the registry's versions; it publishes nothing        |
+| `fflow release [--json] [--offline] [--preflight]`                    | what the next release would publish: pending changesets and next versions, the version PR, the Release workflow's last run and its notices, the registry's versions; it publishes nothing. `--preflight`: whether the owner may merge the version PR now (see [Release preflight](#release-preflight)) |
 | `fflow preset add <pkg> [--dry-run]`                                  | installs a preset package as a dev dependency with the package manager whose lockfile the repository has (pnpm when none), then sets `"preset": "<pkg>"` in `flow.config.json`; run `fflow sync` after. `--dry-run` prints both and runs nothing |
 | `fflow doctor [--json] [--offline]`                                   | checks Node, git, the configuration, the preset (installed, and this Flow inside its declared range), the `.flow/` install, the ignored worktree folder, the roster and the credentials, grouped (Machine, Repo, Flow, GitHub), each with its fix                 |
 | `fflow gate plan <spec.md>`                                           | exits 1 until the spec may be planned (run by `fflow spec setup-plan`)                                                                                                                           |
@@ -693,6 +693,29 @@ Without `answer`, it asks the user with an MCP elicitation form, and only when t
 it connected; otherwise the answer must come in the arguments. No tool merges, lands, starts or cleans; each carries
 MCP's `readOnlyHint`. Register it in your MCP client as the command `fflow mcp` (for example `pnpm exec fflow mcp` in
 a repository's MCP configuration); Figentra Flow never writes that configuration itself.
+
+## Release preflight
+
+`fflow release --preflight` answers one question before the owner merges the version PR (merging it publishes): may
+it be merged now? It reads only (git, GitHub and the registry by anonymous GET) and never merges, dispatches or
+publishes. One row per item, each failed one with its fix, and exit 1 when any fails:
+
+- `branch`, `clean`, `up-to-date`: the checkout is on the default branch, has no changes and is at its GitHub head.
+- `main-checks`: the Quality Gate's `verify` and `test` check runs from GitHub Actions, and every context the
+  default branch's ruleset requires (`fflow/gate` among them when it does), are green at main's head, each from its
+  trusted source as `land` reads them.
+- `changesets`: changesets are pending, and each names a package of the repository.
+- `version-pr`: the open PR from `changeset-release/<default>` is based on main's head (GitHub's compare is 0
+  behind) and its `package.json` versions are the ones the changesets imply. `version-pr-checks`: the same checks
+  are green on its head.
+- `publish-config`: each package to publish sets `publishConfig.registry` to the Release workflow's `registry:`
+  (the Figentra registry when the workflow names none). `registry`: that registry does not have the next version
+  yet.
+- `lockfile`: `pnpm-lock.yaml`'s importers match the `package.json` files at the version PR's head (at `HEAD`
+  without one), read without installing, since a stale importer fails the Release job's frozen install.
+
+With `--offline` the rows that need GitHub or the registry are reported as skipped, not passed; skipped rows do not
+fail the run, but it says the answer is incomplete. `--json` prints `{ schema, ok, rows }`.
 
 ## Release trains
 
