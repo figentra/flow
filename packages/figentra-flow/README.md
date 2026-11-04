@@ -205,8 +205,9 @@ setting you have not made refuses and names it.
   this one departs, default none) and `cutoff` (hours after a train opens when it cuts off by itself; without it,
   `train close` cuts off).
 
-- `review.required` lists the spec tiers whose changes need the AI review before `land` (default `small`,
-  `feature`, `big`; a spec with no tier counts as `small`).
+- `review.required` lists the spec tiers whose changes get the AI review (default `small`, `feature`, `big`; a spec
+  with no tier counts as `small`). The review is advisory: `land` warns when such a change has no PASS on its head,
+  and never refuses for it.
 
 - `runner` says where `gate run`'s checks run:
   - `ssh` with `host`, the same as `--box <host>` for one run;
@@ -437,8 +438,7 @@ The owner sets it up once:
 - green on `fflow/gate` on its exact head, posted by the configuration's `apps.gate.login` (or one of its `aliases`);
 - titled with a conventional commit header;
 - approved as its spec's tier requires (ADR 0502), and at Tasked or later for a feature or big spec.
-- for a change with a spec: reviewed. The `stackra-reviewer` App's unedited `AI-REVIEW: PASS <head> base=<base>`
-  comment, never from the change's own authors, is on its head (ADR 0230). Trivial work, with no spec, is exempt.
+- free of a blocking finding that Flow's own review (`fflow review --record`) confirmed on its newest reviewed head.
 - free of owner-only changes (`src/lib/owner-only.mjs`, matched case-insensitively). Those are:
   - workflows and actions;
   - what a deploy, promote or release runs (`wrangler.*`, `eas.json`, `runway.yaml`, `.changeset/config.json`, the
@@ -451,8 +451,15 @@ The owner sets it up once:
 
   The owner lands those.
 
+The AI review is advisory (ADR 0523 decision 6). The verdict that counts is the reviewer App's unedited
+`AI-REVIEW: PASS <head> base=<base>` (or `FAIL <head>`) comment on the exact head, never from the change's own
+authors (ADR 0230). When a change in a `review.required` tier has no PASS, because the verdict is missing, stale or
+a FAIL, `land` prints a warning and lands it anyway. The rules live in `src/lib/land-rules.mjs`, so the approval job
+can run the same ones.
+
 It lists every failing rule. Then it squash-merges with GitHub's `sha` guard, so the merge fails if the head moved. A
-`Refs:` line and the co-author trailers go into the squash commit. After the merge it:
+`Refs:` line, the AI review's verdict (`AI-Review: PASS <head>`, `AI-Review: FAIL <head>` or `AI-Review: none`) and the
+co-author trailers go into the squash commit. After the merge it:
 
 1. sets the Linear issue Done;
 2. records the merge commit on the branch, so `fflow clean` counts the squashed branch as saved;
