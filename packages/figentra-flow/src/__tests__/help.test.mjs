@@ -54,7 +54,7 @@ test("help: fflow alone prints the banner, the version and every command under i
 });
 
 test("help: <command> --help prints its usage and runs nothing", async () => {
-  // `gate` with no mode prints its own usage and exits 2: a 0 here means it never ran.
+  // `gate` with no mode is a usage error (exit 2): a 0 here means it never ran.
   const gate = await runCommandForTest(CONSOLE, ["gate", "--help"]);
   assert.equal(gate.exitCode, 0);
   assert.match(gate.stdout, /gate dir --key STA-12/);
@@ -121,6 +121,30 @@ test("help: the stage commands declare --input and --record", async () => {
   }
 });
 
+test("help: gate, parse, guard and hooks run declare their arguments and options", async () => {
+  for (const [words, listed] of Object.entries({
+    gate: [
+      "<mode>",
+      "<operands>...",
+      "--ref",
+      "--box",
+      "--shards",
+      "--base",
+      "--key",
+      "--slug",
+      "--summary",
+      "--reader",
+    ],
+    parse: ["<file>"],
+    guard: ["--print-settings"],
+    "hooks run": ["<stage>", "<hook-args>..."],
+  })) {
+    const r = await runCommandForTest(CONSOLE, [...words.split(" "), "--help"]);
+    assert.equal(r.exitCode, 0, words);
+    for (const item of listed) assert.ok(r.stdout.includes(item), `${words} ${item}`);
+  }
+});
+
 test("help: an unknown command names the closest match and exits 2", async () => {
   const r = await runCommandForTest(CONSOLE, ["stauts"]);
   assert.equal(r.exitCode, 2);
@@ -132,15 +156,11 @@ test("help: the commands not yet ported are passthrough, and only these", () => 
     "adr",
     "app",
     "clean",
-    "gate",
-    "guard",
-    "hooks",
     "init",
     "land",
     "linear",
     "mcp",
     "migrate",
-    "parse",
     "readme",
     "release",
     "ship",
