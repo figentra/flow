@@ -139,7 +139,7 @@ test("cli: a command checks for the repository first, in one error block with no
   assert.match(r.text, /not a git repository/);
   assert.match(r.text, /git init/);
   assert.doesNotMatch(r.text, /fatal:/);
-  // A passthrough command's --verbose never reaches the engine's globals, so the check shows git's words itself.
+  // Under --verbose the check's reason carries git's own words.
   const verbose = flow(dir, ["spec", "paths", "--json", "--verbose"]);
   assert.equal(verbose.status, 1);
   assert.match(verbose.text, /not a git repository/);

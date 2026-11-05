@@ -26,7 +26,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
-1. **Setup**: Run `fflow spec setup-plan --json` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, FEATURE_DIR, BRANCH. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+1. **Setup**: Run `fflow spec setup-plan --json` from repo root and parse its JSON for `data.FEATURE_SPEC`, `data.IMPL_PLAN`, `data.FEATURE_DIR` and `data.BRANCH` (the fields are under `data`). For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 2. **Load context**: Read FEATURE_SPEC and `.flow/constitution.md`. Load IMPL_PLAN template (already copied).
 
@@ -124,7 +124,7 @@ input and validates and records its output; never write tasks.md by hand.
 1. **Input**: run `fflow plan <key> --input`. It prints the FRs and ACs to cover, the documents to read and the size
    budget (the most files one task may name). If it refuses (the spec is not approved, or is small: a small spec keeps
    its tasks in spec.md's `## Tasks`), STOP and report it.
-2. **Template**: run `fflow spec setup-tasks --json` and use TASKS_TEMPLATE_CONTENT as the structure.
+2. **Template**: run `fflow spec setup-tasks --json` and use its `data.TASKS_TEMPLATE_CONTENT` as the structure.
 3. **Split**: read the documents and write the tasks, grouped into phases, one PR each, in stack order (a phase comes
    after the phases it builds on). Each task names its files in backticks, at most the budget, and every line follows
    `- [ ] T012 [P] <desc> in <path> — covers: FR-003, AC-004 — deps: T010`. Together the tasks cover every FR and AC;

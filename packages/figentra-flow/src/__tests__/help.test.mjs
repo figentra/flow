@@ -2,11 +2,11 @@
  * Figentra Flow file contract:
  * Purpose: hold `fflow`'s routing on the console engine to AC-36: `fflow` alone prints the banner (on a terminal), the
  *   version and every command under its group; `<command> --help` prints its usage and runs nothing; an unknown
- *   command names the closest match and exits 2; and the passthrough list (commands not yet ported, STA-1966 FR-031)
- *   is pinned, so porting one is a deliberate change here; and only src/lib/console.mjs (with bin/fflow.mjs) imports
+ *   command names the closest match and exits 2; and only src/lib/console.mjs (with bin/fflow.mjs) imports
  *   `@stackra/*`, so the governance core stays free of the engine; and the governance commands' `--help` lists their
- *   options (STA-1945 FR-1), and `preset add` its `--dry-run` (STA-2097), and the commands ported for SC-2 theirs
- *   (asserted on the option's own row, since the help prints the examples too).
+ *   options (STA-1945 FR-1), and `preset add` its `--dry-run` (STA-2097), and the commands ported for SC-2 and FR-31
+ *   theirs, each on its own help row, never matched by an example line; and, every command now ported, the
+ *   passthrough list is empty (STA-1945 SC-2).
  * Boundary: the engine's in-process test harness and the text of src/; no command runs.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945 FR-1, FR-31; STA-1966 FR-031; STA-2097.
@@ -187,30 +187,79 @@ test("help: gate, parse, guard and hooks run declare their arguments and options
   assert.match(hooks.stdout, /<stage> \[?<hook-args>\.\.\.\]?/);
 });
 
-// @covers sta-1945:SC-2
-test("help: readme, team check, land and the train steps declare their options", async () => {
+/**
+ * The help's own row for `name`, never an example: an option's row is `--name` behind its short letter or a four-space
+ * pad, and an argument's (`<name>`) is its bare name; an example line starts with `fflow`, so it matches neither.
+ * @param {string} name
+ */
+function row(name) {
+  const argument = /^<(.+)>$/.exec(name);
+  return argument
+    ? new RegExp(`^  ${argument[1]}(?: |$)`, "m")
+    : new RegExp(`^  (?:-\\w, | {4})${name}(?:[= ]|$)`, "m");
+}
+
+// @covers sta-1945:SC-2 sta-1945:FR-31
+test("help: readme, team check, land, train, spec, linear, clean, ship, release and app create declare options", async () => {
   for (const [argv, options] of /** @type {[string[], string[]][]} */ ([
     [["readme"], ["--check"]],
     [["team", "check"], ["--tracker"]],
-    [["land"], ["--stack", "--dry-run", "--manual-ok", "--wait", "--no-wait"]],
-    [["train", "open"], ["--dry-run"]],
-    [["train", "add"], ["--dry-run"]],
+    [["land"], ["<pr>", "--stack", "--dry-run", "--manual-ok", "--wait", "--no-wait"]],
+    [
+      ["train", "open"],
+      ["<version>", "--dry-run"],
+    ],
+    [
+      ["train", "add"],
+      ["<pr>", "--dry-run"],
+    ],
     [["train", "close"], ["--dry-run"]],
     [["train", "build"], ["--dry-run"]],
-    [["train", "eject"], ["--dry-run"]],
+    [
+      ["train", "eject"],
+      ["<pr>", "--dry-run"],
+    ],
     [["train", "depart"], ["--dry-run"]],
     [["train", "status"], ["--dry-run"]],
+    [
+      ["spec", "paths"],
+      ["--require-spec", "--require-tasks", "--include-tasks", "--paths-only", "--template"],
+    ],
+    [["spec", "template"], ["<template>"]],
+    [
+      ["spec", "ask"],
+      ["<key>", "--async"],
+    ],
+    [["spec", "resume"], ["<key>"]],
+    [
+      ["linear", "issue"],
+      ["<file>", "--dry-run"],
+    ],
+    [
+      ["linear", "tasks"],
+      ["<file>", "--dry-run"],
+    ],
+    [["clean"], ["--dry-run", "--adopt", "--fix-ignore", "--budget", "--all"]],
+    [["ship"], ["<environment>", "--workflow", "--dry-run"]],
+    [["release"], ["--offline", "--preflight"]],
+    [
+      ["app", "create"],
+      ["<role>", "--org", "--name", "--key-file"],
+    ],
   ])) {
     const r = await runCommandForTest(CONSOLE, [...argv, "--help"]);
     assert.equal(r.exitCode, 0, argv.join(" "));
     for (const option of options)
-      assert.match(r.stdout, optionRow(option), `${argv.join(" ")} ${option}`);
+      assert.match(r.stdout, row(option), `${argv.join(" ")} ${option}`);
   }
-  // The positionals too: land's optional PR, add's required one.
-  const land = await runCommandForTest(CONSOLE, ["land", "--help"]);
-  assert.match(land.stdout, /<pr>/);
-  const add = await runCommandForTest(CONSOLE, ["help", "train", "add"]);
-  assert.match(add.stdout, /<pr>/);
+  // setup-plan and setup-tasks take nothing; their own description shows they are declared, not passthrough.
+  const plan = await runCommandForTest(CONSOLE, ["spec", "setup-plan", "--help"]);
+  assert.match(plan.stdout, /^ {2}Run the plan gate/m);
+  const tasks = await runCommandForTest(CONSOLE, ["help", "spec", "setup-tasks"]);
+  assert.match(
+    tasks.stdout,
+    /^ {2}The spec folder, its documents and the resolved tasks template/m,
+  );
 });
 
 test("help: an unknown command names the closest match and exits 2", async () => {
@@ -219,15 +268,8 @@ test("help: an unknown command names the closest match and exits 2", async () =>
   assert.match(r.stdout + r.stderr, /status/);
 });
 
-test("help: the commands not yet ported are passthrough, and only these", () => {
-  assert.deepEqual(passthroughCommands(COMMANDS), [
-    "app",
-    "clean",
-    "linear",
-    "release",
-    "ship",
-    "spec",
-  ]);
+test("help: every command is ported, so none is passthrough", () => {
+  assert.deepEqual(passthroughCommands(COMMANDS), []);
 });
 
 test("help: only the CLI layer imports @stackra/*, so the governance core stays free of the engine", () => {

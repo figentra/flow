@@ -6,9 +6,9 @@
  *   `doctor`, `preset add` (STA-2097), `status`, `next`, `resume`, `task start|done|wave`, `todo`, `ledger`,
  *   `session stop`, the governance commands (`update`, `check`, `diff`, `validate`, STA-1945 FR-1), the stage
  *   commands (`plan`, `review`, FR-15), `init`, `sync`, `migrate`, `trace`, `adr`, `start`, `mcp`, `readme`,
- *   `team check`, `land`, the `train` steps, `gate`, `parse`, `guard` and `hooks run` (SC-2) declare their arguments
- *   and options; every other command is passthrough (migration only, ADR 0500 decision 7): it still parses its own
- *   flags from `io.rest`, and `PASSTHROUGH` in the tests pins that list.
+ *   `team check`, `land`, the `train` steps, `gate`, `parse`, `guard`, `hooks run` (SC-2), `spec`, `linear`, `clean`,
+ *   `ship`, `release` and `app create`: every command declares its arguments and options (`spec` and `release` hand
+ *   their `--json` document to the engine's `{ ok, data }`).
  * Boundary: the registry and the repository check, in the CLI layer only: the governance core (gate, approve, land,
  *   record, lock, baseline) imports nothing from `@stackra/*`. A command's module is imported when it runs, never for
  *   the list or the help, and bin/fflow.mjs never loads this file for `fflow guard`, the agent hook. Plain
@@ -38,7 +38,7 @@ import {
 /** @typedef {import("@stackra/console").CommandClass} CommandClass */
 
 /**
- * The part of the engine's `CommandIo` that the declared (not passthrough) commands use.
+ * The part of the engine's `CommandIo` that the declared commands use.
  * @typedef {{ cwd: string, json: boolean, verbose: boolean, output: { line(text: string): void,
  *   title(text: string): void, note(text: string): void, info(text: string): void, success(text: string): void,
  *   warn(text: string): void, error(text: string): void, list(items: string[]): void, json(data: unknown): void,
@@ -95,8 +95,9 @@ async function refusing(work) {
 
 /**
  * The repository check a command makes before anything else (FR-31, AC-35): outside a git work tree it throws one
- * error block naming the fix. git's own words join the reason only under `verbose`: a passthrough command's
- * `--verbose` reaches it in `io.rest`, never the engine's globals, which would show the block's `detail`.
+ * error block naming the fix. git's own words are the block's `detail`, which the engine prints under its own
+ * `--verbose` but leaves out of the `--json` document; `verbose` adds them to the reason instead, for a command's
+ * `--verbose --json`, so they print once.
  * @param {string} cwd
  * @param {boolean} [verbose]
  * @returns {string} the repository's top folder
@@ -109,33 +110,6 @@ export function requireRepository(cwd, verbose = false) {
     fix: `cd into the repository (or run \`git init\`, then \`${NAME} init\`)`,
     detail: top.err,
   });
-}
-
-/**
- * A command that still parses its own flags (migration only, STA-1966 FR-031).
- * @param {{ name: string, description: string, group: string, examples: string[], repository?: boolean }} definition
- *   `repository`: refuse before anything else when the working directory is not inside a git repository (unless
- *   `--workspace` is given).
- * @returns {CommandClass}
- */
-function passthrough({ name, description, group, examples, repository = false }) {
-  return class extends Command({
-    name,
-    description,
-    group,
-    examples,
-    docs: DOCS,
-    passthrough: true,
-  }) {
-    /** @param {CommandIo} io */
-    async handle(io) {
-      // `--workspace <dir>` (sync, STA-1945) runs in the repositories under it, not in this folder's.
-      if (repository && !io.rest.includes("--workspace"))
-        requireRepository(io.cwd, io.rest.includes("--verbose"));
-      const { run } = await import(`../commands/${name}.mjs`);
-      return refusing(() => run([...io.rest]));
-    }
-  };
 }
 
 /**
@@ -622,6 +596,407 @@ Option({ description: "One repository's path instead of the workspace list" })(
   "repo",
 );
 Str()(LedgerCommand.prototype, "repo");
+
+/**
+ * Runs a ported `run(args)` that prints its own JSON under `--json`: with the engine's `--json` on, `work` gets
+ * `["--json"]` and the document it prints goes to `io.output.json`, so stdout is the engine's one `{ ok, data }`
+ * document with the command's document as `data`, never two documents. Text that is not JSON (`spec template`'s
+ * template) is `data` as one string.
+ * shortcut: captures console.log and process.stdout.write because the command modules print their output
+ * themselves; drop it once `run` returns its document.
+ * @param {CommandIo} io
+ * @param {(json: string[]) => number | Promise<number>} work
+ * @returns {Promise<number>}
+ */
+async function documented(io, work) {
+  if (!io.json) return work([]);
+  /** @type {string[]} */
+  const printed = [];
+  const log = console.log;
+  const write = process.stdout.write;
+  console.log = (...parts) => void printed.push(`${parts.join(" ")}\n`);
+  process.stdout.write = (/** @type {string | Uint8Array} */ chunk) =>
+    (printed.push(Buffer.from(chunk).toString()), true);
+  try {
+    return await work(["--json"]);
+  } finally {
+    console.log = log;
+    process.stdout.write = write;
+    const text = printed.join("");
+    if (text.trim()) {
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = text;
+      }
+      io.output.json(data);
+    }
+  }
+}
+
+/**
+ * Runs `fflow spec <mode>` with `args` inside a repository (FR-31).
+ * @param {CommandIo} io
+ * @param {string} mode
+ * @param {string[]} args
+ */
+async function specRun(io, mode, args) {
+  requireRepository(io.cwd, io.verbose && io.json);
+  const { run } = await import("../commands/spec.mjs");
+  return refusing(() => documented(io, (json) => run([mode, ...args, ...json])));
+}
+
+class SpecPathsCommand extends Command({
+  name: "spec:paths",
+  description: "The spec folder and its documents, for the flow-* commands",
+  group: GROUPS.specs,
+  docs: DOCS,
+  examples: [
+    `${NAME} spec paths --json`,
+    `${NAME} spec paths --json --require-spec --require-tasks --include-tasks`,
+    `${NAME} spec paths --paths-only`,
+  ],
+}) {
+  requireSpec = false;
+  requireTasks = false;
+  includeTasks = false;
+  pathsOnly = false;
+  /** @type {string | undefined} */
+  template = undefined;
+
+  /** @param {CommandIo} io */
+  async handle(io) {
+    return specRun(io, "paths", [
+      ...(this.requireSpec ? ["--require-spec"] : []),
+      ...(this.requireTasks ? ["--require-tasks"] : []),
+      ...(this.includeTasks ? ["--include-tasks"] : []),
+      ...(this.pathsOnly ? ["--paths-only"] : []),
+      ...(this.template === undefined ? [] : ["--template", this.template]),
+    ]);
+  }
+}
+Option({ description: "Exit 1 when the spec folder has no spec.md" })(
+  SpecPathsCommand.prototype,
+  "requireSpec",
+);
+Option({ description: "Exit 1 when the spec folder has no tasks.md" })(
+  SpecPathsCommand.prototype,
+  "requireTasks",
+);
+Option({ description: "List tasks.md among the available documents" })(
+  SpecPathsCommand.prototype,
+  "includeTasks",
+);
+Option({ description: "Only the repository, branch and document paths" })(
+  SpecPathsCommand.prototype,
+  "pathsOnly",
+);
+Option({ description: "Add the resolved template's text, by name" })(
+  SpecPathsCommand.prototype,
+  "template",
+);
+Str()(SpecPathsCommand.prototype, "template");
+
+class SpecSetupPlanCommand extends Command({
+  name: "spec:setup-plan",
+  description:
+    "Run the plan gate, copy the plan template into the spec folder and end the spec stage",
+  group: GROUPS.specs,
+  docs: DOCS,
+  examples: [`${NAME} spec setup-plan --json`],
+}) {
+  /** @param {CommandIo} io */
+  async handle(io) {
+    return specRun(io, "setup-plan", []);
+  }
+}
+
+class SpecSetupTasksCommand extends Command({
+  name: "spec:setup-tasks",
+  description: "The spec folder, its documents and the resolved tasks template",
+  group: GROUPS.specs,
+  docs: DOCS,
+  examples: [`${NAME} spec setup-tasks --json`],
+}) {
+  /** @param {CommandIo} io */
+  async handle(io) {
+    return specRun(io, "setup-tasks", []);
+  }
+}
+
+class SpecTemplateCommand extends Command({
+  name: "spec:template",
+  description: "The resolved template's text",
+  group: GROUPS.specs,
+  docs: DOCS,
+  examples: [`${NAME} spec template plan-template`],
+}) {
+  /** @type {string} */
+  template;
+
+  /** @param {CommandIo} io */
+  async handle(io) {
+    return specRun(io, "template", [this.template]);
+  }
+}
+Argument({ description: "The template's name, as plan-template" })(
+  SpecTemplateCommand.prototype,
+  "template",
+);
+
+class SpecAskCommand extends Command({
+  name: "spec:ask",
+  description:
+    "The spec's open questions; --async posts them on the issue and marks the spec waiting",
+  group: GROUPS.specs,
+  docs: DOCS,
+  examples: [`${NAME} spec ask STA-12`, `${NAME} spec ask STA-12 --async`],
+}) {
+  /** @type {string} */
+  key;
+  async = false;
+
+  /** @param {CommandIo} io */
+  async handle(io) {
+    return specRun(io, "ask", [this.key, ...(this.async ? ["--async"] : [])]);
+  }
+}
+Argument({ description: "The issue key" })(SpecAskCommand.prototype, "key");
+Option({ description: "Post the questions as one comment on the issue" })(
+  SpecAskCommand.prototype,
+  "async",
+);
+
+class SpecResumeCommand extends Command({
+  name: "spec:resume",
+  description: "Record the answers given on the issue into the spec and list what is still open",
+  group: GROUPS.specs,
+  docs: DOCS,
+  examples: [`${NAME} spec resume STA-12`],
+}) {
+  /** @type {string} */
+  key;
+
+  /** @param {CommandIo} io */
+  async handle(io) {
+    return specRun(io, "resume", [this.key]);
+  }
+}
+Argument({ description: "The issue key" })(SpecResumeCommand.prototype, "key");
+
+/**
+ * Runs `fflow linear <mode> <file>`.
+ * @param {string} mode
+ * @param {string} file
+ * @param {boolean} dryRun
+ */
+async function linearRun(mode, file, dryRun) {
+  const { run } = await import("../commands/linear.mjs");
+  return refusing(() => run([mode, file, ...(dryRun ? ["--dry-run"] : [])]));
+}
+
+class LinearIssueCommand extends Command({
+  name: "linear:issue",
+  description: "Create the spec's Linear issue and write its key into the spec",
+  group: GROUPS.specs,
+  docs: DOCS,
+  examples: [`${NAME} linear issue .agents/specs/sta-12-x/spec.md --dry-run`],
+}) {
+  /** @type {string} */
+  file;
+  dryRun = false;
+
+  async handle() {
+    return linearRun("issue", this.file, this.dryRun);
+  }
+}
+Argument({ description: "The spec, as .agents/specs/<folder>/spec.md" })(
+  LinearIssueCommand.prototype,
+  "file",
+);
+Option({ description: "Print what would be created; needs no token and calls nothing" })(
+  LinearIssueCommand.prototype,
+  "dryRun",
+);
+
+class LinearTasksCommand extends Command({
+  name: "linear:tasks",
+  description: "One Linear sub-issue per task of the spec's tasks.md",
+  group: GROUPS.specs,
+  docs: DOCS,
+  examples: [`${NAME} linear tasks .agents/specs/sta-12-x/tasks.md --dry-run`],
+}) {
+  /** @type {string} */
+  file;
+  dryRun = false;
+
+  async handle() {
+    return linearRun("tasks", this.file, this.dryRun);
+  }
+}
+Argument({ description: "The tasks, as .agents/specs/<folder>/tasks.md" })(
+  LinearTasksCommand.prototype,
+  "file",
+);
+Option({ description: "Print what would be created; needs no token and calls nothing" })(
+  LinearTasksCommand.prototype,
+  "dryRun",
+);
+
+class CleanCommand extends Command({
+  name: "clean",
+  description: "Remove finished worktrees and report what was kept",
+  group: GROUPS.work,
+  docs: DOCS,
+  examples: [`${NAME} clean --dry-run`, `${NAME} clean --budget`, `${NAME} clean --all`],
+}) {
+  dryRun = false;
+  adopt = false;
+  fixIgnore = false;
+  budget = false;
+  all = false;
+
+  async handle() {
+    const { run } = await import("../commands/clean.mjs");
+    const args = [
+      ...(this.dryRun ? ["--dry-run"] : []),
+      ...(this.adopt ? ["--adopt"] : []),
+      ...(this.fixIgnore ? ["--fix-ignore"] : []),
+      ...(this.budget ? ["--budget"] : []),
+      ...(this.all ? ["--all"] : []),
+    ];
+    return refusing(() => run(args));
+  }
+}
+Option({ description: "Report what would be removed; change nothing" })(
+  CleanCommand.prototype,
+  "dryRun",
+);
+Option({ description: "Move the stray worktrees outside .claude/worktrees/ inside" })(
+  CleanCommand.prototype,
+  "adopt",
+);
+Option({ description: "Add .claude/worktrees/ to .gitignore" })(
+  CleanCommand.prototype,
+  "fixIgnore",
+);
+Option({
+  description: "Remove the idle merged or pushed worktrees over the budget, preserving their work",
+})(CleanCommand.prototype, "budget");
+Option({ description: "Every repository of the workspace list" })(CleanCommand.prototype, "all");
+
+class ShipCommand extends Command({
+  name: "ship",
+  description: "Ship the default branch to dev or staging through the deploy workflow",
+  group: GROUPS.land,
+  docs: DOCS,
+  examples: [`${NAME} ship staging --dry-run`, `${NAME} ship dev --workflow deploy.yml`],
+}) {
+  /** @type {string | undefined} */
+  environment = undefined;
+  /** @type {string | undefined} */
+  workflow = undefined;
+  dryRun = false;
+
+  async handle() {
+    const { run } = await import("../commands/ship.mjs");
+    // The environment stays optional here: `run` refuses a missing one, and production, with its own words.
+    const args = [
+      ...(this.environment === undefined ? [] : [this.environment]),
+      ...(this.workflow === undefined ? [] : ["--workflow", this.workflow]),
+      ...(this.dryRun ? ["--dry-run"] : []),
+    ];
+    return refusing(() => run(args));
+  }
+}
+Argument({ description: "dev or staging; production is refused", optional: true })(
+  ShipCommand.prototype,
+  "environment",
+);
+Option({ description: "The deploy workflow under .github/workflows/ (default deploy.yml)" })(
+  ShipCommand.prototype,
+  "workflow",
+);
+Str()(ShipCommand.prototype, "workflow");
+Option({ description: "Name the dispatch; make none" })(ShipCommand.prototype, "dryRun");
+
+class ReleaseCommand extends Command({
+  name: "release",
+  description: "What the next release would publish and what stands in its way",
+  group: GROUPS.land,
+  docs: DOCS,
+  examples: [`${NAME} release`, `${NAME} release --offline --json`, `${NAME} release --preflight`],
+}) {
+  offline = false;
+  preflight = false;
+
+  /** @param {CommandIo} io */
+  async handle(io) {
+    const { run } = await import("../commands/release.mjs");
+    const args = [
+      ...(this.offline ? ["--offline"] : []),
+      ...(this.preflight ? ["--preflight"] : []),
+    ];
+    return refusing(() => documented(io, (json) => run([...args, ...json])));
+  }
+}
+Option({ description: "Make no GitHub or registry call" })(ReleaseCommand.prototype, "offline");
+Option({ description: "Whether the owner may merge the version PR now; exit 1 when not" })(
+  ReleaseCommand.prototype,
+  "preflight",
+);
+
+class AppCreateCommand extends Command({
+  name: "app:create",
+  description: "Create the repository's gate or review GitHub App (a human only)",
+  group: GROUPS.agents,
+  docs: DOCS,
+  examples: [
+    `${NAME} app create gate --org acme`,
+    `${NAME} app create review --name "Acme review"`,
+  ],
+}) {
+  /** @type {string} */
+  role;
+  /** @type {string | undefined} */
+  org = undefined;
+  /** @type {string | undefined} */
+  name = undefined;
+  /** @type {string | undefined} */
+  keyFile = undefined;
+
+  async handle() {
+    const { run } = await import("../commands/app.mjs");
+    const args = [
+      "create",
+      this.role,
+      ...(this.org === undefined ? [] : ["--org", this.org]),
+      ...(this.name === undefined ? [] : ["--name", this.name]),
+      ...(this.keyFile === undefined ? [] : ["--key-file", this.keyFile]),
+    ];
+    return refusing(() => run(args));
+  }
+}
+Argument({ description: "The App's role", choices: ["gate", "review"] })(
+  AppCreateCommand.prototype,
+  "role",
+);
+Option({ description: "The organization that owns the App; your account when left out" })(
+  AppCreateCommand.prototype,
+  "org",
+);
+Str()(AppCreateCommand.prototype, "org");
+Option({ description: "The App's name (default fflow-<role>[-<org>])" })(
+  AppCreateCommand.prototype,
+  "name",
+);
+Str()(AppCreateCommand.prototype, "name");
+Option({ description: "Where the secrets port keeps the private key, when it keeps files" })(
+  AppCreateCommand.prototype,
+  "keyFile",
+);
+Str()(AppCreateCommand.prototype, "keyFile");
 
 /**
  * `name value` when the option was given, else nothing: how a declared command hands a valued option to `run`.
@@ -1215,21 +1590,12 @@ export const COMMANDS = [
   MigrateCommand,
   ReadmeCommand,
   TeamCheckCommand,
-  passthrough({
-    name: "spec",
-    description:
-      "The spec folder, its documents and the resolved templates, for the flow-* commands; async questions",
-    group: GROUPS.specs,
-    examples: [
-      `${NAME} spec paths --json`,
-      `${NAME} spec setup-plan --json`,
-      `${NAME} spec setup-tasks --json`,
-      `${NAME} spec template plan-template`,
-      `${NAME} spec ask STA-12 --async`,
-      `${NAME} spec resume STA-12`,
-    ],
-    repository: true,
-  }),
+  SpecPathsCommand,
+  SpecSetupPlanCommand,
+  SpecSetupTasksCommand,
+  SpecTemplateCommand,
+  SpecAskCommand,
+  SpecResumeCommand,
   GateCommand,
   stage({
     name: "plan",
@@ -1241,12 +1607,8 @@ export const COMMANDS = [
   }),
   TraceCommand,
   ParseCommand,
-  passthrough({
-    name: "linear",
-    description: "Link a spec and its tasks to Linear",
-    group: GROUPS.specs,
-    examples: [`${NAME} linear tasks .agents/specs/sta-12-x/tasks.md --dry-run`],
-  }),
+  LinearIssueCommand,
+  LinearTasksCommand,
   AdrCommand,
   StartCommand,
   StatusCommand,
@@ -1256,12 +1618,7 @@ export const COMMANDS = [
   TaskDoneCommand,
   TaskWaveCommand,
   TodoCommand,
-  passthrough({
-    name: "clean",
-    description: "Remove finished worktrees and report what was kept",
-    group: GROUPS.work,
-    examples: [`${NAME} clean --dry-run`, `${NAME} clean --budget`, `${NAME} clean --all`],
-  }),
+  CleanCommand,
   stage({
     name: "review",
     description: "The review stage: its workflow's input, then its findings recorded for land",
@@ -1288,32 +1645,13 @@ export const COMMANDS = [
     sub: "status",
     description: "The open train: members and their gates, ejections, waiting PRs",
   }),
-  passthrough({
-    name: "ship",
-    description: "Ship the default branch to dev or staging through the deploy workflow",
-    group: GROUPS.land,
-    examples: [`${NAME} ship staging --dry-run`],
-  }),
-  passthrough({
-    name: "release",
-    description: "What the next release would publish and what stands in its way",
-    group: GROUPS.land,
-    examples: [
-      `${NAME} release`,
-      `${NAME} release --offline --json`,
-      `${NAME} release --preflight`,
-    ],
-  }),
+  ShipCommand,
+  ReleaseCommand,
   LedgerCommand,
   GuardCommand,
   McpCommand,
   SessionStopCommand,
-  passthrough({
-    name: "app",
-    description: "Create the repository's gate or review GitHub App (a human only)",
-    group: GROUPS.agents,
-    examples: [`${NAME} app create gate --org acme`],
-  }),
+  AppCreateCommand,
 ];
 
 /** `fflow`'s console configuration: the theme, the version and every command. */

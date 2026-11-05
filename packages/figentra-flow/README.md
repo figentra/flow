@@ -28,16 +28,18 @@ closest one and exits 2. A failure is one error block: what failed, why, the fix
 under `NO_COLOR` or in a pipe, and `doctor`, `status` and `status --metrics` take `--json`, which writes one document,
 `{ "ok", "data" }`. That is a breaking change for scripts: `doctor --json` no longer writes
 `{ "schema": "fflow.doctor/1", "checks" }` (its check rows, each with `id`, `ok`, `status` and `group`, are `data`), and
-`status --json` and `status --metrics --json` put the snapshot and the metrics in `data`.
+`status --json` and `status --metrics --json` put the snapshot and the metrics in `data`. So do `spec … --json`
+(`{ "ok", "data": { "FEATURE_DIR", … } }`), `release --json` and `release --preflight --json`: their documents, unchanged,
+are now `data`; `spec template <name> --json` writes the template's text as `data`, one string.
 
 `doctor`, `status`, `next`, `resume`, `task start`, `task done`, `task wave`, `todo`, `ledger`, `session stop`, the
 governance commands (`sync`, `update`, `check`, `diff`, `validate`), the stage commands (`plan`, `review`), `init`,
 `migrate`, `trace`, `adr`, `start`, `mcp`, `readme`, `team check`, `land`, the `train` steps (`train open`, `add`,
-`close`, `build`, `eject`, `depart`, `status`), `gate`, `parse`, `guard` and `hooks run` are ported to the engine
-(`next` and `trace trace` take `--json` too; `trace trace --json` now writes the matrix as `data`); bare
-`fflow train`, `fflow team` and `fflow hooks` are unknown commands and exit 2. A ported command refuses a flag it does
-not declare (exit 2) instead of ignoring it. Every other command is passthrough, keeping its own flags and output until
-it is ported: `app`, `clean`, `linear`, `release`, `ship` and `spec`.
+`close`, `build`, `eject`, `depart`, `status`), `gate`, `parse`, `guard`, `hooks run`, `spec`, `linear`, `clean`,
+`ship`, `release` and `app create`: every command is declared on the engine, none is passthrough (`next` and
+`trace trace` take `--json` too; `trace trace --json` now writes the matrix as `data`, and `spec` and `release` hand
+their `--json` document to the `{ "ok", "data" }` envelope above). Bare `fflow train`, `fflow team` and `fflow hooks`
+are unknown commands and exit 2. A command refuses a flag it does not declare (exit 2) instead of ignoring it.
 
 `@stackra/console` and `@stackra/validation` (0.7.1) are runtime dependencies of Flow (ADR 0506 decision 8, owner
 2026-11-03; this replaces STA-1945 NFR-1's "no runtime dependency, an optional peer"). They come from the Stackra
