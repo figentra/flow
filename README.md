@@ -42,7 +42,7 @@ A preset carries a team's conventions: Flow ships `neutral` for any repository a
 
 ## Status
 
-**In progress**: 0.2.3 is published; 1.0 is being finished.
+**In progress**: 0.3.0 is published; 1.0 follows the repository rollout.
 
 The states: **Live** (serving customers), **In progress** (being built), **Planned** (no build yet).
 
