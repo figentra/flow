@@ -7,7 +7,9 @@
  * Boundary: posts only while the branch tip is still the checked commit; never posts `success` unless the check
  *   exited 0; posts nothing when it cannot mint a token; runs only when `gate run` started it (`<prefix>GATE_RUN=1`;
  *   the hook guard refuses a direct call, the owner's option C1). Exit 0 posted green, 1 posted red, 3 not started by
- *   `gate run`, 4 could not post, 5 stale.
+ *   `gate run`, 4 could not post, 5 stale. Legacy only (STA-2134): with `secrets.oidc` `gate run` never copies it, and
+ *   only main's `fflow-approve.yml` `verdict` job posts the gate; it retires with T137. It never falls back to a
+ *   user's token (`GITHUB_TOKEN`, `GH_TOKEN`, a `gh` login): without the App's id and key it makes no call at all.
  * Runtime: node (on the testbed box or a `--box` host)
  * Governing contract: Stackra ADR 0503 (decision 4); STA-1729 phase 2 (the leader's plan stop of 2026-10-31).
  * Secrets: `<prefix>GATE_APP_ID` and `<prefix>GATE_PRIVATE_KEY` from the environment only (`infisical run`). The key,

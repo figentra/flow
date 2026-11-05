@@ -236,6 +236,42 @@ test("gate run with a caller-posting runner (C1): the box gets only the check; t
   assert.match(unposted.problem ?? "", /was not posted \(poster exit 4\)/);
 });
 
+test("gate run with secrets.oidc: no box and no caller posts; the check's exit passes through (STA-2134)", async (t) => {
+  const r = ghRepo({
+    [CONFIG_FILE]: JSON.stringify({
+      version: 1,
+      secrets: { kind: "infisical", paths: { gate: "/ci/gate" }, oidc: { audience: "fflow-ci" } },
+    }),
+  });
+  t.after(r.dispose);
+  sh(r.root, "push", "-q", "origin", "main");
+  /** @type {any[]} */
+  const boxes = [];
+  let posted = 0;
+  const box = fake((job) => {
+    boxes.push({
+      command: job.command,
+      poster: existsSync(join(job.dir, ".fflow-gate", "post.mjs")),
+      job: existsSync(join(job.dir, ".fflow-gate", "job.json")),
+    });
+    return 1;
+  });
+  for (const runner of [box, { ...box, posts: /** @type {"caller"} */ ("caller") }]) {
+    const result = await gateRun({
+      cwd: r.root,
+      tip: tipOf(r.origin),
+      runner,
+      post: () => ++posted,
+    });
+    assert.deepEqual(result, { code: 1, sha: sh(r.root, "rev-parse", "HEAD") });
+  }
+  assert.equal(posted, 0, "only fflow-approve.yml's verdict job posts the gate");
+  for (const b of boxes) {
+    assert.deepEqual(b, { command: b.command, poster: false, job: false });
+    assert.doesNotMatch(b.command, /post\.mjs|GATE_RUN|infisical/);
+  }
+});
+
 test("box command: the check's log and exit are kept for the poster; the secrets port wraps the poster", () => {
   assert.equal(
     boxCommand("pnpm verify"),
