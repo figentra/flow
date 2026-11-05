@@ -33,6 +33,7 @@
  * States: Draft → Clarified → Planned → Tasked → Implementing → Done, or Abandoned / Superseded. A status may lag
  * its artifacts, never lead them (I5):
  *   Draft         folder `<key>-<slug>` (the tracker's key scheme); a `**Linear**` key, when set, equals the folder's
+ *                 (the only failures; the Clarified spec checks run as `at approval:` warnings, STA-2127)
  *   Clarified     clarifications complete, real key, every Impact line answered, no NEEDS CLARIFICATION; a Status
  *                 history line for the current status. A tiered spec also has `### Sources` citing every FR (FR-26)
  *                 and, in its FR and AC lines, no word of the preset's `quality-words.yml` (a failure on big, else a
@@ -393,12 +394,14 @@ export function checkStage(
     problems.push(
       `the spec's key ${keys.display(linear)} does not match the folder key ${keys.display(key)}`,
     );
-  if (status === "draft") return problems;
-  problems.push(...checkSpec(text, keys, rules));
-  problems.push(...checkApproval(text));
+  // STA-2127: a Draft spec gets the same spec checks as warnings, so its author sees them before approval.
+  const draft = status === "draft";
+  const found = draft ? [] : problems;
+  found.push(...checkSpec(text, keys, rules));
+  found.push(...checkApproval(text));
   const tier = tierOf(text);
   if (team)
-    problems.push(
+    found.push(
       ...checkSpecRoles(text, team, {
         tiered: tier === "feature" || tier === "big",
         pastClarified: atLeast(status, "planned"),
@@ -407,12 +410,16 @@ export function checkStage(
     );
   const history = historyOf(text);
   const documented = !clarifiedBefore(history, DOCUMENT_GATES_SINCE);
-  if (tier !== undefined && tier !== "trivial") problems.push(...checkCriteria(text));
+  if (tier !== undefined && tier !== "trivial") found.push(...checkCriteria(text));
   if (documented && tier !== undefined && tier !== "trivial") {
-    problems.push(...checkSources(text));
+    found.push(...checkSources(text));
     const vague = checkVague(text, words ?? qualityWords(), tier);
-    problems.push(...vague.problems);
+    found.push(...vague.problems);
     for (const w of vague.warnings) warn(w);
+  }
+  if (draft) {
+    for (const p of found) warn(`at approval: ${p}`);
+    return problems;
   }
   // FR-28: what an approval stop approves holds no placeholder, empty mandatory section or open question.
   if (documented && (tier === "feature" || tier === "big")) {
