@@ -5,7 +5,8 @@
  *   command names the closest match and exits 2; and the passthrough list (commands not yet ported, STA-1966 FR-031)
  *   is pinned, so porting one is a deliberate change here; and only src/lib/console.mjs (with bin/fflow.mjs) imports
  *   `@stackra/*`, so the governance core stays free of the engine; and the governance commands' `--help` lists their
- *   options (STA-1945 FR-1), and `preset add` its `--dry-run` (STA-2097).
+ *   options (STA-1945 FR-1), and `preset add` its `--dry-run` (STA-2097), and `readme`, `team check`, `land` and
+ *   the `train` steps theirs (STA-1945 SC-2).
  * Boundary: the engine's in-process test harness and the text of src/; no command runs.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945 FR-1, FR-31; STA-1966 FR-031; STA-2097.
@@ -121,11 +122,18 @@ test("help: the stage commands declare --input and --record", async () => {
   }
 });
 
+/**
+ * The help's own row for `name`: an Options row (`    --name` or `-n, --name`, two spaces in) or an Arguments row
+ * (the bare name, two spaces in). The Usage and Examples lines start `fflow`, so a flag in an example cannot match.
+ */
+const helpRow = (/** @type {string} */ name) =>
+  new RegExp(`^  ${name.startsWith("--") ? "(?:-\\w, |    )" : ""}${name}(?:[ =]|$)`, "m");
+
 test("help: gate, parse, guard and hooks run declare their arguments and options", async () => {
   for (const [words, listed] of Object.entries({
     gate: [
-      "<mode>",
-      "<operands>...",
+      "mode",
+      "operands",
       "--ref",
       "--box",
       "--shards",
@@ -135,14 +143,45 @@ test("help: gate, parse, guard and hooks run declare their arguments and options
       "--summary",
       "--reader",
     ],
-    parse: ["<file>"],
+    parse: ["file"],
     guard: ["--print-settings"],
-    "hooks run": ["<stage>", "<hook-args>..."],
+    "hooks run": ["stage", "hook-args"],
   })) {
     const r = await runCommandForTest(CONSOLE, [...words.split(" "), "--help"]);
     assert.equal(r.exitCode, 0, words);
-    for (const item of listed) assert.ok(r.stdout.includes(item), `${words} ${item}`);
+    for (const item of listed) assert.match(r.stdout, helpRow(item), `${words} ${item}`);
   }
+  // The variadic positionals, from the Usage line; no example spells `<operands>` or `<hook-args>`.
+  const gate = await runCommandForTest(CONSOLE, ["gate", "--help"]);
+  assert.match(gate.stdout, /<mode> \[?<operands>\.\.\.\]?/);
+  const hooks = await runCommandForTest(CONSOLE, ["hooks", "run", "--help"]);
+  assert.match(hooks.stdout, /<stage> \[?<hook-args>\.\.\.\]?/);
+});
+
+// @covers sta-1945:SC-2
+test("help: readme, team check, land and the train steps declare their options", async () => {
+  for (const [argv, options] of /** @type {[string[], string[]][]} */ ([
+    [["readme"], ["--check"]],
+    [["team", "check"], ["--tracker"]],
+    [["land"], ["--stack", "--dry-run", "--manual-ok", "--wait", "--no-wait"]],
+    [["train", "open"], ["--dry-run"]],
+    [["train", "add"], ["--dry-run"]],
+    [["train", "close"], ["--dry-run"]],
+    [["train", "build"], ["--dry-run"]],
+    [["train", "eject"], ["--dry-run"]],
+    [["train", "depart"], ["--dry-run"]],
+    [["train", "status"], ["--dry-run"]],
+  ])) {
+    const r = await runCommandForTest(CONSOLE, [...argv, "--help"]);
+    assert.equal(r.exitCode, 0, argv.join(" "));
+    for (const option of options)
+      assert.ok(r.stdout.includes(option), `${argv.join(" ")} ${option}`);
+  }
+  // The positionals too: land's optional PR, add's required one.
+  const land = await runCommandForTest(CONSOLE, ["land", "--help"]);
+  assert.match(land.stdout, /<pr>/);
+  const add = await runCommandForTest(CONSOLE, ["help", "train", "add"]);
+  assert.match(add.stdout, /<pr>/);
 });
 
 test("help: an unknown command names the closest match and exits 2", async () => {
@@ -157,19 +196,15 @@ test("help: the commands not yet ported are passthrough, and only these", () => 
     "app",
     "clean",
     "init",
-    "land",
     "linear",
     "mcp",
     "migrate",
-    "readme",
     "release",
     "ship",
     "spec",
     "start",
     "sync",
-    "team",
     "trace",
-    "train",
   ]);
 });
 
