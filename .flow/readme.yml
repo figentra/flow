@@ -9,7 +9,7 @@ banner:
   light: https://github.com/figentra/brand/raw/069bb209e8f2b79fe8378c8845030ec767da04c7/brands/flow/3d/stills/flow-3d-og-light-en.png
   dark: https://github.com/figentra/brand/raw/069bb209e8f2b79fe8378c8845030ec767da04c7/brands/flow/3d/stills/flow-3d-og-dark-en.png
 status: In progress
-statusNote: "0.2.3 is published; 1.0 is being finished."
+statusNote: "0.3.0 is published; 1.0 follows the repository rollout."
 package: "@figentra-oss/flow"
 docs: https://github.com/figentra/flow/blob/main/packages/figentra-flow/README.md
 what: |
