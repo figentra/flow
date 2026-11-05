@@ -66,6 +66,7 @@ test("the turbo reader: exit 0 passes, a failure fails, a task that never ran is
   assert.deepEqual(READERS.turbo(s), { "a#lint": "pass", "a#typecheck": "fail", "a#test": "skip" });
 });
 
+// @covers sta-1945:AC-17
 test("compare: the subset passes, a new failure and a new failing task fail, a fixed task is listed", () => {
   const main = READERS.turbo(summary({ "a#lint": 2, "a#test": 1, "b#build": 0 }));
   // the subset: still failing what main fails
@@ -373,6 +374,7 @@ test("findBaseline: the nearest ancestor's push baseline; a PR run's or another 
   assert.deepEqual(none, { searched: [A, C] });
 });
 
+// @covers sta-1945:AC-17
 test("gate baseline: save, then check passes on the subset, fails on a new failure, fails closed without one", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "flow-baseline-"));
   t.after(() => rmSync(root, { recursive: true }));
