@@ -5,7 +5,9 @@
  *   command names the closest match and exits 2; and the passthrough list (commands not yet ported, STA-1966 FR-031)
  *   is pinned, so porting one is a deliberate change here; and only src/lib/console.mjs (with bin/fflow.mjs) imports
  *   `@stackra/*`, so the governance core stays free of the engine; and the governance commands' `--help` lists their
- *   options (STA-1945 FR-1), and `preset add` its `--dry-run` (STA-2097).
+ *   options (STA-1945 FR-1), and `preset add` its `--dry-run` (STA-2097), and `readme`, `team check`, `land`, the
+ *   `train` steps (STA-1945 SC-2), `spec`, `linear`, `clean`, `ship`, `release` and `app create` (FR-31) theirs, each
+ *   on its own help row, never matched by an example line.
  * Boundary: the engine's in-process test harness and the text of src/; no command runs.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945 FR-1, FR-31; STA-1966 FR-031; STA-2097.
@@ -121,15 +123,44 @@ test("help: the stage commands declare --input and --record", async () => {
   }
 });
 
-// @covers sta-1945:FR-31
-test("help: spec, linear, clean, ship, release and app create declare their options", async () => {
+/**
+ * The help's own row for `name`, never an example: an option's row is `--name` behind its short letter or a four-space
+ * pad, and an argument's (`<name>`) is its bare name; an example line starts with `fflow`, so it matches neither.
+ * @param {string} name
+ */
+function row(name) {
+  const argument = /^<(.+)>$/.exec(name);
+  return argument
+    ? new RegExp(`^  ${argument[1]}(?: |$)`, "m")
+    : new RegExp(`^  (?:-\\w, | {4})${name}(?:[= ]|$)`, "m");
+}
+
+// @covers sta-1945:SC-2 sta-1945:FR-31
+test("help: readme, team check, land, train, spec, linear, clean, ship, release and app create declare options", async () => {
   for (const [argv, options] of /** @type {[string[], string[]][]} */ ([
+    [["readme"], ["--check"]],
+    [["team", "check"], ["--tracker"]],
+    [["land"], ["<pr>", "--stack", "--dry-run", "--manual-ok", "--wait", "--no-wait"]],
+    [
+      ["train", "open"],
+      ["<version>", "--dry-run"],
+    ],
+    [
+      ["train", "add"],
+      ["<pr>", "--dry-run"],
+    ],
+    [["train", "close"], ["--dry-run"]],
+    [["train", "build"], ["--dry-run"]],
+    [
+      ["train", "eject"],
+      ["<pr>", "--dry-run"],
+    ],
+    [["train", "depart"], ["--dry-run"]],
+    [["train", "status"], ["--dry-run"]],
     [
       ["spec", "paths"],
       ["--require-spec", "--require-tasks", "--include-tasks", "--paths-only", "--template"],
     ],
-    [["spec", "setup-plan"], ["spec setup-plan --json"]],
-    [["spec", "setup-tasks"], ["spec setup-tasks --json"]],
     [["spec", "template"], ["<template>"]],
     [
       ["spec", "ask"],
@@ -145,7 +176,7 @@ test("help: spec, linear, clean, ship, release and app create declare their opti
       ["<file>", "--dry-run"],
     ],
     [["clean"], ["--dry-run", "--adopt", "--fix-ignore", "--budget", "--all"]],
-    [["ship"], ["--workflow", "--dry-run"]],
+    [["ship"], ["<environment>", "--workflow", "--dry-run"]],
     [["release"], ["--offline", "--preflight"]],
     [
       ["app", "create"],
@@ -155,8 +186,16 @@ test("help: spec, linear, clean, ship, release and app create declare their opti
     const r = await runCommandForTest(CONSOLE, [...argv, "--help"]);
     assert.equal(r.exitCode, 0, argv.join(" "));
     for (const option of options)
-      assert.ok(r.stdout.includes(option), `${argv.join(" ")} ${option}`);
+      assert.match(r.stdout, row(option), `${argv.join(" ")} ${option}`);
   }
+  // setup-plan and setup-tasks take nothing; their own description shows they are declared, not passthrough.
+  const plan = await runCommandForTest(CONSOLE, ["spec", "setup-plan", "--help"]);
+  assert.match(plan.stdout, /^ {2}Run the plan gate/m);
+  const tasks = await runCommandForTest(CONSOLE, ["help", "spec", "setup-tasks"]);
+  assert.match(
+    tasks.stdout,
+    /^ {2}The spec folder, its documents and the resolved tasks template/m,
+  );
 });
 
 test("help: an unknown command names the closest match and exits 2", async () => {
@@ -172,16 +211,12 @@ test("help: the commands not yet ported are passthrough, and only these", () => 
     "guard",
     "hooks",
     "init",
-    "land",
     "mcp",
     "migrate",
     "parse",
-    "readme",
     "start",
     "sync",
-    "team",
     "trace",
-    "train",
   ]);
 });
 

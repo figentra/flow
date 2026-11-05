@@ -55,7 +55,7 @@ skip constitution checks gracefully rather than failing.
 
 ### 1. Initialize Convergence Context
 
-Run `fflow spec paths --json --require-spec --require-tasks --include-tasks` once from repo root and parse JSON for FEATURE_DIR and AVAILABLE_DOCS. Derive absolute paths:
+Run `fflow spec paths --json --require-spec --require-tasks --include-tasks` once from repo root and parse its JSON for `data.FEATURE_DIR` and `data.AVAILABLE_DOCS` (the fields are under `data`). Derive absolute paths:
 
 - SPEC = FEATURE_DIR/spec.md
 - PLAN = FEATURE_DIR/plan.md

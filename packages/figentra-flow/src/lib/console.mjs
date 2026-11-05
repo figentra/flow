@@ -4,11 +4,11 @@
  *   grouped, so `fflow` alone prints the banner, the version and the grouped commands, `<command> --help` prints its
  *   usage and runs nothing, an unknown command names the closest match and exits 2, and a failure is one error block.
  *   `doctor`, `preset add` (STA-2097), `status`, `next`, `resume`, `task start|done|wave`, `todo`, `ledger`,
- *   `session stop`, the governance commands (`update`, `check`, `diff`, `validate`, STA-1945 FR-1) and the stage
- *   commands (`plan`, `review`, FR-15), `spec`, `linear`, `clean`, `ship`, `release` and `app create` declare their
- *   arguments and options (`spec` and `release` hand their `--json` document to the engine's `{ ok, data }`); every
- *   other command is passthrough (migration only, ADR 0500 decision 7): it
- *   still parses its own flags from `io.rest`, and `PASSTHROUGH` in the tests pins that list.
+ *   `session stop`, the governance commands (`update`, `check`, `diff`, `validate`, STA-1945 FR-1), the stage
+ *   commands (`plan`, `review`, FR-15), `readme`, `team check`, `land`, the `train` steps (SC-2), `spec`, `linear`,
+ *   `clean`, `ship`, `release` and `app create` declare their arguments and options (`spec` and `release` hand their
+ *   `--json` document to the engine's `{ ok, data }`); every other command is passthrough (migration only, ADR 0500
+ *   decision 7): it still parses its own flags from `io.rest`, and `PASSTHROUGH` in the tests pins that list.
  * Boundary: the registry and the repository check, in the CLI layer only: the governance core (gate, approve, land,
  *   record, lock, baseline) imports nothing from `@stackra/*`. A command's module is imported when it runs, never for
  *   the list or the help, and bin/fflow.mjs never loads this file for `fflow guard`, the agent hook. Plain
@@ -24,7 +24,15 @@ import { Int, Str } from "@stackra/validation";
 
 import { ConfigError } from "./config.mjs";
 import { git } from "./git.mjs";
-import { CONFIG_FILE, DISPLAY_NAME, ENV_PREFIX, HOMEPAGE, NAME, VERSION } from "./product.mjs";
+import {
+  CONFIG_FILE,
+  DISPLAY_NAME,
+  ENV_PREFIX,
+  HOMEPAGE,
+  NAME,
+  STATUS_CONTEXT,
+  VERSION,
+} from "./product.mjs";
 
 /** @typedef {import("@stackra/console").CommandIo} CommandIo */
 /** @typedef {import("@stackra/console").CommandClass} CommandClass */
@@ -87,8 +95,9 @@ async function refusing(work) {
 
 /**
  * The repository check a command makes before anything else (FR-31, AC-35): outside a git work tree it throws one
- * error block naming the fix. git's own words join the reason only under `verbose`: a passthrough command's
- * `--verbose` reaches it in `io.rest`, never the engine's globals, which would show the block's `detail`.
+ * error block naming the fix. git's own words are the block's `detail`, which the engine prints under its own
+ * `--verbose` but leaves out of the `--json` document; `verbose` adds them to the reason instead, for a passthrough
+ * command's `--verbose` (it stays in `io.rest`) and a declared command's `--verbose --json`, so they print once.
  * @param {string} cwd
  * @param {boolean} [verbose]
  * @returns {string} the repository's top folder
@@ -618,9 +627,10 @@ Str()(LedgerCommand.prototype, "repo");
 /**
  * Runs a ported `run(args)` that prints its own JSON under `--json`: with the engine's `--json` on, `work` gets
  * `["--json"]` and the document it prints goes to `io.output.json`, so stdout is the engine's one `{ ok, data }`
- * document with the command's document as `data`, never two documents.
- * shortcut: captures console.log because the command modules print their JSON themselves; drop it once `run`
- * returns its document.
+ * document with the command's document as `data`, never two documents. Text that is not JSON (`spec template`'s
+ * template) is `data` as one string.
+ * shortcut: captures console.log and process.stdout.write because the command modules print their output
+ * themselves; drop it once `run` returns its document.
  * @param {CommandIo} io
  * @param {(json: string[]) => number | Promise<number>} work
  * @returns {Promise<number>}
@@ -630,16 +640,24 @@ async function documented(io, work) {
   /** @type {string[]} */
   const printed = [];
   const log = console.log;
-  console.log = (...parts) => void printed.push(parts.join(" "));
+  const write = process.stdout.write;
+  console.log = (...parts) => void printed.push(`${parts.join(" ")}\n`);
+  process.stdout.write = (/** @type {string | Uint8Array} */ chunk) =>
+    (printed.push(Buffer.from(chunk).toString()), true);
   try {
     return await work(["--json"]);
   } finally {
     console.log = log;
-    const text = printed.join("\n");
-    try {
-      if (text.trim()) io.output.json(JSON.parse(text));
-    } catch {
-      log(text);
+    process.stdout.write = write;
+    const text = printed.join("");
+    if (text.trim()) {
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = text;
+      }
+      io.output.json(data);
     }
   }
 }
@@ -651,7 +669,7 @@ async function documented(io, work) {
  * @param {string[]} args
  */
 async function specRun(io, mode, args) {
-  requireRepository(io.cwd, io.verbose);
+  requireRepository(io.cwd, io.verbose && io.json);
   const { run } = await import("../commands/spec.mjs");
   return refusing(() => documented(io, (json) => run([mode, ...args, ...json])));
 }
@@ -1007,6 +1025,143 @@ Option({ description: "Where the secrets port keeps the private key, when it kee
 );
 Str()(AppCreateCommand.prototype, "keyFile");
 
+class ReadmeCommand extends Command({
+  name: "readme",
+  description: "Render README.md from .flow/readme.yml; --check exits 1 when it differs",
+  group: GROUPS.setup,
+  docs: DOCS,
+  examples: [`${NAME} readme`, `${NAME} readme --check`],
+}) {
+  check = false;
+
+  /** @param {CommandIo} io */
+  async handle(io) {
+    requireRepository(io.cwd);
+    const { run } = await import("../commands/readme.mjs");
+    return refusing(() => run(this.check ? ["--check"] : []));
+  }
+}
+Option({ description: "Write nothing; exit 1 when README.md differs from the render" })(
+  ReadmeCommand.prototype,
+  "check",
+);
+
+class TeamCheckCommand extends Command({
+  name: "team:check",
+  description: "Check the roster and its role files",
+  group: GROUPS.setup,
+  docs: DOCS,
+  examples: [`${NAME} team check`, `${NAME} team check --tracker`],
+}) {
+  tracker = false;
+
+  /** @param {CommandIo} io */
+  async handle(io) {
+    requireRepository(io.cwd);
+    const { run } = await import("../commands/team.mjs");
+    return refusing(() => run(["check", ...(this.tracker ? ["--tracker"] : [])]));
+  }
+}
+Option({ description: "Also list the roles' labels the tracker does not have" })(
+  TeamCheckCommand.prototype,
+  "tracker",
+);
+
+class LandCommand extends Command({
+  name: "land",
+  description: "Squash-merge a PR that is green on the gate and approved",
+  group: GROUPS.land,
+  docs: DOCS,
+  examples: [`${NAME} land 42 --dry-run`, `${NAME} land --stack`],
+}) {
+  /** @type {string | undefined} */
+  pr = undefined;
+  stack = false;
+  dryRun = false;
+  manualOk = false;
+  /** @type {string | undefined} */
+  wait = undefined;
+  noWait = false;
+
+  async handle() {
+    const { run } = await import("../commands/land.mjs");
+    // parseArgs (allowNegative) stores `--no-wait` as `wait: false`, which reaches here as the string "false".
+    const noWait = this.noWait || this.wait === "false";
+    const args = [
+      ...(this.pr === undefined ? [] : [this.pr]),
+      ...(this.stack ? ["--stack"] : []),
+      ...(this.dryRun ? ["--dry-run"] : []),
+      ...(this.manualOk ? ["--manual-ok"] : []),
+      ...(noWait ? ["--no-wait"] : this.wait === undefined ? [] : ["--wait", this.wait]),
+    ];
+    return refusing(() => run(args));
+  }
+}
+Argument({
+  description: "The pull request number (#42 too); the branch's open PR when left out",
+  optional: true,
+})(LandCommand.prototype, "pr");
+Option({ description: "Land the stack bottom-up, picking up where a stopped run left it" })(
+  LandCommand.prototype,
+  "stack",
+);
+Option({ description: "Check every rule; merge nothing" })(LandCommand.prototype, "dryRun");
+Option({ description: `Land although the ruleset does not require ${STATUS_CONTEXT} yet` })(
+  LandCommand.prototype,
+  "manualOk",
+);
+Option({ description: "Minutes to wait for main's land lane (default 10)" })(
+  LandCommand.prototype,
+  "wait",
+);
+Str()(LandCommand.prototype, "wait");
+Option({ description: "Return at once instead of waiting for the land lane" })(
+  LandCommand.prototype,
+  "noWait",
+);
+
+/**
+ * A release-train step (STA-1746): `train <sub>`, with its argument (`open`'s version, `add`'s and `eject`'s PR) and
+ * `--dry-run` declared. It hands them to train's `run`, which checks the PR is a number.
+ * @param {{ sub: string, description: string, subject?: "version" | "pr" }} definition
+ * @returns {CommandClass}
+ */
+function trainStep({ sub, description, subject }) {
+  const Step = class extends Command({
+    name: `train:${sub}`,
+    description,
+    group: GROUPS.land,
+    examples: [`${NAME} train ${sub}${subject === "pr" ? " 42" : ""}`],
+    docs: DOCS,
+  }) {
+    /** @type {string | undefined} */
+    version = undefined;
+    /** @type {string | undefined} */
+    pr = undefined;
+    dryRun = false;
+
+    async handle() {
+      const { run } = await import("../commands/train.mjs");
+      const given = this.version ?? this.pr;
+      const args = [
+        sub,
+        ...(given === undefined ? [] : [given]),
+        ...(this.dryRun ? ["--dry-run"] : []),
+      ];
+      return refusing(() => run(args));
+    }
+  };
+  if (subject === "version")
+    Argument({
+      description: "The version, as x.y.z; the next from changesets when left out",
+      optional: true,
+    })(Step.prototype, "version");
+  if (subject === "pr")
+    Argument({ description: "The pull request number (#42 too)" })(Step.prototype, "pr");
+  Option({ description: "Print what it would do; change nothing" })(Step.prototype, "dryRun");
+  return Step;
+}
+
 /** Every command, in the order the list shows them within their group. */
 export const COMMANDS = [
   ContextCommand,
@@ -1068,20 +1223,8 @@ export const COMMANDS = [
     examples: [`${NAME} migrate --dry-run`],
     repository: true,
   }),
-  passthrough({
-    name: "readme",
-    description: "Render README.md from .flow/readme.yml; --check exits 1 when it differs",
-    group: GROUPS.setup,
-    examples: [`${NAME} readme`, `${NAME} readme --check`],
-    repository: true,
-  }),
-  passthrough({
-    name: "team",
-    description: "Check the roster and its role files",
-    group: GROUPS.setup,
-    examples: [`${NAME} team check`, `${NAME} team check --tracker`],
-    repository: true,
-  }),
+  ReadmeCommand,
+  TeamCheckCommand,
   SpecPathsCommand,
   SpecSetupPlanCommand,
   SpecSetupTasksCommand,
@@ -1157,17 +1300,22 @@ export const COMMANDS = [
     group: GROUPS.work,
     examples: [`${NAME} hooks run pre-commit`, `${NAME} hooks run commit-msg .git/COMMIT_EDITMSG`],
   }),
-  passthrough({
-    name: "land",
-    description: "Squash-merge a PR that is green on the gate and approved",
-    group: GROUPS.land,
-    examples: [`${NAME} land 42 --dry-run`, `${NAME} land --stack`],
+  LandCommand,
+  trainStep({ sub: "open", description: "Open the next release train", subject: "version" }),
+  trainStep({ sub: "add", description: "Board a green PR on the open train", subject: "pr" }),
+  trainStep({ sub: "close", description: "Cut off the open train" }),
+  trainStep({
+    sub: "build",
+    description: "Build train/<version> from the members by merge commits, then gate it",
   }),
-  passthrough({
-    name: "train",
-    description: "The release train: open, board, cut off, build and depart",
-    group: GROUPS.land,
-    examples: [`${NAME} train status`, `${NAME} train open`],
+  trainStep({ sub: "eject", description: "Eject a member from the train by hand", subject: "pr" }),
+  trainStep({
+    sub: "depart",
+    description: "Fast-forward the default branch to the green tip and open the next train",
+  }),
+  trainStep({
+    sub: "status",
+    description: "The open train: members and their gates, ejections, waiting PRs",
   }),
   ShipCommand,
   ReleaseCommand,
