@@ -825,6 +825,20 @@ test("checkStage: Sources at Clarified, placeholders at the approval stop, vague
     checkStage("sta-12-x", documented("feature", "Clarified", dated), over).join(),
     /placeholder/,
   );
+  // A big Draft warns of the placeholder its Clarified approval would fail on, and still passes.
+  /** @type {string[]} */
+  const early = [];
+  assert.deepEqual(
+    checkStage("sta-12-x", documented("big", "Draft", dated), {
+      ...over,
+      warn: (w) => early.push(w),
+    }),
+    [],
+  );
+  assert.match(
+    early.join("\n"),
+    /at approval: spec\.md: the template placeholder `\[DATE\]` remains/,
+  );
   // At Planned the feature spec is approved, and so is the plan: its placeholders, questions and components.
   const planned = { ...over, words: [], files: ["spec.md", "plan.md"] };
   assert.match(

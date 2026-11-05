@@ -33,7 +33,8 @@
  * States: Draft → Clarified → Planned → Tasked → Implementing → Done, or Abandoned / Superseded. A status may lag
  * its artifacts, never lead them (I5):
  *   Draft         folder `<key>-<slug>` (the tracker's key scheme); a `**Linear**` key, when set, equals the folder's
- *                 (the only failures; the Clarified spec checks run as `at approval:` warnings, STA-2127)
+ *                 (the only failures; the Clarified spec checks, and a big spec's FR-28 placeholders, run
+ *                 as `at approval:` warnings, STA-2127)
  *   Clarified     clarifications complete, real key, every Impact line answered, no NEEDS CLARIFICATION; a Status
  *                 history line for the current status. A tiered spec also has `### Sources` citing every FR (FR-26)
  *                 and, in its FR and AC lines, no word of the preset's `quality-words.yml` (a failure on big, else a
@@ -418,6 +419,9 @@ export function checkStage(
     for (const w of vague.warnings) warn(w);
   }
   if (draft) {
+    // FR-28: a big spec's approval stop is Clarified, so its placeholders are part of the Draft warnings.
+    if (documented && tier === "big")
+      found.push(...checkPlaceholders(text).map((p) => `spec.md: ${p}`));
     for (const p of found) warn(`at approval: ${p}`);
     return problems;
   }

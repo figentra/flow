@@ -14,8 +14,7 @@
 // @covers sta-1945:FR-31 sta-1945:AC-36 sta-1945:P-035
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -92,23 +91,22 @@ test("help: <command> --help prints its usage and runs nothing", async () => {
 });
 
 test("help: gate run --help and gate --help print the usage, exit 0 and dispatch nothing", async (t) => {
-  // Outside a git repository a dispatched `gate run` refuses (exit 2) after printing "gate run: checking".
-  const cwd = mkdtempSync(join(tmpdir(), "fflow-help-"));
-  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  // A spy on the gate command's handle sees any dispatch; the control run proves the spy is on the path.
+  const Gate = COMMANDS.find((c) => c.name === "GateCommand");
+  assert.ok(Gate, "GateCommand is registered");
+  const handle = t.mock.method(Gate.prototype, "handle", async () => 0);
   for (const argv of [
     ["gate", "run", "--help"],
     ["gate", "--help"],
     ["gate", "run", "--box", "nowhere", "--help"],
   ]) {
-    const r = await runCommandForTest(CONSOLE, argv, { cwd });
+    const r = await runCommandForTest(CONSOLE, argv);
     assert.equal(r.exitCode, 0, argv.join(" "));
     assert.match(r.stdout, /gate run --shards 4 -- --no-wait/, argv.join(" "));
-    assert.doesNotMatch(
-      r.stdout + r.stderr,
-      /gate run: checking|not in a git repository/,
-      argv.join(" "),
-    );
+    assert.equal(handle.mock.callCount(), 0, argv.join(" "));
   }
+  assert.equal((await runCommandForTest(CONSOLE, ["gate", "run"])).exitCode, 0);
+  assert.equal(handle.mock.callCount(), 1, "a real `gate run` reaches the spy");
 });
 
 test("help: task refuses an id that is not T###, and done a missing --command, running nothing", async () => {
