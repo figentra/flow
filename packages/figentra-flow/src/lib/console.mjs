@@ -5,9 +5,9 @@
  *   usage and runs nothing, an unknown command names the closest match and exits 2, and a failure is one error block.
  *   `doctor`, `preset add` (STA-2097), `status`, `next`, `resume`, `task start|done|wave`, `todo`, `ledger`,
  *   `session stop`, the governance commands (`update`, `check`, `diff`, `validate`, STA-1945 FR-1), the stage
- *   commands (`plan`, `review`, FR-15), `readme`, `team check`, `land` and the `train` steps (SC-2) declare their
- *   arguments and options; every other command is passthrough (migration only, ADR 0500 decision 7): it still parses
- *   its own flags from `io.rest`, and `PASSTHROUGH` in the tests pins that list.
+ *   commands (`plan`, `review`, FR-15), `readme`, `team check`, `land`, the `train` steps, `gate`, `parse`, `guard`
+ *   and `hooks run` (SC-2) declare their arguments and options; every other command is passthrough (migration only,
+ *   ADR 0500 decision 7): it still parses its own flags from `io.rest`, and `PASSTHROUGH` in the tests pins that list.
  * Boundary: the registry and the repository check, in the CLI layer only: the governance core (gate, approve, land,
  *   record, lock, baseline) imports nothing from `@stackra/*`. A command's module is imported when it runs, never for
  *   the list or the help, and bin/fflow.mjs never loads this file for `fflow guard`, the agent hook. Plain
@@ -19,7 +19,7 @@
  * Secrets: none.
  */
 import { Argument, Command, CommandError, Option, UsageError } from "@stackra/console";
-import { Int, Str } from "@stackra/validation";
+import { Int, List, Str } from "@stackra/validation";
 
 import { ConfigError } from "./config.mjs";
 import { git } from "./git.mjs";
@@ -622,6 +622,200 @@ Option({ description: "One repository's path instead of the workspace list" })(
 );
 Str()(LedgerCommand.prototype, "repo");
 
+class GateCommand extends Command({
+  name: "gate",
+  description: "The stage gates, the CI gate, the spec folder and the gate run on the runner",
+  group: GROUPS.specs,
+  docs: DOCS,
+  examples: [
+    `${NAME} gate dir --key STA-12`,
+    `${NAME} gate plan .agents/specs/sta-12-x/spec.md`,
+    `${NAME} gate ci --base=origin/main`,
+    `${NAME} gate run`,
+    `${NAME} gate run --shards 4 -- --no-wait`,
+    `${NAME} gate baseline check --base <sha> --json`,
+  ],
+}) {
+  /** @type {string} */
+  mode;
+  /** @type {string[] | undefined} */
+  operands = undefined;
+  /** @type {string | undefined} */
+  ref = undefined;
+  /** @type {string | undefined} */
+  box = undefined;
+  /** @type {number | undefined} */
+  shards = undefined;
+  /** @type {string | undefined} */
+  base = undefined;
+  /** @type {string | undefined} */
+  key = undefined;
+  /** @type {string | undefined} */
+  slug = undefined;
+  /** @type {string | undefined} */
+  summary = undefined;
+  /** @type {string | undefined} */
+  reader = undefined;
+
+  /** @param {CommandIo} io */
+  async handle(io) {
+    const { run } = await import("../commands/gate.mjs");
+    /** @type {(flag: string, value: string | number | undefined) => string[]} */
+    const pair = (flag, value) => (value === undefined ? [] : [`--${flag}`, String(value)]);
+    const operands = this.operands ?? [];
+    // Each mode's own parser reads these, so they go back as it reads them: `gate run` hands the runner every
+    // token after `--`; `gate baseline` reads `--base <sha>`, `gate lane` and `gate ci` read `--base=<ref>`.
+    const args =
+      this.mode === "run"
+        ? [
+            ...pair("ref", this.ref),
+            ...pair("box", this.box),
+            ...pair("shards", this.shards),
+            ...(operands.length > 0 ? ["--", ...operands] : []),
+          ]
+        : [
+            ...operands,
+            ...(this.base === undefined
+              ? []
+              : this.mode === "baseline"
+                ? ["--base", this.base]
+                : [`--base=${this.base}`]),
+            ...pair("key", this.key),
+            ...pair("slug", this.slug),
+            ...pair("summary", this.summary),
+            ...pair("reader", this.reader),
+            ...(io.json ? ["--json"] : []),
+          ];
+    return refusing(() => run([this.mode, ...args]));
+  }
+}
+Argument({
+  description: "run, command, baseline, plan, check, tasks, lane, branch, ci, dir or stage",
+  choices: [
+    "run",
+    "command",
+    "baseline",
+    "plan",
+    "check",
+    "tasks",
+    "lane",
+    "branch",
+    "ci",
+    "dir",
+    "stage",
+  ],
+})(GateCommand.prototype, "mode");
+Argument({
+  description:
+    "The mode's operands (a spec file, a folder, save|check, a stage); for run, the runner's flags after --",
+})(GateCommand.prototype, "operands");
+List(GateCommand.prototype, "operands");
+Option({ description: "run: the branch to gate (default HEAD)" })(GateCommand.prototype, "ref");
+Str()(GateCommand.prototype, "ref");
+Option({ description: "run: the ssh host to run the checks on instead of the runner" })(
+  GateCommand.prototype,
+  "box",
+);
+Str()(GateCommand.prototype, "box");
+Option({ description: "run: fan the checks out over this many package shards" })(
+  GateCommand.prototype,
+  "shards",
+);
+Int()(GateCommand.prototype, "shards");
+Option({
+  description:
+    "lane, ci: the base ref (default origin/main); baseline check: the base commit's 40-hex SHA",
+})(GateCommand.prototype, "base");
+Str()(GateCommand.prototype, "base");
+Option({ description: "dir: the issue key, instead of the branch's" })(
+  GateCommand.prototype,
+  "key",
+);
+Str()(GateCommand.prototype, "key");
+Option({ description: "dir: the spec folder's kebab-case short name" })(
+  GateCommand.prototype,
+  "slug",
+);
+Str()(GateCommand.prototype, "slug");
+Option({ description: "baseline save: the run summary (default the newest .turbo/runs/*.json)" })(
+  GateCommand.prototype,
+  "summary",
+);
+Str()(GateCommand.prototype, "summary");
+Option({ description: "baseline save: the summary's reader (default turbo)" })(
+  GateCommand.prototype,
+  "reader",
+);
+Str()(GateCommand.prototype, "reader");
+
+class ParseCommand extends Command({
+  name: "parse",
+  description: "What the parsers read from a spec artifact, as JSON",
+  group: GROUPS.specs,
+  docs: DOCS,
+  examples: [`${NAME} parse .agents/specs/sta-12-x/tasks.md`],
+}) {
+  /** @type {string} */
+  file;
+
+  async handle() {
+    const { run } = await import("../commands/parse.mjs");
+    return refusing(() => run([this.file]));
+  }
+}
+Argument({ description: "A spec.md, plan.md, tasks.md or routing.yaml" })(
+  ParseCommand.prototype,
+  "file",
+);
+
+class HooksRunCommand extends Command({
+  name: "hooks:run",
+  description:
+    "Run a stage's lefthook jobs here, else on the runner's box, and stamp the Hooks-Run trailer",
+  group: GROUPS.work,
+  docs: DOCS,
+  examples: [`${NAME} hooks run pre-commit`, `${NAME} hooks run commit-msg .git/COMMIT_EDITMSG`],
+}) {
+  /** @type {string} */
+  stage;
+  /** @type {string[] | undefined} */
+  hookArgs = undefined;
+
+  async handle() {
+    const { run } = await import("../commands/hooks.mjs");
+    return refusing(() => run(["run", this.stage, ...(this.hookArgs ?? [])]));
+  }
+}
+Argument({ description: "The git hook: pre-commit, commit-msg or pre-push" })(
+  HooksRunCommand.prototype,
+  "stage",
+);
+Argument({ description: "The git hook's own arguments, as git passes them" })(
+  HooksRunCommand.prototype,
+  "hookArgs",
+);
+List(HooksRunCommand.prototype, "hookArgs");
+
+class GuardCommand extends Command({
+  name: "guard",
+  description:
+    "The guard engine on the hook event: the preset's rules, the side doors and the secret files",
+  group: GROUPS.agents,
+  docs: DOCS,
+  examples: [`${NAME} guard --print-settings`],
+}) {
+  printSettings = false;
+
+  async handle() {
+    const { run } = await import("../commands/guard.mjs");
+    return refusing(() => run(this.printSettings ? ["--print-settings"] : []));
+  }
+}
+Option({ description: "Print the .claude/settings.json hooks sync renders; run no guard" })(
+  GuardCommand.prototype,
+  "printSettings",
+);
+
 class ReadmeCommand extends Command({
   name: "readme",
   description: "Render README.md from .flow/readme.yml; --check exits 1 when it differs",
@@ -837,17 +1031,7 @@ export const COMMANDS = [
     ],
     repository: true,
   }),
-  passthrough({
-    name: "gate",
-    description: "The stage gates, the CI gate, the spec folder and the gate run on the runner",
-    group: GROUPS.specs,
-    examples: [
-      `${NAME} gate dir --key STA-12`,
-      `${NAME} gate plan .agents/specs/sta-12-x/spec.md`,
-      `${NAME} gate ci --base=origin/main`,
-      `${NAME} gate run`,
-    ],
-  }),
+  GateCommand,
   stage({
     name: "plan",
     description: "The plan stage: its workflow's input, then its tasks.md checked and recorded",
@@ -862,12 +1046,7 @@ export const COMMANDS = [
     group: GROUPS.specs,
     examples: [`${NAME} trace trace .agents/specs/sta-12-x`, `${NAME} trace ci`],
   }),
-  passthrough({
-    name: "parse",
-    description: "What the parsers read from a spec artifact, as JSON",
-    group: GROUPS.specs,
-    examples: [`${NAME} parse .agents/specs/sta-12-x/tasks.md`],
-  }),
+  ParseCommand,
   passthrough({
     name: "linear",
     description: "Link a spec and its tasks to Linear",
@@ -908,13 +1087,7 @@ export const COMMANDS = [
     subject: "The pull request number",
     output: "findings (JSON)",
   }),
-  passthrough({
-    name: "hooks",
-    description:
-      "Run a stage's lefthook jobs here, else on the runner's box, and stamp the Hooks-Run trailer",
-    group: GROUPS.work,
-    examples: [`${NAME} hooks run pre-commit`, `${NAME} hooks run commit-msg .git/COMMIT_EDITMSG`],
-  }),
+  HooksRunCommand,
   LandCommand,
   trainStep({ sub: "open", description: "Open the next release train", subject: "version" }),
   trainStep({ sub: "add", description: "Board a green PR on the open train", subject: "pr" }),
@@ -949,13 +1122,7 @@ export const COMMANDS = [
     ],
   }),
   LedgerCommand,
-  passthrough({
-    name: "guard",
-    description:
-      "The guard engine on the hook event: the preset's rules, the side doors and the secret files",
-    group: GROUPS.agents,
-    examples: [`${NAME} guard --print-settings`],
-  }),
+  GuardCommand,
   passthrough({
     name: "mcp",
     description: "A read-only MCP server over stdio",

@@ -55,7 +55,7 @@ test("help: fflow alone prints the banner, the version and every command under i
 });
 
 test("help: <command> --help prints its usage and runs nothing", async () => {
-  // `gate` with no mode prints its own usage and exits 2: a 0 here means it never ran.
+  // `gate` with no mode is a usage error (exit 2): a 0 here means it never ran.
   const gate = await runCommandForTest(CONSOLE, ["gate", "--help"]);
   assert.equal(gate.exitCode, 0);
   assert.match(gate.stdout, /gate dir --key STA-12/);
@@ -122,6 +122,42 @@ test("help: the stage commands declare --input and --record", async () => {
   }
 });
 
+/**
+ * The help's own row for `name`: an Options row (`    --name` or `-n, --name`, two spaces in) or an Arguments row
+ * (the bare name, two spaces in). The Usage and Examples lines start `fflow`, so a flag in an example cannot match.
+ */
+const helpRow = (/** @type {string} */ name) =>
+  new RegExp(`^  ${name.startsWith("--") ? "(?:-\\w, |    )" : ""}${name}(?:[ =]|$)`, "m");
+
+test("help: gate, parse, guard and hooks run declare their arguments and options", async () => {
+  for (const [words, listed] of Object.entries({
+    gate: [
+      "mode",
+      "operands",
+      "--ref",
+      "--box",
+      "--shards",
+      "--base",
+      "--key",
+      "--slug",
+      "--summary",
+      "--reader",
+    ],
+    parse: ["file"],
+    guard: ["--print-settings"],
+    "hooks run": ["stage", "hook-args"],
+  })) {
+    const r = await runCommandForTest(CONSOLE, [...words.split(" "), "--help"]);
+    assert.equal(r.exitCode, 0, words);
+    for (const item of listed) assert.match(r.stdout, helpRow(item), `${words} ${item}`);
+  }
+  // The variadic positionals, from the Usage line; no example spells `<operands>` or `<hook-args>`.
+  const gate = await runCommandForTest(CONSOLE, ["gate", "--help"]);
+  assert.match(gate.stdout, /<mode> \[?<operands>\.\.\.\]?/);
+  const hooks = await runCommandForTest(CONSOLE, ["hooks", "run", "--help"]);
+  assert.match(hooks.stdout, /<stage> \[?<hook-args>\.\.\.\]?/);
+});
+
 // @covers sta-1945:SC-2
 test("help: readme, team check, land and the train steps declare their options", async () => {
   for (const [argv, options] of /** @type {[string[], string[]][]} */ ([
@@ -159,14 +195,10 @@ test("help: the commands not yet ported are passthrough, and only these", () => 
     "adr",
     "app",
     "clean",
-    "gate",
-    "guard",
-    "hooks",
     "init",
     "linear",
     "mcp",
     "migrate",
-    "parse",
     "release",
     "ship",
     "spec",
