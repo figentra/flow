@@ -283,16 +283,21 @@ test("the stackra preset runs one member's tests through turbo, never a bare fil
   const own = ["agents", "commands", "rules", "skills", "templates"].flatMap((d) =>
     md(join(STACKRA, d)),
   );
-  // A line that warns the bare form skips gen names it on purpose.
-  const bare = own.filter((f) =>
-    readFileSync(f, "utf8")
-      .split("\n")
-      .some(
-        (line) =>
-          /pnpm (?:--filter|-F)[ =]\S+ (?:\S+ )*?(?:test|typecheck)\b/.test(line) &&
-          !line.includes("skips `stackra gen`"),
-      ),
-  );
+  // Each line is read with the next, so a command wrapped after `--filter <x>` is caught; a line that warns the
+  // bare form skips gen names it on purpose.
+  /** @param {string} text */
+  const bareFiltered = (text) =>
+    text.split("\n").some((line, i, lines) => {
+      const joined = `${line.trimEnd()} ${lines[i + 1]?.trimStart() ?? ""}`;
+      return (
+        /pnpm (?:--filter|-F)[ =]\S+ (?:\S+ )*?(?:test|typecheck|build)\b/.test(joined) &&
+        !joined.includes("skips `stackra gen`")
+      );
+    });
+  assert.ok(bareFiltered("Run `pnpm --filter @stackra/logger\ntest` first."));
+  assert.ok(bareFiltered("Run `pnpm -F @stackra/logger build`."));
+  assert.ok(!bareFiltered("Run `pnpm turbo run build --filter=@stackra/logger`."));
+  const bare = own.filter((f) => bareFiltered(readFileSync(f, "utf8")));
   assert.deepEqual(bare, []);
   assert.match(
     readFileSync(join(STACKRA, "rules", "task-vocabulary.md"), "utf8"),
