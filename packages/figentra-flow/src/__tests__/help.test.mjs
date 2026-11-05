@@ -5,7 +5,7 @@
  *   command names the closest match and exits 2; and the passthrough list (commands not yet ported, STA-1966 FR-031)
  *   is pinned, so porting one is a deliberate change here; and only src/lib/console.mjs (with bin/fflow.mjs) imports
  *   `@stackra/*`, so the governance core stays free of the engine; and the governance commands' `--help` lists their
- *   options (STA-1945 FR-1), and `preset add` its `--dry-run` (STA-2097).
+ *   options (STA-1945 FR-1), and `preset add` its `--dry-run` (STA-2097), and the commands ported for SC-2 theirs.
  * Boundary: the engine's in-process test harness and the text of src/; no command runs.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945 FR-1, FR-31; STA-1966 FR-031; STA-2097.
@@ -121,6 +121,26 @@ test("help: the stage commands declare --input and --record", async () => {
   }
 });
 
+test("help: the setup, spec and agent commands ported from passthrough declare their options", async () => {
+  for (const [name, options] of Object.entries({
+    init: ["--force", "--runner", "--workspace"],
+    sync: ["--workspace", "--direct"],
+    migrate: ["--dry-run"],
+    trace: ["--base"],
+    adr: ["--issue", "--owner"],
+    start: ["--slug", "--role", "--session", "--install", "--dry-run"],
+    mcp: [],
+  })) {
+    const r = await runCommandForTest(CONSOLE, [name, "--help"]);
+    assert.equal(r.exitCode, 0, name);
+    assert.match(r.stdout, new RegExp(`fflow ${name}`), name);
+    for (const option of options) assert.ok(r.stdout.includes(option), `${name} ${option}`);
+  }
+  // A mode the command does not have is refused before it runs.
+  const mode = await runCommandForTest(CONSOLE, ["trace", "tracee"]);
+  assert.equal(mode.exitCode, 2);
+});
+
 test("help: an unknown command names the closest match and exits 2", async () => {
   const r = await runCommandForTest(CONSOLE, ["stauts"]);
   assert.equal(r.exitCode, 2);
@@ -129,26 +149,19 @@ test("help: an unknown command names the closest match and exits 2", async () =>
 
 test("help: the commands not yet ported are passthrough, and only these", () => {
   assert.deepEqual(passthroughCommands(COMMANDS), [
-    "adr",
     "app",
     "clean",
     "gate",
     "guard",
     "hooks",
-    "init",
     "land",
     "linear",
-    "mcp",
-    "migrate",
     "parse",
     "readme",
     "release",
     "ship",
     "spec",
-    "start",
-    "sync",
     "team",
-    "trace",
     "train",
   ]);
 });
