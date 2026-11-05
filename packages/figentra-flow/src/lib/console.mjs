@@ -290,14 +290,20 @@ class ContextCommand extends Command({
     return refusing(() => handle(io, this));
   }
 }
-for (const [key, description] of Object.entries({
-  repo: "One local repository (defaults to the current checkout)",
-  query: "Case-insensitive phrase in paths, package names or descriptions",
-  path: "Repository-relative file or folder; also returns its ancestor instructions",
-})) {
-  Option({ description })(ContextCommand.prototype, key);
-  Str()(ContextCommand.prototype, key);
-}
+Option({ description: "One local repository (defaults to the current checkout)" })(
+  ContextCommand.prototype,
+  "repo",
+);
+Str()(ContextCommand.prototype, "repo");
+Option({ description: "Case-insensitive phrase in paths, package names or descriptions" })(
+  ContextCommand.prototype,
+  "query",
+);
+Str()(ContextCommand.prototype, "query");
+Option({
+  description: "Repository-relative file or folder; also returns its ancestor instructions",
+})(ContextCommand.prototype, "path");
+Str()(ContextCommand.prototype, "path");
 Option({ description: "Read the existing workspace registry (at most 25 repositories)" })(
   ContextCommand.prototype,
   "all",
