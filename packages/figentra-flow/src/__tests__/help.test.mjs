@@ -121,6 +121,44 @@ test("help: the stage commands declare --input and --record", async () => {
   }
 });
 
+// @covers sta-1945:FR-31
+test("help: spec, linear, clean, ship, release and app create declare their options", async () => {
+  for (const [argv, options] of /** @type {[string[], string[]][]} */ ([
+    [
+      ["spec", "paths"],
+      ["--require-spec", "--require-tasks", "--include-tasks", "--paths-only", "--template"],
+    ],
+    [["spec", "setup-plan"], ["spec setup-plan --json"]],
+    [["spec", "setup-tasks"], ["spec setup-tasks --json"]],
+    [["spec", "template"], ["<template>"]],
+    [
+      ["spec", "ask"],
+      ["<key>", "--async"],
+    ],
+    [["spec", "resume"], ["<key>"]],
+    [
+      ["linear", "issue"],
+      ["<file>", "--dry-run"],
+    ],
+    [
+      ["linear", "tasks"],
+      ["<file>", "--dry-run"],
+    ],
+    [["clean"], ["--dry-run", "--adopt", "--fix-ignore", "--budget", "--all"]],
+    [["ship"], ["--workflow", "--dry-run"]],
+    [["release"], ["--offline", "--preflight"]],
+    [
+      ["app", "create"],
+      ["<role>", "--org", "--name", "--key-file"],
+    ],
+  ])) {
+    const r = await runCommandForTest(CONSOLE, [...argv, "--help"]);
+    assert.equal(r.exitCode, 0, argv.join(" "));
+    for (const option of options)
+      assert.ok(r.stdout.includes(option), `${argv.join(" ")} ${option}`);
+  }
+});
+
 test("help: an unknown command names the closest match and exits 2", async () => {
   const r = await runCommandForTest(CONSOLE, ["stauts"]);
   assert.equal(r.exitCode, 2);
@@ -130,21 +168,15 @@ test("help: an unknown command names the closest match and exits 2", async () =>
 test("help: the commands not yet ported are passthrough, and only these", () => {
   assert.deepEqual(passthroughCommands(COMMANDS), [
     "adr",
-    "app",
-    "clean",
     "gate",
     "guard",
     "hooks",
     "init",
     "land",
-    "linear",
     "mcp",
     "migrate",
     "parse",
     "readme",
-    "release",
-    "ship",
-    "spec",
     "start",
     "sync",
     "team",
