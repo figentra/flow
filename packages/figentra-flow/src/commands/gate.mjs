@@ -1,25 +1,28 @@
 /**
  * Figentra Flow file contract:
  * Purpose: `fflow gate` (core's `spec-gate`, moved unchanged) — the stage gates for the specs in `.agents/specs/<key>-<slug>/` (ADR 0120 D1, owner
- *          decision OR12).
+ *          decision OR12). The spec's status, tier and approval helpers live in `lib/spec-status.mjs` and are
+ *          re-exported here (ADR 0523).
  * Boundary: reads the spec folders, git and, through the tracker port, comments on the issue (best-effort); writes no spec
  *           file.
  * Runtime: node
- * Governing contract: ADR 0120 (SDLC spec location, lanes and change risk); ADR 0121; ADR 0065 (rule 7).
+ * Governing contract: ADR 0120 (SDLC spec location, lanes and change risk); ADR 0121; ADR 0065 (rule 7); STA-2097.
  *
- *   run [--ref b] [--box host] [-- flags]  the checks through the runner (or on `--box`); the box posts `fflow/gate`
+ *   run [--ref b] [--box host] [--shards n] [-- flags]  the checks through the runner (or on `--box`), fanned out by
+ *                               package shard with `--shards`; one `fflow/gate` status is posted
  *   baseline save|check         the baseline gate (STA-1942, gate-baseline.mjs): a PR passes when it adds no failure
  *                               to main's
  *   plan <spec.md>              exit 1 unless the spec may be planned (run by setup-plan.sh)
  *   check <dir>                 the stage rules for the spec's declared `**Status**`
- *   tasks <tasks.md>            tasks lint: ids, covers, routes, deps, coverage, waves
+ *   tasks <tasks.md>            tasks lint: ids, covers, routes, deps, coverage, waves; each task's files in the
+ *                               design's folder trees (FR-30: a failure on big, else a warning)
  *   lane [--base=ref]           feat commits need a lite or full spec reached through the branch or `Refs:` keys,
  *                               and the diff's tier floor is not above the branch spec's `**Tier**` (ADR 0502)
  *   branch                      warn, never fail, unless the branch (STACKRA_BRANCH, else git) is Linear-named or
  *                               allow-listed: a `chore-lane` PR may use any branch, and only `linear check-pr`
  *                               sees the PR labels, so check-pr is the enforcing check
  *   ci [--base=ref]             the install check (ADR 0510); `check` for every spec folder changed since the base; bug-lane rules;
- *                               `lane`. SPEC_GATE_REQUIRE_READY=1 (a ready-for-review PR) also requires the PR's
+ *                               `lane`; scope drift against the branch's own spec's tasks (FR-30). SPEC_GATE_REQUIRE_READY=1 (a ready-for-review PR) also requires the PR's
  *                               own spec (the branch key's folder), when changed, to be at Tasked or later; an
  *                               edit to another spec gets only `check`, and changing another spec's `**Status**`
  *                               line needs a commit whose `Refs:` names that spec's key. No branch check: check-pr
@@ -31,10 +34,16 @@
  * its artifacts, never lead them (I5):
  *   Draft         folder `<key>-<slug>` (the tracker's key scheme); a `**Linear**` key, when set, equals the folder's
  *   Clarified     clarifications complete, real key, every Impact line answered, no NEEDS CLARIFICATION; a Status
- *                 history line for the current status
+ *                 history line for the current status. A tiered spec also has `### Sources` citing every FR (FR-26)
+ *                 and, in its FR and AC lines, no word of the preset's `quality-words.yml` (a failure on big, else a
+ *                 warning; FR-29); at its approval stop a document holds no template placeholder, empty mandatory
+ *                 section or open question (FR-28). A spec whose last `→ Clarified` history line is dated before
+ *                 DOCUMENT_GATES_SINCE is exempt from FR-26 to FR-29 (it was approved under the older rules)
  *   Planned       plan.md: Constitution Check rows PASS or N/A with a reason, three deploy-mode rows, every live FR
- *                 validated by a P-### (or marked example-only)
- *   Tasked        tasks.md passes `tasks`
+ *                 validated by a P-### (or marked example-only); a feature or big plan's components each have a
+ *                 folder tree and interface declarations, and a small spec's `## Design` has both (FR-27)
+ *   Tasked        tasks.md passes `tasks`; each task names only files of the plan's folder trees, or of a small
+ *                 spec's design (FR-30; a spec last clarified before TREE_GATES_SINCE is exempt)
  *   Implementing  at least one task ticked
  *   Done          every live task ticked (spec-trace adds test coverage)
  * Tracker: `plan` and `stage` comment the stage on the spec's issue through the tracker port; a failure warns, never part of
@@ -56,8 +65,24 @@ import { loadTeam } from "../lib/team.mjs";
 import { installProblems } from "../lib/render.mjs";
 import { BUNDLED } from "./sync.mjs";
 import { loadConfig } from "../lib/config.mjs";
-import { specsDirs, writeCurrent } from "../lib/flow-dir.mjs";
+import { presetDir, resolveTemplate, specsDirs, writeCurrent } from "../lib/flow-dir.mjs";
+import { isPackageName, packagePreset } from "../lib/preset-package.mjs";
 import { ENV_PREFIX, LEGACY_ENV_PREFIX, NAME } from "../lib/product.mjs";
+import { outsideTrees, scopeDrift, treePaths } from "../lib/scope-drift.mjs";
+import {
+  approvedAt,
+  atLeast,
+  checkApproval,
+  STATUSES,
+  statusLine,
+  statusOf,
+  TIERS,
+  tierOf,
+} from "../lib/spec-status.mjs";
+import { parseYaml } from "../lib/yaml.mjs";
+
+// Moved to lib/spec-status.mjs so the land rules import nothing from commands/ (ADR 0523); kept here for callers.
+export { approvedAt, checkApproval, STATUSES, statusLine, statusOf, TIERS, tierOf };
 
 /** The presets this package ships (`stackra`, `neutral`), installed when a repository keeps none of its own. */
 import {
@@ -117,13 +142,20 @@ export const presetOf = (root = ROOT) => loadConfig(root).config.preset ?? "neut
 
 /**
  * The id a preset declares: a bundled one's name, or the `id:` in a preset folder's `preset.yml` (a repository's own
- * copy of `stackra` keeps Stackra's rules). Undefined when the folder declares none.
+ * copy of `stackra`, or an installed preset package's folder, STA-2097, keeps Stackra's rules). Undefined when the
+ * folder declares none.
  * @param {string} preset
  * @param {string} [root]
  */
 export function presetId(preset, root = ROOT) {
   if (BUNDLED.includes(preset)) return preset;
-  const yml = readIf(join(resolve(root, preset), "preset.yml"));
+  let dir = resolve(root, preset);
+  try {
+    if (isPackageName(preset)) dir = packagePreset(root, preset)?.dir ?? dir;
+  } catch {
+    // A package that names no preset folder declares no id; `doctor` names the problem.
+  }
+  const yml = readIf(join(dir, "preset.yml"));
   return yml.match(/^\s+id:\s*["']?([\w-]+)["']?\s*$/m)?.[1];
 }
 
@@ -149,17 +181,6 @@ const issueLine = (/** @type {string} */ body, /** @type {KeyScheme} */ keys) =>
   body
     .match(new RegExp(`^\\*\\*(?:Linear|Issue)\\*\\*:\\s*(${keys.pattern})(?![0-9])`, "mi"))?.[1]
     .toLowerCase();
-export const STATUSES = [
-  "draft",
-  "clarified",
-  "planned",
-  "tasked",
-  "implementing",
-  "done",
-  "abandoned",
-  "superseded",
-];
-
 /** Problems that stop a spec from being planned; empty means it may be. */
 /**
  * @param {string} text
@@ -193,13 +214,6 @@ export function checkSpec(text, keys = repoScheme(), rules = repoRules()) {
 }
 
 export const STAGES = ["clarified", "planned", "tasked", "implementing", "done"];
-const atLeast = (status, stage) => STATUSES.indexOf(status) >= STATUSES.indexOf(stage);
-
-/** The declared `**Status**`, lower-cased ("" when absent). */
-export const statusOf = (text) =>
-  strip(text)
-    .match(/^\*\*Status\*\*:\s*([A-Za-z]+)/m)?.[1]
-    ?.toLowerCase() ?? "";
 
 /** The table rows of `text`: every `|` line but the first (the header) and the rules, each as its trimmed cells. */
 const tableRows = (text) =>
@@ -267,8 +281,20 @@ export function checkTasks(
     seen.set(t.id, t.line);
   }
   const live = tasks.filter((t) => !t.struck);
-  for (const t of live) {
+  for (const [i, t] of live.entries()) {
     const at = `tasks.md:${t.line}: ${t.id}`;
+    // FR-25: a checkpoint runs a command at its phase's end; it covers nothing and names no route
+    if (t.checkpoint !== undefined) {
+      if (!t.checkpoint) problems.push(`${at} is a checkpoint with no command`);
+      if (t.optional) problems.push(`${at} is a checkpoint, which cannot be optional`);
+      if (t.covers.length || t.route || t.role)
+        problems.push(`${at} is a checkpoint, which covers nothing and names no route or role`);
+      if (live[i + 1]?.phase === t.phase)
+        problems.push(`${at} is a checkpoint, but ${live[i + 1].id} follows it in its phase`);
+      for (const d of t.deps)
+        if (!seen.has(d)) problems.push(`${at} depends on ${d}, which does not exist`);
+      continue;
+    }
     if (!t.covers.length) problems.push(`${at} has no \`covers:\``);
     for (const id of t.covers)
       if (!ids.has(id))
@@ -308,12 +334,37 @@ export function checkTasks(
   return problems;
 }
 
+/** The day the document gates (FR-26 to FR-29) began: a spec last clarified before it keeps the rules it was approved under. */
+export const DOCUMENT_GATES_SINCE = "2026-11-03";
+
+/** The day FR-30's task trees began: a spec last clarified before it was tasked without them. */
+export const TREE_GATES_SINCE = "2026-11-04";
+
+/** A spec's `## Status history` section. */
+export const historyOf = (/** @type {string} */ text) =>
+  strip(text).match(/^## Status history\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
+
+/**
+ * Whether the last dated `→ Clarified` line of a Status history is before `since` (a `YYYY-MM-DD` day); false when
+ * no such line is dated, so an undated spec gets every check.
+ * @param {string} history
+ * @param {string} since
+ */
+export function clarifiedBefore(history, since) {
+  const day = [...history.matchAll(/^\s*[-*]\s*(\d{4}-\d{2}-\d{2})\b[^\n]*→\s*Clarified\b/gim)].at(
+    -1,
+  )?.[1];
+  return day !== undefined && day < since;
+}
+
 /**
  * Problems for a spec at its declared `**Status**`; `files` lists the names in its folder.
  * @param {string} folder
  * @param {string} text
  * @param {{ files?: string[], tasks?: string, plan?: string, known?: Set<string>, keys?: KeyScheme,
- *           rules?: Rules, team?: import("../lib/team.mjs").Team }} [options]
+ *           rules?: Rules, team?: import("../lib/team.mjs").Team, words?: string[],
+ *           warn?: (warning: string) => void }} [options] `words` is the vague-word list (the preset's by default);
+ *           `warn` takes what only warns (dropped by default)
  */
 export function checkStage(
   folder,
@@ -326,6 +377,8 @@ export function checkStage(
     keys = repoScheme(),
     rules = repoRules(),
     team = loadTeam(ROOT),
+    words,
+    warn = () => {},
   } = {},
 ) {
   const body = strip(text);
@@ -352,9 +405,30 @@ export function checkStage(
       }),
       ...ownerApprovalProblems(text, loadConfig(ROOT).config.apps?.owner),
     );
+  const history = historyOf(text);
+  const documented = !clarifiedBefore(history, DOCUMENT_GATES_SINCE);
   if (tier !== undefined && tier !== "trivial") problems.push(...checkCriteria(text));
-  const history =
-    body.match(/^## Status history\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
+  if (documented && tier !== undefined && tier !== "trivial") {
+    problems.push(...checkSources(text));
+    const vague = checkVague(text, words ?? qualityWords(), tier);
+    problems.push(...vague.problems);
+    for (const w of vague.warnings) warn(w);
+  }
+  // FR-28: what an approval stop approves holds no placeholder, empty mandatory section or open question.
+  if (documented && (tier === "feature" || tier === "big")) {
+    if (atLeast(status, tier === "big" ? "clarified" : "planned"))
+      problems.push(...checkPlaceholders(text).map((p) => `spec.md: ${p}`));
+    if (atLeast(status, "planned") && files.includes("plan.md"))
+      problems.push(
+        ...checkPlaceholders(plan).map((p) => `plan.md: ${p}`),
+        ...checkComponents(plan),
+      );
+  }
+  if (atLeast(status, "tasked")) {
+    const trees = checkTaskTrees(text, plan, tasks, folder);
+    problems.push(...trees.problems);
+    for (const w of trees.warnings) warn(w);
+  }
   if (!new RegExp(`→\\s*${status}\\b`, "i").test(history))
     problems.push(
       `\`## Status history\` has no "→ ${status[0].toUpperCase()}${status.slice(1)}" line`,
@@ -369,7 +443,11 @@ export function checkStage(
     if (atLeast(status, "planned")) {
       if (design === undefined)
         problems.push(`status ${status} needs a \`## Design\` section in a small spec`);
-      else problems.push(...checkDesign(design, "spec.md ## Design", "###"));
+      else
+        problems.push(
+          ...checkDesign(design, "spec.md ## Design", "###"),
+          ...(documented ? checkSmallDesign(design) : []),
+        );
     }
     if (atLeast(status, "tasked")) {
       if (steps === undefined)
@@ -395,30 +473,12 @@ export function checkStage(
   const live = parseTasks(tasks).filter((t) => !t.struck);
   if (atLeast(status, "implementing") && !live.some((t) => t.done))
     problems.push(`status ${status}, but no task is ticked`);
-  if (status === "done" && live.some((t) => !t.done))
-    problems.push(
-      `status done, but ${live
-        .filter((t) => !t.done)
-        .map((t) => t.id)
-        .join(", ")} are unticked`,
-    );
+  // FR-25: an optional task may stay open at Done (status reports it)
+  const open = live.filter((t) => !t.done && !t.optional).map((t) => t.id);
+  if (status === "done" && open.length)
+    problems.push(`status done, but ${open.join(", ")} are unticked`);
   return problems;
 }
-
-/** The spec tiers of ADR 0502, smallest first. */
-export const TIERS = ["trivial", "small", "feature", "big"];
-
-/**
- * The tier a spec declares in its `**Tier**:` header, or undefined (an older spec).
- * @param {string} text
- * @returns {string | undefined}
- */
-export const tierOf = (text) => {
-  const tier = strip(text)
-    .match(/^\*\*Tier\*\*:\s*([A-Za-z]+)/m)?.[1]
-    ?.toLowerCase();
-  return tier !== undefined && TIERS.includes(tier) ? tier : undefined;
-};
 
 /** Paths that raise the floor, highest first (ADR 0502). */
 const FLOORS = [
@@ -510,25 +570,6 @@ export function checkTier({ declared, computed, reasons = [] }) {
 }
 
 /**
- * Who approved a spec at `stage` and when: "Approved by <who> <YYYY-MM-DD>" on the Status line while the spec sits
- * there, or on the Status history line that moved it there.
- * @param {string} text
- * @param {string} stage
- * @returns {{ who: string, date: string } | undefined}
- */
-export function approvedAt(text, stage) {
-  const lines = statusOf(text) === stage ? [statusLine(text)] : [];
-  const history =
-    strip(text).match(/^## Status history\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
-  lines.push(...history.split("\n").filter((l) => new RegExp(`→\\s*${stage}\\b`, "i").test(l)));
-  for (const line of lines) {
-    const found = line.match(/Approved by ([^\n]+?) (\d{4}-\d{2}-\d{2})\b/);
-    if (found) return { who: found[1] ?? "", date: found[2] ?? "" };
-  }
-  return undefined;
-}
-
-/**
  * AC-053: an owner-kept spec's stage approvals come from the owner only: "Approved by owner …" or by the configured
  * owner login. Without `**Owner stops**` (or with none) nothing is checked here.
  * @param {string} text
@@ -547,31 +588,6 @@ export function ownerApprovalProblems(text, owner) {
     if (!/^owner\b/i.test(who) && (!owner || who.toLowerCase() !== owner.toLowerCase()))
       problems.push(
         `the ${stage} approval is by ${who}, but the spec touches ${stops.join(", ")}: only the owner approves it`,
-      );
-  }
-  return problems;
-}
-
-/**
- * The approval stops of ADR 0502: feature before Tasked; big before Planned and before Tasked; both name the Approver.
- * @param {string} text
- * @returns {string[]}
- */
-export function checkApproval(text) {
-  const tier = tierOf(text);
-  if (tier !== "feature" && tier !== "big") return [];
-  const status = statusOf(text);
-  if (status === "abandoned" || status === "superseded") return [];
-  const problems = [];
-  if (atLeast(status, "planned") && !/^\*\*Approver\*\*:\s*\S/m.test(strip(text)))
-    problems.push(
-      `a ${tier} spec names its \`**Approver**\` (the owner, or the leader for a technical-only stop; ADR 0502)`,
-    );
-  for (const stop of tier === "big" ? ["clarified", "planned"] : ["planned"]) {
-    const next = stop === "clarified" ? "planned" : "tasked";
-    if (atLeast(status, next) && approvedAt(text, stop) === undefined)
-      problems.push(
-        `status ${status} needs the ${stop[0].toUpperCase()}${stop.slice(1)} approval of a ${tier} spec: "Approved by <who> <YYYY-MM-DD>" on that stage (ADR 0502)`,
       );
   }
   return problems;
@@ -653,7 +669,7 @@ export function checkTraceTasks(tasks, spec, where) {
   const live = parseTasks(tasks).filter((t) => !t.struck);
   if (live.length === 0) return [`${where}: no \`- [ ] T###\` task lines`];
   const problems = [];
-  for (const t of live) {
+  for (const t of live.filter((x) => x.checkpoint === undefined)) {
     const at = `${where}:${t.line}: ${t.id}`;
     if (!t.covers.some((id) => criteria.has(id)))
       problems.push(`${at} covers no acceptance criterion (AC-###) of spec.md (ADR 0502)`);
@@ -663,6 +679,297 @@ export function checkTraceTasks(tasks, spec, where) {
   for (const ac of criteria)
     if (!covered.has(ac)) problems.push(`${where}: ${ac} is covered by no task`);
   return problems;
+}
+
+/**
+ * Markdown's fenced blocks (``` or ~~~, indented too; only a fence of the same kind and at least the opening's length
+ * closes one, so a ````md block may quote a ``` one): each opening's language and lines, and the text without the blocks.
+ * @param {string} text
+ * @returns {{ langs: string[], bodies: string[][], rest: string }}
+ */
+function fences(text) {
+  /** @type {string[]} */
+  const langs = [];
+  /** @type {string[][]} */
+  const bodies = [];
+  const rest = [];
+  /** @type {string | undefined} */
+  let open;
+  for (const line of text.split("\n")) {
+    const fence = line.match(/^\s*(`{3,}|~{3,})\s*([^\s`]*)/);
+    if (open === undefined) {
+      if (!fence) rest.push(line);
+      else {
+        open = fence[1];
+        langs.push(fence[2].toLowerCase());
+        bodies.push([]);
+      }
+    } else if (fence && fence[1][0] === open[0] && fence[1].length >= open.length && !fence[2])
+      open = undefined;
+    else bodies.at(-1)?.push(line);
+  }
+  return { langs, bodies, rest: rest.join("\n") };
+}
+
+/** Markdown without fenced blocks and inline code, which quote text rather than state it. */
+const prose = (/** @type {string} */ text) => fences(text).rest.replaceAll(/`[^`\n]*`/g, "");
+
+/**
+ * The `##` to `####` sections whose title matches `title`: each runs to the next heading of its level or higher, so
+ * its subsections are part of it.
+ * @param {string} body
+ * @param {RegExp} title
+ * @returns {{ title: string, text: string }[]}
+ */
+function sectionsOf(body, title) {
+  const lines = body.split("\n");
+  const found = [];
+  for (const [i, line] of lines.entries()) {
+    const heading = line.match(/^(#{2,4}) (.*)$/);
+    if (!heading || !title.test(heading[2])) continue;
+    const level = heading[1].length;
+    const end = lines.findIndex(
+      (next, j) => j > i && (next.match(/^(#{1,6}) /)?.[1].length ?? 7) <= level,
+    );
+    found.push({
+      title: heading[2].trim(),
+      text: lines.slice(i + 1, end === -1 ? undefined : end).join("\n"),
+    });
+  }
+  return found;
+}
+
+/**
+ * The `[…]` placeholders and `$ARGUMENTS` of the spec and plan templates `root` resolves (FR-28); a checkbox, `[P]` and
+ * `[NEEDS CLARIFICATION` are not placeholders.
+ * @param {string} [root]
+ * @returns {Set<string>}
+ */
+export function templatePlaceholders(root = ROOT) {
+  const text = ["spec-template", "plan-template"]
+    .map((name) => readIf(resolveTemplate(root, name) ?? ""))
+    .join("\n");
+  return new Set(
+    [...prose(strip(text)).matchAll(/\[[^\]\n]+\](?![([:])|\$ARGUMENTS/g)]
+      .map((m) => m[0])
+      .filter((m) => !/^\[(?:[ xX~P-]\]|NEEDS CLARIFICATION)/.test(m)),
+  );
+}
+/** @type {Set<string> | undefined} */
+let marks;
+
+/**
+ * FR-28: a document's template placeholders, empty `(mandatory)` sections and open questions (a `## Open questions`
+ * section that does not start with "None"; a struck item is decided).
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function checkPlaceholders(text) {
+  const body = prose(strip(text));
+  const problems = [];
+  for (const mark of (marks ??= templatePlaceholders()))
+    if (body.includes(mark)) problems.push(`the template placeholder \`${mark}\` remains`);
+  for (const { title, text: part } of sectionsOf(body, /\(mandatory/))
+    if (!part.split("\n").some((l) => l.trim() && !/^#{1,6} /.test(l)))
+      problems.push(`the mandatory section \`${title}\` is empty`);
+  for (const { text: part } of sectionsOf(body, /^Open questions\b/i)) {
+    const open = part.trim();
+    if (!open || /^none\b/i.test(open)) continue;
+    const items = open.split("\n").filter((l) => /^\s*(?:[-*]|\d+\.) /.test(l));
+    for (const q of items.length ? items : [open.split("\n")[0] ?? ""]) {
+      const said = q.replace(/^\s*(?:[-*]|\d+\.) /, "").trim();
+      if (!said.startsWith("~~"))
+        problems.push(`an open question remains: "${said}" (decide it before the approval)`);
+    }
+  }
+  return problems;
+}
+
+/**
+ * FR-26, AC-28: a `### Sources` section, and every live FR cited in it by id or in a range ("FR-1 to FR-12").
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function checkSources(text) {
+  const sources = sectionsOf(strip(text), /^Sources\b/)[0]?.text.trim() ?? "";
+  if (!sources || /^none\.?$/i.test(sources))
+    return [
+      "spec.md: no `### Sources` section naming the files, ADRs, commands and issues the spec rests on (FR-26)",
+    ];
+  /** @type {Set<number>} */
+  const cited = new Set();
+  for (const m of sources.matchAll(/\bFR-(\d+)(?:\s*(?:to|through|–|—)\s*(?:FR-)?(\d+))?/g)) {
+    const from = Number(m[1]);
+    const to = m[2] === undefined ? from : Number(m[2]);
+    for (let n = from; n <= Math.min(to, from + 999); n++) cited.add(n);
+  }
+  return [...definedIds(text, "FR").live]
+    .filter((fr) => !cited.has(Number(fr.slice(3))))
+    .map(
+      (fr) =>
+        `spec.md: ${fr} cites no source (name it in \`### Sources\`, alone or in a range such as "FR-1 to FR-12")`,
+    );
+}
+
+/** Fence languages that declare no interface (FR-27): trees, diagrams, data, shell sessions and prose. */
+const NOT_CODE = new Set(
+  "|text|txt|plaintext|tree|mermaid|plantuml|dot|md|markdown|yaml|yml|json|jsonc|toml|ini|csv|sh|bash|zsh|shell|console|diff".split(
+    "|",
+  ),
+);
+
+/** Fence languages of a folder tree (FR-27). */
+const TREE = new Set(["text", "tree"]);
+
+/** FR-27: what a design part lacks of a folder tree (a ```text block) and interface declarations (a code block). */
+function lacks(/** @type {string} */ part) {
+  const { langs } = fences(part);
+  return [
+    ...(langs.some((l) => TREE.has(l))
+      ? []
+      : ["no folder tree (a ```text block of every file it adds)"]),
+    ...(langs.some((l) => !NOT_CODE.has(l))
+      ? []
+      : ["no interface declarations (a fenced block in the repository's language)"]),
+  ];
+}
+
+/**
+ * FR-27, AC-29: each component (a `###` under `## Components`) has a folder tree (a ```text block) and its interface
+ * declarations (a fenced block in a programming language: not a diagram, data, shell or prose block).
+ * @param {string} plan
+ * @returns {string[]}
+ */
+export function checkComponents(plan) {
+  const section =
+    strip(plan).match(/^## Components\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
+  const problems = [];
+  for (const [, name, part] of section.matchAll(/^### (.+)\n([\s\S]*?)(?=^### |(?![\s\S]))/gm))
+    for (const lack of lacks(part))
+      problems.push(`plan.md: component \`${name.trim()}\` has ${lack} (FR-27)`);
+  return problems;
+}
+
+/**
+ * FR-27: a small spec's one-page `## Design` keeps the folder tree and the interfaces, as a plan's component does.
+ * @param {string} design the section's text
+ * @returns {string[]}
+ */
+export function checkSmallDesign(design) {
+  return lacks(design).map((lack) => `spec.md ## Design: the design has ${lack} (FR-27)`);
+}
+
+/** FR-27, FR-30: the paths of the folder trees under a document's Components and Files and folders headings. */
+function treeEntries(/** @type {string} */ text) {
+  return sectionsOf(strip(text), /^(?:Components|Files and folders)\b/).flatMap(
+    ({ text: part }) => {
+      const { langs, bodies } = fences(part);
+      return bodies.filter((_, i) => TREE.has(langs[i])).flatMap(treePaths);
+    },
+  );
+}
+
+/**
+ * FR-30: each live task names only files of the plan's folder trees (a small spec's: its `## Design`); its own spec
+ * folder, tests, changesets and lockfiles aside. Failures on a big spec, warnings on the others; a spec without a tier,
+ * a feature or big spec without a plan (the stage gate reports that), or one last clarified before TREE_GATES_SINCE,
+ * is exempt.
+ * @param {string} spec
+ * @param {string} plan
+ * @param {string} tasks tasks.md (a small spec keeps its tasks in spec.md)
+ * @param {string} folder the spec's folder name under SPECS_DIR
+ * @returns {{ problems: string[], warnings: string[] }}
+ */
+export function checkTaskTrees(spec, plan, tasks, folder) {
+  const tier = tierOf(spec);
+  const small = tier === "small";
+  if (
+    tier === undefined ||
+    tier === "trivial" ||
+    (!small && !plan.trim()) ||
+    clarifiedBefore(historyOf(spec), TREE_GATES_SINCE)
+  )
+    return { problems: [], warnings: [] };
+  const design = strip(spec).match(/^## Design\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
+  const entries = [...treeEntries(small ? design : plan), `${SPECS_DIR}/${folder}/`];
+  const found = parseTasks(small ? spec : tasks).flatMap((t) =>
+    outsideTrees([t], entries).map(
+      (p) =>
+        `${small ? "spec.md" : "tasks.md"}:${t.line}: ${t.id} names \`${p}\`, which no folder tree of ${
+          small ? "spec.md ## Design" : "plan.md"
+        } holds (add it to the tree, or amend the task) (FR-30)`,
+    ),
+  );
+  return tier === "big" ? { problems: found, warnings: [] } : { problems: [], warnings: found };
+}
+
+/**
+ * The vague words of the preset `root` uses (`quality-words.yml`'s `words:`, each `{ word, example }`); none when the
+ * preset has no list.
+ * @param {string} [root]
+ * @returns {string[]}
+ */
+export function qualityWords(root = ROOT) {
+  const text = readIf(join(presetDir(root), "quality-words.yml"));
+  if (!text) return [];
+  /** @type {{ words?: { word?: unknown }[] }} */
+  const yml = parseYaml(text) ?? {};
+  return (yml.words ?? []).map((w) => String(w?.word ?? "")).filter(Boolean);
+}
+
+/**
+ * FR-29, AC-31: listed vague words in the FR, NFR and AC lines (their continuation lines too, inline code aside): failures
+ * on a big spec, warnings on the others.
+ * @param {string} text
+ * @param {string[]} words
+ * @param {string} tier
+ * @returns {{ problems: string[], warnings: string[] }}
+ */
+export function checkVague(text, words, tier) {
+  const res = words.map((w) => {
+    const escaped = w.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&").replaceAll(" ", "\\s+");
+    return { w, re: new RegExp(`(?<![\\w-])${escaped}(?![\\w-])`, "i") };
+  });
+  /** @type {Set<string>} */
+  const found = new Set();
+  /** @type {string | undefined} */
+  let id;
+  for (const line of strip(text).split("\n")) {
+    const start = line.match(/^\s*[-*] (~~)?\*\*((?:N?FR|AC)-\d+)\*\*(~~)?/);
+    if (start) id = start[1] || start[3] ? undefined : start[2];
+    else if (!/^\s+\S/.test(line)) id = undefined;
+    if (id === undefined) continue;
+    const said = line.replaceAll(/`[^`\n]*`/g, "");
+    for (const { w, re } of res)
+      if (re.test(said))
+        found.add(
+          `spec.md: ${id} uses the vague term "${w}" (state a measurable value; the preset's quality-words.yml has an example) (FR-29)`,
+        );
+  }
+  return tier === "big"
+    ? { problems: [...found], warnings: [] }
+    : { problems: [], warnings: [...found] };
+}
+
+/**
+ * FR-30, AC-32: the files a PR changes that no task of its spec names (the spec folder itself aside); failures on a
+ * big spec, warnings on the others. A spec without a tier, or not yet tasked, has nothing to drift from.
+ * @param {string} spec
+ * @param {string} tasks tasks.md (a small spec keeps its tasks in spec.md)
+ * @param {string[]} changed
+ * @param {string} [specs] the specs folder
+ * @returns {{ problems: string[], warnings: string[] }}
+ */
+export function checkScope(spec, tasks, changed, specs = SPECS_DIR) {
+  const tier = tierOf(spec);
+  const parsed = parseTasks(tier === "small" ? spec : tasks);
+  if (tier === undefined || tier === "trivial" || parsed.length === 0)
+    return { problems: [], warnings: [] };
+  const drift = scopeDrift(
+    changed.filter((f) => !f.startsWith(`${specs}/`)),
+    parsed,
+  ).map((f) => `scope drift: \`${f}\` is named by no task (amend the spec to add it) (FR-30)`);
+  return tier === "big" ? { problems: drift, warnings: [] } : { problems: [], warnings: drift };
 }
 
 /** feat commits need a lite or full spec reached through the branch key or their `Refs:` keys (ADR 0120 D4). */
@@ -687,12 +994,6 @@ export function isOwnSpec(folder, branch, keys = repoScheme()) {
   const key = keys.keys(branch)[0];
   return Boolean(key) && keys.folderKey(folder) === key;
 }
-
-/** The spec's `**Status**:` line, trimmed ("" when absent). */
-export const statusLine = (text) =>
-  strip(text)
-    .match(/^\*\*Status\*\*:.*$/m)?.[0]
-    .trim() ?? "";
 
 /** The issue keys named on the `Refs:` trailers of the commit messages, lower-cased. */
 export const refsKeys = (commits, keys = repoScheme()) =>
@@ -741,21 +1042,41 @@ export function checkBug(folder, tests, keys = repoScheme()) {
 }
 
 /**
- * The repo-relative spec folder for a key: its existing `<key>-*` folder, else one named from `slug`.
+ * The repo-relative spec folder for a key: its existing `<key>-*` folder, else one named from `slug`. A branch with no
+ * key falls back to the one folder whose slug is exactly the branch's last segment, as `feature/cancel-order` →
+ * `<key>-cancel-order` (FR-31). A refusal's `fix` is the flag that settles it (`--key` or `--slug`), so a caller
+ * names it, never another command that sends back here.
  * @param {{ root?: string, branch?: string, key?: string, slug?: string, keys?: KeyScheme }} [options]
  */
 export function specDir({ root = ROOT, branch = "", key, slug, keys = repoScheme() } = {}) {
   const k = key === undefined ? keys.keys(branch)[0] : keys.parse(key);
-  if (!k) return { error: `no issue key in ${key ? `--key ${key}` : `branch \`${branch}\``}` };
   const specs = specsDirs(root).dir;
   const base = join(root, specs);
+  if (!k) {
+    if (key !== undefined) return { error: `no issue key in --key ${key}`, fix: "--key <key>" };
+    const tail = branch.split("/").pop() ?? "";
+    const folderSlug = (/** @type {string} */ d) => {
+      const own = keys.folderKey(d);
+      return own === undefined ? undefined : d.slice(own.length + 1);
+    };
+    const named =
+      tail && existsSync(base) ? readdirSync(base).filter((d) => folderSlug(d) === tail) : [];
+    if (named.length === 1) return { dir: `${specs}/${named[0]}` };
+    return {
+      error: `no issue key in branch \`${branch}\` and ${named.length ? `several spec folders named for it: ${named.join(", ")}` : "no spec folder named for its slug"}`,
+      fix: "--key <key>",
+    };
+  }
   const existing = existsSync(base) ? readdirSync(base).filter((d) => keys.folderKey(d) === k) : [];
   if (existing.length > 1)
     return { error: `several folders for ${keys.display(k)}: ${existing.join(", ")}` };
   if (existing.length) return { dir: `${specs}/${existing[0]}` };
   const name = keys.folder(k, slug ?? "");
   if (keys.folderKey(name) !== k)
-    return { error: `no folder for ${keys.display(k)} yet; pass --slug <kebab-case short name>` };
+    return {
+      error: `no folder for ${keys.display(k)} yet`,
+      fix: "--slug <kebab-case short name>",
+    };
   return { dir: `${specs}/${name}` };
 }
 
@@ -816,6 +1137,7 @@ function stageGate(dir, { requireReady = false } = {}) {
         tasks: readIf(join(dir, "tasks.md")),
         plan: readIf(join(dir, "plan.md")),
         known: knownRoutes(),
+        warn: (w) => console.warn(`spec-gate: warning: ${relative(ROOT, dir)}: ${w}`),
       })
     : [existsSync(dir) ? "spec.md is missing" : "no such spec folder"];
   const status = statusOf(readIf(spec));
@@ -879,6 +1201,11 @@ const git = (...a) => {
   }
 };
 const currentBranch = () => process.env.STACKRA_BRANCH || git("branch", "--show-current").trim();
+/** The branch's own spec folder's name under SPECS_DIR, if it has one. */
+const ownSpec = (branch = currentBranch()) => {
+  const dir = join(ROOT, SPECS_DIR);
+  return (existsSync(dir) ? readdirSync(dir) : []).find((f) => isOwnSpec(f, branch));
+};
 
 /** Spec keys that exist, and the `[<KEY>]` keys in any tasks.md (phase and task sub-issues). */
 function specIndex() {
@@ -907,7 +1234,7 @@ function roleGate(base) {
   const team = loadTeam(ROOT);
   if (!team) return [];
   const dir = join(ROOT, SPECS_DIR);
-  const own = (existsSync(dir) ? readdirSync(dir) : []).find((f) => isOwnSpec(f, currentBranch()));
+  const own = ownSpec();
   if (own === undefined) return [];
   const slug = git("remote", "get-url", "origin").match(
     /github\.com[:/]+([^/]+\/[^/\s]+?)(?:\.git)?\/?\s*$/,
@@ -921,7 +1248,7 @@ function laneGate(base) {
   const lane = checkLane({ commits: prCommits(base), branch, ...specIndex() });
   // ADR 0502: the diff's floor against the branch's own spec; none is trivial, a spec without a tier is exempt.
   const dir = join(ROOT, SPECS_DIR);
-  const own = (existsSync(dir) ? readdirSync(dir) : []).find((f) => isOwnSpec(f, branch));
+  const own = ownSpec(branch);
   const declared = own === undefined ? undefined : tierOf(readIf(join(dir, own, "spec.md")));
   if (own !== undefined && declared === undefined) return lane;
   const changes = git("diff", "--name-status", `${base}...HEAD`)
@@ -933,6 +1260,21 @@ function laneGate(base) {
     });
   const computed = computedTier(changes);
   return [...lane, ...checkTier({ declared, computed: computed.tier, reasons: computed.reasons })];
+}
+
+/** FR-30: checkScope for the branch's own spec against the PR's diff; its warnings go to stderr here. */
+function scopeGate(base) {
+  const dir = join(ROOT, SPECS_DIR);
+  const own = ownSpec();
+  if (own === undefined) return [];
+  const changed = git("diff", "--name-only", `${base}...HEAD`).split("\n").filter(Boolean);
+  const { problems, warnings } = checkScope(
+    readIf(join(dir, own, "spec.md")),
+    readIf(join(dir, own, "tasks.md")),
+    changed,
+  );
+  for (const w of warnings) console.warn(`spec-gate: warning: ${w}`);
+  return problems;
 }
 
 /** checkForeignStatus for every changed spec folder, against its spec.md at the merge base. */
@@ -990,9 +1332,13 @@ export function run([mode, ...args]) {
     } catch {
       // not a git checkout: no branch, so --key and --slug decide
     }
-    const { dir, error } = specDir({ branch: branch.trim(), key: opt("key"), slug: opt("slug") });
+    const { dir, error, fix } = specDir({
+      branch: branch.trim(),
+      key: opt("key"),
+      slug: opt("slug"),
+    });
     if (error) {
-      console.error(`spec-gate: ${error}`);
+      console.error(`spec-gate: ${error}${fix ? `; pass ${fix}` : ""}`);
       return 1;
     }
     // Every later `fflow spec` call resolves the spec folder from here (ADR 0510).
@@ -1009,6 +1355,13 @@ export function run([mode, ...args]) {
     // AC-048: a task with no role is the lead's to assign, never a guess.
     for (const t of roles?.unassigned ?? [])
       console.warn(`spec-gate: for the lead: ${t} has no role`);
+    const trees = checkTaskTrees(
+      readIf(join(dir, "spec.md")),
+      readIf(join(dir, "plan.md")),
+      readFileSync(arg, "utf8"),
+      basename(dir),
+    );
+    for (const w of trees.warnings) console.warn(`spec-gate: warning: ${w}`);
     return report([
       ...(roles?.problems ?? []),
       ...checkTasks(readFileSync(arg, "utf8"), {
@@ -1016,6 +1369,7 @@ export function run([mode, ...args]) {
         plan: readIf(join(dir, "plan.md")),
         known: knownRoutes(),
       }),
+      ...trees.problems,
     ])
       ? 1
       : 0;
@@ -1051,6 +1405,7 @@ export function run([mode, ...args]) {
       for (const b of bugs) failures += report(checkBug(basename(b), tests));
     }
     failures += report(laneGate(base));
+    failures += report(scopeGate(base));
     failures += report(loadTeam(ROOT)?.problems.map((p) => `team: ${p}`) ?? []);
     failures += report(roleGate(base));
     say(
@@ -1060,7 +1415,7 @@ export function run([mode, ...args]) {
     return failures ? 1 : 0;
   }
   console.error(
-    `usage: ${NAME} gate run [--ref <branch>] [--box <host>] [-- <runner flags>] | command | plan <spec.md> | check <dir> | tasks <tasks.md> | lane | branch | ci [--base=ref] | stage <spec.md> <${STAGES.join("|")}> | dir [--slug s] [--key <key>]`,
+    `usage: ${NAME} gate run [--ref <branch>] [--box <host>] [--shards <n>] [-- <runner flags>] | command | plan <spec.md> | check <dir> | tasks <tasks.md> | lane | branch | ci [--base=ref] | stage <spec.md> <${STAGES.join("|")}> | dir [--slug s] [--key <key>]`,
   );
   return 2;
 }

@@ -1,0 +1,59 @@
+# The stackra preset's git hooks (STA-1945 FR-7, AC-8), rendered into `lefthook.yml` with the repository's own
+# `lefthook` jobs from flow.config.json after these. Hooks are advisory; CI is the gate.
+# - oxfmt and oxlint run the mise-pinned binary, named in `mise exec` so mise fetches only that tool, and a commit
+#   needs no workspace install; where mise is missing the job is skipped and CI checks (STA-2039; no pnpm fallback:
+#   pnpm 12's exec installs). `fflow sync` keeps mise.toml's pins at the catalog's versions.
+# - --no-error-on-unmatched-pattern passes staged files that are all on oxfmt's ignore list (pnpm-lock.yaml
+#   alone); exit 2 is not swallowed, because oxfmt also exits 2 on a file it cannot parse.
+# - oxlint whose config extends @stackra/oxlint-config, and commitlint, need a workspace install; without one they
+#   are skipped with a note, and CI checks the commit (os#112).
+# - Every pre-push job passes on the registry's 401 alone (fflow adds the check); any other failure blocks.
+pre-commit:
+  parallel: true
+  jobs:
+    - name: oxfmt
+      glob:
+        - "*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"
+        - "*.{json,jsonc,json5,yaml,yml,toml,md,mdx}"
+        - "*.{css,scss,less,html,graphql,vue}"
+      run: |
+        sh -c 'command -v mise >/dev/null 2>&1 || { echo "oxfmt skipped: mise not installed; CI checks"; exit 0; };
+        exec mise exec npm:oxfmt -- oxfmt --check --no-error-on-unmatched-pattern "$@"' -- {staged_files}
+    - name: oxlint
+      glob: "*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"
+      # Rendered and third-party skills and reference docs are not the repository's code.
+      exclude:
+        - ".agents/skills/**"
+        - ".agents/reference/**"
+      run: |
+        if [ ! -d node_modules/@stackra/oxlint-config ] && grep -qs @stackra/oxlint-config .oxlintrc.json .oxlintrc.jsonc; then
+          echo "oxlint skipped: its config extends @stackra/oxlint-config and no workspace install has it; CI lints this commit"
+          exit 0
+        fi
+        sh -c 'command -v mise >/dev/null 2>&1 || { echo "oxlint skipped: mise not installed; CI lints"; exit 0; };
+        exec mise exec npm:oxlint -- oxlint "$@"' -- {staged_files}
+    - name: gitleaks
+      run: |
+        if command -v gitleaks >/dev/null 2>&1; then
+          gitleaks protect --staged --no-banner --redact
+        else
+          echo "gitleaks not installed (mise install); CI still scans"
+        fi
+commit-msg:
+  jobs:
+    # @stackra/commitlint-config exports its src under this condition; a commit builds no dist (ADR 0025).
+    - name: commitlint
+      run: |
+        if [ -x node_modules/.bin/commitlint ]; then
+          NODE_OPTIONS=--conditions=@stackra/source node_modules/.bin/commitlint --edit {1}
+        else
+          echo "commitlint not installed (pnpm install); the Quality Gate checks the pull request's commits"
+        fi
+pre-push:
+  jobs:
+    # Warns on a branch without a tracker key; never blocks (ADR 0065 D5).
+    - name: spec-branch
+      run: |
+        if [ -f node_modules/@figentra-oss/flow/bin/fflow.mjs ]; then
+          node node_modules/@figentra-oss/flow/bin/fflow.mjs gate branch
+        fi

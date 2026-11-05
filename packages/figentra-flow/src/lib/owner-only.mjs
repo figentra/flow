@@ -2,15 +2,17 @@
  * Figentra Flow file contract:
  * Purpose: what only the owner lands (owner decision 2026-11-01, STA-1856): every workflow and action, what a deploy,
  *   promote or release runs, secrets and the secret guards, the catalog, the Flow configuration (it names the trusted
- *   Apps), repo settings and branch protection, and billing or legal files, matched case-insensitively; plus a
- *   repository's own `approve.ownerOnly` globs. `packageFindings` adds what a path cannot show: the root package.json's
- *   scripts changing, and a dependency moved off its `catalog:` entry. `land`, the approval check and the generated
- *   CODEOWNERS all read this one list.
+ *   Apps), the repository's overrides (STA-1945 FR-4) and a preset's `third-party.yml` (its `ownerEntry` admits a
+ *   licence, STA-1945 FR-8), repo settings and branch protection, and billing or legal files, matched
+ *   case-insensitively; plus a repository's own `approve.ownerOnly` globs. `packageFindings` adds what a path cannot
+ *   show: the root package.json's scripts changing, and a dependency moved off its `catalog:` entry. `land`, the
+ *   approval check and the generated CODEOWNERS all read this one list.
  * Boundary: pure: paths and texts in, findings out.
  * Runtime: node
  * Governing contract: STA-1856 FR-1 (the security review of 2026-11-01).
  * Secrets: none.
  */
+import { OVERRIDES } from "./flow-dir.mjs";
 import { CONFIG_FILE, LEGACY_CONFIG_FILE, NAME } from "./product.mjs";
 import { globRe } from "./roles.mjs";
 
@@ -38,6 +40,10 @@ export const OWNER_ONLY = [
   "**/.npmrc",
   CONFIG_FILE,
   LEGACY_CONFIG_FILE,
+  // A repository's overrides reshape what `sync` renders, the mandatory policies among it (STA-1945 FR-4).
+  `${OVERRIDES}/**`,
+  // A preset's third-party skills: its `ownerEntry` admits a licence outside the allowed ones (STA-1945 FR-8).
+  "**/third-party.yml",
   // Secrets and the guards that keep them.
   "**/.infisical.*",
   ".gitleaks.toml",
@@ -49,6 +55,7 @@ export const OWNER_ONLY = [
   "**/*.p12",
   ".agents/hooks/**",
   ".agents/rules/secrets.md",
+  ".claude/rules/secrets.md",
   ".claude/settings.json",
   ".claude/settings.local.json",
   "opencode.jsonc",

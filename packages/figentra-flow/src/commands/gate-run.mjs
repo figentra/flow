@@ -6,12 +6,21 @@
  *   configuration, or `--box <host>` for one run). An `ssh` or `local` box posts `fflow/gate` after the
  *   check; for a `command` runner (the testbed) the box returns only the check's exit code and this side posts, inside
  *   `gate run` only (the owner's option C1 of 2026-11-01; the hook guard refuses a direct poster call).
- * Boundary: runs no check on the caller's machine (FR-9). Refuses a dirty tree, a detached head without `--ref`, a
- *   head that is not the remote branch tip, and a missing runner, before any box is claimed; a runner program that
+ *   `--shards <n>` (FR-15, a `command` runner only) fans the check out: the workspace's packages dealt into at most
+ *   n groups, one `run … --json` call per group with `gate.shard`'s `{filters}`, all at once, and one `fflow/gate`
+ *   status, green only when every shard exited 0 (AC-41), red when one failed; a shard with still no slot or healthy
+ *   box (73, 75) and no failed shard posts nothing, since that is never a test failure. The spec gate runs on the first
+ *   shard only. A run that reached a verdict ends the gate stage in Flow's record on the task's branch (`recordGate`,
+ *   STA-1945 FR-14): the verdict on the sha, `gate` done or failed, written but not committed, since a commit would
+ *   move the head off the gated sha; the next commit (the review's, a session's stop) carries it.
+ * Boundary: runs no check on the caller's machine (FR-9). Refuses a dirty tree (Flow's record aside: it is never part of
+ *   the gated commit), a detached head without `--ref`, a
+ *   head that is not the remote branch tip, a missing runner and, with `--shards`, a workspace pattern or package
+ *   folder it cannot read, before any box is claimed; a runner program that
  *   is not installed is refused after. Removes its temporary
  *   folder when the run ends.
  * Runtime: node
- * Governing contract: Stackra ADR 0503 (decision 4), ADR 0484 (the testbed); STA-1729 phase 2.
+ * Governing contract: Stackra ADR 0503 (decision 4), ADR 0484 (the testbed); STA-1729 phase 2; STA-1945 (FR-14).
  * Secrets: the gate App's key is read through the secrets port's `gate` scope (`infisical run`, `/ci/gate`) by the
  *   poster process only: on the box for `ssh` and `local`, on this side for a `command` runner. It never reaches a
  *   testbed box, and this process never reads it.
@@ -26,8 +35,21 @@ import { secretsPort } from "../adapters/secrets.mjs";
 import { artifactProblems } from "../lib/artifacts.mjs";
 import { say } from "../lib/cli.mjs";
 import { loadConfig } from "../lib/config.mjs";
-import { defaultBranch, git, isClean, remoteTip } from "../lib/git.mjs";
+import { schemeFor } from "../adapters/tracker/index.mjs";
+import { defaultBranch, git, remoteTip } from "../lib/git.mjs";
+import { endStage, RECORD_DIR } from "../lib/record.mjs";
 import {
+  combine,
+  MAX_SHARDS,
+  NO_BOX,
+  NO_SLOT,
+  reportOf,
+  shard,
+  shardCommand,
+  workspacePackages,
+} from "../lib/shards.mjs";
+import {
+  CONFIG_FILE,
   ENV_PREFIX,
   GATE_DIR,
   GATE_MARKER,
@@ -40,11 +62,17 @@ import {
 const POSTER = new URL("../lib/gate-post.mjs", import.meta.url);
 
 /**
- * The repository's check command: the configuration's `gate.check`, else `pnpm verify`, followed by the spec gate
- * where this package is installed.
+ * The repository's check command: `check` (a shard's), else the configuration's `gate.check`, else `pnpm verify`,
+ * followed by the spec gate where this package is installed, unless `spec` is false (a shard after the first).
  * @param {string} dir
+ * @param {string} [check]
+ * @param {boolean} [spec]
  */
-export function checkCommand(dir) {
+export function checkCommand(
+  dir,
+  check = loadConfig(dir).config.gate?.check ?? "pnpm verify",
+  spec = true,
+) {
   /** @type {any} */
   let pkg = {};
   try {
@@ -52,8 +80,7 @@ export function checkCommand(dir) {
   } catch {
     // no package.json: the default command, which will fail loudly on the box
   }
-  const check = loadConfig(dir).config.gate?.check ?? "pnpm verify";
-  const installed = Boolean(pkg.devDependencies?.[PACKAGE] ?? pkg.dependencies?.[PACKAGE]);
+  const installed = spec && Boolean(pkg.devDependencies?.[PACKAGE] ?? pkg.dependencies?.[PACKAGE]);
   return `pnpm install --frozen-lockfile && ${check}${installed ? ` && pnpm exec ${NAME} gate ci` : ""}`;
 }
 
@@ -88,8 +115,33 @@ function postHere(dir, wrap) {
 export const slugOf = (url) => url.match(/github\.com[:/]+([^/]+\/[^/]+?)(?:\.git)?\/?$/)?.[1];
 
 /**
- * Runs the gate for the head of `cwd`.
- * @param {{ cwd: string, ref?: string, box?: string, flags?: string[],
+ * Runs every shard at once (the testbed picks region, box and slot, and a call over its cap waits inside `run`), each
+ * with `--json` for the testbed's one result line; a shard that found no free slot or healthy box is tried once more.
+ * @param {NonNullable<import("../adapters/runner/index.mjs").Runner["start"]>} start
+ * @param {string[][]} groups
+ * @param {import("../adapters/runner/index.mjs").Job} job
+ * @param {(group: string[], i: number) => string} check
+ * @returns {Promise<import("../lib/shards.mjs").ShardResult[]>}
+ */
+export function runShards(start, groups, job, check) {
+  return Promise.all(
+    groups.map(async (packages, i) => {
+      const one = {
+        ...job,
+        label: `${job.label} shard ${i + 1}/${groups.length}`,
+        command: check(packages, i),
+        flags: [...job.flags, "--json"],
+      };
+      let r = await start(one);
+      if (r.code === NO_SLOT || r.code === NO_BOX) r = await start(one);
+      return { packages, code: r.code, report: reportOf(r.out) };
+    }),
+  );
+}
+
+/**
+ * Runs the gate for the head of `cwd`; with `shards`, the check fans out by package shard (FR-15).
+ * @param {{ cwd: string, ref?: string, box?: string, flags?: string[], shards?: number,
  *           runner?: import("../adapters/runner/index.mjs").Runner,
  *           tip?: (root: string, branch: string) => string | undefined, now?: () => Date,
  *           post?: (dir: string) => number }} options
@@ -100,7 +152,17 @@ export async function gateRun(options) {
   const top = git(cwd, ["rev-parse", "--show-toplevel"]);
   if (!top.ok) return { code: 2, problem: `${cwd} is not in a git repository` };
   const root = top.out;
-  if (!isClean(root))
+  // Flow's record is bookkeeping a gate run itself leaves uncommitted (`recordGate`); the clone takes only the head.
+  // Untracked files are listed by name, so the record inside an untracked `.flow/` is not reported as the folder.
+  const dirty = git(root, [
+    "status",
+    "--porcelain",
+    "--untracked-files=all",
+    "--",
+    ".",
+    `:(exclude)${RECORD_DIR}`,
+  ]);
+  if (!dirty.ok || dirty.out)
     return {
       code: 2,
       problem: "the tree has uncommitted or untracked changes; commit and push first",
@@ -131,6 +193,27 @@ export async function gateRun(options) {
   const artifacts = artifactProblems(root, `origin/${base}`, sha, loaded.config.artifacts);
   if (artifacts.length)
     return { code: 2, problem: `the change carries artifacts:\n  ${artifacts.join("\n  ")}` };
+  const template = loaded.config.gate?.shard ?? "";
+  /** @type {string[][] | undefined} */
+  let groups;
+  if (options.shards !== undefined) {
+    if (runner.posts !== "caller" || !runner.start)
+      return {
+        code: 2,
+        problem: `--shards needs a command runner (the testbed); ${runner.kind} is not one`,
+      };
+    if (!template.includes("{filters}"))
+      return {
+        code: 2,
+        problem: `--shards needs "gate.shard" in ${CONFIG_FILE}: the check command, with {filters} for the shard's packages`,
+      };
+    // No workspace file reads as no packages, so `"problem" in` narrows to one of the two shapes.
+    const workspace = workspacePackages(root) ?? { packages: [] };
+    if ("problem" in workspace) return { code: 2, problem: `--shards: ${workspace.problem}` };
+    if (!workspace.packages.length)
+      return { code: 2, problem: "--shards needs pnpm-workspace.yaml naming the packages" };
+    groups = shard(workspace.packages, Math.min(options.shards, MAX_SHARDS));
+  }
 
   const dir = mkdtempSync(join(tmpdir(), `${NAME}-gate-`));
   try {
@@ -162,7 +245,7 @@ export async function gateRun(options) {
     // A box-side poster runs under the secrets port's `gate` scope unless the runner brings its own.
     const wrap = runner.wraps ? (/** @type {string} */ c) => secrets.wrap(c, "gate") : undefined;
     const command = callerPosts ? checkCommand(dir) : boxCommand(checkCommand(dir), { wrap });
-    const code = runner.run({
+    const each = {
       dir,
       command,
       label: `${NAME} gate ${repository}@${sha.slice(0, 12)}`,
@@ -171,7 +254,20 @@ export async function gateRun(options) {
       branch,
       repository,
       base,
-    });
+    };
+    let code;
+    if (groups && runner.start) {
+      // AC-41: one status for every shard, green only when each passed; it goes to the poster as the check's log.
+      // The spec gate reads the whole repository, so only the first shard runs it.
+      const results = await runShards(runner.start, groups, each, (g, i) =>
+        checkCommand(dir, shardCommand(template, g), i === 0),
+      );
+      const verdict = combine(results);
+      for (const line of verdict.lines) console.error(`${NAME} gate run: ${line}`);
+      code = results.some((r) => r.code === 127) ? 127 : verdict.code;
+      if (code !== 127 && verdict.infra) return { code, problem: verdict.infra, sha };
+      writeFileSync(join(dir, GATE_DIR, "log.txt"), `${verdict.lines.join("\n")}\n`);
+    } else code = runner.run(each);
     if (code === 127)
       return {
         code: 2,
@@ -195,7 +291,28 @@ export async function gateRun(options) {
   }
 }
 
-/** `fflow gate run [--ref <branch>] [--box <ssh host>] [-- <runner flags>]`. */
+/**
+ * Records a gate verdict on `sha` (exit `code`) in the record of the issue `root`'s branch names (FR-14): the gate
+ * stage done on green, failed otherwise. Written only, never committed: a commit would move the head off `sha`.
+ * @param {string} root
+ * @param {string} sha
+ * @param {number} code
+ * @returns {string | undefined} why the record was not written
+ */
+export function recordGate(root, sha, code) {
+  const key = schemeFor(root).keys(git(root, ["branch", "--show-current"]).out)[0];
+  if (!key) return undefined;
+  return endStage(root, key, "gate", {
+    state: code === 0 ? "done" : "failed",
+    change: (r) => ({
+      ...r,
+      gate: [...r.gate, { sha, state: code === 0 ? "success" : "failure" }],
+    }),
+    commit: false,
+  });
+}
+
+/** `fflow gate run [--ref <branch>] [--box <ssh host>] [--shards <n>] [-- <runner flags>]`. */
 export async function run(/** @type {string[]} */ all) {
   // Everything after `--` is the runner's own (a command runner's `{flags}`, e.g. the testbed's `--no-wait`).
   const cut = all.indexOf("--");
@@ -203,7 +320,12 @@ export async function run(/** @type {string[]} */ all) {
   const flags = cut === -1 ? [] : all.slice(cut + 1);
   const opt = (/** @type {string} */ name) =>
     args.includes(`--${name}`) ? args[args.indexOf(`--${name}`) + 1] : undefined;
-  /** @type {{ code: number, problem?: string }} */
+  const shards = args.includes("--shards") ? Number(opt("shards")) : undefined;
+  if (shards !== undefined && !(Number.isInteger(shards) && shards >= 1 && shards <= MAX_SHARDS)) {
+    console.error(`${NAME} gate run: --shards takes 1 to ${MAX_SHARDS}`);
+    return 2;
+  }
+  /** @type {{ code: number, problem?: string, sha?: string }} */
   let result;
   say("checking", `${NAME} gate run: checking ${opt("ref") ?? "HEAD"}`);
   try {
@@ -212,12 +334,21 @@ export async function run(/** @type {string[]} */ all) {
       ref: opt("ref"),
       box: opt("box"),
       flags,
+      shards,
     });
   } catch (error) {
     // a configuration the secrets or runner port refuses
     result = { code: 2, problem: /** @type {Error} */ (error).message };
   }
   if (result.problem) console.error(`${NAME} gate run: ${result.problem}`);
+  // A verdict on the checkout's own branch (not another `--ref`) ends the gate stage.
+  const root = git(process.cwd(), ["rev-parse", "--show-toplevel"]).out;
+  const here = root && git(root, ["branch", "--show-current"]).out;
+  if (result.sha && !result.problem && here && (opt("ref") ?? here) === here) {
+    const unrecorded = recordGate(root, result.sha, result.code);
+    if (unrecorded)
+      console.error(`${NAME} gate run: warning: the record was not saved (${unrecorded})`);
+  }
   say(result.code ? "blocked" : "approved", `${NAME} gate run: ${result.code ? "red" : "green"}`);
   return result.code;
 }

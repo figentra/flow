@@ -17,6 +17,17 @@
       "type": "string",
       "minLength": 1
     },
+    "profile": {
+      "type": "string",
+      "minLength": 1
+    },
+    "harnesses": {
+      "type": "array",
+      "items": {
+        "enum": ["claude-code", "opencode", "copilot", "cursor", "codex"]
+      },
+      "minItems": 1
+    },
     "team": {
       "type": "string",
       "minLength": 1
@@ -295,6 +306,21 @@
             "envFile": {
               "type": "string",
               "minLength": 1
+            },
+            "oidc": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["audience"],
+              "properties": {
+                "identityId": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                },
+                "audience": {
+                  "type": "string",
+                  "pattern": "^[\\w.-]+$"
+                }
+              }
             }
           }
         }
@@ -316,6 +342,14 @@
             "login": {
               "type": "string",
               "minLength": 1
+            },
+            "aliases": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
             }
           }
         },
@@ -343,6 +377,10 @@
         "check": {
           "type": "string",
           "minLength": 1
+        },
+        "shard": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },
@@ -362,6 +400,20 @@
           "additionalProperties": {
             "type": "string",
             "minLength": 1
+          }
+        },
+        "workflows": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[\\w .()-]+$"
+          }
+        },
+        "requesters": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[\\w-]+$"
           }
         },
         "tolerate": {
@@ -476,6 +528,31 @@
           }
         },
         "label": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "mcp": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "lefthook": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        }
+      }
+    },
+    "agentsMd": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "facts": {
           "type": "string",
           "minLength": 1
         }

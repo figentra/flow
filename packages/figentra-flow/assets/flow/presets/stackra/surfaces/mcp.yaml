@@ -1,0 +1,46 @@
+# The stackra preset's MCP servers (STA-1945 FR-7), rendered into `.mcp.yaml` with the repository's own `mcp`
+# servers from flow.config.json. Only servers that need no credential and no repository script live here: remote
+# (http) servers authenticate with OAuth on first use. A server that needs a token is the repository's own (its
+# launcher injects the secret), and its `env` names the secret (`$NAME`), never a value.
+# An `npx -y` server is pinned to an exact version, never `@latest` (STA-2097): bump it like any dependency.
+mcpServers:
+  heroui-react:
+    command: npx
+    args: [-y, "@heroui/react-mcp@1.1.4"]
+  heroui-native:
+    command: npx
+    args: [-y, "@heroui/native-mcp@1.1.4"]
+  uniwind:
+    type: http
+    url: https://docs.uniwind.dev/mcp
+  expo:
+    type: http
+    url: https://mcp.expo.dev/mcp
+  figma:
+    type: http
+    url: https://mcp.figma.com/mcp
+  linear:
+    type: http
+    url: https://mcp.linear.app/mcp
+  resend-docs:
+    type: http
+    url: https://resend.com/docs/mcp
+  encore-cloud:
+    type: http
+    url: https://api.encore.dev/mcp
+  cloudflare-docs:
+    type: http
+    url: https://docs.mcp.cloudflare.com/mcp
+  cloudflare-api:
+    type: http
+    url: https://mcp.cloudflare.com/mcp
+  # Documentation only, not an operations server.
+  aws-knowledge:
+    type: http
+    url: https://knowledge-mcp.global.api.aws
+  posthog:
+    type: http
+    url: https://mcp.posthog.com/mcp?readonly=true
+  playwright:
+    command: npx
+    args: [-y, "@playwright/mcp@0.0.84"]

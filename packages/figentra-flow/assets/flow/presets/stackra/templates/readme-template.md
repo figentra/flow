@@ -57,7 +57,7 @@ Every branch and pull request carries a Linear `STA-` key.
 
 | Step                          | Command                                                       |
 | ----------------------------- | ------------------------------------------------------------- |
-| Spec the change               | `/flow-specify`, `/flow-clarify`, `/flow-plan`, `/flow-tasks` |
+| Spec the change               | `/flow-specify`, `/flow-clarify`, `/flow-plan`                |
 | Start a worktree for an issue | `fflow start STA-<n>`                                 |
 | Run the gate on the branch    | `fflow gate run`                                      |
 | Land the pull request         | `fflow land`                                          |

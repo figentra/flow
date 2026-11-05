@@ -243,13 +243,16 @@ export function linear(c, { dry = false, log = console.log } = {}) {
       if (!c.app) return;
       await api.update(issue, { delegateId: await api.viewerId() }, "delegate to Stackra Agent");
     },
-    /** The comment's own id lets a retry ask whether the failed attempt landed, so it never posts twice. */
+    /**
+     * The comment's own id lets a retry ask whether the failed attempt landed, so it never posts twice. Resolves to
+     * its link; undefined when dry, or when a retry found the first attempt had landed.
+     */
     async comment(issue, body) {
       const id = randomUUID();
-      await write(`comment on ${issue.identifier}: ${body.split("\n")[0]}`, () =>
+      const done = await write(`comment on ${issue.identifier}: ${body.split("\n")[0]}`, () =>
         retryUnlessLanded(
           () =>
-            gql(`mutation($i:CommentCreateInput!){commentCreate(input:$i){success}}`, {
+            gql(`mutation($i:CommentCreateInput!){commentCreate(input:$i){success comment{url}}}`, {
               i: { id, issueId: issue.id, body },
             }),
           // Re-send only on Linear's explicit not-found; any other read error leaves the outcome unknown.
@@ -260,6 +263,15 @@ export function linear(c, { dry = false, log = console.log } = {}) {
             }),
         ),
       );
+      return done?.commentCreate?.comment?.url;
+    },
+    /** The issue's comments (the newest 100), each `{ body, url, createdAt }`. */
+    async comments(issue) {
+      const d = await gql(
+        `query($id:String!){issue(id:$id){comments(first:100){nodes{body url createdAt}}}}`,
+        { id: issue.id },
+      );
+      return d.issue?.comments?.nodes ?? [];
     },
     async link(issue, url, title) {
       await write(`attach ${url} to ${issue.identifier}`, () =>

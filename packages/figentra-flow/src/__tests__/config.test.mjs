@@ -3,10 +3,11 @@
  * Purpose: hold the configuration to AC-035, AC-036 and AC-042: the shipped schema file equals `SCHEMA`; Figentra's
  *   configuration and a minimal outside one are valid; an unknown key, a wrong kind, a wrong type and a missing field
  *   are refused by their path; a missing port is refused naming its key; the older `package.json` keys still work with
- *   a warning; and the product's name-bearing literals live only in `product.mjs`.
+ *   a warning; the gate App's `aliases` (a rename, ADR 0523) add logins and the bare login keeps its string form;
+ *   the product's name-bearing literals live only in `product.mjs`; and `profile` is a name (STA-1945).
  * Boundary: temporary folders and the package's own source files; nothing runs.
  * Runtime: node
- * Governing contract: ADR 0022; STA-1729 phase A (A1).
+ * Governing contract: ADR 0022; STA-1729 phase A (A1); STA-1945 (FR-6).
  */
 // @covers sta-1729:FR-11 sta-1729:AC-035 sta-1729:AC-036 sta-1729:AC-042 sta-1729:P-011 sta-1945:FR-22
 import { test } from "node:test";
@@ -16,7 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { ConfigError, loadConfig, need, SCHEMA, validate } from "../lib/config.mjs";
+import { ConfigError, gateLogins, loadConfig, need, SCHEMA, validate } from "../lib/config.mjs";
 import { CONFIG_FILE, ENV_PREFIX, GATE_DIR, GATE_MARKER, STATUS_CONTEXT } from "../lib/product.mjs";
 
 const PACKAGE_DIR = fileURLToPath(new URL("../..", import.meta.url));
@@ -115,6 +116,71 @@ test("schema: approve.tolerate takes check names, but never Baseline or the gate
   );
   assert.match(problems("lint"), /^approve\.tolerate: must be a array$/m);
   assert.match(problems([""]), /^approve\.tolerate\[0\]: must not be empty$/m);
+});
+
+// @covers sta-1945:FR-6 sta-1945:AC-6 sta-1945:P-009
+test("schema: the config names its profile by a non-empty string", () => {
+  assert.deepEqual(validate(SCHEMA, { ...FIGENTRA, profile: "framework" }), []);
+  assert.deepEqual(validate(SCHEMA, { ...FIGENTRA, profile: "" }), ["profile: must not be empty"]);
+  assert.deepEqual(validate(SCHEMA, { ...FIGENTRA, profile: ["framework"] }), [
+    "profile: must be a string",
+  ]);
+});
+
+test("config: a renamed gate App's aliases add logins; without them the login stays a string", () => {
+  const renamed = {
+    ...FIGENTRA,
+    apps: { ...FIGENTRA.apps, gate: { ...FIGENTRA.apps.gate, aliases: ["figentra-flow[bot]"] } },
+  };
+  assert.deepEqual(validate(SCHEMA, renamed), []);
+  assert.deepEqual(gateLogins(renamed.apps), ["figentra-gate[bot]", "figentra-flow[bot]"]);
+  assert.equal(gateLogins(FIGENTRA.apps), "figentra-gate[bot]");
+  assert.equal(gateLogins(undefined), undefined);
+  // Unvalidated config: a bare string or an empty alias widens nothing.
+  const raw = (/** @type {any} */ aliases) => gateLogins({ gate: { login: "a[bot]", aliases } });
+  assert.equal(raw("figentra-flow[bot]"), "a[bot]");
+  assert.deepEqual(raw(["", "b[bot]"]), ["a[bot]", "b[bot]"]);
+  const bad = (/** @type {unknown} */ aliases) =>
+    validate(SCHEMA, { version: 1, apps: { gate: { login: "a[bot]", aliases } } }).join("\n");
+  assert.match(bad([]), /^apps\.gate\.aliases: must have at least 1 item/m);
+  assert.match(bad([""]), /^apps\.gate\.aliases\[0\]: must not be empty$/m);
+  assert.match(bad("b[bot]"), /^apps\.gate\.aliases: must be a array$/m);
+});
+
+test("schema: secrets.oidc names an audience and, optionally, the identity's uuid, nothing else", () => {
+  const oidc = (/** @type {unknown} */ value) =>
+    validate(SCHEMA, { ...FIGENTRA, secrets: { ...FIGENTRA.secrets, oidc: value } }).join("\n");
+  assert.equal(
+    oidc({ identityId: "0f4b2c1e-9a8d-4c3b-8e7f-6a5b4c3d2e1f", audience: "fflow-ci" }),
+    "",
+  );
+  // K7: the id may come from the Actions variable instead, so an audience alone is valid.
+  assert.equal(oidc({ audience: "fflow-ci" }), "");
+  assert.match(
+    oidc({ identityId: "0f4b2c1e-9a8d-4c3b-8e7f-6a5b4c3d2e1f" }),
+    /^secrets\.oidc\.audience: is required$/m,
+  );
+  assert.match(
+    oidc({ identityId: "not-a-uuid", audience: "fflow-ci" }),
+    /^secrets\.oidc\.identityId: must match/m,
+  );
+  assert.match(
+    oidc({ identityId: "0f4b2c1e-9a8d-4c3b-8e7f-6a5b4c3d2e1f", audience: "a b" }),
+    /^secrets\.oidc\.audience: must match/m,
+  );
+  assert.match(
+    oidc({
+      identityId: "0f4b2c1e-9a8d-4c3b-8e7f-6a5b4c3d2e1f",
+      audience: "fflow-ci",
+      subject: "x",
+    }),
+    /^secrets\.oidc\.subject: is not a known key$/m,
+  );
+  assert.match(oidc(["fflow-ci"]), /^secrets\.oidc: must be a object$/m);
+  assert.match(
+    validate(SCHEMA, { ...FIGENTRA, secrets: { kind: "env", oidc: {} } }).join("\n"),
+    /^secrets\.oidc: is not a known key$/m,
+  );
 });
 
 test("config: a file is loaded and validated; a missing port is refused naming its key", (t) => {

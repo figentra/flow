@@ -8,6 +8,8 @@
  *     no value; it carries `approve.tolerate` (empty by default) and refuses one naming `Baseline` or `fflow/gate`;
  *   - `sync` renders each preset's stewards (neutral: git, ci, tracker; stackra: git, ci, linear), CODEOWNERS only
  *     with an owner, and refuses a secret name that is not one;
+ *   - the gate status's trusted source is the gate App's login as a string, or with its aliases (a rename, ADR 0523)
+ *     the list of logins;
  *   - a repository override wins.
  * Boundary: temporary folders; no network, no GitHub.
  * Runtime: node
@@ -40,6 +42,7 @@ const OWNER = [
   "pnpm-workspace.yaml",
   "packages/x/.npmrc",
   "flow.config.json",
+  "presets/ours/third-party.yml",
   "sub/.infisical.json",
   ".agents/hooks/_rules.mjs",
   ".claude/settings.json",
@@ -195,10 +198,14 @@ test("sync renders each preset's stewards, the workflow with the approver's name
       JSON.stringify({ version: 1, preset, ...(owner ? { apps: { owner } } : {}) }),
     );
     const { files } = sync(root, { direct: true, log: () => {} });
-    assert.deepEqual(
-      files.filter((f) => f.startsWith(".claude/agents/")),
-      ids.map((id) => `.claude/agents/${id}.md`),
-    );
+    const agents = files.filter((f) => f.startsWith(".claude/agents/"));
+    // The stackra preset also carries core's role agents (STA-1945, preset-content.test.mjs); neutral only its stewards.
+    if (preset === "neutral")
+      assert.deepEqual(
+        agents,
+        ids.map((id) => `.claude/agents/${id}.md`),
+      );
+    for (const id of ids) assert.ok(agents.includes(`.claude/agents/${id}.md`), id);
     for (const id of ids)
       assert.match(
         readFileSync(join(root, `.claude/agents/${id}.md`), "utf8"),
@@ -231,6 +238,28 @@ test("sync renders the config's approve.tolerate into the workflow", (t) => {
     readFileSync(join(root, ".github/workflows/fflow-approve.yml"), "utf8"),
     /^ {10}TOLERATE: '\["lint"\]'$/m,
   );
+});
+
+test("sync trusts the gate status from the gate App's login, or from each of its logins after a rename", (t) => {
+  /** @type {[object, string][]} the gate block and the TRUSTED value it renders */
+  const cases = [
+    [{ login: "figentra-gate[bot]" }, `'{"fflow/gate":"figentra-gate[bot]"}'`],
+    [
+      { login: "figentra-gate[bot]", aliases: ["figentra-flow[bot]"] },
+      `'{"fflow/gate":["figentra-gate[bot]","figentra-flow[bot]"]}'`,
+    ],
+  ];
+  for (const [gate, trusted] of cases) {
+    const root = mkdtempSync(join(tmpdir(), "flow-trusted-"));
+    t.after(() => rmSync(root, { recursive: true }));
+    writeFileSync(
+      join(root, "flow.config.json"),
+      JSON.stringify({ version: 1, preset: "neutral", apps: { gate, owner: "figentra-usr" } }),
+    );
+    sync(root, { direct: true, log: () => {} });
+    const text = readFileSync(join(root, ".github/workflows/fflow-approve.yml"), "utf8");
+    assert.ok(text.includes(`          TRUSTED: ${trusted}\n`), JSON.stringify(gate));
+  }
 });
 
 test("sync refuses a preset whose approval secret name is not a secret name", (t) => {

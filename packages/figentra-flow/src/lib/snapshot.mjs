@@ -4,8 +4,10 @@
  *   repository of the workspace, its specs (status, tier, session, gate problems), its worktrees (branch, key, head,
  *   dirty, idle, in use, ahead and behind), its open PRs (gate on the head, the counted AI review, stacked) and its
  *   sessions (a spec's `**Session**`, with the worktree carrying the spec's key and that head's gate), plus a warning
- *   when more sessions build than the cap allows. With a roster, each spec's role and owner stops, and `byRole`: the
- *   specs grouped by role with their sessions and counts (AC-050).
+ *   when more sessions build than the cap allows. With `live`, the running agent sessions by title, state, worktree and
+ *   stage (STA-1945 FR-20), and a warning for each title off ADR 0001's pattern or at odds with its record. With a
+ *   roster, each spec's role and owner stops, and `byRole`: the specs grouped by role with their sessions and counts
+ *   (AC-050).
  * Boundary: reads git, the spec files and GitHub (through the credentials port; never with `offline`); stores nothing,
  *   writes nothing. A repository that is missing or unreadable, and a GitHub failure, are reported in place.
  * Runtime: node
@@ -26,11 +28,13 @@ import {
   statusOf,
   tierOf,
 } from "../commands/gate.mjs";
-import { loadConfig } from "./config.mjs";
+import { gateLogins, loadConfig } from "./config.mjs";
 import { defaultBranch, git, idleHours, inUse, isClean, worktrees } from "./git.mjs";
 import { STATUS_CONTEXT } from "./product.mjs";
 import { aiReview } from "./review.mjs";
 import { ownerStopsOf, roleOf } from "./roles.mjs";
+import { liveSessions } from "./sessions.mjs";
+import { parseTasks } from "./spec-parse.mjs";
 import { loadTeam } from "./team.mjs";
 
 /** The snapshot's schema; a breaking change raises it. */
@@ -61,6 +65,7 @@ function specsIn(checkout, { keys, rules, team }) {
     .map((folder) => {
       const dir = join(base, folder);
       const text = readIf(join(dir, "spec.md"));
+      const tasks = readIf(join(dir, "tasks.md"));
       return {
         key: keys.folderKey(folder) ?? null,
         folder,
@@ -71,9 +76,16 @@ function specsIn(checkout, { keys, rules, team }) {
         ownerStops: ownerStopsOf(text) ?? null,
         // An owner-kept spec with a stage approval missing waits on the owner.
         ownerWaiting: Boolean(ownerStopsOf(text)?.length) && checkApproval(text).length > 0,
+        // FR-25: optional tasks a Done spec left open
+        skipped:
+          statusOf(text) === "done"
+            ? parseTasks(tasks)
+                .filter((t) => t.optional && !t.done && !t.struck)
+                .map((t) => t.id)
+            : [],
         problems: checkStage(folder, text, {
           files: readdirSync(dir),
-          tasks: readIf(join(dir, "tasks.md")),
+          tasks,
           plan: readIf(join(dir, "plan.md")),
           keys,
           rules,
@@ -101,7 +113,7 @@ function aheadBehind(path, branch) {
  * @param {import("./github.mjs").Api} api
  * @param {string} slug
  * @param {string} base the default branch
- * @param {{ reviewer?: string, owner?: string, gateApp?: string }} apps
+ * @param {{ reviewer?: string, owner?: string, gateApp?: string | string[] }} apps
  */
 function openPrs(api, slug, base, apps) {
   const listed = api("GET", `/repos/${slug}/pulls?state=open&per_page=100`);
@@ -136,7 +148,12 @@ function openPrs(api, slug, base, apps) {
         ? {
             state: status.state,
             creator: status.creator?.login ?? null,
-            trusted: apps.gateApp ? status.creator?.login === apps.gateApp : null,
+            trusted: apps.gateApp
+              ? [apps.gateApp]
+                  .flat()
+                  .filter(Boolean)
+                  .includes(status.creator?.login ?? "")
+              : null,
           }
         : null,
       review: review.verdict,
@@ -148,9 +165,10 @@ function openPrs(api, slug, base, apps) {
 /**
  * The snapshot of one repository.
  * @param {{ path: string, github?: string }} repo
- * @param {{ api?: (root: string) => import("./github.mjs").Api, offline?: boolean, now?: number, busy?: string[] }} options
+ * @param {{ api?: (root: string) => import("./github.mjs").Api, offline?: boolean, now?: number, busy?: string[],
+ *           live?: import("./sessions.mjs").SessionDeps }} options `live` lists the running agent sessions (FR-20)
  */
-export function repoSnapshot(repo, { api, offline = false, now = Date.now(), busy } = {}) {
+export function repoSnapshot(repo, { api, offline = false, now = Date.now(), busy, live } = {}) {
   const root = repo.path;
   if (!existsSync(root)) return { path: root, error: "missing" };
   const top = git(root, ["rev-parse", "--show-toplevel"]);
@@ -202,7 +220,7 @@ export function repoSnapshot(repo, { api, offline = false, now = Date.now(), bus
       prs = openPrs(api(root), slug, base, {
         reviewer: apps.review?.slug,
         owner: apps.owner,
-        gateApp: apps.gate?.login,
+        gateApp: gateLogins(apps),
       });
     } catch (error) {
       prsProblem = `unknown (${/** @type {Error} */ (error).message})`;
@@ -217,6 +235,7 @@ export function repoSnapshot(repo, { api, offline = false, now = Date.now(), bus
     prs,
     prsProblem,
     sessions,
+    live: live ? liveSessions(root, live) : undefined,
     // A plain property, not a conditional spread: it keeps this and the error return one normalized union type.
     byRole: team ? rolesOf([...specs.values()], trees, prs, team) : undefined,
   };
@@ -294,7 +313,7 @@ export function sessionsOf(specs, trees, prs) {
 /**
  * The snapshot of every repository, with the session cap's warning.
  * @param {{ repos: { path: string, github?: string }[], cap?: number, api?: (root: string) => import("./github.mjs").Api,
- *           offline?: boolean, now?: number, busy?: string[] }} options
+ *           offline?: boolean, now?: number, busy?: string[], live?: import("./sessions.mjs").SessionDeps }} options
  */
 export function snapshot({ repos, cap = SESSION_CAP, now = Date.now(), ...options }) {
   const entries = repos.map((repo) => repoSnapshot(repo, { now, ...options }));
@@ -302,12 +321,19 @@ export function snapshot({ repos, cap = SESSION_CAP, now = Date.now(), ...option
     (e.sessions ?? []).filter((s) => s.building).map((s) => s.name),
   );
   const names = [...new Set(building)];
-  const warnings =
-    names.length > cap
+  const warnings = [
+    ...(names.length > cap
       ? [
           `${names.length} sessions are building (${names.join(", ")}); the cap is ${cap}: ${names.length - cap} over`,
         ]
-      : [];
+      : []),
+    // FR-20: a title off ADR 0001's pattern, or one the record disagrees with
+    ...entries.flatMap((e) =>
+      (e.live ?? [])
+        .filter((s) => s.problem)
+        .map((s) => `session "${s.name || "(untitled)"}" in ${s.worktree}: ${s.problem}`),
+    ),
+  ];
   return {
     version: SNAPSHOT_VERSION,
     takenAt: new Date(now).toISOString(),

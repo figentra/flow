@@ -1,8 +1,9 @@
 /**
  * Figentra Flow file contract:
  * Purpose: the one place the product's name lives (AC-042): the CLI name, the config file, the gate's status context
- *   and comment marker, the gate job folder, the environment prefix and the user folder. The product is being renamed;
- *   a rename changes this module, `package.json` and the docs.
+ *   and comment marker, the gate job folder, the environment prefix, the user folder, the automation freeze
+ *   variable and the land request's label, hold label, status context and comment marker. The product is being
+ *   renamed; a rename changes this module, `package.json` and the docs.
  * Boundary: constants only.
  * Runtime: node
  * Governing contract: STA-1729 phase A (the leader's plan stop of 2026-10-31).
@@ -23,6 +24,9 @@ export const VERSION = MANIFEST.version;
 
 /** The Node range Flow needs, from `package.json`'s `engines`. */
 export const NODE_RANGE = MANIFEST.engines?.node ?? ">=0";
+
+/** The docs link every command's help and error block give, from `package.json`'s `homepage`. */
+export const HOMEPAGE = MANIFEST.homepage;
 
 /** The registry the package is published to (`publishConfig.registry`), or undefined for npm's default. */
 export const REGISTRY = MANIFEST.publishConfig?.registry;
@@ -63,10 +67,16 @@ export const USER_DIR = [".config", NAME];
 /** The branch config key `land` records its squash commit under (`branch.<b>.<key>`, AC-029). */
 export const LANDED_KEY = `${NAME.replace(/-(\w)/g, (_, c) => c.toUpperCase())}Landed`;
 
+/** The branch config key `land --stack` records a child's squashed parent head under, for a re-run after a stop. */
+export const STACK_PARENT_KEY = `${NAME.replace(/-(\w)/g, (_, c) => c.toUpperCase())}StackParent`;
+
 /** The key before 0.2.2; `clean` still reads it, so a branch landed by 0.2.1 is still known as landed. */
 export const LEGACY_LANDED_KEY = `${LEGACY_NAME.replace(/-(\w)/g, (_, c) => c.toUpperCase())}Landed`;
 
-/** The approval workflow `sync` renders (STA-1856); `land` dispatches it when a review is required. */
+/**
+ * The approval workflow `sync` renders (STA-1856). With `secrets.oidc`, events run it (the L2 design): the `LAND_LABEL`
+ * label or a `/fflow land` comment asks for a land; before that, `land` dispatched it.
+ */
 export const APPROVE_WORKFLOW = `${NAME}-approve.yml`;
 
 /** The GitHub environment holding the approving App's id and key; it allows the default branch only. */
@@ -83,3 +93,34 @@ export const BASELINE_CHECK = "Baseline";
  * itself, and the gate runs the whole check command, more than Baseline's tasks.
  */
 export const NEVER_TOLERATED = [BASELINE_CHECK, STATUS_CONTEXT];
+
+/**
+ * The organisation's Actions variable that freezes automation (ADR 0523; the owner, 2026-11-04): `on`, `merge-only`
+ * or `frozen`. Missing or unreadable is frozen; the approval workflow's event jobs run only on `AUTOMATION_RUNS`.
+ */
+export const AUTOMATION_VARIABLE = "FIGENTRA_AUTOMATION";
+
+/**
+ * The Actions variable (repository or organisation) that holds the Infisical OIDC identity's id when
+ * `secrets.oidc.identityId` is not in the config (Infisical plan K7): the owner sets it, and the approval workflow's
+ * OIDC jobs pass it to the minter. A config `identityId` wins.
+ */
+export const OIDC_IDENTITY_VARIABLE = `${ENV_PREFIX}OIDC_IDENTITY_ID`;
+
+/** The `AUTOMATION_VARIABLE` values the verdict runs on; any other value, or none, is the freeze. */
+export const AUTOMATION_RUNS = Object.freeze(["on", "merge-only"]);
+
+/** The label that asks main's approval workflow to approve and merge a PR (the L2 design); a push removes it. */
+export const LAND_LABEL = `${NAME}:land`;
+
+/** The label that pauses one PR's land request (ADR 0523). */
+export const HOLD_LABEL = "HOLD";
+
+/** The commit status main's approval workflow posts on a requested head: why it waits, refuses or approved. */
+export const LAND_CONTEXT = `${NAME}/land`;
+
+/** The first line of the one PR comment main's approval workflow keeps up to date. */
+export const LAND_MARKER = `<!-- ${LAND_CONTEXT} -->`;
+
+/** The comment that re-asks for a land when the label is already there (re-adding a label fires no event). */
+export const LAND_COMMAND = `/${NAME} land`;

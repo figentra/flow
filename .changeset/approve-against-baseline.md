@@ -14,5 +14,6 @@ unchanged. The approval names the baseline's SHA and the checks it tolerated.
 The tolerance is per check, so list only checks that run no more than `baseline.tasks`. `Baseline` and `fflow/gate`
 (which runs the whole check command) are never tolerated: the schema refuses a list naming either, `sync` refuses to
 render it, and the check refuses it. `sync` renders the list into `fflow-approve.yml` as `TOLERATE`, beside
-`OWNER_ONLY_EXTRA`. A `TOLERATE` that is not a JSON list of names refuses the approval, and an unset one is the empty
+`OWNER_ONLY_EXTRA`, in the dispatched job and in the event lane's jobs alike, so a `fflow:land` request is judged
+the same way. A `TOLERATE` that is not a JSON list of names refuses the approval, and an unset one is the empty
 list. Run `fflow sync` after upgrading.

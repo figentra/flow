@@ -1,8 +1,8 @@
 {
   "name": "@figentra-oss/flow",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "private": false,
-  "description": "Figentra Flow: spec-driven development from spec to landed change. Spec gates and traceability on spec-kit, worktrees, the gate on a box, land, and adapters for your tracker, runner, credentials and secrets",
+  "description": "Spec-driven development for agent teams: specs, approval stops, tasks, the gate, landing and releases, with presets and adapters for your tracker, runner, credentials and secrets",
   "keywords": [
     "linear",
     "sdlc",
@@ -53,6 +53,14 @@
       "types": "./dist/src/lib/spec-parse.d.mts",
       "default": "./src/lib/spec-parse.mjs"
     },
+    "./guard": {
+      "types": "./dist/src/guard/index.d.mts",
+      "default": "./src/guard/index.mjs"
+    },
+    "./guard/neutral": {
+      "types": "./dist/src/guard/neutral.d.mts",
+      "default": "./src/guard/neutral.mjs"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {
@@ -65,9 +73,12 @@
     "typecheck": "tsc --noEmit",
     "lint": "oxlint .",
     "test": "node --test 'src/**/__tests__/*.test.mjs'",
+    "test:e2e": "node --test src/__tests__/packed.e2e.mjs",
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
+    "@stackra/console": "catalog:",
+    "@stackra/validation": "catalog:",
     "undici": "catalog:"
   },
   "devDependencies": {

@@ -72,6 +72,10 @@ Given that feature description, do this:
        If empty: ERROR "No feature description provided"
     2. Extract key concepts from description
        Identify: actors, actions, data, constraints
+       Then fill `## Discovery` before any requirement: read the code, ADRs and issues the change touches, and
+       state its current behaviour, topology, dependencies, ownership and the constraints already decided. List
+       every file, ADR, command output and issue you read under `### Sources` as `- **SRC-###**:` lines. Never
+       invent a source: when you could not read one, ask the user for it.
     3. For unclear aspects:
        - Make informed guesses based on context and industry standards
        - Only mark with [NEEDS CLARIFICATION: specific question] if:
@@ -83,7 +87,8 @@ Given that feature description, do this:
     4. Fill User Scenarios & Testing section
        If no clear user flow: ERROR "Cannot determine user scenarios"
     5. Generate Functional Requirements
-       Each requirement must be testable
+       Each requirement must be testable and end with the sources it rests on (`Sources: SRC-###`)
+       Write non-functional requirements as their own `NFR-###` EARS lines, each with its number
        Use reasonable defaults for unspecified details (document assumptions in Assumptions section)
     6. Define Success Criteria
        Create measurable, technology-agnostic outcomes
@@ -152,6 +157,7 @@ Given that feature description, do this:
       - **If [NEEDS CLARIFICATION] markers remain**:
         1. Extract all [NEEDS CLARIFICATION: ...] markers from the spec
         2. **LIMIT CHECK**: If more than 3 markers exist, keep only the 3 most critical (by scope/security/UX impact) and make informed guesses for the rest
+        <!-- flow:ask -->
         3. For each clarification needed (max 3), present options to user in this format:
 
            ```markdown
@@ -181,6 +187,7 @@ Given that feature description, do this:
         5. Number questions sequentially (Q1, Q2, Q3 - max 3 total)
         6. Present all questions together before waiting for responses
         7. Wait for user to respond with their choices for all questions (e.g., "Q1: A, Q2: Custom - [details], Q3: B")
+        <!-- /flow:ask -->
         8. Update the spec by replacing each [NEEDS CLARIFICATION] marker with the user's selected or provided answer
         9. Re-run validation after all clarifications are resolved
 
@@ -263,7 +270,9 @@ Success criteria must be:
 ## Stackra: Impact questionnaire (mandatory)
 
 The spec template (v2) carries an `## Impact` section. After drafting, ask the user each question in it and write
-the answers in. Set `**Linear**` to the folder's key. Never guess an answer: leave it as
+the answers in. Then ask for the Discovery facts and Sources you could not read yourself (an issue, a decision, a
+command's output); Clarified needs `### Sources`, and every requirement cites at least one. Set
+`**Linear**` to the folder's key. Never guess an answer: leave it as
 `[NEEDS CLARIFICATION: ...]`. Write requirements in EARS form ("WHEN … THE <subject> SHALL …"), give every SC a
 verification method, and keep `## Amendments` and `## Status history` (one line: `<date> · — → Draft · <you> ·
 created`). Leave `**Status**: Draft` and `**Clarifications status**: pending`, then run

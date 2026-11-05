@@ -1,0 +1,179 @@
+# Figentra Flow file contract:
+# Purpose: the stackra preset's third-party skills (STA-1945 FR-8, D1). Each entry names its source and licence; one
+#          that `fflow sync` installs also pins a full commit id (`version`) and the `treeDigest` of its folder there
+#          (`digest`), and lands in the git-ignored `.agents/skills/.vendor/`. A licence outside MIT, Apache-2.0, BSD
+#          and ISC needs the owner's `ownerEntry`. A `machineOnly` skill is never installed, pinned or committed:
+#          `fflow doctor` names its source and `fflow check` refuses a committed copy.
+# Owner: the owner (D1); a change here is a preset change, adopted with `fflow update`.
+# Secrets: none; the sources are public or the owner's own.
+skills:
+  # HeroUI Pro's: the HeroUI Pro License Agreement, internal use only (D1).
+  - id: heroui-react-pro
+    source: "HeroUI Pro (heroui.pro), under the owner's licence"
+    licence: "HeroUI Pro License Agreement"
+    machineOnly: true
+  - id: heroui-pro-design-taste
+    source: "HeroUI Pro (heroui.pro), under the owner's licence"
+    licence: "HeroUI Pro License Agreement"
+    machineOnly: true
+  # Remotion's: remotion-dev/skills declares no licence; Remotion is under its own company licence (D1).
+  - id: remotion-best-practices
+    source: "github:remotion-dev/skills"
+    licence: "none declared (Remotion company licence)"
+    machineOnly: true
+  - id: remotion-create
+    source: "github:remotion-dev/skills"
+    licence: "none declared (Remotion company licence)"
+    machineOnly: true
+  - id: remotion-docs
+    source: "github:remotion-dev/skills"
+    licence: "none declared (Remotion company licence)"
+    machineOnly: true
+  - id: remotion-markup
+    source: "github:remotion-dev/skills"
+    licence: "none declared (Remotion company licence)"
+    machineOnly: true
+  - id: remotion-render
+    source: "github:remotion-dev/skills"
+    licence: "none declared (Remotion company licence)"
+    machineOnly: true
+  - id: remotion-studio
+    source: "github:remotion-dev/skills"
+    licence: "none declared (Remotion company licence)"
+    machineOnly: true
+  # The owner's own Claude skills, the 13 of the local library: that is their recorded source (D1).
+  - id: svg-logo-designer
+    source: "the owner's skill library (~/.claude/skills)"
+    licence: "the owner's own"
+    machineOnly: true
+  - id: better-typography
+    source: "the owner's skill library (~/.claude/skills)"
+    licence: "the owner's own"
+    machineOnly: true
+  - id: better-ui
+    source: "the owner's skill library (~/.claude/skills)"
+    licence: "the owner's own"
+    machineOnly: true
+  - id: apple-design
+    source: "the owner's skill library (~/.claude/skills)"
+    licence: "the owner's own"
+    machineOnly: true
+  - id: animate
+    source: "the owner's skill library (~/.claude/skills)"
+    licence: "the owner's own"
+    machineOnly: true
+  - id: animate-expo
+    source: "the owner's skill library (~/.claude/skills)"
+    licence: "the owner's own"
+    machineOnly: true
+  - id: animation-vocabulary
+    source: "the owner's skill library (~/.claude/skills)"
+    licence: "the owner's own"
+    machineOnly: true
+  - id: review-animations
+    source: "the owner's skill library (~/.claude/skills)"
+    licence: "the owner's own"
+    machineOnly: true
+  - id: improve-animations
+    source: "the owner's skill library (~/.claude/skills)"
+    licence: "the owner's own"
+    machineOnly: true
+  - id: design-review
+    source: "the owner's skill library (~/.claude/skills)"
+    licence: "the owner's own"
+    machineOnly: true
+  - id: mobile-native
+    source: "the owner's skill library (~/.claude/skills)"
+    licence: "the owner's own"
+    machineOnly: true
+  - id: accessibility
+    source: "the owner's skill library (~/.claude/skills)"
+    licence: "the owner's own (its front matter says MIT)"
+    machineOnly: true
+  - id: expo-design-system
+    source: "the owner's skill library (~/.claude/skills)"
+    licence: "the owner's own (its front matter says MIT)"
+    machineOnly: true
+  # Upstream skills core used to vendor (STA-1945 PR 6, owner O9 2026-11-04: not vendored into Flow). Each is listed
+  # by its source until G7 pins a commit and digest on the testbed, when `fflow sync` installs it into
+  # `.agents/skills/.vendor/`; until then `fflow doctor` names where to install it from.
+  - id: archify
+    source: "github:tt-a1i/archify (from Cocoon-AI/architecture-diagram-generator)"
+    licence: "Apache-2.0"
+    machineOnly: true
+  - id: playwright-best-practices
+    source: "github:currents-dev (Currents Software, playwright-best-practices)"
+    licence: "MIT"
+    machineOnly: true
+  - id: react-native-best-practices
+    source: "github:callstackincubator/agent-skills"
+    licence: "MIT"
+    machineOnly: true
+  - id: turborepo
+    source: "github:vercel/turborepo (its skills)"
+    licence: "MIT"
+    machineOnly: true
+  - id: vitest
+    source: "github:antfu/skills"
+    licence: "MIT"
+    machineOnly: true
+  - id: pnpm
+    source: "github:antfu/skills"
+    licence: "MIT"
+    machineOnly: true
+  - id: resend
+    source: "github:resend/resend-skills"
+    licence: "MIT"
+    machineOnly: true
+  - id: stripe-best-practices
+    source: "github:stripe (Stripe's agent skills)"
+    licence: "MIT"
+    machineOnly: true
+  - id: heroui-react
+    source: "github:heroui-inc (HeroUI's agent skills)"
+    licence: "MIT"
+    machineOnly: true
+  - id: heroui-native
+    source: "github:heroui-inc (HeroUI Native's agent skills)"
+    licence: "Apache-2.0"
+    machineOnly: true
+  - id: tdd
+    source: "github:mattpocock/skills"
+    licence: "MIT"
+    machineOnly: true
+  - id: changesets
+    source: "github:oakoss (its agent skills)"
+    licence: "MIT"
+    machineOnly: true
+  - id: frontend-design
+    source: "github:anthropics/skills"
+    licence: "Apache-2.0"
+    machineOnly: true
+  - id: expo-animation
+    source: "github:expo/skills (with emilkowalski/skills)"
+    licence: "MIT"
+    machineOnly: true
+  - id: expo-upgrade
+    source: "github:expo/skills"
+    licence: "MIT"
+    machineOnly: true
+  - id: expo-data-fetching
+    source: "github:expo/skills"
+    licence: "MIT"
+    machineOnly: true
+  - id: expo-dev-client
+    source: "github:expo/skills"
+    licence: "MIT"
+    machineOnly: true
+  - id: eas-app-stores
+    source: "github:expo/skills"
+    licence: "MIT"
+    machineOnly: true
+  - id: eas-update
+    source: "github:expo/skills"
+    licence: "MIT"
+    machineOnly: true
+  - id: eas-workflows
+    source: "github:expo/skills"
+    licence: "MIT"
+    machineOnly: true

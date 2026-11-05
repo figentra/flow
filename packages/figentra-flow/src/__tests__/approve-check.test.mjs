@@ -10,8 +10,10 @@
  *   - a catalog swap;
  *   - a moved head;
  *   - an unprotected environment or a wrong ref;
- *   - the approving App as author.
- *   A refusal is one comment and no review; a head that moves after the approval gets the review dismissed.
+ *   - the approving App as author;
+ *   - a malformed `TRUSTED`.
+ *   A renamed gate App (ADR 0523) counts from either login a list names, and the string form still parses. A refusal
+ *   is one comment and no review; a head that moves after the approval gets the review dismissed.
  *   On a red main (STA-1945 FR-22) a required check that `approve.tolerate` lists, failing on the head and on main's
  *   recorded baseline too, is tolerated beside a green, required `Baseline` check, and the approval names the baseline
  *   and what it tolerated. The default empty list excuses nothing, and an unlisted check, a check that passed (or
@@ -485,6 +487,48 @@ test("approve: on a red main, every other guard still refuses", async () => {
     );
 });
 
+test("approve: a renamed gate App counts from either login the list names, and from no third", async () => {
+  const both = { trusted: { "fflow/gate": ["figentra-gate[bot]", "figentra-flow[bot]"] } };
+  const by = (/** @type {string} */ login) => ({
+    statuses: [{ context: "fflow/gate", state: "success", creator: { login } }],
+  });
+  assert.equal(await refusals(by("figentra-gate[bot]"), both), "");
+  assert.equal(await refusals(by("figentra-flow[bot]"), both), "");
+  assert.match(
+    await refusals(by("figentra-other[bot]"), both),
+    /fflow\/gate was posted by figentra-other\[bot\], not figentra-gate\[bot\] or figentra-flow\[bot\]/,
+  );
+  // The string form, as an already-rendered workflow carries it, still trusts its one login only.
+  assert.equal(await refusals(by("figentra-gate[bot]")), "");
+  assert.match(await refusals(by("figentra-flow[bot]")), /not figentra-gate\[bot\]$/m);
+});
+
+test("approve: a malformed TRUSTED trusts no one and refuses", async () => {
+  for (const trusted of [
+    { "fflow/gate": 5 },
+    { "fflow/gate": [] },
+    { "fflow/gate": ["figentra-gate[bot]", ""] },
+    ["figentra-gate[bot]"],
+    null,
+  ])
+    assert.match(
+      await refusals({}, { trusted }),
+      /^TRUSTED is not an object of context to a login or a list of logins$/,
+      JSON.stringify(trusted),
+    );
+  const gh = github();
+  const code = await main(
+    { ...env(), TRUSTED: "{ not json" },
+    { read: gh.read, write: gh.write, log: () => {} },
+  );
+  assert.equal(code, 1);
+  assert.deepEqual(
+    gh.writes.map((w) => `${w.method} ${w.path}`),
+    [`POST /repos/${REPO}/issues/7/comments`],
+  );
+  assert.match(gh.writes[0].body.body, /TRUSTED is not an object/);
+});
+
 test("approve: a refusal is one comment and no review", async () => {
   const gh = github({ runs: [] });
   const code = await main(env(), { read: gh.read, write: gh.write, log: () => {} });
@@ -606,6 +650,35 @@ test("required checks: only a `failure` conclusion or status is an outright fail
   });
   assert.deepEqual(state.failed, [...names, "red", "errored"]);
   assert.deepEqual(state.outright, ["failure", "red"]);
+});
+
+test("required checks: a list of logins trusts a check run or status from any of them, a string from its one", () => {
+  const run = (/** @type {string} */ slug) => ({
+    id: 1,
+    name: "gate",
+    status: "completed",
+    conclusion: "success",
+    app: { id: 9, slug },
+  });
+  const both = { gate: ["old-gate[bot]", "new-gate[bot]"] };
+  const state = (/** @type {any[]} */ checkRuns, /** @type {any} */ trusted) =>
+    requiredCheckState({ required: [{ context: "gate" }], statuses: [], checkRuns, trusted });
+  assert.deepEqual(state([run("new-gate")], both).passed, ["gate"]);
+  assert.deepEqual(state([run("old-gate")], both).passed, ["gate"]);
+  assert.deepEqual(state([run("other-gate")], both).pending, ["gate"]);
+  assert.deepEqual(state([run("new-gate")], { gate: "old-gate[bot]" }).pending, ["gate"]);
+  // An empty login trusts no one, not even a status with no creator.
+  const ghost = [{ context: "gate", state: "success", creator: null }];
+  for (const login of ["", [""]])
+    assert.equal(
+      requiredCheckState({
+        required: [{ context: "gate" }],
+        statuses: ghost,
+        checkRuns: [],
+        trusted: { gate: login },
+      }).passed.length,
+      0,
+    );
 });
 
 /**

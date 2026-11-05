@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "record.schema.json",
+  "title": ".flow/record/<key>.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "recordVersion",
+    "key",
+    "stage",
+    "state",
+    "approvals",
+    "sessions",
+    "commits",
+    "prs",
+    "gate",
+    "review",
+    "asks",
+    "tasks"
+  ],
+  "properties": {
+    "$schema": { "type": "string", "minLength": 1 },
+    "recordVersion": { "const": 1 },
+    "key": { "type": "string", "minLength": 1 },
+    "stage": {
+      "enum": [
+        "start",
+        "spec",
+        "approval",
+        "plan",
+        "worktree",
+        "build",
+        "gate",
+        "review",
+        "land",
+        "release",
+        "ship"
+      ]
+    },
+    "state": { "enum": ["active", "waiting", "done", "failed"] },
+    "approvals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["who", "when", "stage", "digest"],
+        "properties": {
+          "who": { "type": "string", "minLength": 1 },
+          "when": { "type": "string", "minLength": 1 },
+          "stage": { "type": "string", "minLength": 1 },
+          "digest": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "sessions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "kind", "start"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "id": { "type": "string", "minLength": 1 },
+          "kind": { "type": "string", "minLength": 1 },
+          "start": { "type": ["string", "null"], "minLength": 1 },
+          "end": { "type": "string", "minLength": 1 },
+          "pushed": { "type": "boolean" }
+        }
+      }
+    },
+    "commits": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "prs": { "type": "array", "items": { "type": "integer", "minimum": 1 } },
+    "gate": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sha", "state"],
+        "properties": {
+          "sha": { "type": "string", "minLength": 1 },
+          "state": { "type": "string", "minLength": 1 },
+          "baseline": { "type": "boolean" }
+        }
+      }
+    },
+    "review": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sha", "verdict", "findings"],
+        "properties": {
+          "sha": { "type": "string", "minLength": 1 },
+          "verdict": { "type": "string", "minLength": 1 },
+          "findings": { "type": "integer", "minimum": 0 },
+          "pr": { "type": "integer", "minimum": 1 },
+          "blocking": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "file", "text"],
+              "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "file": { "type": "string", "minLength": 1 },
+                "text": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "asks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["what", "command"],
+        "properties": {
+          "what": { "type": "string", "minLength": 1 },
+          "command": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "tasks": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "exit", "head", "clean", "digest", "at"],
+          "properties": {
+            "command": { "type": "string", "minLength": 1 },
+            "exit": { "type": "integer" },
+            "ms": { "type": "integer", "minimum": 0 },
+            "head": { "type": "string", "minLength": 1 },
+            "clean": { "type": "boolean" },
+            "digest": { "type": "string", "minLength": 1 },
+            "at": { "type": "string", "minLength": 1 },
+            "error": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "started": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["at", "head", "docs"],
+        "properties": {
+          "at": { "type": "string", "minLength": 1 },
+          "head": { "type": "string", "minLength": 1 },
+          "docs": { "type": "string", "minLength": 1 },
+          "session": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["stage", "state", "at"],
+        "properties": {
+          "stage": {
+            "enum": [
+              "start",
+              "spec",
+              "approval",
+              "plan",
+              "worktree",
+              "build",
+              "gate",
+              "review",
+              "land",
+              "release",
+              "ship"
+            ]
+          },
+          "state": { "enum": ["active", "waiting", "done", "failed"] },
+          "at": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

@@ -3,7 +3,8 @@
  * Purpose: hold `fflow status` and its snapshot to FR-7, AC-012, AC-024 and AC-026: specs by status (a
  *   worktree's copy wins for its own key), worktrees (dirty, idle, no key), open PRs with the head's gate, the counted
  *   review and stacking, sessions with their spec, worktree and gate, the cap's warning naming the excess, a missing
- *   repository reported and skipped, and `--offline` making no GitHub call.
+ *   repository reported and skipped, `--offline` making no GitHub call, and the live agent sessions by title, state,
+ *   worktree and stage with a warning for a title off ADR 0001's pattern (STA-1945 FR-20).
  * Boundary: temporary repositories with a local bare origin; GitHub injected; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1729 phase 4.
@@ -15,8 +16,9 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { render } from "../commands/status.mjs";
+import { tablesOf } from "../commands/status.mjs";
 import { CONFIG_FILE, STATUS_CONTEXT } from "../lib/product.mjs";
+import { updateRecord } from "../lib/record.mjs";
 import { snapshot } from "../lib/snapshot.mjs";
 import { CONFIG, repo, sh } from "./__fixtures__/repo.mjs";
 
@@ -151,12 +153,6 @@ test("status: specs, worktrees, PRs with gate and review, sessions with their ga
     building: true,
   });
   assert.match(snap.warnings.join(), /3 sessions are building .*the cap is 2: 1 over/);
-  const text = render(snap);
-  assert.match(text, /#7 alpha — fflow\/gate success, review PASS/);
-  assert.match(text, /#8 on top .*stacked on figentra\/sta-1-alpha/);
-  assert.match(text, /os-services-b \(building\): sta-1; worktree .*sta-1-alpha; gate success/);
-  assert.match(text, /skipped: missing/);
-  assert.match(text, /warning: 3 sessions are building/);
 });
 
 test("status --offline: no GitHub call; the cap is the owner's", (t) => {
@@ -173,4 +169,126 @@ test("status --offline: no GitHub call; the cap is the owner's", (t) => {
   assert.equal(snap.repos[0].prsProblem, "offline");
   assert.deepEqual(snap.warnings, []);
   assert.equal(snap.version, "fflow.status/1");
+});
+
+// @covers sta-1945:FR-25 sta-1945:AC-27 sta-1945:P-030
+test("status lists a Done spec's skipped optional tasks", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  for (const [folder, status] of [
+    ["sta-5-done", "Done"],
+    ["sta-6-open", "Implementing"],
+  ]) {
+    const dir = join(r.root, ".agents/specs", folder);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "spec.md"), spec(status, "s5"));
+    writeFileSync(
+      join(dir, "tasks.md"),
+      "## Phase 1\n- [x] T001 Do\n- [ ] T002* Polish\n- [x] T003* Docs\n- [ ] ~~T004*~~ gone\n",
+    );
+  }
+  const snap = snapshot({ repos: [{ path: r.root, github: "acme/app" }], offline: true });
+  const skipped = Object.fromEntries(
+    snap.repos[0].specs.map((/** @type {any} */ s) => [s.folder, s.skipped]),
+  );
+  assert.deepEqual(skipped, { "sta-5-done": ["T002"], "sta-6-open": [] });
+  const [specs] = tablesOf(snap.repos[0], false);
+  assert.equal(specs.rows.find((row) => row.folder === "sta-5-done")?.skipped, "T002");
+});
+
+// @covers sta-1945:FR-31 sta-1945:AC-37 sta-1945:P-035
+test("status tables: specs, worktrees, PRs and sessions; each problem counted, and listed under --verbose", (t) => {
+  const w = world();
+  t.after(w.r.dispose);
+  const { api } = github(w.head);
+  const snap = snapshot({
+    repos: [{ path: w.r.root, github: "acme/app" }],
+    api: () => api,
+    busy: [],
+  });
+  const [repo] = snap.repos;
+  const before = repo.specs[0].problems.length;
+  repo.specs[0].problems.push("**Tier** is missing");
+  const tables = tablesOf(repo, false);
+  assert.deepEqual(
+    tables.map((x) => x.title),
+    ["Specs", "Worktrees", "PRs", "Sessions"],
+  );
+  const [specs, trees, prs, sessions] = tables;
+  assert.equal(specs.rows.length, 3);
+  assert.equal(specs.problems, undefined, "problems are listed only under --verbose");
+  assert.equal(specs.rows.find((r) => r.folder === repo.specs[0].folder)?.problems, before + 1);
+  assert.match(String(tablesOf(repo, true)[0].problems), /\*\*Tier\*\* is missing/);
+  assert.equal(trees.rows.length, repo.worktrees.length);
+  assert.equal(prs.rows.length, 2);
+  assert.deepEqual(
+    [prs.rows[0].gate, prs.rows[0].number, prs.rows[0].review],
+    ["ok", "#7", "PASS"],
+  );
+  assert.match(String(prs.rows[1].notes), /stacked on figentra\/sta-1-alpha/);
+  assert.ok(sessions.rows.some((r) => r.name === "os-services-b (building)"));
+});
+
+// @covers sta-1945:FR-20 sta-1945:AC-19 sta-1945:P-025
+test("status shows the live sessions by title, state, worktree and stage, and warns on a bad title", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  const path = join(r.root, ".claude/worktrees/sta-5-live");
+  sh(r.root, "worktree", "add", "-q", "-b", "figentra/sta-5-live", path, "main");
+  updateRecord(path, "sta-5", (rec) => ({ ...rec, stage: "gate" }));
+  const snap = snapshot({
+    repos: [{ path: r.root, github: "acme/app" }],
+    offline: true,
+    live: {
+      processes: () => [
+        { pid: 31, cwd: path, args: ["claude"] },
+        { pid: 32, cwd: path, args: ["claude"] },
+        // OpenCode's title is not readable: a note, never a warning.
+        { pid: 33, cwd: path, args: ["opencode"] },
+      ],
+      sessionFiles: () => [
+        { path: "/s/31.json", name: "FLOW · live sessions (STA-5)", pid: 31 },
+        { path: "/s/32.json", name: "projects-2e", pid: 32 },
+      ],
+    },
+  });
+  assert.deepEqual(
+    snap.repos[0].live?.map((s) => [s.name, s.state, s.worktree, s.stage, s.problem]),
+    [
+      ["FLOW · live sessions (STA-5)", "active", path, "gate", undefined],
+      ["projects-2e", "active", path, "gate", "not `TRACK · job (key)` (ADR 0001)"],
+      ["", "active", path, "gate", undefined],
+    ],
+  );
+  assert.deepEqual(snap.warnings, [
+    `session "projects-2e" in ${path}: not \`TRACK · job (key)\` (ADR 0001)`,
+  ]);
+  const live = tablesOf(snap.repos[0], false).find((table) => table.title === "Live sessions");
+  assert.deepEqual(live?.rows, [
+    {
+      name: "FLOW · live sessions (STA-5)",
+      state: "active",
+      worktree: path,
+      stage: "gate",
+      pid: 31,
+      notes: "",
+    },
+    {
+      name: "projects-2e",
+      state: "active",
+      worktree: path,
+      stage: "gate",
+      pid: 32,
+      notes: "not `TRACK · job (key)` (ADR 0001)",
+    },
+    {
+      name: "(untitled)",
+      state: "active",
+      worktree: path,
+      stage: "gate",
+      pid: 33,
+      notes: "title not readable for opencode",
+    },
+  ]);
+  assert.equal(snapshot({ repos: [{ path: r.root }], offline: true }).repos[0].live, undefined);
 });

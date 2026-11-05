@@ -10,7 +10,7 @@
  * Runtime: node
  * Governing contract: ADR 0022; ADR 0510; STA-1729 (F7).
  */
-// @covers sta-1729:FR-11
+// @covers sta-1729:FR-11 sta-1945:FR-1 sta-1945:FR-11 sta-1945:AC-1 sta-1945:P-016
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -20,6 +20,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -52,7 +53,8 @@ const run = (cwd, cmd, args) => {
 };
 
 test("e2e: the packed package installs .flow/ and carries one spec from gate dir to tasks; gate ci holds the install", (t) => {
-  const top = mkdtempSync(join(tmpdir(), "flow-e2e-"));
+  // The real path: git and the CLI report /private/var on macOS where tmpdir() says /var.
+  const top = realpathSync(mkdtempSync(join(tmpdir(), "flow-e2e-")));
   t.after(() => rmSync(top, { recursive: true, force: true }));
   const packed = run(PKG, "npm", ["pack", "--silent", "--pack-destination", top]);
   assert.equal(packed.status, 0, packed.err);
@@ -109,10 +111,14 @@ test("e2e: the packed package installs .flow/ and carries one spec from gate dir
   run(repo, "git", ["add", "-A"]);
   run(repo, "git", ["commit", "-q", "-m", "spec"]);
   assert.equal(flow(repo, ["gate", "ci", "--base=HEAD"]).status, 0);
+  assert.equal(flow(repo, ["check"]).status, 0, "STA-1945: a synced repository passes check");
   writeFileSync(join(repo, ".opencode/commands/flow-plan.md"), "hand edit\n");
   const ci = flow(repo, ["gate", "ci", "--base=HEAD"]);
   assert.equal(ci.status, 1);
   assert.match(ci.err, /install: \.opencode\/commands\/flow-plan\.md differs/);
+  const checked = flow(repo, ["check"]);
+  assert.equal(checked.status, 1);
+  assert.match(checked.out, /fflow check: \.opencode\/commands\/flow-plan\.md differs/);
 
   const old = join(top, "old");
   mkdirSync(join(old, ".specify/memory"), { recursive: true });
