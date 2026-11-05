@@ -128,6 +128,18 @@ test(
     const check = flow(["check"]);
     assert.equal(check.status, 0, `${check.out}${check.err}`);
 
+    const context = flow(["context", "--query", "outsider", "--json"]);
+    assert.equal(context.status, 0, `${context.out}${context.err}`);
+    const navigation = JSON.parse(context.out).data;
+    assert.equal(navigation.repositories.length, 1);
+    assert.equal(navigation.repositories[0].matches[0].name, "outsider");
+    assert.ok(navigation.repositories[0].instructions.includes("AGENTS.md"));
+    assert.ok(navigation.repositories[0].revision);
+    assert.ok(
+      existsSync(join(repo, ".agents/skills/flow-plan/SKILL.md")),
+      "plain sync supplies native Codex skills",
+    );
+
     const doctor = flow(["doctor", "--offline", "--json"]);
     assert.equal(doctor.status, 0, `${doctor.out}${doctor.err}`);
     const report = /** @type {{ ok: boolean, data: { id: string, status: string }[] }} */ (
@@ -151,6 +163,15 @@ test(
       },
       { jsonrpc: "2.0", method: "notifications/initialized" },
       { jsonrpc: "2.0", id: 2, method: "tools/list" },
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: {
+          name: "fflow_context",
+          arguments: { repo, query: "outsider" },
+        },
+      },
     ];
     // Closing stdin after the messages ends the server once it has answered them.
     const mcp = flow(["mcp"], messages.map((m) => `${JSON.stringify(m)}\n`).join(""));
@@ -162,13 +183,18 @@ test(
         .map((line) => JSON.parse(line))
         .map((reply) => [reply.id, reply]),
     );
-    assert.equal(replies.size, 2, "only the two requests are answered");
+    assert.equal(replies.size, 3, "only the three requests are answered");
     assert.equal(replies.get(1).result.serverInfo.name, "fflow");
     assert.equal(replies.get(1).result.serverInfo.version, VERSION);
     const tools = replies
       .get(2)
       .result.tools.map((/** @type {{ name: string }} */ tool) => tool.name);
-    assert.equal(tools.length, 8);
+    assert.equal(tools.length, 9);
     assert.ok(tools.includes("fflow_status") && tools.includes("fflow_clarification_record"));
+    assert.ok(tools.includes("fflow_context"));
+    assert.equal(
+      JSON.parse(replies.get(3).result.content[0].text).repositories[0].matches[0].name,
+      "outsider",
+    );
   },
 );

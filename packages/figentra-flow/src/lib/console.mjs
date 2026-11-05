@@ -267,6 +267,53 @@ Option({ description: "Print the install command and the config change; run noth
   "dryRun",
 );
 
+class ContextCommand extends Command({
+  name: "context",
+  description: "Find repository guidance, packages and skills without setup or network access",
+  group: GROUPS.agents,
+  docs: DOCS,
+  examples: [
+    `${NAME} context --path packages/widget --json`,
+    `${NAME} context --all --query payments`,
+  ],
+}) {
+  /** @type {string | undefined} */
+  repo = undefined;
+  all = false;
+  query = "";
+  path = "";
+  limit = 20;
+
+  /** @param {CommandIo} io */
+  async handle(io) {
+    const { handle } = await import("../commands/context.mjs");
+    return refusing(() => handle(io, this));
+  }
+}
+Option({ description: "One local repository (defaults to the current checkout)" })(
+  ContextCommand.prototype,
+  "repo",
+);
+Str()(ContextCommand.prototype, "repo");
+Option({ description: "Case-insensitive phrase in paths, package names or descriptions" })(
+  ContextCommand.prototype,
+  "query",
+);
+Str()(ContextCommand.prototype, "query");
+Option({
+  description: "Repository-relative file or folder; also returns its ancestor instructions",
+})(ContextCommand.prototype, "path");
+Str()(ContextCommand.prototype, "path");
+Option({ description: "Read the existing workspace registry (at most 25 repositories)" })(
+  ContextCommand.prototype,
+  "all",
+);
+Option({ description: "Maximum matches per repository (1–100, default 20)" })(
+  ContextCommand.prototype,
+  "limit",
+);
+Int({ min: 1, max: 100 })(ContextCommand.prototype, "limit");
+
 class StatusCommand extends Command({
   name: "status",
   description: "Specs, worktrees, open PRs and sessions for every repository of the workspace",
@@ -568,6 +615,7 @@ Str()(LedgerCommand.prototype, "repo");
 
 /** Every command, in the order the list shows them within their group. */
 export const COMMANDS = [
+  ContextCommand,
   passthrough({
     name: "init",
     description:

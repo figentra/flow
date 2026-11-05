@@ -77,6 +77,7 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow guard [--print-settings]`                                      | the guard engine on the hook event on stdin: the preset's rules, the side doors and the secret files; `--print-settings` prints the hooks that wire `bin/fflow-guard.mjs` for four events        |
 | `fflow init --workspace <dir>…`                                       | writes the workspace list (`~/.config/fflow/workspace.yaml`) that `--all` acts on                                                                                                                |
 | `fflow status [--repo p] [--json] [--offline]`                        | specs by status, worktrees, open PRs with their gate and review, and sessions, for every repository of the workspace                                                                             |
+| `fflow context [--repo <path> | --all] [--path <path>] [--query <phrase>] [--limit <n>] [--json]` | offline, bounded repository or collection navigation; no setup or network |
 | `fflow mcp`                                                           | an MCP server over stdio: status, spec, trace, worktrees, metrics, a spec's open questions, a docs lookup, and the one writer, recording an answer                                               |
 | `fflow next [<key>] [--json]`                                         | the task's stage and the command that moves it on, from Flow's record on the key's worktree or branch; back at approval when an approved document changed since |
 | `fflow resume <key>`                                                  | re-enters the stage a stopped session left half done: the task's worktree, fast-forwarded to its pushed branch                                                                                   |
@@ -337,9 +338,63 @@ tools in `flow.config.json` and run `fflow sync --direct`:
 Where a tool's question tool is unavailable, the command still carries the text table to ask with. Every file has the
 provenance header and its digest in `.flow/lock.json`, and a tool removed from the list takes its unedited commands
 with it. Without `harnesses`, nothing changes: `--direct` renders Claude Code's and OpenCode's files and a plain `sync`
-the neutral `.agents/skills/` documents, both with the text table, byte for byte as before. A plain `sync` ignores
-`harnesses`: the repository's own projector places those documents. Answers are recorded in the spec, never only in a
+the neutral `.agents/skills/` documents, both with the text table. A plain `sync` ignores `harnesses`: Codex reads
+these documents natively; a repository projector may place them for other clients. Answers are recorded in the spec, never only in a
 tool's chat; the MCP server's `fflow_clarification_record` (under Status) writes them the same way from any tool.
+
+### Codex
+
+Codex uses the existing `codex` harness, `AGENTS.md` and `.agents/skills/`; Flow adds no second Codex adapter or
+home-directory prompt files. A plain `fflow sync` renders native skills. For a mixed setup, include `"codex"` in
+`harnesses` and use `fflow sync --direct`. Review `fflow diff` before updating an existing governed setup.
+
+Open Codex in the target repository and invoke a rendered skill such as `$flow-plan`. Root instructions do not mean
+all nested instructions or linked rules have already been read: use the context route below for the paths being edited.
+Flow's Claude-specific hooks and `.mcp.yaml` are not evidence of Codex hook enforcement or MCP registration. Register
+`fflow mcp` in the client's own MCP configuration if needed; CLI context lookup works without MCP. Client-level loading
+and enforcement still need a clean-checkout smoke test on the installed Codex version.
+
+## Task context and documentation boundaries
+
+```sh
+fflow context --json                                    # current checkout, no registry required
+fflow context --path packages/figentra-flow --limit 10   # scoped instructions and navigation
+fflow context --repo ../service --query payments --json # explicit standalone checkout
+fflow context --all --query payments --json             # existing fflow workspace registry
+```
+
+Discovery reads Git's tracked and non-ignored untracked paths, plus package names/descriptions. It returns up to 20
+matches per repository (1–100), at most 25 registered repositories, each repository's HEAD/branch and dirty flag,
+ancestor instruction paths (including `AGENTS.override.md`), entry points and explicit missing/invalid metadata.
+Results are uncached and describe the working tree; HEAD alone is insufficient when dirty. Narrow the query or select
+one repository when truncated. It does not fetch, install, run scripts, load private document bodies, follow symlinks,
+or traverse dependencies/build outputs. Paths are classified for navigation; no inferred owner or consumer graph is
+presented as fact. Package fixtures can appear; confirm the actual workspace membership from its manifest.
+
+Use `fflow_context` over MCP for the same result. Query matching is by path/name/description, not document contents;
+use the existing `fflow_docs_lookup` for bounded prose search. With no matches, use repository search and report the
+missing route. Ignored files, custom instruction filenames and ancestor instructions outside the checkout are not
+indexed: the client/user's applicable instructions still govern. Missing repositories and malformed package metadata
+make the CLI exit 1; invalid options exit 2. A truncated result alone is not a failure.
+
+| Boundary | Minimum useful guidance |
+| --- | --- |
+| Repository | README navigation, scoped AGENTS constraints, pinned guidance and allowed verification environment |
+| Package/service | Purpose and owner, public exports/API/events, dependencies, failure boundaries, one example and tests |
+| Component family | Import/type and playground routes; composition, accessibility, platform and state behavior relevant to the component |
+| Capability | Existing catalogue entry connecting step owners, contracts, consumers, authorization and failure behavior, and test evidence |
+| Skill/role | Narrow trigger, prerequisites/version compatibility, procedure/responsibility, output, verification and failure route |
+
+Add guidance at real ownership or contract boundaries, not per ordinary folder or function. Preserve existing member
+requirements. README explains use, AGENTS governs work, ADR explains decisions, contracts specify behavior and tests
+supply revision-specific evidence. A newer timestamp alone does not supersede a decision. Update generated sources,
+not projections. Treat release/deployment status as unknown until matching evidence exists.
+
+For this package's context capability, the route is `src/lib/context.mjs` → `src/commands/context.mjs` and
+`src/commands/mcp.mjs`; `src/lib/console.mjs` declares CLI options. `src/__tests__/context.test.mjs` covers scoped
+instructions, metadata, bounds, missing checkouts and symlinks; help and MCP tests cover the entry contracts. The
+preset `surfaces/agents-md/agents.md` sources project the navigation procedure. Run `pnpm verify` and the packed e2e
+in CI/the allowed runner, not on a workstation. Test files being present is not evidence that they passed.
 
 ## Presets
 
@@ -719,7 +774,7 @@ the preset lag (the locked version against the installed one), the overrides by 
 without a lock is "not synced", never skipped. It reads the repositories only; `--json` writes `{ repos: [...] }`. The
 exit code is 1 when a repository drifts or holds an override past its review date.
 
-`fflow mcp` is an MCP server over stdio for agents. It offers eight tools, each returning JSON. Seven read:
+`fflow mcp` is an MCP server over stdio for agents. It offers nine tools, each returning JSON. Eight read:
 
 | Tool                   | Arguments                    | What it returns                                                                       |
 | ---------------------- | ---------------------------- | ------------------------------------------------------------------------------------- |
@@ -729,6 +784,7 @@ exit code is 1 when a repository drifts or holds an override past its review dat
 | `fflow_worktrees`      | `repo?`                      | each repository's worktrees                                                           |
 | `fflow_metrics`        | `since?` (days)              | delivery metrics                                                                      |
 | `fflow_questions_list` | `repo`, `key`                | each live `[NEEDS CLARIFICATION: …]` marker and unanswered Clarifications question    |
+| `fflow_context` | `repo?`, `all?`, `query?`, `path?`, `limit?` | offline navigation with checkout revisions, dirty state and scoped instruction paths |
 | `fflow_docs_lookup`    | `repo`, `query`, `limit?`    | matching lines of `.agents/specs`, `docs/` and `.flow/` text (at most 100; no links)  |
 
 One writes: `fflow_clarification_record` (`repo`, `key`, `question`, `answer?`, `marker?`) records one answer in the
