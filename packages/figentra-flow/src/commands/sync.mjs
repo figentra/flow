@@ -143,7 +143,7 @@ export function project(root, direct, io) {
   if (direct) return 0;
   if (!hasProjector(root)) {
     io.log(
-      `${NAME} sync: no agents:sync script projects .agents/skills; run \`${NAME} sync --direct\` to render Claude Code and OpenCode files`,
+      `${NAME} sync: .agents/skills is ready for Codex; no agents:sync projector is configured. For other configured harnesses, run \`${NAME} sync --direct\` (defaults to Claude Code and OpenCode)`,
     );
     return 0;
   }

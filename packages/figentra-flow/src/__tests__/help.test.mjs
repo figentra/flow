@@ -47,6 +47,7 @@ test("help: fflow alone prints the banner, the version and every command under i
     "land",
     "release",
     "guard",
+    "context",
   ])
     assert.match(plain.stdout, new RegExp(`\\b${name}\\b`));
   assert.ok(!plain.stdout.includes(FLOW_THEME.logo[1]), "a pipe gets no banner");
@@ -82,6 +83,10 @@ test("help: <command> --help prints its usage and runs nothing", async () => {
   assert.equal(preset.exitCode, 0);
   assert.match(preset.stdout, /--dry-run/);
   assert.match(preset.stdout, /preset add @acme\/flow-preset/);
+  const context = await runCommandForTest(CONSOLE, ["context", "--help"]);
+  assert.equal(context.exitCode, 0);
+  for (const option of ["--repo", "--all", "--path", "--query", "--limit"])
+    assert.ok(context.stdout.includes(option), option);
 });
 
 test("help: task refuses an id that is not T###, and done a missing --command, running nothing", async () => {

@@ -17,7 +17,7 @@ what: |
   approval, becomes a plan and tasks, passes a gate and lands as a reviewed pull request. Flow keeps each spec, plan,
   task and test in step, and refuses to move on when they drift.
 
-  - **Specs and approval stops:** `/flow-specify`, `/flow-clarify` and `/flow-plan` for Claude Code, OpenCode and
+  - **Specs and approval stops:** `/flow-specify`, `/flow-clarify` and `/flow-plan` for Claude Code, OpenCode, Codex and
     other agents, with the templates and checks behind them.
   - **One command for a repository's agent setup:** `fflow sync` renders the commands, skills, agents, rules, guard
     hooks, git hooks and CI workflows from a preset, and `fflow check` fails CI when any of them drifts.
@@ -25,6 +25,9 @@ what: |
     green, approved pull request. Release trains and releases follow the same rules.
   - **Adapters:** the tracker (Linear or GitHub Issues), the runner (GitHub Actions or your own box), credentials and
     secrets are chosen per repository.
+
+  - **Task context:** `fflow context` finds scoped instructions, packages, skills and guidance in one checkout or the
+    registered collection, with revisions and dirty state. See the [context guide](packages/figentra-flow/README.md#task-context-and-documentation-boundaries).
 
   A preset carries a team's conventions: Flow ships `neutral` for any repository and `stackra` for Stackra's own.
 quickstart: |
@@ -56,3 +59,10 @@ architecture: |
   | `packages/figentra-flow/src/adapters` | the tracker and runner adapters                                              |
   | `packages/figentra-flow/assets/flow`  | the `neutral` and `stackra` presets and the base templates                   |
   | `packages/figentra-flow/schema`       | the `flow.config.json` schema                                       |
+
+development: |
+  Nothing installs or tests on a workstation. CI runs `pnpm verify`; the tester lane can run it in the permitted
+  Testbed environment. Follow [AGENTS.md](AGENTS.md) for the current landing and verification policy.
+
+  Change source files and add a changeset. For generated guidance, edit the preset or `.flow/readme.yml`, then
+  re-render with `fflow readme` or the appropriate `fflow sync` workflow.
