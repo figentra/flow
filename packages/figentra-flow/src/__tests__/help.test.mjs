@@ -2,12 +2,11 @@
  * Figentra Flow file contract:
  * Purpose: hold `fflow`'s routing on the console engine to AC-36: `fflow` alone prints the banner (on a terminal), the
  *   version and every command under its group; `<command> --help` prints its usage and runs nothing; an unknown
- *   command names the closest match and exits 2; and the passthrough list (commands not yet ported, STA-1966 FR-031)
- *   is pinned, so porting one is a deliberate change here; and only src/lib/console.mjs (with bin/fflow.mjs) imports
+ *   command names the closest match and exits 2; and only src/lib/console.mjs (with bin/fflow.mjs) imports
  *   `@stackra/*`, so the governance core stays free of the engine; and the governance commands' `--help` lists their
- *   options (STA-1945 FR-1), and `preset add` its `--dry-run` (STA-2097), and `readme`, `team check`, `land`, the
- *   `train` steps (STA-1945 SC-2), `spec`, `linear`, `clean`, `ship`, `release` and `app create` (FR-31) theirs, each
- *   on its own help row, never matched by an example line.
+ *   options (STA-1945 FR-1), and `preset add` its `--dry-run` (STA-2097), and the commands ported for SC-2 and FR-31
+ *   theirs, each on its own help row, never matched by an example line; and, every command now ported, the
+ *   passthrough list is empty (STA-1945 SC-2).
  * Boundary: the engine's in-process test harness and the text of src/; no command runs.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945 FR-1, FR-31; STA-1966 FR-031; STA-2097.
@@ -56,7 +55,7 @@ test("help: fflow alone prints the banner, the version and every command under i
 });
 
 test("help: <command> --help prints its usage and runs nothing", async () => {
-  // `gate` with no mode prints its own usage and exits 2: a 0 here means it never ran.
+  // `gate` with no mode is a usage error (exit 2): a 0 here means it never ran.
   const gate = await runCommandForTest(CONSOLE, ["gate", "--help"]);
   assert.equal(gate.exitCode, 0);
   assert.match(gate.stdout, /gate dir --key STA-12/);
@@ -121,6 +120,71 @@ test("help: the stage commands declare --input and --record", async () => {
     for (const option of ["--input", "--record"])
       assert.match(r.stdout, new RegExp(option), `${name} ${option}`);
   }
+});
+
+/**
+ * The help's row for `--flag` (render-help: two spaces, then `-s, ` or four spaces): an example line starts with
+ * `fflow`, so a flag that only appears in an example does not match.
+ * @param {string} flag
+ */
+const optionRow = (flag) => new RegExp(`^  (?:-\\w, | {4})${flag}(?![\\w-])`, "m");
+
+test("help: the setup, spec and agent commands ported from passthrough declare their options", async () => {
+  for (const [name, options] of Object.entries({
+    init: ["--force", "--runner", "--workspace"],
+    sync: ["--workspace", "--direct"],
+    migrate: ["--dry-run"],
+    trace: ["--base"],
+    adr: ["--issue", "--owner"],
+    start: ["--slug", "--role", "--session", "--install", "--dry-run"],
+    mcp: [],
+  })) {
+    const r = await runCommandForTest(CONSOLE, [name, "--help"]);
+    assert.equal(r.exitCode, 0, name);
+    // The usage line, which no example has: the help is this command's.
+    assert.match(r.stdout, new RegExp(`^  fflow ${name} \\[options\\]`, "m"), name);
+    for (const option of options) assert.match(r.stdout, optionRow(option), `${name} ${option}`);
+  }
+  // A mode the command does not have is refused by the engine's choices, before trace.mjs runs.
+  const mode = await runCommandForTest(CONSOLE, ["trace", "tracee"]);
+  assert.equal(mode.exitCode, 2);
+  assert.match(mode.stdout + mode.stderr, /<mode> must be one of trace, drift, ci, got "tracee"/);
+});
+
+/**
+ * The help's own row for `name`: an Options row (`    --name` or `-n, --name`, two spaces in) or an Arguments row
+ * (the bare name, two spaces in). The Usage and Examples lines start `fflow`, so a flag in an example cannot match.
+ */
+const helpRow = (/** @type {string} */ name) =>
+  new RegExp(`^  ${name.startsWith("--") ? "(?:-\\w, |    )" : ""}${name}(?:[ =]|$)`, "m");
+
+test("help: gate, parse, guard and hooks run declare their arguments and options", async () => {
+  for (const [words, listed] of Object.entries({
+    gate: [
+      "mode",
+      "operands",
+      "--ref",
+      "--box",
+      "--shards",
+      "--base",
+      "--key",
+      "--slug",
+      "--summary",
+      "--reader",
+    ],
+    parse: ["file"],
+    guard: ["--print-settings"],
+    "hooks run": ["stage", "hook-args"],
+  })) {
+    const r = await runCommandForTest(CONSOLE, [...words.split(" "), "--help"]);
+    assert.equal(r.exitCode, 0, words);
+    for (const item of listed) assert.match(r.stdout, helpRow(item), `${words} ${item}`);
+  }
+  // The variadic positionals, from the Usage line; no example spells `<operands>` or `<hook-args>`.
+  const gate = await runCommandForTest(CONSOLE, ["gate", "--help"]);
+  assert.match(gate.stdout, /<mode> \[?<operands>\.\.\.\]?/);
+  const hooks = await runCommandForTest(CONSOLE, ["hooks", "run", "--help"]);
+  assert.match(hooks.stdout, /<stage> \[?<hook-args>\.\.\.\]?/);
 });
 
 /**
@@ -204,20 +268,8 @@ test("help: an unknown command names the closest match and exits 2", async () =>
   assert.match(r.stdout + r.stderr, /status/);
 });
 
-test("help: the commands not yet ported are passthrough, and only these", () => {
-  assert.deepEqual(passthroughCommands(COMMANDS), [
-    "adr",
-    "gate",
-    "guard",
-    "hooks",
-    "init",
-    "mcp",
-    "migrate",
-    "parse",
-    "start",
-    "sync",
-    "trace",
-  ]);
+test("help: every command is ported, so none is passthrough", () => {
+  assert.deepEqual(passthroughCommands(COMMANDS), []);
 });
 
 test("help: only the CLI layer imports @stackra/*, so the governance core stays free of the engine", () => {

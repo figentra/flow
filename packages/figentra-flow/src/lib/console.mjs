@@ -5,10 +5,10 @@
  *   usage and runs nothing, an unknown command names the closest match and exits 2, and a failure is one error block.
  *   `doctor`, `preset add` (STA-2097), `status`, `next`, `resume`, `task start|done|wave`, `todo`, `ledger`,
  *   `session stop`, the governance commands (`update`, `check`, `diff`, `validate`, STA-1945 FR-1), the stage
- *   commands (`plan`, `review`, FR-15), `readme`, `team check`, `land`, the `train` steps (SC-2), `spec`, `linear`,
- *   `clean`, `ship`, `release` and `app create` declare their arguments and options (`spec` and `release` hand their
- *   `--json` document to the engine's `{ ok, data }`); every other command is passthrough (migration only, ADR 0500
- *   decision 7): it still parses its own flags from `io.rest`, and `PASSTHROUGH` in the tests pins that list.
+ *   commands (`plan`, `review`, FR-15), `init`, `sync`, `migrate`, `trace`, `adr`, `start`, `mcp`, `readme`,
+ *   `team check`, `land`, the `train` steps, `gate`, `parse`, `guard`, `hooks run` (SC-2), `spec`, `linear`, `clean`,
+ *   `ship`, `release` and `app create`: every command declares its arguments and options (`spec` and `release` hand
+ *   their `--json` document to the engine's `{ ok, data }`).
  * Boundary: the registry and the repository check, in the CLI layer only: the governance core (gate, approve, land,
  *   record, lock, baseline) imports nothing from `@stackra/*`. A command's module is imported when it runs, never for
  *   the list or the help, and bin/fflow.mjs never loads this file for `fflow guard`, the agent hook. Plain
@@ -20,7 +20,7 @@
  * Secrets: none.
  */
 import { Argument, Command, CommandError, Option, UsageError } from "@stackra/console";
-import { Int, Str } from "@stackra/validation";
+import { Int, List, Str } from "@stackra/validation";
 
 import { ConfigError } from "./config.mjs";
 import { git } from "./git.mjs";
@@ -38,7 +38,7 @@ import {
 /** @typedef {import("@stackra/console").CommandClass} CommandClass */
 
 /**
- * The part of the engine's `CommandIo` that the declared (not passthrough) commands use.
+ * The part of the engine's `CommandIo` that the declared commands use.
  * @typedef {{ cwd: string, json: boolean, verbose: boolean, output: { line(text: string): void,
  *   title(text: string): void, note(text: string): void, info(text: string): void, success(text: string): void,
  *   warn(text: string): void, error(text: string): void, list(items: string[]): void, json(data: unknown): void,
@@ -96,8 +96,8 @@ async function refusing(work) {
 /**
  * The repository check a command makes before anything else (FR-31, AC-35): outside a git work tree it throws one
  * error block naming the fix. git's own words are the block's `detail`, which the engine prints under its own
- * `--verbose` but leaves out of the `--json` document; `verbose` adds them to the reason instead, for a passthrough
- * command's `--verbose` (it stays in `io.rest`) and a declared command's `--verbose --json`, so they print once.
+ * `--verbose` but leaves out of the `--json` document; `verbose` adds them to the reason instead, for a command's
+ * `--verbose --json`, so they print once.
  * @param {string} cwd
  * @param {boolean} [verbose]
  * @returns {string} the repository's top folder
@@ -113,36 +113,9 @@ export function requireRepository(cwd, verbose = false) {
 }
 
 /**
- * A command that still parses its own flags (migration only, STA-1966 FR-031).
- * @param {{ name: string, description: string, group: string, examples: string[], repository?: boolean }} definition
- *   `repository`: refuse before anything else when the working directory is not inside a git repository (unless
- *   `--workspace` is given).
- * @returns {CommandClass}
- */
-function passthrough({ name, description, group, examples, repository = false }) {
-  return class extends Command({
-    name,
-    description,
-    group,
-    examples,
-    docs: DOCS,
-    passthrough: true,
-  }) {
-    /** @param {CommandIo} io */
-    async handle(io) {
-      // `--workspace <dir>` (sync, STA-1945) runs in the repositories under it, not in this folder's.
-      if (repository && !io.rest.includes("--workspace"))
-        requireRepository(io.cwd, io.rest.includes("--verbose"));
-      const { run } = await import(`../commands/${name}.mjs`);
-      return refusing(() => run([...io.rest]));
-    }
-  };
-}
-
-/**
- * A governance command (STA-1945 FR-1): `update`, `check`, `diff` or `validate`, with its options declared, so its
- * help lists them. It hands them to the command's `run` as flags, which runs it here or, with `--workspace`, in each
- * repository of the workspace (src/lib/workspace-run.mjs); only the run here needs a repository.
+ * A governance command (STA-1945 FR-1): `sync`, `update`, `check`, `diff` or `validate`, with its options declared, so
+ * its help lists them. It hands them to the command's `run` as flags, which runs it here or, with `--workspace`, in
+ * each repository of the workspace (src/lib/workspace-run.mjs); only the run here needs a repository.
  * @param {{ name: string, description: string, examples: string[], direct?: boolean, preset?: boolean }} definition
  *   `direct`, `preset`: the command takes `--direct`, `--preset <version>`.
  * @returns {CommandClass}
@@ -179,7 +152,7 @@ function governance({ name, description, examples, direct = false, preset = fals
   );
   Str()(Governance.prototype, "workspace");
   if (direct)
-    Option({ description: "Render Claude Code and OpenCode files, as `sync --direct` does" })(
+    Option({ description: "Render Claude Code and OpenCode files itself, with no projector" })(
       Governance.prototype,
       "direct",
     );
@@ -1025,6 +998,416 @@ Option({ description: "Where the secrets port keeps the private key, when it kee
 );
 Str()(AppCreateCommand.prototype, "keyFile");
 
+/**
+ * `name value` when the option was given, else nothing: how a declared command hands a valued option to `run`.
+ * @param {string} name
+ * @param {string | undefined} value
+ */
+const valued = (name, value) => (value === undefined ? [] : [name, value]);
+
+class InitCommand extends Command({
+  name: "init",
+  description:
+    "Install .flow/ and the flow-* skills, a starter config, the workspace list or a runner",
+  group: GROUPS.setup,
+  docs: DOCS,
+  examples: [
+    `${NAME} init`,
+    `${NAME} init --force`,
+    `${NAME} init --workspace ~/code`,
+    `${NAME} init --runner github-actions`,
+  ],
+}) {
+  force = false;
+  /** @type {string | undefined} */
+  runner = undefined;
+  /** @type {string | undefined} */
+  workspace = undefined;
+  /** @type {string[]} */
+  folders = [];
+
+  async handle() {
+    const { run } = await import("../commands/init.mjs");
+    // `run` reads every folder after `--workspace`, so the further ones follow it.
+    const args = [
+      ...valued("--runner", this.runner),
+      ...valued("--workspace", this.workspace),
+      ...this.folders,
+      ...(this.force ? ["--force"] : []),
+    ];
+    return refusing(() => run(args));
+  }
+}
+Argument({ description: "More folders for the workspace list (with --workspace)" })(
+  InitCommand.prototype,
+  "folders",
+);
+List(InitCommand.prototype, "folders");
+Option({ description: "Overwrite an existing .flow/ or gate workflow" })(
+  InitCommand.prototype,
+  "force",
+);
+Option({ description: "Write only the gate workflow of this runner: github-actions" })(
+  InitCommand.prototype,
+  "runner",
+);
+Str()(InitCommand.prototype, "runner");
+Option({ description: "Write the workspace list of the git repositories in or under this folder" })(
+  InitCommand.prototype,
+  "workspace",
+);
+Str()(InitCommand.prototype, "workspace");
+
+class MigrateCommand extends Command({
+  name: "migrate",
+  description: "Move a spec-kit repository onto .flow/",
+  group: GROUPS.setup,
+  docs: DOCS,
+  examples: [`${NAME} migrate --dry-run`],
+}) {
+  dryRun = false;
+
+  /** @param {CommandIo} io */
+  async handle(io) {
+    requireRepository(io.cwd);
+    const { run } = await import("../commands/migrate.mjs");
+    return refusing(() => run(this.dryRun ? ["--dry-run"] : []));
+  }
+}
+Option({ description: "List the steps; write nothing" })(MigrateCommand.prototype, "dryRun");
+
+class TraceCommand extends Command({
+  name: "trace",
+  description: "The requirement to task to test matrix, spec drift and the Done rules",
+  group: GROUPS.specs,
+  docs: DOCS,
+  examples: [`${NAME} trace trace .agents/specs/sta-12-x`, `${NAME} trace ci`],
+}) {
+  /** @type {string} */
+  mode;
+  /** @type {string | undefined} */
+  dir = undefined;
+  base = "origin/main";
+
+  /** @param {CommandIo} io */
+  async handle(io) {
+    const { run } = await import("../commands/trace.mjs");
+    const args = [
+      this.mode,
+      ...(this.dir === undefined ? [] : [this.dir]),
+      `--base=${this.base}`,
+      ...(io.json ? ["--json"] : []),
+    ];
+    // `--json` is the engine's: the matrix is its document's `data`.
+    return refusing(() => run(args, { json: (matrix) => io.output.json(matrix) }));
+  }
+}
+Argument({
+  description: "trace (the matrix), drift (against the diff) or ci (every changed spec)",
+  choices: ["trace", "drift", "ci"],
+})(TraceCommand.prototype, "mode");
+Argument({ description: "The spec folder (trace, drift)", optional: true })(
+  TraceCommand.prototype,
+  "dir",
+);
+Option({ description: "The ref the diff starts from (drift, ci)" })(TraceCommand.prototype, "base");
+Str()(TraceCommand.prototype, "base");
+
+class AdrCommand extends Command({
+  name: "adr",
+  description:
+    "Reserve the next ADR number under the queue lock; prints it once it is on the default branch",
+  group: GROUPS.specs,
+  docs: DOCS,
+  examples: [`${NAME} adr reserve cancel-order --issue STA-12`],
+}) {
+  /** @type {string} */
+  verb;
+  /** @type {string} */
+  slug;
+  /** @type {string | undefined} */
+  issue = undefined;
+  /** @type {string | undefined} */
+  owner = undefined;
+
+  async handle() {
+    const { run } = await import("../commands/adr.mjs");
+    const args = [
+      this.verb,
+      this.slug,
+      ...valued("--issue", this.issue),
+      ...valued("--owner", this.owner),
+    ];
+    return refusing(() => run(args));
+  }
+}
+Argument({ description: "What to do: reserve", choices: ["reserve"] })(
+  AdrCommand.prototype,
+  "verb",
+);
+Argument({ description: "The ADR's kebab-case slug" })(AdrCommand.prototype, "slug");
+Option({ description: "The issue the ADR belongs to (required)" })(AdrCommand.prototype, "issue");
+Str()(AdrCommand.prototype, "issue");
+Option({ description: "Who owns the ADR" })(AdrCommand.prototype, "owner");
+Str()(AdrCommand.prototype, "owner");
+
+class StartCommand extends Command({
+  name: "start",
+  description: "Make the issue's worktree and branch from the default branch",
+  group: GROUPS.work,
+  docs: DOCS,
+  examples: [`${NAME} start STA-12 --slug cancel-order`, `${NAME} start STA-12 --dry-run`],
+}) {
+  /** @type {string} */
+  key;
+  /** @type {string | undefined} */
+  slug = undefined;
+  /** @type {string | undefined} */
+  role = undefined;
+  /** @type {string | undefined} */
+  session = undefined;
+  install = false;
+  dryRun = false;
+
+  async handle() {
+    const { run } = await import("../commands/start.mjs");
+    const args = [
+      this.key,
+      ...valued("--slug", this.slug),
+      ...valued("--role", this.role),
+      ...valued("--session", this.session),
+      ...(this.install ? ["--install"] : []),
+      ...(this.dryRun ? ["--dry-run"] : []),
+    ];
+    return refusing(() => run(args));
+  }
+}
+Argument({ description: "The issue key" })(StartCommand.prototype, "key");
+Option({ description: "The branch's kebab-case slug; the issue's title when left out" })(
+  StartCommand.prototype,
+  "slug",
+);
+Str()(StartCommand.prototype, "slug");
+Option({ description: "The builder's role, from the roster; the spec's **Role** when left out" })(
+  StartCommand.prototype,
+  "role",
+);
+Str()(StartCommand.prototype, "role");
+Option({ description: "The session's name; the spec's **Session** when left out" })(
+  StartCommand.prototype,
+  "session",
+);
+Str()(StartCommand.prototype, "session");
+Option({ description: "Run pnpm install in the new worktree" })(StartCommand.prototype, "install");
+Option({ description: "Print what it would do; change nothing" })(StartCommand.prototype, "dryRun");
+
+class McpCommand extends Command({
+  name: "mcp",
+  description: "A read-only MCP server over stdio",
+  group: GROUPS.agents,
+  docs: DOCS,
+  examples: [`${NAME} mcp`],
+}) {
+  async handle() {
+    const { run } = await import("../commands/mcp.mjs");
+    return refusing(() => run());
+  }
+}
+
+class GateCommand extends Command({
+  name: "gate",
+  description: "The stage gates, the CI gate, the spec folder and the gate run on the runner",
+  group: GROUPS.specs,
+  docs: DOCS,
+  examples: [
+    `${NAME} gate dir --key STA-12`,
+    `${NAME} gate plan .agents/specs/sta-12-x/spec.md`,
+    `${NAME} gate ci --base=origin/main`,
+    `${NAME} gate run`,
+    `${NAME} gate run --shards 4 -- --no-wait`,
+    `${NAME} gate baseline check --base <sha> --json`,
+  ],
+}) {
+  /** @type {string} */
+  mode;
+  /** @type {string[] | undefined} */
+  operands = undefined;
+  /** @type {string | undefined} */
+  ref = undefined;
+  /** @type {string | undefined} */
+  box = undefined;
+  /** @type {number | undefined} */
+  shards = undefined;
+  /** @type {string | undefined} */
+  base = undefined;
+  /** @type {string | undefined} */
+  key = undefined;
+  /** @type {string | undefined} */
+  slug = undefined;
+  /** @type {string | undefined} */
+  summary = undefined;
+  /** @type {string | undefined} */
+  reader = undefined;
+
+  /** @param {CommandIo} io */
+  async handle(io) {
+    const { run } = await import("../commands/gate.mjs");
+    /** @type {(flag: string, value: string | number | undefined) => string[]} */
+    const pair = (flag, value) => (value === undefined ? [] : [`--${flag}`, String(value)]);
+    const operands = this.operands ?? [];
+    // Each mode's own parser reads these, so they go back as it reads them: `gate run` hands the runner every
+    // token after `--`; `gate baseline` reads `--base <sha>`, `gate lane` and `gate ci` read `--base=<ref>`.
+    const args =
+      this.mode === "run"
+        ? [
+            ...pair("ref", this.ref),
+            ...pair("box", this.box),
+            ...pair("shards", this.shards),
+            ...(operands.length > 0 ? ["--", ...operands] : []),
+          ]
+        : [
+            ...operands,
+            ...(this.base === undefined
+              ? []
+              : this.mode === "baseline"
+                ? ["--base", this.base]
+                : [`--base=${this.base}`]),
+            ...pair("key", this.key),
+            ...pair("slug", this.slug),
+            ...pair("summary", this.summary),
+            ...pair("reader", this.reader),
+            ...(io.json ? ["--json"] : []),
+          ];
+    return refusing(() => run([this.mode, ...args]));
+  }
+}
+Argument({
+  description: "run, command, baseline, plan, check, tasks, lane, branch, ci, dir or stage",
+  choices: [
+    "run",
+    "command",
+    "baseline",
+    "plan",
+    "check",
+    "tasks",
+    "lane",
+    "branch",
+    "ci",
+    "dir",
+    "stage",
+  ],
+})(GateCommand.prototype, "mode");
+Argument({
+  description:
+    "The mode's operands (a spec file, a folder, save|check, a stage); for run, the runner's flags after --",
+})(GateCommand.prototype, "operands");
+List(GateCommand.prototype, "operands");
+Option({ description: "run: the branch to gate (default HEAD)" })(GateCommand.prototype, "ref");
+Str()(GateCommand.prototype, "ref");
+Option({ description: "run: the ssh host to run the checks on instead of the runner" })(
+  GateCommand.prototype,
+  "box",
+);
+Str()(GateCommand.prototype, "box");
+Option({ description: "run: fan the checks out over this many package shards" })(
+  GateCommand.prototype,
+  "shards",
+);
+Int()(GateCommand.prototype, "shards");
+Option({
+  description:
+    "lane, ci: the base ref (default origin/main); baseline check: the base commit's 40-hex SHA",
+})(GateCommand.prototype, "base");
+Str()(GateCommand.prototype, "base");
+Option({ description: "dir: the issue key, instead of the branch's" })(
+  GateCommand.prototype,
+  "key",
+);
+Str()(GateCommand.prototype, "key");
+Option({ description: "dir: the spec folder's kebab-case short name" })(
+  GateCommand.prototype,
+  "slug",
+);
+Str()(GateCommand.prototype, "slug");
+Option({ description: "baseline save: the run summary (default the newest .turbo/runs/*.json)" })(
+  GateCommand.prototype,
+  "summary",
+);
+Str()(GateCommand.prototype, "summary");
+Option({ description: "baseline save: the summary's reader (default turbo)" })(
+  GateCommand.prototype,
+  "reader",
+);
+Str()(GateCommand.prototype, "reader");
+
+class ParseCommand extends Command({
+  name: "parse",
+  description: "What the parsers read from a spec artifact, as JSON",
+  group: GROUPS.specs,
+  docs: DOCS,
+  examples: [`${NAME} parse .agents/specs/sta-12-x/tasks.md`],
+}) {
+  /** @type {string} */
+  file;
+
+  async handle() {
+    const { run } = await import("../commands/parse.mjs");
+    return refusing(() => run([this.file]));
+  }
+}
+Argument({ description: "A spec.md, plan.md, tasks.md or routing.yaml" })(
+  ParseCommand.prototype,
+  "file",
+);
+
+class HooksRunCommand extends Command({
+  name: "hooks:run",
+  description:
+    "Run a stage's lefthook jobs here, else on the runner's box, and stamp the Hooks-Run trailer",
+  group: GROUPS.work,
+  docs: DOCS,
+  examples: [`${NAME} hooks run pre-commit`, `${NAME} hooks run commit-msg .git/COMMIT_EDITMSG`],
+}) {
+  /** @type {string} */
+  stage;
+  /** @type {string[] | undefined} */
+  hookArgs = undefined;
+
+  async handle() {
+    const { run } = await import("../commands/hooks.mjs");
+    return refusing(() => run(["run", this.stage, ...(this.hookArgs ?? [])]));
+  }
+}
+Argument({ description: "The git hook: pre-commit, commit-msg or pre-push" })(
+  HooksRunCommand.prototype,
+  "stage",
+);
+Argument({ description: "The git hook's own arguments, as git passes them" })(
+  HooksRunCommand.prototype,
+  "hookArgs",
+);
+List(HooksRunCommand.prototype, "hookArgs");
+
+class GuardCommand extends Command({
+  name: "guard",
+  description:
+    "The guard engine on the hook event: the preset's rules, the side doors and the secret files",
+  group: GROUPS.agents,
+  docs: DOCS,
+  examples: [`${NAME} guard --print-settings`],
+}) {
+  printSettings = false;
+
+  async handle() {
+    const { run } = await import("../commands/guard.mjs");
+    return refusing(() => run(this.printSettings ? ["--print-settings"] : []));
+  }
+}
+Option({ description: "Print the .claude/settings.json hooks sync renders; run no guard" })(
+  GuardCommand.prototype,
+  "printSettings",
+);
+
 class ReadmeCommand extends Command({
   name: "readme",
   description: "Render README.md from .flow/readme.yml; --check exits 1 when it differs",
@@ -1165,25 +1548,13 @@ function trainStep({ sub, description, subject }) {
 /** Every command, in the order the list shows them within their group. */
 export const COMMANDS = [
   ContextCommand,
-  passthrough({
-    name: "init",
-    description:
-      "Install .flow/ and the flow-* skills, a starter config, the workspace list or a runner",
-    group: GROUPS.setup,
-    examples: [
-      `${NAME} init`,
-      `${NAME} init --force`,
-      `${NAME} init --workspace ~/code`,
-      `${NAME} init --runner github-actions`,
-    ],
-  }),
-  passthrough({
+  InitCommand,
+  governance({
     name: "sync",
     description:
       "Render the flow-* skills from the locked preset and write .flow/lock.json; --workspace for each repository",
-    group: GROUPS.setup,
     examples: [`${NAME} sync`, `${NAME} sync --direct`, `${NAME} sync --workspace ~/code`],
-    repository: true,
+    direct: true,
   }),
   governance({
     name: "update",
@@ -1216,13 +1587,7 @@ export const COMMANDS = [
   }),
   DoctorCommand,
   PresetAddCommand,
-  passthrough({
-    name: "migrate",
-    description: "Move a spec-kit repository onto .flow/",
-    group: GROUPS.setup,
-    examples: [`${NAME} migrate --dry-run`],
-    repository: true,
-  }),
+  MigrateCommand,
   ReadmeCommand,
   TeamCheckCommand,
   SpecPathsCommand,
@@ -1231,17 +1596,7 @@ export const COMMANDS = [
   SpecTemplateCommand,
   SpecAskCommand,
   SpecResumeCommand,
-  passthrough({
-    name: "gate",
-    description: "The stage gates, the CI gate, the spec folder and the gate run on the runner",
-    group: GROUPS.specs,
-    examples: [
-      `${NAME} gate dir --key STA-12`,
-      `${NAME} gate plan .agents/specs/sta-12-x/spec.md`,
-      `${NAME} gate ci --base=origin/main`,
-      `${NAME} gate run`,
-    ],
-  }),
+  GateCommand,
   stage({
     name: "plan",
     description: "The plan stage: its workflow's input, then its tasks.md checked and recorded",
@@ -1250,33 +1605,12 @@ export const COMMANDS = [
     subject: "The issue key",
     output: "tasks.md",
   }),
-  passthrough({
-    name: "trace",
-    description: "The requirement to task to test matrix, spec drift and the Done rules",
-    group: GROUPS.specs,
-    examples: [`${NAME} trace trace .agents/specs/sta-12-x`, `${NAME} trace ci`],
-  }),
-  passthrough({
-    name: "parse",
-    description: "What the parsers read from a spec artifact, as JSON",
-    group: GROUPS.specs,
-    examples: [`${NAME} parse .agents/specs/sta-12-x/tasks.md`],
-  }),
+  TraceCommand,
+  ParseCommand,
   LinearIssueCommand,
   LinearTasksCommand,
-  passthrough({
-    name: "adr",
-    description:
-      "Reserve the next ADR number under the queue lock; prints it once it is on the default branch",
-    group: GROUPS.specs,
-    examples: [`${NAME} adr reserve cancel-order --issue STA-12`],
-  }),
-  passthrough({
-    name: "start",
-    description: "Make the issue's worktree and branch from the default branch",
-    group: GROUPS.work,
-    examples: [`${NAME} start STA-12 --slug cancel-order`, `${NAME} start STA-12 --dry-run`],
-  }),
+  AdrCommand,
+  StartCommand,
   StatusCommand,
   NextCommand,
   ResumeCommand,
@@ -1293,13 +1627,7 @@ export const COMMANDS = [
     subject: "The pull request number",
     output: "findings (JSON)",
   }),
-  passthrough({
-    name: "hooks",
-    description:
-      "Run a stage's lefthook jobs here, else on the runner's box, and stamp the Hooks-Run trailer",
-    group: GROUPS.work,
-    examples: [`${NAME} hooks run pre-commit`, `${NAME} hooks run commit-msg .git/COMMIT_EDITMSG`],
-  }),
+  HooksRunCommand,
   LandCommand,
   trainStep({ sub: "open", description: "Open the next release train", subject: "version" }),
   trainStep({ sub: "add", description: "Board a green PR on the open train", subject: "pr" }),
@@ -1320,19 +1648,8 @@ export const COMMANDS = [
   ShipCommand,
   ReleaseCommand,
   LedgerCommand,
-  passthrough({
-    name: "guard",
-    description:
-      "The guard engine on the hook event: the preset's rules, the side doors and the secret files",
-    group: GROUPS.agents,
-    examples: [`${NAME} guard --print-settings`],
-  }),
-  passthrough({
-    name: "mcp",
-    description: "A read-only MCP server over stdio",
-    group: GROUPS.agents,
-    examples: [`${NAME} mcp`],
-  }),
+  GuardCommand,
+  McpCommand,
   SessionStopCommand,
   AppCreateCommand,
 ];

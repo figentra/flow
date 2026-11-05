@@ -33,12 +33,13 @@ under `NO_COLOR` or in a pipe, and `doctor`, `status` and `status --metrics` tak
 are now `data`; `spec template <name> --json` writes the template's text as `data`, one string.
 
 `doctor`, `status`, `next`, `resume`, `task start`, `task done`, `task wave`, `todo`, `ledger`, `session stop`, the
-governance commands (`update`, `check`, `diff`, `validate`), the stage commands (`plan`, `review`), `readme`,
-`team check`, `land`, the `train` steps (`train open`, `add`, `close`, `build`, `eject`, `depart`, `status`), `spec`,
-`linear`, `clean`, `ship`, `release` and `app create` are ported to the engine (`next` takes `--json` too); bare
-`fflow train` and `fflow team` are unknown commands and exit 2. Every other command is passthrough, keeping its own
-flags and output until it is ported: `adr`, `gate`, `guard`, `hooks`, `init`, `mcp`, `migrate`, `parse`, `start`,
-`sync` and `trace`.
+governance commands (`sync`, `update`, `check`, `diff`, `validate`), the stage commands (`plan`, `review`), `init`,
+`migrate`, `trace`, `adr`, `start`, `mcp`, `readme`, `team check`, `land`, the `train` steps (`train open`, `add`,
+`close`, `build`, `eject`, `depart`, `status`), `gate`, `parse`, `guard`, `hooks run`, `spec`, `linear`, `clean`,
+`ship`, `release` and `app create`: every command is declared on the engine, none is passthrough (`next` and
+`trace trace` take `--json` too; `trace trace --json` now writes the matrix as `data`, and `spec` and `release` hand
+their `--json` document to the `{ "ok", "data" }` envelope above). Bare `fflow train`, `fflow team` and `fflow hooks`
+are unknown commands and exit 2. A command refuses a flag it does not declare (exit 2) instead of ignoring it.
 
 `@stackra/console` and `@stackra/validation` (0.7.1) are runtime dependencies of Flow (ADR 0506 decision 8, owner
 2026-11-03; this replaces STA-1945 NFR-1's "no runtime dependency, an optional peer"). They come from the Stackra
