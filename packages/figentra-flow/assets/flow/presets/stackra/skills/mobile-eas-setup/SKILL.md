@@ -77,5 +77,5 @@ npx expo export                        # the JS bundle builds locally
 
 ## Check
 
-`pnpm --filter @figentra/mobile test typecheck`, the three commands above, then `pnpm verify`. Owner: `mobile-builder`;
+`pnpm turbo run test typecheck --filter=@figentra/mobile`, the three commands above, then `pnpm verify`. Owner: `mobile-builder`;
 release gate: `release-operations`.

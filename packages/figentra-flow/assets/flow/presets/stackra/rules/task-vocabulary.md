@@ -29,7 +29,10 @@ Root: `pnpm build|typecheck|lint|test|clean` run `turbo run <task>`. `pnpm gen` 
 member's own. Root `pnpm format|format:check` run oxfmt
 over the whole repository (root files included) plus shfmt on `*.sh`, not turbo. `pnpm check` is
 format:check + lint + typecheck. `pnpm verify` is the full gate (add `validate`, `boundaries`, `knip`);
-`pnpm verify:affected` limits it to changed members. Run one member with `pnpm --filter <name> <script>`.
+`pnpm verify:affected` limits it to changed members. Run one member's tasks with
+`pnpm turbo run <task> --filter=<name>` (e.g. `pnpm turbo run test --filter=<name>`): turbo runs `gen` first. A bare
+`pnpm --filter <name> test` skips `stackra gen`, so vitest cannot load the generated `.stackra/vitest.config`. A pull
+request's `Needs testing:` line names the same command, e.g. `Needs testing: pnpm turbo run test --filter=<name>`.
 
 A new task name goes in `turbo.jsonc` and in every member of that shape together.
 

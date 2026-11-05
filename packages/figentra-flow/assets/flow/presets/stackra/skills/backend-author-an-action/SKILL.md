@@ -143,5 +143,5 @@ six months (ADR 0131, 0136). Never change the shape of a published version.
 
 ## Check
 
-`pnpm --filter <member> test typecheck build`, then `pnpm verify` (and `stackra gen --check` once gen ships). Review:
+`pnpm turbo run test typecheck build --filter=<member>`, then `pnpm verify` (and `stackra gen --check` once gen ships). Review:
 `api-contract-reviewer`.

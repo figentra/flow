@@ -34,7 +34,7 @@ renderer kit), 0139 (action UX), 0164, 0165 (component contract, form adapters i
 6. Free packages never import Pro components (0165).
 7. Within the budgets of 0183: 200 KB gzipped entry, 100 KB per route chunk.
 
-Run `pnpm --filter @figentra/console test typecheck build`, then `pnpm verify`.
+Run `pnpm turbo run test typecheck build --filter=@figentra/console`, then `pnpm verify`.
 
 ## Never
 

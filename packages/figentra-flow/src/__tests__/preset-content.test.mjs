@@ -8,7 +8,8 @@
  *   `renderReference` reads only the preset folder it is given; the profiles name only what the preset carries, each
  *   selects the agents routing's trust tasks go to, and `validate` names each agent or skill a profile selects that
  *   its preset lacks; a `replace` of a preset skill's file, a reference file or `routing.yaml` is a preset source
- *   `sync` renders (FR-4).
+ *   `sync` renders (FR-4); its own text runs one member's tests through turbo, never a bare filtered `pnpm test`,
+ *   which skips `stackra gen` (STA-2129).
  * Boundary: temporary folders; no network.
  * Runtime: node
  * Governing contract: STA-1945 (C6, D2, FR-4).
@@ -270,4 +271,31 @@ test("a replace of a preset skill's file, a reference file or routing.yaml is a 
   assert.match(read(".agents/reference/README.md"), /OUR REFERENCE/);
   assert.match(read(".agents/routing.yaml"), /routes: \[\]/);
   assert.match(read(".agents/routing.yaml"), /\.flow\/overrides\/content\/routing\.yml/);
+});
+
+test("the stackra preset runs one member's tests through turbo, never a bare filtered pnpm test", () => {
+  /** @param {string} dir @returns {string[]} */
+  const md = (dir) =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory() ? md(join(dir, e.name)) : e.name.endsWith(".md") ? [join(dir, e.name)] : [],
+    );
+  // reference/ is vendored third-party text, not Flow's guidance.
+  const own = ["agents", "commands", "rules", "skills", "templates"].flatMap((d) =>
+    md(join(STACKRA, d)),
+  );
+  // A line that warns the bare form skips gen names it on purpose.
+  const bare = own.filter((f) =>
+    readFileSync(f, "utf8")
+      .split("\n")
+      .some(
+        (line) =>
+          /pnpm (?:--filter|-F)[ =]\S+ (?:\S+ )*?(?:test|typecheck)\b/.test(line) &&
+          !line.includes("skips `stackra gen`"),
+      ),
+  );
+  assert.deepEqual(bare, []);
+  assert.match(
+    readFileSync(join(STACKRA, "rules", "task-vocabulary.md"), "utf8"),
+    /`Needs testing: pnpm turbo run test --filter=<name>`/,
+  );
 });
