@@ -32,11 +32,12 @@ under `NO_COLOR` or in a pipe, and `doctor`, `status` and `status --metrics` tak
 
 `doctor`, `status`, `next`, `resume`, `task start`, `task done`, `task wave`, `todo`, `ledger`, `session stop`, the
 governance commands (`sync`, `update`, `check`, `diff`, `validate`), the stage commands (`plan`, `review`), `init`,
-`migrate`, `trace`, `adr`, `start` and `mcp` are ported to the engine (`next` and `trace trace` take `--json` too;
-`trace trace --json` now writes the matrix as `data`). A ported command refuses a flag it does not declare (exit 2)
-instead of ignoring it. Every other command is passthrough, keeping its own flags and output until it is ported:
-`app`, `clean`, `gate`, `guard`, `hooks`, `land`, `linear`, `parse`, `readme`, `release`, `ship`, `spec`, `team` and
-`train`.
+`migrate`, `trace`, `adr`, `start`, `mcp`, `readme`, `team check`, `land` and the `train` steps (`train open`, `add`,
+`close`, `build`, `eject`, `depart`, `status`) are ported to the engine (`next` and `trace trace` take `--json` too;
+`trace trace --json` now writes the matrix as `data`); bare `fflow train` and `fflow team` are unknown commands and
+exit 2. A ported command refuses a flag it does not declare (exit 2) instead of ignoring it. Every other command is
+passthrough, keeping its own flags and output until it is ported: `app`, `clean`, `gate`, `guard`, `hooks`, `linear`,
+`parse`, `release`, `ship` and `spec`.
 
 `@stackra/console` and `@stackra/validation` (0.7.1) are runtime dependencies of Flow (ADR 0506 decision 8, owner
 2026-11-03; this replaces STA-1945 NFR-1's "no runtime dependency, an optional peer"). They come from the Stackra
