@@ -1,5 +1,68 @@
 # @figentra-oss/flow
 
+## 0.4.0
+
+### Minor Changes
+
+- b23d580: The approval check can judge a red main against its recorded baseline (STA-1945 FR-22), and it fails safe: it excuses
+  nothing unless the config's new `approve.tolerate` lists the check. That list is empty by default. A required check
+  that fails on the PR's head is a pre-existing failure, not a new one, only when all of these hold: the list names its
+  context; from its trusted source, it concluded `failure` on the commit that left main's nearest baseline too; and the
+  ruleset requires the `Baseline` check and it is green on the head (it compares each task, a newly reached failure
+  excepted). An unlisted check, or one that passed, never ran, or was only cancelled or timed out on the baseline, still
+  refuses. With no baseline or an empty list every required check must be green, as before. Every other refusal is
+  unchanged. The approval names the baseline's SHA and the checks it tolerated.
+  
+  The tolerance is per check, so list only checks that run no more than `baseline.tasks`. `Baseline` and `fflow/gate`
+  (which runs the whole check command) are never tolerated: the schema refuses a list naming either, `sync` refuses to
+  render it, and the check refuses it. `sync` renders the list into `fflow-approve.yml` as `TOLERATE`, beside
+  `OWNER_ONLY_EXTRA`, in the dispatched job and in the event lane's jobs alike, so a `fflow:land` request is judged
+  the same way. A `TOLERATE` that is not a JSON list of names refuses the approval, and an unset one is the empty
+  list. Run `fflow sync` after upgrading.
+- 9821447: Add offline, bounded task context discovery through `fflow context` and the read-only `fflow_context` MCP tool,
+  using checkout paths and the existing workspace registry. Include revisions, dirty state, scoped instructions,
+  package metadata and explicit discovery gaps. Clarify native Codex skill support and project concise documentation
+  boundary guidance through both built-in presets.
+- 30212bb: Port `spec`, `linear`, `clean`, `ship`, `release` and `app create` from passthrough to declared commands on
+  `@stackra/console`, so each `--help` lists its arguments and options. Every flag is still accepted and handed to the
+  same `run`. **Breaking** for scripts parsing `spec … --json` and `release [--preflight] --json`: they now write the
+  engine's one `{ "ok", "data" }` document, and the command's old document is under `.data` (`data.FEATURE_DIR`,
+  `data.IMPL_PLAN`, …), as `doctor --json` and `status --json` already do. `spec template <name> --json` writes the
+  template's text as `data`, one string. The shipped `flow-*` commands read the fields under `data`.
+
+### Patch Changes
+
+- a6f3e96: `fflow gate check` on a Draft spec now runs the spec checks its approval will run and prints their findings as
+  `at approval:` warnings (the exit stays 0), so an author sees them before approval. `gate run --help` is pinned to
+  print the help and dispatch nothing.
+- a2e6b8a: Port `gate`, `parse`, `guard` and `hooks run` from passthrough to declared commands, so their `--help` lists their
+  arguments and options. Each still runs the same command with the same flags.
+- 25b7d53: `readme`, `team check`, `land` and the `train` steps (`open`, `add`, `close`, `build`, `eject`, `depart`, `status`)
+  are declared commands on the console engine instead of passthrough (STA-1945 SC-2), so their `--help` lists every
+  option and positional. Each still runs its own `run`, with the same flags: `readme --check`; `team check --tracker`;
+  `land [<pr>] --stack --dry-run --manual-ok --wait <minutes> --no-wait`; `train open [<version>]`, `train add <pr>`,
+  `train eject <pr>` and `--dry-run` on every step. `readme` and `team check` still refuse outside a git repository.
+  The engine now refuses an unknown flag or a surplus argument (exit 2) where the old parsers ignored it, and bare
+  `fflow train` or `fflow team` is an unknown command (exit 2) (bare `train` printed its usage and exited 0).
+- 6ed589a: `init`, `sync`, `migrate`, `trace`, `adr`, `start` and `mcp` are ported from passthrough to the console engine
+  (STA-1945 SC-2): each declares its arguments and options, so `fflow <command> --help` lists them, and hands them to
+  the command's own `run` as before. Two differences: a flag a command does not declare is now refused (exit 2) instead
+  of ignored, and `fflow trace trace <dir> --json` writes the engine's `{ "ok", "data" }` document with the matrix as
+  `data`. `trace` also takes `--base <ref>` besides `--base=<ref>`, and `start` and `init` take `--opt=value`.
+- b4a4e5b: The stackra preset's reviewer agents post an advisory `Review (advisory): PASS|FAIL <sha>` comment through
+  `pnpm bot:gh` instead of `pnpm bot:review`, since the stackra-reviewer App is retired (ADR 0523 decision 6);
+  nothing counts the comment. `flow-review` and `docs-spec-flow` say the same. Flow's own config drops `apps.review`.
+- 84f046b: The stackra preset's agents, skills and task-vocabulary rule now run one member's tests with
+  `pnpm turbo run test --filter=<name>` (and `typecheck`/`build` the same way), since turbo runs `stackra gen` first and
+  a bare `pnpm --filter <name> test` skips it, leaving vitest without `.stackra/vitest.config`. The rule also says a pull
+  request's `Needs testing:` line names that command. The OpenCode surface allows `pnpm turbo run *`, which its
+  `pnpm *` deny otherwise blocked. Run `fflow sync` after upgrading.
+- 61bf06c: `fflow start` creates the key's spec folder in the new worktree when `origin/<default>` has none for it: `spec.md`
+  from the preset's spec template with the issue key and feature branch filled in, committed with the start record so
+  the worktree stays clean, and `fflow spec paths` finds it. A bug-lane key (a folder under the bugs dir) and
+  `--no-spec` (trivial work) get none. `--dry-run` names it. `/flow-specify` edits a `spec.md` start wrote rather than
+  overwriting it.
+
 ## 0.3.0
 
 ### Minor Changes
