@@ -33,7 +33,7 @@ equality on `tenant_id`), `.agents/rules/tenancy.md`, and the skill `db-models-a
 5. Tables snake_case plural, `idx_` and `fk_` names, public ids `<prefix>_<26>` (0135, 0231).
 6. No ORM on a client; client storage is `@stackra/storage` (0256).
 
-Run `pnpm --filter <member> test typecheck build`, then `pnpm verify`.
+Run `pnpm turbo run test typecheck build --filter=<member>`, then `pnpm verify`.
 
 ## Never
 

@@ -104,5 +104,5 @@ export class Order extends Model.with(HasPublicId("ord"), BelongsToTenant, Times
 
 ## Check
 
-The conformance test above, `pnpm --filter <package> test typecheck build`, then `pnpm verify`. Gen changes needed for a
+The conformance test above, `pnpm turbo run test typecheck build --filter=<package>`, then `pnpm verify`. Gen changes needed for a
 new kind or facet go to `compiler-engineer`.
