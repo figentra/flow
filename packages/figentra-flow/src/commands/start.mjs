@@ -7,7 +7,9 @@
  *   `--role` or the spec's `**Role**` on the default branch; the issue gets its `role:<id>` label and the agent app as
  *   delegate, and a comment records the builder's role and session (`--session`, else the spec's `**Session**`).
  *   The stage ends with Flow's record (STA-1945 FR-14): `start` done (`worktree` when the spec there is Tasked or
- *   later, so `next` names the build), committed on the new branch and pushed.
+ *   later, so `next` names the build), committed on the new branch and pushed. When the key has no spec folder, the
+ *   new worktree gets `<specs dir>/<key>-<slug>/spec.md` from the preset's spec template, its issue key line and
+ *   `**Feature Branch**` filled in, left uncommitted for the builder (STA-2126).
  * Boundary: writes one branch and one worktree, or nothing: an existing folder or branch (local or remote) is refused.
  *   The record's commit and push only warn when they fail.
  *   Works from the main checkout or from inside any of its worktrees. Runs `pnpm install` only with `--install` (the
@@ -17,11 +19,12 @@
  * Secrets: the Linear token only from the environment the calling wrapper sets; never read or printed.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { trackerFor } from "../adapters/tracker/index.mjs";
-import { SPECS_DIR } from "./gate.mjs";
+import { SPECS_DIR, specDir } from "./gate.mjs";
+import { resolveTemplate } from "../lib/flow-dir.mjs";
 import { defaultBranch, fetch, git, mainCheckout } from "../lib/git.mjs";
 import { NAME } from "../lib/product.mjs";
 import { endStage } from "../lib/record.mjs";
@@ -115,8 +118,16 @@ export async function start(options) {
   for (const ref of [`refs/heads/${branch}`, `refs/remotes/origin/${branch}`])
     if (git(root, ["show-ref", "--verify", "--quiet", ref]).ok)
       return { ok: false, problem: `branch ${branch} already exists (${ref})` };
+  /** The spec folder to create under `top`: the key's folder when it has none yet (STA-2126). */
+  const newSpec = (/** @type {string} */ top) => {
+    const { dir } = specDir({ root: top, key, slug, keys: scheme });
+    return dir && !existsSync(join(top, dir)) ? dir : undefined;
+  };
   if (dry) {
-    log(`${NAME} start: would create ${branch} from origin/${base} at ${path}`);
+    const spec = newSpec(root);
+    log(
+      `${NAME} start: would create ${branch} from origin/${base} at ${path}${spec ? ` and ${spec}/spec.md` : ""}`,
+    );
     return { ok: true, path, branch };
   }
   const added = git(root, ["worktree", "add", "-q", "-b", branch, path, `origin/${base}`]);
@@ -176,6 +187,16 @@ export async function start(options) {
         warn(`${NAME} start: warning: ${p}`);
     }
   }
+  const spec = newSpec(path);
+  const template = spec ? resolveTemplate(path, "spec-template") : undefined;
+  if (spec && template) {
+    mkdirSync(join(path, spec), { recursive: true });
+    const text = readFileSync(template, "utf8")
+      .replace(/^(\*\*(?:Linear|Issue)\*\*:[ \t]*)\S+/m, `$1${shown}`)
+      .replace(/^(\*\*Feature Branch\*\*:[ \t]*)\S+/m, `$1\`${branch}\``);
+    writeFileSync(join(path, spec, "spec.md"), text);
+    log(`${NAME} start: ${spec}/spec.md from the spec template`);
+  } else if (spec) warn(`${NAME} start: warning: no spec-template, so no ${spec}/spec.md`);
   if (install) {
     const r = spawnSync("pnpm", ["install"], { cwd: path, stdio: "inherit" });
     if (r.status !== 0)

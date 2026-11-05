@@ -10,7 +10,7 @@
 // @covers sta-1729:FR-1 sta-1729:AC-001 sta-1729:AC-002 sta-1729:P-001
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { slugOf, start } from "../commands/start.mjs";
@@ -213,4 +213,66 @@ test("start with a roster: an unknown --role is refused first; no role only warn
     warnings.join(),
     /no role \(pass --role, or set the spec's \*\*Role\*\*\); the lead assigns one/,
   );
+});
+
+// @covers sta-2126:FR-1
+test("start: a key with no spec folder gets spec.md from the preset's template, key and branch filled in", async (t) => {
+  const r = repo({ [CONFIG_FILE]: JSON.stringify({ ...CONFIG, preset: "stackra" }) });
+  t.after(r.dispose);
+  /** @type {string[]} */
+  const logs = [];
+  const dry = await start({
+    cwd: r.root,
+    key: "STA-13",
+    slug: "specced",
+    issues: tracker().issues,
+    dry: true,
+    log: (s) => logs.push(s),
+    warn: () => {},
+  });
+  assert.equal(dry.ok, true);
+  assert.match(logs.join(), /and \.agents\/specs\/sta-13-specced\/spec\.md/);
+  const result = await start({
+    cwd: r.root,
+    key: "STA-13",
+    slug: "specced",
+    issues: tracker().issues,
+    ...quiet,
+  });
+  const text = readFileSync(
+    join(result.path ?? "", ".agents", "specs", "sta-13-specced", "spec.md"),
+    "utf8",
+  );
+  assert.match(text, /^\*\*Linear\*\*: STA-13 <!--/m);
+  assert.match(text, /^\*\*Feature Branch\*\*: `figentra\/sta-13-specced`$/m);
+  assert.match(text, /^\*\*Linear project\*\*: \[project name/m);
+  // The record alone is committed; the spec waits for the builder.
+  assert.equal(
+    sh(result.path ?? "", "show", "--name-only", "--format=", "HEAD"),
+    ".flow/record/sta-13.json",
+  );
+});
+
+test("start: an existing spec folder for the key is left as it is", async (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  mkdirSync(join(r.root, ".agents", "specs", "sta-14-older"), { recursive: true });
+  writeFileSync(join(r.root, ".agents", "specs", "sta-14-older", "spec.md"), "# Mine\n");
+  sh(r.root, "add", "-A");
+  sh(r.root, "commit", "-q", "-m", "spec");
+  sh(r.root, "push", "-q", "origin", "main");
+  /** @type {string[]} */
+  const logs = [];
+  const result = await start({
+    cwd: r.root,
+    key: "STA-14",
+    slug: "newer",
+    issues: tracker().issues,
+    log: (s) => logs.push(s),
+    warn: () => {},
+  });
+  const specs = join(result.path ?? "", ".agents", "specs");
+  assert.equal(readFileSync(join(specs, "sta-14-older", "spec.md"), "utf8"), "# Mine\n");
+  assert.equal(existsSync(join(specs, "sta-14-newer")), false);
+  assert.doesNotMatch(logs.join(), /spec template/);
 });
