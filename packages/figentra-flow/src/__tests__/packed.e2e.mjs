@@ -198,14 +198,15 @@ test(
       "outsider",
     );
 
-    // A hand edit to a rendered file is caught: `check` exits non-zero and names the file.
-    const skill = join(repo, ".claude/skills/flow-plan/SKILL.md");
+    // A hand edit to a rendered file is caught: `check` exits non-zero and names the file. Plain `sync` renders
+    // the neutral `.agents/skills/` (asserted above) and locks it; init's `.claude/skills/` is gone by now.
+    const skill = join(repo, ".agents/skills/flow-plan/SKILL.md");
     writeFileSync(skill, `${readFileSync(skill, "utf8")}\nedited by hand\n`);
     const caught = flow(["check"]);
     assert.notEqual(caught.status, 0, "check fails on a hand edit");
     assert.match(
       `${caught.out}${caught.err}`,
-      /\.claude\/skills\/flow-plan\/SKILL\.md differs from what `fflow sync` rendered/,
+      /\.agents\/skills\/flow-plan\/SKILL\.md differs from what `fflow sync` rendered/,
     );
   },
 );
