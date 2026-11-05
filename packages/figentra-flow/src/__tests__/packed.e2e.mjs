@@ -4,14 +4,15 @@
  *   a scratch repository that knows only the public registry scopes (`@figentra-oss` and `@stackra` on the
  *   Figentra registry, the rest on npm's default), and run the installed `fflow`: `--version`, `init` on the
  *   `neutral` preset, `sync`, `check`, `doctor --offline --json` and `mcp` (`initialize` and `tools/list` over
- *   stdio), asserting exit codes and key outputs. No workspace links: every dependency resolves from a registry.
+ *   stdio), asserting exit codes and key outputs; then a hand edit to a rendered file, which `check` catches and
+ *   names. No workspace links: every dependency resolves from a registry.
  * Boundary: temporary folders; needs the network (the registries), so it is not in `node --test`'s `*.test.mjs`
  *   glob: CI's `e2e` job runs it (`pnpm --filter @figentra-oss/flow test:e2e`). The npm and pnpm settings of the
  *   workspace and the machine are kept out of the install (a userconfig of its own, no `npm_config_*`).
  * Runtime: node
  * Governing contract: ADR 0510; STA-1945 (T121; FR-11, P-016).
  */
-// @covers sta-1945:FR-11 sta-1945:P-016
+// @covers sta-1945:FR-11 sta-1945:AC-1 sta-1945:P-016
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -56,7 +57,7 @@ const run = (cwd, cmd, args, { env = OUTSIDE, input } = {}) => {
 };
 
 test(
-  "e2e: the packed tarball installs from the public registries and fflow runs init, sync, check, doctor and mcp",
+  "e2e: the packed tarball installs from the public registries and fflow runs init, sync, check, doctor and mcp; check catches a hand edit",
   {
     timeout: 900_000,
   },
@@ -195,6 +196,17 @@ test(
     assert.equal(
       JSON.parse(replies.get(3).result.content[0].text).repositories[0].matches[0].name,
       "outsider",
+    );
+
+    // A hand edit to a rendered file is caught: `check` exits non-zero and names the file. Plain `sync` renders
+    // the neutral `.agents/skills/` (asserted above) and locks it; init's `.claude/skills/` is gone by now.
+    const skill = join(repo, ".agents/skills/flow-plan/SKILL.md");
+    writeFileSync(skill, `${readFileSync(skill, "utf8")}\nedited by hand\n`);
+    const caught = flow(["check"]);
+    assert.notEqual(caught.status, 0, "check fails on a hand edit");
+    assert.match(
+      `${caught.out}${caught.err}`,
+      /\.agents\/skills\/flow-plan\/SKILL\.md differs from what `fflow sync` rendered/,
     );
   },
 );
