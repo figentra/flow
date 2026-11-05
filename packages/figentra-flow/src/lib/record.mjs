@@ -316,14 +316,14 @@ const paths = (/** @type {string} */ out) => out.split("\0").filter(Boolean);
  * like a secret: those are reported as `secrets` and `untracked`, left in the worktree. The hooks always run, even
  * when the caller's environment sets `LEFTHOOK` or `LEFTHOOK_EXCLUDE`. When nothing could be committed `uncommitted`
  * is set and the staging is undone (the working tree is unchanged); when it is the hooks that refused, `hooks` is
- * their output's tail.
+ * their output's tail. `files` (paths relative to `root`) are committed with the record.
  * @param {string} root the task's worktree
  * @param {string} key
- * @param {{ message: string, wip?: boolean, push?: boolean }} options `push: false` commits only
+ * @param {{ message: string, wip?: boolean, push?: boolean, files?: string[] }} options `push: false` commits only
  * @returns {{ sha: string, pushed: boolean, uncommitted?: boolean, problem?: string, hooks?: string,
  *             secrets?: string[], untracked?: string[] }}
  */
-export function commitRecord(root, key, { message, wip = false, push: send = true }) {
+export function commitRecord(root, key, { message, wip = false, push: send = true, files = [] }) {
   const head = () => git(root, ["rev-parse", "HEAD"]).out;
   /** @type {{ secrets?: string[], untracked?: string[] }} */
   const left = {};
@@ -352,10 +352,10 @@ export function commitRecord(root, key, { message, wip = false, push: send = tru
       : staged;
     if (!unstaged.ok) return failed(`git reset failed: ${unstaged.err}`);
   }
-  const added = git(root, ["add", "--", file]);
+  const added = git(root, ["add", "--", file, ...files]);
   if (!added.ok) return failed(`git add failed: ${added.err}`);
-  // Only a stop commits more than the record.
-  const only = wip ? [] : ["--", file];
+  // Only a stop commits more than the record (and the caller's `files`).
+  const only = wip ? [] : ["--", file, ...files];
   if (!git(root, ["diff", "--cached", "--quiet", ...only]).ok) {
     const committed = git(root, ["commit", "-q", "-m", message, ...only], hooked());
     if (!committed.ok) {
@@ -378,19 +378,19 @@ export function commitRecord(root, key, { message, wip = false, push: send = tru
  * the task's branch and pushed (`commit: false` writes only, `push: false` commits only). Off a task's branch (the
  * default branch, a detached HEAD) nothing is written: the record lives on the task's branch. A record that cannot be
  * read or written, and a commit or push that failed, come back as the problem for the caller to warn: a stage's own
- * outcome never hangs on its record.
+ * outcome never hangs on its record. `files` are committed with the record (`start`'s new spec.md, STA-2126).
  * @param {string} root the task's checkout
  * @param {string} key
  * @param {Stage} stage
  * @param {{ state?: FlowRecord["state"], change?: (r: FlowRecord) => FlowRecord, commit?: boolean,
- *           push?: boolean }} [options]
+ *           push?: boolean, files?: string[] }} [options]
  * @returns {string | undefined} the problem
  */
 export function endStage(
   root,
   key,
   stage,
-  { state = "done", change = (r) => r, commit = true, push = true } = {},
+  { state = "done", change = (r) => r, commit = true, push = true, files = [] } = {},
 ) {
   const branch = git(root, ["branch", "--show-current"]).out;
   if (!branch || branch === defaultBranch(root)) return undefined;
@@ -405,6 +405,7 @@ export function endStage(
   return commitRecord(root, key, {
     message: `chore(flow): ${shown} ${stage} ${state}\n\nRefs: ${shown}`,
     push,
+    files,
   }).problem;
 }
 

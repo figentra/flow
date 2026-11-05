@@ -1167,6 +1167,7 @@ class StartCommand extends Command({
   /** @type {string | undefined} */
   session = undefined;
   install = false;
+  spec = true;
   dryRun = false;
 
   async handle() {
@@ -1177,6 +1178,7 @@ class StartCommand extends Command({
       ...valued("--role", this.role),
       ...valued("--session", this.session),
       ...(this.install ? ["--install"] : []),
+      ...(this.spec === false ? ["--no-spec"] : []),
       ...(this.dryRun ? ["--dry-run"] : []),
     ];
     return refusing(() => run(args));
@@ -1199,6 +1201,10 @@ Option({ description: "The session's name; the spec's **Session** when left out"
 );
 Str()(StartCommand.prototype, "session");
 Option({ description: "Run pnpm install in the new worktree" })(StartCommand.prototype, "install");
+Option({ description: "Write the key's spec.md from the template; --no-spec for trivial work" })(
+  StartCommand.prototype,
+  "spec",
+);
 Option({ description: "Print what it would do; change nothing" })(StartCommand.prototype, "dryRun");
 
 class McpCommand extends Command({
