@@ -1,29 +1,26 @@
 /**
  * Figentra Flow file contract:
- * Purpose: the approval workflow `sync` renders into a repository (STA-1856 FR-4). It is dispatched with `pr` and
- *   `head`, mints the approving App's token, downloads this exact package version, refuses unless the tarball's
- *   sha512 is the integrity the repository's lockfile pinned at render time, and runs `approve-check.mjs` from it. That script
- *   holds every rule, and its tests live here. The workflow runs in `APPROVE_ENVIRONMENT`, which must allow the
- *   default branch only; the check refuses when it does not. With `verdict` (a `github-actions` runner and
- *   `secrets.oidc`, the L2 design's PR F) it also runs on the gate workflow's `workflow_run`: a `verdict` job, with
- *   `id-token: write` and no App secret, runs `verdict.mjs` from the same pinned tarball, which mints a `verdict`
- *   token over OIDC and posts the gate's status. Then every job runs only on the default branch and while the
- *   automation variable allows it (missing is frozen). With `lane` (`secrets.oidc`, the L2 design's PR D) events run
- *   it: a `cancel` job removes `LAND_LABEL` on a push (with the job's token, so it starts nothing, and even while frozen,
- *   since it only withdraws), a keyless `route` job wakes on the label, a `/fflow land` comment, the gate's success
- *   status, a listed workflow's success, ready-for-review or the schedule and says whether any PR asks to land, then
- *   `approve` (`approve-check.mjs` with `MODE=event`, automation `on`) and `merge` (`merge.mjs`, `on` or `merge-only`)
- *   mint their own tokens over OIDC, one at a time per repository; the dispatched job stays as `approve-dispatch`, the
- *   one-release fallback. Without `verdict` and `lane` the file is today's, byte for byte.
+ * Purpose: the approval workflow `sync` renders into a repository (STA-1856 FR-4, the L2 design). Events run it, never
+ *   a dispatch. Every job downloads this exact package version, refuses unless the tarball's sha512 is the integrity
+ *   the repository's lockfile pinned at render time, and runs one script from it; those scripts hold every rule, and
+ *   their tests live here. The jobs run in `APPROVE_ENVIRONMENT`, which must allow the default branch only, only on
+ *   the default branch and only while the automation variable allows it (missing is frozen). With `lane`
+ *   (`secrets.oidc`, the L2 design's PR D): a `cancel` job removes `LAND_LABEL` on a push (with the job's token, so it
+ *   starts nothing, and even while frozen, since it only withdraws), a keyless `route` job wakes on the label, a
+ *   `/fflow land` comment, the gate's success status, a listed workflow's success, ready-for-review or the schedule
+ *   and says whether any PR asks to land, then `approve` (`approve-check.mjs` with `MODE=event`, automation `on`) and
+ *   `merge` (`merge.mjs`, `on` or `merge-only`) mint their own tokens over OIDC, one at a time per repository. With
+ *   `verdict` (a `github-actions` runner and `secrets.oidc`, the L2 design's PR F) a `verdict` job runs on the gate
+ *   workflow's `workflow_run`, mints a `verdict` token over OIDC and posts the gate's status. The dispatched
+ *   `approve-dispatch` job and the approving App's secrets it read are gone (the L2 design's PR G, STA-1945 FR-36).
  * Boundary: returns text; writes nothing. The workflow never checks out or runs the PR's code, never downloads an
  *   artifact and never puts event text in a `run:` block (it reaches a step through `env` only). It has no `push`,
- *   `pull_request`, `workflow_call` or `repository_dispatch` trigger. Dispatched, it never merges (auto merge does,
- *   after every required check); with `lane`, only `merge.mjs` merges, at the approved head.
+ *   `pull_request`, `workflow_dispatch`, `workflow_call` or `repository_dispatch` trigger; only `merge.mjs` merges, at
+ *   the approved head.
  * Runtime: node
- * Governing contract: STA-1856 FR-4 (the security review of 2026-11-01); the L2 design (PR D, PR F); STA-1945.
- * Secrets: names the approving App's id and key secrets, which are distinct from any bot that pushes; holds no value.
- *   The `verdict`, `approve` and `merge` event jobs name none: their tokens come from Infisical over the job's OIDC
- *   token, in process.
+ * Governing contract: STA-1856 FR-4 (the security review of 2026-11-01); the L2 design (PR D, PR F, PR G); STA-1945
+ *   FR-36 and AC-50.
+ * Secrets: names none. Every job's token comes from Infisical over the job's OIDC token, in process.
  */
 import { SETUP_NODE } from "./gate-workflow.mjs";
 import {
@@ -39,9 +36,6 @@ import {
   STATUS_CONTEXT,
 } from "./product.mjs";
 
-const APP_TOKEN =
-  "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0";
-
 /**
  * The `verdict` job's inputs: the gate workflow's path, the owner, the default branch and the Infisical coordinates.
  * @typedef {{ gatePath: string, owner?: string, defaultBranch: string,
@@ -54,18 +48,16 @@ const APP_TOKEN =
 
 /**
  * The workflow's YAML.
- * @param {{ version: string, integrity?: string, appId: string, privateKey: string,
- *           trusted?: Record<string, string | string[]>, ownerOnly?: string[], verdict?: Verdict,
- *           lane?: Lane }} options the package version to run and its lockfile integrity (`sha512-…`; without one the
- *   workflow refuses to run), the App secret names, the trusted check sources (context to a login or a list of
+ * @param {{ version: string, integrity?: string, trusted?: Record<string, string | string[]>, ownerOnly?: string[],
+ *           verdict?: Verdict, lane?: Lane }} options the package version to run and its lockfile integrity
+ *   (`sha512-…`; without one the workflow refuses to run), the trusted check sources (context to a login or a list of
  *   logins), the repository's extra owner-only globs, for a `github-actions` runner with `secrets.oidc` the `verdict`
  *   job's inputs and, with `secrets.oidc`, the event lane's
+ * @throws {Error} with neither `lane` nor `verdict`: there is no dispatched fallback to render
  */
 export function approveWorkflow({
   version,
   integrity = "",
-  appId,
-  privateKey,
   trusted = {},
   ownerOnly = [],
   verdict,
@@ -90,35 +82,23 @@ export function approveWorkflow({
 `;
   if (verdict) checkVerdict(verdict);
   if (lane) checkLane(lane);
-  const events = verdict ?? lane;
-  // With events, every job runs on the default branch only, and only while automation is not frozen.
-  const ref = events ? `github.ref == 'refs/heads/${events.defaultBranch}'` : "";
-  const guard = events
-    ? `${ref} && (${AUTOMATION_RUNS.map((v) => `vars.${AUTOMATION_VARIABLE} == '${v}'`).join(" || ")})`
-    : "";
+  const events = lane ?? verdict;
+  if (!events)
+    throw new Error(
+      `${pkg}: the approval workflow needs secrets.oidc (the event lane or the verdict job); the dispatched fallback is retired`,
+    );
+  // Every job runs on the default branch only, and only while automation is not frozen.
+  const ref = `github.ref == 'refs/heads/${events.defaultBranch}'`;
+  const guard = `${ref} && (${AUTOMATION_RUNS.map((v) => `vars.${AUTOMATION_VARIABLE} == '${v}'`).join(" || ")})`;
   // What approves runs only while automation is fully on (`merge-only` merges what was approved before).
   const guardOn = `${ref} && vars.${AUTOMATION_VARIABLE} == '${AUTOMATION_RUNS[0]}'`;
   const woken = [...(lane?.workflows ?? []), ...(verdict ? [STATUS_CONTEXT] : [])];
-  return `# Written by \`${NAME} sync\`; ${lane ? `events run it: the ${LAND_LABEL} label or a \`${LAND_COMMAND}\` comment asks for a land` : `\`${NAME} land\` dispatches it when the ruleset requires a review`} (STA-1856).
-# Every rule is in ${PACKAGE}'s approve-check.mjs, at the version below; \`${NAME} gate ci\` fails on a hand edit.
+  return `# Written by \`${NAME} sync\`; ${lane ? `events run it: the ${LAND_LABEL} label or a \`${LAND_COMMAND}\` comment asks for a land` : "the gate workflow's runs wake it"} (STA-1856).
+# Every rule is in ${PACKAGE}'s scripts, at the version below; \`${NAME} gate ci\` fails on a hand edit.
 name: ${NAME} approve
-${
-  events
-    ? `run-name: \${{ github.event_name == 'workflow_dispatch' && format('${NAME} approve PR {0} at {1}', inputs.pr, inputs.head) || '${NAME} ${lane ? "approve" : "verdict"}' }}`
-    : `run-name: ${NAME} approve PR \${{ inputs.pr }} at \${{ inputs.head }}`
-}
+run-name: ${NAME} ${lane ? "approve" : "verdict"}
 
 on:
-  workflow_dispatch:
-    inputs:
-      pr:
-        description: Pull request number
-        required: true
-        type: number
-      head:
-        description: The head SHA the caller checked; the approval is refused if the PR moved since
-        required: true
-        type: string
 ${
   lane
     ? `  # A land request, and what can unblock one; each run sweeps every request, so a lost event loses nothing.
@@ -141,60 +121,8 @@ ${
       : ""
   }
 permissions: {}
-${
-  events
-    ? ""
-    : `
-concurrency:
-  group: ${NAME}-approve-\${{ inputs.pr }}
-  cancel-in-progress: false
-`
-}
-jobs:
-  approve${lane ? "-dispatch" : ""}:
-${
-  events
-    ? `    if: github.event_name == 'workflow_dispatch' && ${guard}
-    concurrency:
-      group: ${NAME}-approve-\${{ inputs.pr }}
-      cancel-in-progress: false
-`
-    : ""
-}    # The App's key is only in this environment; the check refuses unless it admits the default branch alone.
-    environment: ${APPROVE_ENVIRONMENT}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      actions: read
-      checks: read
-      contents: read
-      pull-requests: read
-      statuses: read
-    steps:
-      - uses: ${SETUP_NODE}
-        with:
-          node-version: 24
-      - name: App token
-        id: app
-        uses: ${APP_TOKEN}
-        with:
-          app-id: \${{ secrets.${appId} }}
-          private-key: \${{ secrets.${privateKey} }}
-          permission-pull-requests: write
-      - name: Check and approve
-        env:
-          GITHUB_TOKEN: \${{ github.token }}
-          APP_TOKEN: \${{ steps.app.outputs.token }}
-          APPROVER: \${{ steps.app.outputs.app-slug }}[bot]
-          REPO: \${{ github.repository }}
-          PR: \${{ inputs.pr }}
-          EXPECTED_HEAD: \${{ inputs.head }}
-          ENVIRONMENT: ${APPROVE_ENVIRONMENT}
-          RUN_URL: \${{ github.server_url }}/\${{ github.repository }}/actions/runs/\${{ github.run_id }}
-          INTEGRITY: '${integrity}'
-          TRUSTED: ${yamlJson(trusted)}
-          OWNER_ONLY_EXTRA: ${yamlJson(ownerOnly)}
-${packageRun("approve-check.mjs")}${
+
+jobs:${
     lane
       ? laneJobs({ lane, ref, guard, guardOn, packageRun, yamlJson, integrity, trusted, ownerOnly })
       : ""

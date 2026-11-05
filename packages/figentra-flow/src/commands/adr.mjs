@@ -50,7 +50,7 @@ export function queueFile(root, name) {
   try {
     path = existsSync(file) ? parseYaml(readFileSync(file, "utf8"))?.queues?.[name] : undefined;
   } catch (error) {
-    // A repository's own preset.yml outside the YAML subset declares no queue (as `approveSecrets` reads it).
+    // A repository's own preset.yml outside the YAML subset declares no queue.
     if (!(error instanceof YamlError)) throw error;
   }
   return typeof path === "string" && FILE.test(path) ? path : undefined;

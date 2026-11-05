@@ -12,28 +12,25 @@
  *   approval workflow (read through the contents API) takes `LAND_LABEL`, `land` only asks main's land lane (the L2
  *   design): it adds the label, or comments `/fflow land` when the label is already there, then waits up to `--wait`
  *   minutes (default 10; `--no-wait` returns at once) for the merge or the lane's verdict on the head (`LAND_CONTEXT`,
- *   from a gate login only). Otherwise, when the base's ruleset requires an approving review the head lacks, it
- *   dispatches the approval workflow and turns on auto-merge at the head instead, never an admin path (deprecated, one
- *   release); `land` on a merged PR runs the steps after the merge (STA-1856). `--stack` lands a stack bottom-up: after each squash it
+ *   from a gate login only). Otherwise, when the base's ruleset requires an approving review the head lacks, it refuses
+ *   and names `secrets.oidc` and `sync` (the dispatched fallback is retired, the L2 design's PR G; never an admin
+ *   path); `land` on a merged PR runs the steps after the merge (STA-1856). `--stack` lands a stack bottom-up: after each squash it
  *   merges the default branch into the next PR, resolves each conflict that is only the landed parent's own change
  *   (`lib/stack.mjs`), retargets the PR, gates it and lands it; a re-run after a stop picks the stack up where it
  *   stopped (STA-1945 FR-16).
  * Boundary: every rule is read from GitHub's live state and the spec at the PR's head; nothing changes until all
- *   pass. The merge carries `sha`, so GitHub refuses it if the head moved. Waiting on required checks exits 4. On the
- *   label path it never dispatches, turns on auto-merge or merges: a merge finishes (0, or 3 on warnings), a refusal
+ *   pass. The merge carries `sha`, so GitHub refuses it if the head moved. It never dispatches a workflow or turns on
+ *   auto-merge. On the label path it never merges: a merge finishes (0, or 3 on warnings), a refusal
  *   prints the lane's reasons (1), the owner's review or a timeout exits 4, a moved head 1. Steps after the merge only
  *   warn (exit 3)
  *   and never undo it. A stack is brought up to date by a merge commit and a normal push, never a rewrite; any other
  *   conflict stops the stack with the merge aborted and the files named.
  * Runtime: node
  * Governing contract: Stackra ADR 0503 (decision 5), ADR 0502; ADR 0523 (decision 6); STA-1729 phase 3 (the leader's
- *   plan stop of 2026-10-31); STA-1856 (FR-1 to FR-3); STA-1945 (FR-14, FR-16, AC-14, AC-42); the L2 design (PR E).
+ *   plan stop of 2026-10-31); STA-1856 (FR-1 to FR-3); STA-1945 (FR-14, FR-16, AC-14, AC-42); the L2 design (PR E, PR G).
  * Secrets: none here. GitHub calls go through `gh` (or the repository's `bot:gh`), Linear through the environment's
  *   token, which is never read into output.
  */
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-
 import { ownerApprovalProblems } from "./gate.mjs";
 import { clean } from "./clean.mjs";
 import { gateRun, slugOf } from "./gate-run.mjs";
@@ -117,12 +114,6 @@ export function blockingFindings(record) {
 
 /** A list response's items; none when the call failed or answered something else. */
 const list = (/** @type {{ json: any }} */ r) => (Array.isArray(r.json) ? r.json : []);
-
-/** Turns on auto-merge (squash), pinned to the head that was checked. */
-const AUTO_MERGE = `mutation($id: ID!, $head: GitObjectID!, $title: String!, $body: String!) {
-  enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: SQUASH, expectedHeadOid: $head,
-    commitHeadline: $title, commitBody: $body }) { clientMutationId }
-}`;
 
 /**
  * Every path the PR changes (a rename's old path too), each listed entry, and how many files GitHub listed (it lists
@@ -342,9 +333,17 @@ export async function landOne({
   if (problems.length) return { code: 1, problems };
   const queue = needsReview && !approved;
   const label = takesLabel(api, repo, base);
+  // The L2 design's PR G: with no land lane on the base, nothing but a person can give the review the ruleset requires.
+  if (queue && !label)
+    return {
+      code: 1,
+      problems: [
+        `${base}'s ruleset requires an approving review the head lacks, and ${base}'s ${APPROVE_WORKFLOW} takes no ${LAND_LABEL} request: add secrets.oidc and run \`${NAME} sync\`, or have the owner review it`,
+      ],
+    };
   if (dry) {
     log(
-      `${NAME} land: would ${label ? `request the land with ${LAND_LABEL}, for main's land lane to approve and merge,` : queue ? "request the approval and auto-merge" : "squash-merge"} #${number} (${branch} at ${head.slice(0, 12)}) into ${base}`,
+      `${NAME} land: would ${label ? `request the land with ${LAND_LABEL}, for main's land lane to approve and merge,` : "squash-merge"} #${number} (${branch} at ${head.slice(0, 12)}) into ${base}`,
     );
     return { code: 0 };
   }
@@ -427,59 +426,7 @@ export async function landOne({
       await sleep(POLL_MS);
     }
   }
-  if (queue)
-    deps.warn(
-      `${NAME} land: warning: ${base}'s ${APPROVE_WORKFLOW} takes no ${LAND_LABEL} request yet, so land dispatches it (deprecated: \`${NAME} sync\` with secrets.oidc renders the land lane)`,
-    );
-
   const commits = api("GET", `/repos/${repo}/pulls/${number}/commits?per_page=100`).json ?? [];
-  // STA-1856 FR-2: a required review comes from the approval workflow; auto-merge waits for it and every check.
-  if (queue) {
-    if (!existsSync(join(root, ".github", "workflows", APPROVE_WORKFLOW)))
-      return {
-        code: 1,
-        problems: [
-          `${base}'s ruleset requires an approving review and .github/workflows/${APPROVE_WORKFLOW} is not installed (run \`${NAME} sync\`)`,
-        ],
-      };
-    // The approval checks every required check on the head; asking before they are green only gets a refusal.
-    const checks = requiredCheckState({
-      required: requiredContexts(rules.ok ? (rules.json ?? []) : []),
-      statuses,
-      checkRuns:
-        api("GET", `/repos/${repo}/commits/${head}/check-runs?per_page=100`).json?.check_runs ?? [],
-      trusted: { ...(gateApp ? { [STATUS_CONTEXT]: gateApp } : {}), ...config.approve?.checks },
-    });
-    const bad = [...checks.failed.map((c) => `${c} failed`), ...checks.untrusted];
-    if (bad.length) return { code: 1, problems: bad.map((b) => `required check: ${b}`) };
-    if (checks.pending.length) {
-      log(
-        `${NAME} land: #${number}: waiting on ${checks.pending.join(", ")}; \`${NAME} land ${number}\` again once green`,
-      );
-      return { code: 4, queued: true, waiting: checks.pending };
-    }
-    const asked = api("POST", `/repos/${repo}/actions/workflows/${APPROVE_WORKFLOW}/dispatches`, {
-      ref: base,
-      inputs: { pr: String(number), head },
-    });
-    if (!asked.ok) return { code: 1, problems: [`the approval request was refused: ${asked.err}`] };
-    const auto = api("POST", "/graphql", {
-      query: AUTO_MERGE,
-      variables: {
-        id: pr.json.node_id,
-        head,
-        title: `${pr.json.title} (#${number})`,
-        body: squashMessage(key ?? refs, commits, verdict),
-      },
-    });
-    const error = auto.json?.errors?.[0]?.message;
-    if (!auto.ok || error)
-      return { code: 1, problems: [`auto-merge was not turned on: ${error ?? auto.err}`] };
-    log(
-      `${NAME} land: #${number}: approval requested, auto-merge on at ${head.slice(0, 12)}; \`${NAME} land ${number}\` finishes it once merged`,
-    );
-    return { code: 0, queued: true };
-  }
   const merge = api("PUT", `/repos/${repo}/pulls/${number}/merge`, {
     merge_method: "squash",
     sha: head,
