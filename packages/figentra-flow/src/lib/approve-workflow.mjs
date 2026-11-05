@@ -33,6 +33,7 @@ import {
   LAND_COMMAND,
   LAND_LABEL,
   NAME,
+  NEVER_TOLERATED,
   OIDC_IDENTITY_VARIABLE,
   PACKAGE,
   REGISTRY,
@@ -56,10 +57,11 @@ const APP_TOKEN =
  * The workflow's YAML.
  * @param {{ version: string, integrity?: string, appId: string, privateKey: string,
  *           trusted?: Record<string, string | string[]>, ownerOnly?: string[], verdict?: Verdict,
- *           lane?: Lane }} options the package version to run and its lockfile integrity (`sha512-…`; without one the
- *   workflow refuses to run), the App secret names, the trusted check sources (context to a login or a list of
- *   logins), the repository's extra owner-only globs, for a `github-actions` runner with `secrets.oidc` the `verdict`
- *   job's inputs and, with `secrets.oidc`, the event lane's
+ *           lane?: Lane, tolerate?: string[] }} options the package version to run and its lockfile integrity
+ *   (`sha512-…`; without one the workflow refuses to run), the App secret names, the trusted check sources (context
+ *   to a login or a list of logins), the repository's extra owner-only globs, for a `github-actions` runner with
+ *   `secrets.oidc` the `verdict` job's inputs and, with `secrets.oidc`, the event lane's, and the required checks a
+ *   red main may excuse (`approve.tolerate`; none by default)
  */
 export function approveWorkflow({
   version,
@@ -68,11 +70,15 @@ export function approveWorkflow({
   privateKey,
   trusted = {},
   ownerOnly = [],
+  tolerate = [],
   verdict,
   lane,
 }) {
   if (!/^(?:sha512-[A-Za-z0-9+/]+=*)?$/.test(integrity))
     throw new Error(`${PACKAGE}@${version}: "${integrity}" is not a sha512 integrity`);
+  const never = tolerate.filter((c) => NEVER_TOLERATED.includes(c));
+  if (never.length)
+    throw new Error(`approve.tolerate lists ${never.join(", ")}, which a red main never excuses`);
   const pkg = `${PACKAGE}@${version}`;
   const scope =
     PACKAGE.startsWith("@") && REGISTRY ? ` --${PACKAGE.split("/")[0]}:registry=${REGISTRY}` : "";
@@ -194,9 +200,21 @@ ${
           INTEGRITY: '${integrity}'
           TRUSTED: ${yamlJson(trusted)}
           OWNER_ONLY_EXTRA: ${yamlJson(ownerOnly)}
+          TOLERATE: ${yamlJson(tolerate)}
 ${packageRun("approve-check.mjs")}${
     lane
-      ? laneJobs({ lane, ref, guard, guardOn, packageRun, yamlJson, integrity, trusted, ownerOnly })
+      ? laneJobs({
+          lane,
+          ref,
+          guard,
+          guardOn,
+          packageRun,
+          yamlJson,
+          integrity,
+          trusted,
+          ownerOnly,
+          tolerate,
+        })
       : ""
   }${verdict ? verdictJob(verdict, guard, packageRun, yamlJson, integrity) : ""}`;
 }
@@ -246,7 +264,7 @@ function checkLane(l) {
  * The event lane's jobs: `cancel`, `route`, `approve` and `merge` (the L2 design, PR D).
  * @param {{ lane: Lane, ref: string, guard: string, guardOn: string, packageRun: (script: string) => string,
  *           yamlJson: (v: unknown) => string, integrity: string, trusted: Record<string, string | string[]>,
- *           ownerOnly: string[] }} input
+ *           ownerOnly: string[], tolerate: string[] }} input
  */
 function laneJobs({
   lane,
@@ -258,6 +276,7 @@ function laneJobs({
   integrity,
   trusted,
   ownerOnly,
+  tolerate,
 }) {
   const keyed = (
     /** @type {string} */ name,
@@ -304,6 +323,7 @@ ${extra}          REPO: \${{ github.repository }}
           INTEGRITY: '${integrity}'
           TRUSTED: ${yamlJson(trusted)}
           OWNER_ONLY_EXTRA: ${yamlJson(ownerOnly)}
+          TOLERATE: ${yamlJson(tolerate)}
 ${packageRun(script)}`;
   return `
   cancel:

@@ -622,6 +622,29 @@ everything at the checked head: the files from the merge base, and each required
 trusted source is the App the ruleset pins (`integration_id`), or the login `approve.checks` or the gate App names.
 The author must not be the approving App.
 
+On a red main the check can compare failures with main's recorded baseline (STA-1945). It excuses nothing by
+default. A required check that fails on the head is tolerated only when all of these hold:
+
+- `approve.tolerate` in the config lists its context;
+- from its trusted source, it concluded `failure` on the commit that left the base's nearest baseline too;
+- the ruleset requires the `Baseline` check and it is green on the head, since that check compares each task.
+
+A check that is not listed, or that passed, never ran, or was only cancelled or timed out on the baseline, still
+refuses. With no baseline, or an empty list, every required check must be green, `Baseline` included. The approval
+names the baseline's commit and the checks it tolerated.
+
+The tolerance is per check, not per task: a listed check red on main for one reason and on the PR for another passes.
+So list only checks that run no more than the `baseline.tasks` Baseline compares:
+
+```json
+"approve": { "tolerate": ["lint", "typecheck"] }
+```
+
+`Baseline` and `fflow/gate` are never tolerated: `Baseline` is the comparison, and `fflow/gate` runs the whole check
+command, so a red-main repository requires `Baseline` instead of it. The config schema refuses a list naming either,
+`sync` refuses to render it, and the check refuses it too. `sync` renders the list into the workflow as `TOLERATE`; a
+value that is not a JSON list of names refuses the approval.
+
 The workflow then either approves at that head or comments the reasons. After approving, it re-reads the PR and
 dismisses its own review if the head moved. The App's id and key are secrets of that environment, under names of
 their own: `FFLOW_APPROVER_APP_ID` and `FFLOW_APPROVER_PRIVATE_KEY`, unless the preset's `approve`

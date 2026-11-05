@@ -14,22 +14,31 @@
  *   - a malformed `TRUSTED`.
  *   A renamed gate App (ADR 0523) counts from either login a list names, and the string form still parses. A refusal
  *   is one comment and no review; a head that moves after the approval gets the review dismissed.
+ *   On a red main (STA-1945 FR-22) a required check that `approve.tolerate` lists, failing on the head and on main's
+ *   recorded baseline too, is tolerated beside a green, required `Baseline` check, and the approval names the baseline
+ *   and what it tolerated. The default empty list excuses nothing, and an unlisted check, a check that passed (or
+ *   never ran, or was only cancelled or timed out) on the baseline, a red `fflow/gate`, a missing or planted baseline,
+ *   a red, skipped or unrequired `Baseline`, a list naming `Baseline` or `fflow/gate`, a malformed `TOLERATE`, and
+ *   every guard above still refuse.
  * Boundary: no network: the read and write APIs are stubs.
  * Runtime: node
- * Governing contract: ADR 0022; STA-1856.
+ * Governing contract: ADR 0022; STA-1856; STA-1945 FR-22.
  */
-// @covers sta-1856:FR-4 sta-1856:FR-6
+// @covers sta-1856:FR-4 sta-1856:FR-6 sta-1945:FR-22 sta-1945:AC-17
 // @covers sta-1856:AC-008 sta-1856:AC-009 sta-1856:AC-010 sta-1856:P-001 sta-1856:P-004
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { decide, main } from "../lib/approve-check.mjs";
+import { ANCESTORS, artifactName } from "../lib/baseline.mjs";
 import { requiredCheckState } from "../lib/required-checks.mjs";
 
 const REPO = "figentra/x";
 const SHA = "a".repeat(40);
 const BASE = "b".repeat(40);
 const FORK = "c".repeat(40);
+/** The ancestor of BASE whose push left main's baseline. */
+const MAIN = "f".repeat(40);
 const ENV = "fflow-approve";
 const APPROVER = "flow-approver[bot]";
 const TRUSTED = { "fflow/gate": "figentra-gate[bot]" };
@@ -70,6 +79,8 @@ function github(over = {}) {
       { context: "fflow/gate", state: "success", creator: { login: "figentra-gate[bot]" } },
     ],
     runs: [VERIFY],
+    /** @type {{ sha: string, event?: string, statuses: any[], runs: any[] } | undefined} main's recorded baseline */
+    baseline: undefined,
     headAfter: SHA,
     ...over,
   };
@@ -105,9 +116,22 @@ function github(over = {}) {
           },
         },
       ]);
-    if (path.startsWith(`/repos/${REPO}/commits/${SHA}/statuses`)) return ok(s.statuses);
-    if (path.startsWith(`/repos/${REPO}/commits/${SHA}/check-runs`))
-      return ok({ check_runs: s.runs });
+    const at = path.match(/^\/repos\/figentra\/x\/commits\/(\w+)\/(statuses|check-runs)\?/);
+    const commit = at?.[1] === SHA ? s : at?.[1] === s.baseline?.sha ? s.baseline : undefined;
+    if (at && commit)
+      return ok(at[2] === "statuses" ? commit.statuses : { check_runs: commit.runs });
+    if (at) return ok(at[2] === "statuses" ? [] : { check_runs: [] });
+    if (path === `/repos/${REPO}/commits?sha=${BASE}&per_page=${ANCESTORS}`)
+      return ok([{ sha: BASE }, { sha: MAIN }]);
+    const artifact = path.match(/^\/repos\/figentra\/x\/actions\/artifacts\?name=([\w-]+)&/);
+    if (artifact) {
+      const b = s.baseline;
+      const hit = b && artifact[1] === artifactName(b.sha);
+      return ok({
+        artifacts: hit ? [{ workflow_run: { id: 9, head_sha: b.sha, head_branch: "main" } }] : [],
+      });
+    }
+    if (path === `/repos/${REPO}/actions/runs/9`) return ok({ event: s.baseline?.event ?? "push" });
     throw new Error(`unexpected ${method} ${path}`);
   };
   /** @type {import("../lib/approve-check.mjs").Rest} */
@@ -143,99 +167,324 @@ test("approve: a safe PR, green from its trusted sources at the checked head, ha
   assert.equal(await refusals(), "");
 });
 
-test("approve: each unsafe case refuses with its reason", async () => {
-  const run = (/** @type {Record<string, any>} */ r) => [{ ...VERIFY, ...r }];
-  const cases = /** @type {[Record<string, any>, Record<string, any>, RegExp][]} */ ([
-    [
-      { runs: run({ status: "in_progress", conclusion: null }) },
-      {},
-      /required checks still running: verify/,
-    ],
-    [
-      {
-        required: [{ context: "verify", integration_id: 15368 }],
-        runs: run({ conclusion: "skipped" }),
+const run = (/** @type {Record<string, any>} */ r) => [{ ...VERIFY, ...r }];
+
+/** Every guard's unsafe case: what it replaces, the `decide` input it replaces, and the reason it refuses with. */
+const CASES = /** @type {[Record<string, any>, Record<string, any>, RegExp][]} */ ([
+  [
+    { runs: run({ status: "in_progress", conclusion: null }) },
+    {},
+    /required checks still running: verify/,
+  ],
+  [
+    {
+      required: [{ context: "verify", integration_id: 15368 }],
+      runs: run({ conclusion: "skipped" }),
+    },
+    {},
+    /no required check succeeded \(all were skipped\)/,
+  ],
+  [
+    {
+      statuses: [{ context: "fflow/gate", state: "success", creator: { login: "someone" } }],
+    },
+    {},
+    /fflow\/gate was posted by someone, not figentra-gate\[bot\]/,
+  ],
+  [
+    { runs: run({ app: { id: 999, slug: "lookalike" } }) },
+    {},
+    /required checks still running: verify/,
+  ],
+  [{ required: [{ context: "ci" }] }, {}, /ci is pinned to no App/],
+  [
+    {
+      files: [
+        {
+          filename: "docs/x.yml",
+          previous_filename: ".github/workflows/x.yml",
+          status: "renamed",
+        },
+      ],
+    },
+    {},
+    /owner-only paths: \.github\/workflows\/x\.yml/,
+  ],
+  [
+    {
+      files: [{ filename: "packages/a/package.json", status: "modified" }],
+      contents: {
+        [`packages/a/package.json@${FORK}`]: '{"dependencies":{"zod":"catalog:"}}',
+        [`packages/a/package.json@${SHA}`]: '{"dependencies":{"zod":"4.0.0"}}',
       },
-      {},
-      /no required check succeeded \(all were skipped\)/,
-    ],
-    [
-      {
-        statuses: [{ context: "fflow/gate", state: "success", creator: { login: "someone" } }],
-      },
-      {},
-      /fflow\/gate was posted by someone, not figentra-gate\[bot\]/,
-    ],
-    [
-      { runs: run({ app: { id: 999, slug: "lookalike" } }) },
-      {},
-      /required checks still running: verify/,
-    ],
-    [{ required: [{ context: "ci" }] }, {}, /ci is pinned to no App/],
-    [
-      {
-        files: [
-          {
-            filename: "docs/x.yml",
-            previous_filename: ".github/workflows/x.yml",
-            status: "renamed",
-          },
+    },
+    {},
+    /packages\/a\/package\.json: zod moved off its catalog to "4\.0\.0"/,
+  ],
+  [{ files: [{ filename: "src/a\nb.mjs", status: "added" }] }, {}, /control character/],
+  [
+    { files: Array.from({ length: 300 }, (_, i) => ({ filename: `f${i}`, status: "added" })) },
+    {},
+    /300 files changed/,
+  ],
+  [{}, { expectedHead: "d".repeat(40) }, /the head is a{40}, not the d{40} that was checked/],
+  [{ env: { deployment_branch_policy: null } }, {}, /must allow the default branch only/],
+  [
+    {
+      policies: {
+        branch_policies: [
+          { name: "main", type: "branch" },
+          { name: "x", type: "branch" },
         ],
       },
-      {},
-      /owner-only paths: \.github\/workflows\/x\.yml/,
+    },
+    {},
+    /must allow the default branch only/,
+  ],
+  [{}, { ref: "refs/heads/feature" }, /runs on refs\/heads\/feature, not the default branch main/],
+  [
+    { pr: { ...PR, user: { login: APPROVER } } },
+    {},
+    /the author is flow-approver\[bot\], the approving App/,
+  ],
+  [{ codeOwnerReview: false }, {}, /main's ruleset does not require the code owner's review/],
+  [{ contents: {} }, {}, /main has no \.github\/CODEOWNERS/],
+  [
+    { files: [{ filename: "packages/a/package.json", status: "modified" }] },
+    {},
+    /packages\/a\/package\.json cannot be read at the merge base/,
+  ],
+  // What a deploy, promote or release runs, and the repository's own owner-only globs.
+  [
+    { files: [{ filename: "apps/web/wrangler.toml", status: "modified" }] },
+    {},
+    /owner-only paths: apps\/web\/wrangler\.toml/,
+  ],
+  [
+    { files: [{ filename: ".changeset/config.json", status: "modified" }] },
+    {},
+    /owner-only paths: \.changeset\/config\.json/,
+  ],
+  [
+    { files: [{ filename: "deploy/promote.sh", status: "modified" }] },
+    { extraOwnerOnly: ["deploy/**"] },
+    /owner-only paths: deploy\/promote\.sh/,
+  ],
+]);
+
+test("approve: each unsafe case refuses with its reason", async () => {
+  for (const [over, input, reason] of CASES)
+    assert.match(await refusals(over, input), reason, String(reason));
+});
+
+/** Baseline is the per-task comparison: the job `sync` renders, from GitHub Actions. */
+const GATE = { ...VERIFY, id: 2, name: "Baseline" };
+const RED = { ...VERIFY, conclusion: "failure" };
+const RED_GATE_STATUS = {
+  context: "fflow/gate",
+  state: "failure",
+  creator: { login: "figentra-gate[bot]" },
+};
+
+/** A red main: `verify` fails on the head and on main's baseline commit, and `Baseline` is green and required. */
+const RED_MAIN = {
+  required: [
+    { context: "fflow/gate" },
+    { context: "verify", integration_id: 15368 },
+    { context: "Baseline", integration_id: 15368 },
+  ],
+  runs: [RED, GATE],
+  baseline: { sha: MAIN, statuses: [], runs: [RED, GATE] },
+};
+/** The repository's `approve.tolerate` for RED_MAIN. */
+const TOLERATE = ["verify"];
+/** The refusal for failures a red main does not excuse. */
+const NOT_EXCUSED =
+  "required checks failed that `approve\\.tolerate` does not list or that do not fail on the baseline at f{40}";
+
+test("approve: on a red main, a listed required check failing on the baseline too is tolerated beside a green Baseline", async () => {
+  // A newly reached task failure is Baseline's to judge (`compare`); it stays green, so only the check level is left.
+  const result = await decide({
+    api: github(RED_MAIN).read,
+    repo: REPO,
+    number: 7,
+    expectedHead: SHA,
+    approver: APPROVER,
+    ref: "refs/heads/main",
+    environment: ENV,
+    trusted: TRUSTED,
+    tolerate: TOLERATE,
+  });
+  assert.deepEqual(result.refuse, []);
+  assert.deepEqual(result.baseline, { sha: MAIN, tolerated: ["verify"] });
+
+  // The approval says what it compared against and what it tolerated.
+  const gh = github(RED_MAIN);
+  const code = await main(env({ TOLERATE: JSON.stringify(TOLERATE) }), {
+    read: gh.read,
+    write: gh.write,
+    log: () => {},
+  });
+  assert.equal(code, 0);
+  assert.equal(gh.writes[0].body.event, "APPROVE");
+  assert.match(
+    gh.writes[0].body.body,
+    new RegExp(
+      `baseline at ${MAIN}\\. Tolerated, as \`approve\\.tolerate\` lists them and they fail there too: \`verify\`\\. `,
+    ),
+  );
+});
+
+test("approve: on a red main, the default empty list excuses nothing, and an unlisted check refuses", async () => {
+  const empty = await decide({
+    api: github(RED_MAIN).read,
+    repo: REPO,
+    number: 7,
+    expectedHead: SHA,
+    approver: APPROVER,
+    ref: "refs/heads/main",
+    environment: ENV,
+    trusted: TRUSTED,
+  });
+  assert.deepEqual(empty.refuse, ["required checks failed: verify"]);
+  assert.equal(empty.baseline, undefined);
+  // An unset TOLERATE, as an older render leaves it, is the empty list.
+  const gh = github(RED_MAIN);
+  assert.equal(await main(env(), { read: gh.read, write: gh.write, log: () => {} }), 1);
+  assert.match(gh.writes[0].body.body, /required checks failed: verify/);
+
+  assert.equal(await refusals(RED_MAIN, { tolerate: ["lint"] }), "required checks failed: verify");
+  // A listed check is excused; an unlisted one failing on the baseline too still refuses.
+  const LINT = { ...RED, id: 3, name: "lint" };
+  const both = {
+    ...RED_MAIN,
+    required: [...RED_MAIN.required, { context: "lint", integration_id: 15368 }],
+    runs: [RED, GATE, LINT],
+    baseline: { ...RED_MAIN.baseline, runs: [RED, GATE, LINT] },
+  };
+  assert.match(await refusals(both, { tolerate: TOLERATE }), new RegExp(`${NOT_EXCUSED}: lint$`));
+});
+
+test("approve: a list naming Baseline or fflow/gate, or a malformed TOLERATE, fails closed", async () => {
+  for (const never of ["Baseline", "fflow/gate"])
+    assert.match(
+      await refusals(RED_MAIN, { tolerate: [...TOLERATE, never] }),
+      new RegExp(`\`approve\\.tolerate\` lists ${never}, which a red main never excuses`),
+    );
+  // Even with every check green, a broken list refuses.
+  assert.match(await refusals({}, { tolerate: ["Baseline"] }), /lists Baseline/);
+  // A listed fflow/gate, red on the head and the baseline, is refused before any comparison: nothing is tolerated. (A
+  // listed Baseline cannot be excused either, as only a green Baseline excuses anything.)
+  const redGate = await decide({
+    api: github({
+      ...RED_MAIN,
+      statuses: [RED_GATE_STATUS],
+      baseline: { ...RED_MAIN.baseline, statuses: [RED_GATE_STATUS] },
+    }).read,
+    repo: REPO,
+    number: 7,
+    expectedHead: SHA,
+    approver: APPROVER,
+    ref: "refs/heads/main",
+    environment: ENV,
+    trusted: TRUSTED,
+    tolerate: [...TOLERATE, "fflow/gate"],
+  });
+  assert.equal(redGate.baseline, undefined);
+  assert.match(
+    redGate.refuse.join("\n"),
+    /`approve\.tolerate` lists fflow\/gate, which a red main never excuses/,
+  );
+  for (const bad of ["{not json", '"verify"', "null", "[1]", '[""]', '{"verify":true}']) {
+    const gh = github(RED_MAIN);
+    const code = await main(env({ TOLERATE: bad }), {
+      read: gh.read,
+      write: gh.write,
+      log: () => {},
+    });
+    assert.equal(code, 1, bad);
+    assert.match(
+      gh.writes[0].body.body,
+      /`TOLERATE` is not a JSON list of check names \(`fflow sync` renders it from `approve\.tolerate`\)/,
+      bad,
+    );
+  }
+});
+
+test("approve: on a red main, each new or unproven failure refuses with its reason", async () => {
+  const cases = /** @type {[Record<string, any>, RegExp][]} */ ([
+    // Passed on the baseline, fails now: a regression.
+    [
+      { baseline: { ...RED_MAIN.baseline, runs: [VERIFY, GATE] } },
+      new RegExp(`${NOT_EXCUSED}: verify`),
+    ],
+    // Never ran on the baseline: nothing shows it failed before.
+    [{ baseline: { ...RED_MAIN.baseline, runs: [GATE] } }, new RegExp(`${NOT_EXCUSED}: verify`)],
+    // A failure on the baseline from an untrusted source proves nothing.
+    [
+      { baseline: { ...RED_MAIN.baseline, runs: [{ ...RED, app: { id: 999 } }, GATE] } },
+      new RegExp(`${NOT_EXCUSED}: verify`),
+    ],
+    // A cancelled, timed-out or waiting run on the baseline recorded no failure.
+    ...["cancelled", "timed_out", "action_required"].map((conclusion) => [
+      { baseline: { ...RED_MAIN.baseline, runs: [{ ...RED, conclusion }, GATE] } },
+      new RegExp(`${NOT_EXCUSED}: verify`),
+    ]),
+    // Flow's gate runs more than Baseline's tasks, so it is never excused, even when red on the baseline too.
+    [
+      {
+        statuses: [RED_GATE_STATUS],
+        baseline: { ...RED_MAIN.baseline, statuses: [RED_GATE_STATUS] },
+      },
+      new RegExp(`${NOT_EXCUSED}: fflow/gate$`),
+    ],
+    // No baseline: every required check must be green, as before.
+    [
+      { baseline: undefined },
+      /no baseline at b{40} or its 1 nearest ancestors, so every required check must be green\n.*required checks failed: verify/s,
+    ],
+    // An artifact a pull_request run left is not main's baseline.
+    [
+      { baseline: { ...RED_MAIN.baseline, event: "pull_request" } },
+      /no baseline at b{40}.*\n.*required checks failed: verify/s,
+    ],
+    // Without the per-task comparison, a red check may hide a new task failure.
+    [
+      { required: RED_MAIN.required.slice(0, 2) },
+      /a failure is tolerated only beside a green `Baseline` check, which main's ruleset must require/,
+    ],
+    [
+      { runs: [RED, { ...GATE, conclusion: "skipped" }] },
+      /a failure is tolerated only beside a green `Baseline` check/,
+    ],
+    // Baseline red on the head is a new task failure, even when the baseline's own run was red.
+    [
+      { runs: [RED, { ...GATE, conclusion: "failure" }] },
+      /required checks failed: verify, Baseline/,
     ],
     [
       {
-        files: [{ filename: "packages/a/package.json", status: "modified" }],
-        contents: {
-          [`packages/a/package.json@${FORK}`]: '{"dependencies":{"zod":"catalog:"}}',
-          [`packages/a/package.json@${SHA}`]: '{"dependencies":{"zod":"4.0.0"}}',
-        },
+        runs: [RED, { ...GATE, conclusion: "failure" }],
+        baseline: { ...RED_MAIN.baseline, runs: [RED, { ...GATE, conclusion: "failure" }] },
       },
-      {},
-      /packages\/a\/package\.json: zod moved off its catalog to "4\.0\.0"/,
-    ],
-    [{ files: [{ filename: "src/a\nb.mjs", status: "added" }] }, {}, /control character/],
-    [
-      { files: Array.from({ length: 300 }, (_, i) => ({ filename: `f${i}`, status: "added" })) },
-      {},
-      /300 files changed/,
-    ],
-    [{}, { expectedHead: "d".repeat(40) }, /the head is a{40}, not the d{40} that was checked/],
-    [{ env: { deployment_branch_policy: null } }, {}, /must allow the default branch only/],
-    [
-      {
-        policies: {
-          branch_policies: [
-            { name: "main", type: "branch" },
-            { name: "x", type: "branch" },
-          ],
-        },
-      },
-      {},
-      /must allow the default branch only/,
-    ],
-    [
-      {},
-      { ref: "refs/heads/feature" },
-      /runs on refs\/heads\/feature, not the default branch main/,
-    ],
-    [
-      { pr: { ...PR, user: { login: APPROVER } } },
-      {},
-      /the author is flow-approver\[bot\], the approving App/,
-    ],
-    [{ codeOwnerReview: false }, {}, /main's ruleset does not require the code owner's review/],
-    [{ contents: {} }, {}, /main has no \.github\/CODEOWNERS/],
-    [
-      { files: [{ filename: "packages/a/package.json", status: "modified" }] },
-      {},
-      /packages\/a\/package\.json cannot be read at the merge base/,
+      /required checks failed: verify, Baseline/,
     ],
   ]);
-  for (const [over, input, reason] of cases)
-    assert.match(await refusals(over, input), reason, String(reason));
+  for (const [over, reason] of cases)
+    assert.match(
+      await refusals({ ...RED_MAIN, ...over }, { tolerate: TOLERATE }),
+      reason,
+      String(reason),
+    );
+});
+
+test("approve: on a red main, every other guard still refuses", async () => {
+  for (const [over, input, reason] of CASES)
+    assert.match(
+      await refusals({ ...RED_MAIN, ...over }, { tolerate: TOLERATE, ...input }),
+      reason,
+      String(reason),
+    );
 });
 
 test("approve: a renamed gate App counts from either login the list names, and from no third", async () => {
@@ -372,9 +621,35 @@ test("required checks: an App-pinned context counts only that App's newest run; 
     passed: ["verify", "gate"],
     pending: [],
     failed: [],
+    outright: [],
     untrusted: [],
     succeeded: 2,
   });
+});
+
+test("required checks: only a `failure` conclusion or status is an outright failure", () => {
+  const names = ["failure", "cancelled", "timed_out", "action_required"];
+  const state = requiredCheckState({
+    required: [
+      ...names.map((context) => ({ context, integration_id: 1 })),
+      { context: "red" },
+      { context: "errored" },
+    ],
+    checkRuns: names.map((name, id) => ({
+      id,
+      name,
+      status: "completed",
+      conclusion: name,
+      app: { id: 1 },
+    })),
+    statuses: [
+      { context: "red", state: "failure", creator: { login: "gate[bot]" } },
+      { context: "errored", state: "error", creator: { login: "gate[bot]" } },
+    ],
+    trusted: { red: "gate[bot]", errored: "gate[bot]" },
+  });
+  assert.deepEqual(state.failed, [...names, "red", "errored"]);
+  assert.deepEqual(state.outright, ["failure", "red"]);
 });
 
 test("required checks: a list of logins trusts a check run or status from any of them, a string from its one", () => {
@@ -406,8 +681,11 @@ test("required checks: a list of logins trusts a check run or status from any of
     );
 });
 
-/** The workflow's environment for `main`. */
-function env() {
+/**
+ * The workflow's environment for `main`; `over` adds or replaces variables.
+ * @param {Record<string, string>} [over]
+ */
+function env(over = {}) {
   return {
     REPO,
     PR: "7",
@@ -418,5 +696,6 @@ function env() {
     RUN_URL: "https://github.com/run/1",
     TRUSTED: JSON.stringify(TRUSTED),
     OWNER_ONLY_EXTRA: "[]",
+    ...over,
   };
 }

@@ -287,6 +287,7 @@ function renderPreset(root, direct, overrides) {
       // The gate's status counts only from the gate App; a repository adds its own sources in `approve.checks`.
       trusted: { ...(gate ? { [STATUS_CONTEXT]: gate } : {}), ...approve?.checks },
       ownerOnly,
+      tolerate: approve?.tolerate,
       ...(oidc
         ? {
             lane: {

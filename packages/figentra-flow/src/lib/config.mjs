@@ -15,7 +15,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { HARNESS_IDS } from "../adapters/harness/index.mjs";
-import { CONFIG_FILE, LEGACY_CONFIG_FILE, NAME } from "./product.mjs";
+import { CONFIG_FILE, LEGACY_CONFIG_FILE, NAME, NEVER_TOLERATED } from "./product.mjs";
 
 const str = { type: "string", minLength: 1 };
 const strs = { type: "array", items: str, minItems: 1 };
@@ -144,6 +144,8 @@ export const SCHEMA = {
         // The L2 design: the workflows whose success wakes main's land lane, and the App slugs that may ask for a land.
         workflows: { type: "array", items: { type: "string", pattern: "^[\\w .()-]+$" } },
         requesters: { type: "array", items: { type: "string", pattern: "^[\\w-]+$" } },
+        // The required checks a red main may excuse against its baseline (STA-1945 FR-22); none by default.
+        tolerate: { type: "array", items: { ...str, not: { enum: NEVER_TOLERATED } } },
       },
     },
     clean: {
@@ -227,6 +229,8 @@ export function validate(schema, value, path = "") {
     return [`${at}: must be ${JSON.stringify(schema.const)}`];
   if (schema.enum && !schema.enum.includes(value))
     return [`${at}: must be one of ${schema.enum.join(", ")}`];
+  if (schema.not?.enum?.includes(value))
+    return [`${at}: must not be one of ${schema.not.enum.join(", ")}`];
   if (schema.type) {
     const t = typeOf(value);
     /** @type {string[]} */
@@ -268,7 +272,7 @@ export function validate(schema, value, path = "") {
  *             apps?: { gate?: { slug?: string, login: string, aliases?: string[] }, review?: { slug: string },
  *                      owner?: string },
  *             gate?: { check?: string, shard?: string }, approve?: { ownerOnly?: string[], checks?: Record<string, string>,
- *                      workflows?: string[], requesters?: string[] },
+ *                      workflows?: string[], requesters?: string[], tolerate?: string[] },
  *             clean?: { keep?: string[], budget?: number }, review?: { required?: string[] },
  *             baseline?: { tasks?: string[], mustPass?: string[], install?: string, setup?: Record<string, unknown>[], branch?: string },
  *             artifacts?: { paths?: string[], maxBytes?: number },
