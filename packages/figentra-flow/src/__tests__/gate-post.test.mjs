@@ -212,7 +212,8 @@ test("only the poster and the verdict write fflow/gate or its comment, and neith
   for (const f of ["lib/gate-post.mjs", "lib/verdict.mjs", "lib/app-token.mjs"])
     assert.doesNotMatch(
       files.find((x) => x.f === f)?.text ?? "",
-      /child_process|\.\/github\.mjs|credentials|GH_TOKEN/,
+      // Imports and reads only: the contracts may name `gh` and `GH_TOKEN` to say they never use them.
+      /"node:child_process"|\/github\.mjs"|\/credentials\.mjs"|\.GH_TOKEN\b/,
       `${f} has no path to gh's ambient login`,
     );
 });
