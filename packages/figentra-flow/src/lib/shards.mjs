@@ -21,6 +21,8 @@ export const MAX_SHARDS = 12;
 export const NO_SLOT = 73;
 export const NO_BOX = 75;
 export const TIMED_OUT = 124;
+/** A run stopped by Ctrl-C or SIGTERM: it decided nothing about the code, so it counts as infrastructure. */
+export const INTERRUPTED = 130;
 
 /** A pattern segment or package folder name this reads: plain characters, safe on a shell line. */
 const PLAIN = /^[\w@.-]+$/;
@@ -129,7 +131,7 @@ export function reportOf(out) {
 /**
  * The one verdict of every shard (P-021): `code` 0 only when each exited 0, else the first failure's code, which is
  * posted red even when another shard found no slot; `infra` when no shard failed but one still found no slot or no
- * healthy box (never a test failure, so nothing is posted); a line per shard.
+ * healthy box, or was stopped by a signal (never a test failure, so nothing is posted); a line per shard.
  * @param {ShardResult[]} results
  * @returns {{ code: number, infra?: string, lines: string[] }}
  */
@@ -143,10 +145,13 @@ export function combine(results) {
         ? " (the testbed's 3-hour limit)"
         : r.code === NO_BOX || r.code === NO_SLOT
           ? " (no healthy box or free slot: an infrastructure failure)"
-          : "";
+          : r.code === INTERRUPTED
+            ? " (stopped by a signal: an infrastructure failure)"
+            : "";
     return `shard ${i + 1}/${results.length} [${r.packages.join(" ")}]: exit ${r.code}${why}${where}`;
   });
-  const infraOnly = (/** @type {number} */ code) => code === NO_BOX || code === NO_SLOT;
+  const infraOnly = (/** @type {number} */ code) =>
+    code === NO_BOX || code === NO_SLOT || code === INTERRUPTED;
   const failed = results.find((r) => r.code !== 0 && !infraOnly(r.code));
   const infra = results.findIndex((r) => infraOnly(r.code));
   if (!failed && infra >= 0)

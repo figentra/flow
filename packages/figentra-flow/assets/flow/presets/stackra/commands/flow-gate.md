@@ -22,7 +22,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    `"reachable": true`: that is N, the shards to run, at least 1 and at most 12. A call over the cap waits inside
    `run`, so N is the fan-out, not a limit on correctness.
 3. **Fan out**: run `fflow gate run --shards <N>` in the worktree. It deals the workspace's packages into N shards,
-   makes one `stackra testbed run "<session> <what>" <dir> "<cmd>" --json` call per shard, all at once, and posts one
+   makes one `testbed run "<session> <what>" <dir> "<cmd>" --json` call per shard, all at once, and posts one
    `fflow/gate` status: green only when every shard exited 0. The testbed picks the region, the box and the slot
    (heavy for encore test, Playwright, e2e, act and builds; light otherwise); never name them. The shard's check is
    `gate.shard` in `flow.config.json`, with `{filters}` for its packages; without it run `fflow gate run` (one job).
