@@ -8,7 +8,7 @@
  *   the phase A plan stop).
  * Runtime: node
  * Governing contract: STA-1729 phase A (the leader's plan stop of 2026-10-31); STA-2098 (`harnesses`); STA-1945
- *   (FR-7: `mcp`, `lefthook`, `agentsMd`).
+ *   (FR-7: `mcp`, `lefthook`, `agentsMd`); STA-2131 (`session`).
  * Secrets: none; the config names environment variables and secret paths, never values.
  */
 import { existsSync, readFileSync } from "node:fs";
@@ -200,6 +200,13 @@ export const SCHEMA = {
       additionalProperties: { type: "array", items: { type: "object" } },
     },
     agentsMd: { type: "object", additionalProperties: false, properties: { facts: str } },
+    // STA-2131: `pushAtEnd` renders the SessionEnd hook that commits the session's work as WIP and pushes it; off
+    // unless a repository opts in.
+    session: {
+      type: "object",
+      additionalProperties: false,
+      properties: { pushAtEnd: { type: "boolean" } },
+    },
   },
 };
 
@@ -278,7 +285,7 @@ export function validate(schema, value, path = "") {
  *             artifacts?: { paths?: string[], maxBytes?: number },
  *             train?: { cutoff?: number, eject?: "bisect" | "manual", after?: string[], label?: string },
  *             mcp?: Record<string, Record<string, any>>, lefthook?: Record<string, Record<string, any>[]>,
- *             agentsMd?: { facts?: string } }} Config
+ *             agentsMd?: { facts?: string }, session?: { pushAtEnd?: boolean } }} Config
  * @typedef {{ config: Config, source: string | undefined, warnings: string[], errors: string[] }} Loaded
  */
 

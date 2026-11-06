@@ -2,9 +2,9 @@
  * Figentra Flow file contract:
  * Purpose: hold `.claude/settings.json` to STA-1945 FR-7 and FR-19: the preset's settings with Flow's hooks first
  *   (the guard on every tool it checks, through `node` and the installed entry, never `pnpm exec`; the Stop hook
- *   writing the session's record and the SessionEnd hook committing and pushing it), each event's preset entries
- *   after them; the profile's `hooks` selects them by id, the guard always (FR-5); a preset without the surface
- *   renders nothing, and one whose surface is not JSON is a ConfigError naming the file.
+ *   writing the session's record and, only when `session.pushAtEnd` opts in (STA-2131), the SessionEnd hook
+ *   committing and pushing it), each event's preset entries after them; the profile's `hooks` selects them by id,
+ *   the guard always (FR-5); a preset without the surface renders nothing, and one whose surface is not JSON is a ConfigError naming the file.
  * Boundary: pure functions over the bundled presets and temporary folders; no process, no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
@@ -25,12 +25,13 @@ const NEUTRAL = join(FLOW_ASSETS, "presets/neutral");
 const ENTRY = 'node "$CLAUDE_PROJECT_DIR/node_modules/@figentra-oss/flow/bin';
 /** @param {string[]} hooks */
 const profile = (hooks) => ({ name: "p", agents: ["*"], skills: ["*"], hooks });
-/** @param {string} presetDir @param {string[]} [hooks] */
-const settingsOf = (presetDir, hooks) =>
+const PUSH = { session: { pushAtEnd: true } };
+/** @param {string} presetDir @param {string[]} [hooks] @param {Record<string, any>} [config] */
+const settingsOf = (presetDir, hooks, config = {}) =>
   JSON.parse(
     renderSettings({
       root: "/repo",
-      config: {},
+      config,
       presetDir,
       ...(hooks ? { profile: profile(hooks) } : {}),
     }).get(SETTINGS_FILE) ?? "null",
@@ -47,7 +48,7 @@ function preset(/** @type {import("node:test").TestContext} */ t, /** @type {str
 
 test("renderSettings: the stackra preset's permissions with Flow's guard and session hooks", () => {
   const surface = JSON.parse(readFileSync(join(STACKRA, "surfaces/settings.json"), "utf8"));
-  const settings = settingsOf(STACKRA);
+  const settings = settingsOf(STACKRA, undefined, PUSH);
   assert.deepEqual({ ...settings, hooks: undefined }, { ...surface, hooks: undefined });
   assert.ok(settings.permissions.allow.length > 0);
   assert.deepEqual(Object.keys(settings.hooks), [
@@ -64,7 +65,7 @@ test("renderSettings: the stackra preset's permissions with Flow's guard and ses
       hooks: [{ type: "command", command: `${ENTRY}/fflow-guard.mjs" PreToolUse`, timeout: 5 }],
     },
   ]);
-  // FR-19: every turn writes the record; the session's end commits and pushes it.
+  // FR-19: every turn writes the record; with `session.pushAtEnd`, the session's end commits and pushes it.
   assert.equal(
     settings.hooks.Stop[0].hooks[0].command,
     `${ENTRY}/fflow.mjs" session stop --save-only`,
@@ -75,15 +76,35 @@ test("renderSettings: the stackra preset's permissions with Flow's guard and ses
       for (const h of entry.hooks) assert.doesNotMatch(h.command, /pnpm|npx/, h.command);
 });
 
+test("renderSettings: by default no hook commits or pushes; the Stop hook only writes the record (STA-2131)", () => {
+  for (const config of [{}, { session: {} }, { session: { pushAtEnd: false } }]) {
+    const settings = settingsOf(STACKRA, undefined, config);
+    assert.equal(settings.hooks.SessionEnd, undefined, JSON.stringify(config));
+    const commands = Object.values(settings.hooks).flatMap((entries) =>
+      entries.flatMap((/** @type {any} */ e) => e.hooks.map((/** @type {any} */ h) => h.command)),
+    );
+    assert.deepEqual(
+      commands.filter((c) => c.includes("session stop")),
+      [`${ENTRY}/fflow.mjs" session stop --save-only`],
+    );
+  }
+  // a profile selecting session-stop by id still needs the opt-in
+  assert.deepEqual(Object.keys(settingsOf(NEUTRAL, ["session-stop"]).hooks), ["PreToolUse"]);
+  assert.equal(hookSettings().SessionEnd, undefined);
+});
+
 test("renderSettings: the neutral preset gets the same hooks over its bare settings", () => {
-  const settings = settingsOf(NEUTRAL);
-  assert.equal(settings.$schema, "https://json.schemastore.org/claude-code-settings.json");
-  assert.deepEqual(settings.hooks, hookSettings());
+  assert.equal(
+    settingsOf(NEUTRAL).$schema,
+    "https://json.schemastore.org/claude-code-settings.json",
+  );
+  assert.deepEqual(settingsOf(NEUTRAL).hooks, hookSettings());
+  assert.deepEqual(settingsOf(NEUTRAL, undefined, PUSH).hooks, hookSettings(undefined, PUSH));
 });
 
 test("renderSettings: the profile's hooks select by id; the guard is mandatory", () => {
   assert.deepEqual(Object.keys(settingsOf(NEUTRAL, []).hooks), ["PreToolUse"]);
-  assert.deepEqual(Object.keys(settingsOf(NEUTRAL, ["session-save", "session-stop"]).hooks), [
+  assert.deepEqual(Object.keys(settingsOf(NEUTRAL, ["session-save", "session-stop"], PUSH).hooks), [
     "PreToolUse",
     "Stop",
     "SessionEnd",
