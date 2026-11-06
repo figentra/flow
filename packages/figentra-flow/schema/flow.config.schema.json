@@ -557,6 +557,15 @@
           "minLength": 1
         }
       }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pushAtEnd": {
+          "type": "boolean"
+        }
+      }
     }
   }
 }

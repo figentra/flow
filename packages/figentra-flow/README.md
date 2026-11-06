@@ -121,7 +121,8 @@ Flow's hooks in `.claude/settings.json` run the installed package through `node`
 `hooks` selects them by id: `guard` (`PreToolUse`: bash, paths and the plan gate; mandatory, so every profile gets
 it), `post-write` (`PostToolUse`), `prompt-hints` (`UserPromptSubmit`), `session-context` (`SessionStart`),
 `session-save` (`Stop`: `fflow session stop --save-only` writes the session's record) and `session-stop`
-(`SessionEnd`: `fflow session stop` commits the work as WIP and pushes it). The OpenCode guard plugin puts every
+(`SessionEnd`: `fflow session stop` commits the work as WIP and pushes it; rendered only when the config's
+`session.pushAtEnd` is `true`, see Configuration). The OpenCode guard plugin puts every
 shell, edit, read, glob and grep call to the same guard entry, an ask counting as a deny. With `lefthook.yml`
 rendered, `sync` also pins `mise.toml`'s `npm:oxfmt` and `npm:oxlint` at the versions `pnpm-workspace.yaml`'s catalog
 pins.
@@ -312,6 +313,10 @@ setting you have not made refuses and names it.
   `third-party.yml` is selected by its id in `skills`, and `sync` removes one a profile drops from
   `.agents/skills/.vendor/`. `hooks` selects Flow's agent hooks by id (see What `sync` owns); the guard is always
   rendered. Narrowing a profile deletes the rendered agents, skills and files it drops that nobody edited.
+
+- `session.pushAtEnd` (default `false`): `true` renders the `session-stop` hook, which commits the session's tracked
+  work as WIP and pushes it when the session ends. Off, no rendered hook commits or pushes; the `Stop` hook still
+  writes the session's record locally. The profile must select `session-stop` too.
 
 - `specs` sets where specs live: `dir` (default `.agents/specs`) and `bugsDir` (default `.agents/specs/bugs`).
 

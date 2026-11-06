@@ -63,7 +63,8 @@ test("sync: the stackra preset renders every surface, headed where the format al
     assert.ok(read(path).startsWith(`<!-- ${words} -->\n`), path);
   assert.match(read("CLAUDE.md"), /\n@AGENTS\.md\n$/);
   const settings = JSON.parse(read(".claude/settings.json"));
-  assert.ok(settings.hooks.Stop && settings.hooks.SessionEnd, "FR-19: the session's hooks");
+  assert.ok(settings.hooks.Stop, "FR-19: the session's record");
+  assert.equal(settings.hooks.SessionEnd, undefined, "STA-2131: no push at session end by default");
   const lock = readLock(root);
   for (const path of files.filter(isSurface)) assert.ok(lock?.files[path], `${path} is locked`);
   assert.deepEqual(installProblems(root), []);
@@ -103,7 +104,7 @@ profiles:
   const edited = join(root, ".claude/agents/tracker-steward.md");
   writeFileSync(edited, `${readFileSync(edited, "utf8")}\nOurs.\n`);
   rmSync(join(root, OWN_PRESET, "surfaces/lefthook.yml"));
-  configure(root, { preset: OWN_PRESET, profile: "lean" });
+  configure(root, { preset: OWN_PRESET, profile: "lean", session: { pushAtEnd: true } });
   const { removed } = sync(root, { direct: true, ...quiet, adopt: true });
   assert.deepEqual(removed.toSorted(), [".claude/agents/ci-steward.md", "lefthook.yml"]);
   assert.ok(existsSync(edited), "an edited owned file is never deleted");
