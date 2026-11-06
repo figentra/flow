@@ -1,5 +1,36 @@
 # @figentra-oss/flow
 
+## 0.6.0
+
+### Minor Changes
+
+- 63cc648: Close the gaps a repository could not close through its own configuration (STA-2131). `claudeCode` in
+  `flow.config.json` carries Claude Code `enabledPlugins` and `extraKnownMarketplaces` into `.claude/settings.json`,
+  and nothing else: the hooks, permissions and environment stay Flow's. A marketplace must be a remote source (`github`,
+  `git` or `url`), because an enabled plugin brings its own hooks. `session.contextCommands` appends the output of
+  the repository's own commands to the SessionStart context (no shell, 4 seconds each, capped, failures silent).
+  `agentsMd.land` replaces the landing line of AGENTS.md's "How work flows". The Stop and SessionEnd hooks exit 0
+  silently on a checkout with no install. The stackra preset's OpenCode guard plugin fails closed: a missing bundle, a
+  timeout, a kill, a non-zero exit or no answer denies, naming why, and the guard bundle answers an unattended caller
+  (`FFLOW_GUARD_UNATTENDED=1`) with an explicit allow. A grep or glob from OpenCode now carries its searched folder and a
+  grep its `include` filter, so the secret-path rules apply to it as on Claude Code.
+- 17677be: `fflow ship` records what a Runway deploy did (STA-2137). In a repository with a `runway.yaml` it dispatches with
+  `return_run_details`, so GitHub answers with the run it started, and writes that run id into the record's new `ships`
+  list at once. When GitHub names no run, it notes the deploy workflow's runs before it dispatches and finds a new run
+  created after the dispatch whose deploy job names the environment (a running run with no jobs yet is taken only
+  provisionally; a completed run naming another environment or none never is), so a ship never adopts another ship's or
+  the owner's promote run. It follows the run for up to `--wait` minutes (default 10), downloads its
+  `runway-outcome-<env>` artifact through the configured GitHub credentials and reads it in memory:
+  `runway-outcome.json` (`runway.outcome/v1`) decides the outcome (`deployed` for the environment and the run's own
+  revision is a success; `failed`, `cancelled` or a mismatch is a failure, with the reason), and `deploy-<env>.json` adds
+  the KV rows and uploads written, held apps and any smoke or rollback field. The `ship` stage is done only on success,
+  active while the run is pending (exit 4) and failed otherwise; a run whose artifact list has no outcome artifact is
+  `no outcome artifact`, while a GitHub error listing or downloading it keeps the ship pending. `fflow ship <env>
+  --resolve` dispatches nothing: it re-reads the task record's pending ship and writes its outcome back, committed and
+  pushed. `fflow status` shows each record's newest ship in its Ships table, re-read but not written (Runway repositories
+  only; `status --json` of other repositories is unchanged). `fflow ledger` shows each ship row's own outcome.
+  Repositories without `runway.yaml` ship as before.
+
 ## 0.5.0
 
 ### Minor Changes
