@@ -21,8 +21,6 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-/** The guard bundle, under the project folder. */
-const BUNDLE = ".agents/hooks/fflow-guard.mjs";
 /** How long one decision may take. */
 export const TIMEOUT_MS = 5000;
 
@@ -65,10 +63,10 @@ export function searched(action, args) {
 export function refusal(root, cwd, action, resource, extra = {}, timeout = TIMEOUT_MS) {
   const tool = TOOLS[/** @type {keyof typeof TOOLS} */ (action)];
   if (!tool) return undefined;
-  const bundle = join(root, BUNDLE);
+  const bundle = join(root, ".agents/hooks/fflow-guard.mjs");
   const closed = (/** @type {string} */ why) =>
     `fflow-guard: ${why}, so the call is denied (OpenCode runs unattended)`;
-  if (!existsSync(bundle)) return closed(`${BUNDLE} is missing; \`fflow sync\` writes it`);
+  if (!existsSync(bundle)) return closed(`${bundle} is missing; \`fflow sync\` writes it`);
   const r = spawnSync("node", [bundle, "PreToolUse"], {
     cwd,
     input: JSON.stringify({

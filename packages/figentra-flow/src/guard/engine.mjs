@@ -15,6 +15,7 @@
  * Secrets: none.
  */
 import { git } from "../lib/git.mjs";
+import { ENV_PREFIX } from "../lib/product.mjs";
 import { ALLOW, decideBash } from "./bash.mjs";
 import { answer, readStdin } from "./io.mjs";
 import { decidePaths, PATH_TOOLS, WRITE_TOOLS } from "./paths.mjs";
@@ -33,7 +34,7 @@ import { loadTables } from "./tables.mjs";
 /** @typedef {import("./bash.mjs").Decision} Decision */
 
 /** The environment variable an unattended caller sets: every PreToolUse answer is explicit, and closed on error. */
-export const UNATTENDED = "FFLOW_GUARD_UNATTENDED";
+export const UNATTENDED = `${ENV_PREFIX}GUARD_UNATTENDED`;
 
 /** A context decision, or allow when there is nothing to say. */
 const say = (/** @type {string | undefined} */ text) =>
