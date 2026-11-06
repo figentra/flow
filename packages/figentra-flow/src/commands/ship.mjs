@@ -219,7 +219,8 @@ export async function run(args) {
     ref: branch,
     inputs: { environment: env },
     // GitHub answers 200 with the run it started (else 204, no body): the run is then known, not searched for.
-    return_run_details: true,
+    // Only a Runway product asks, so any other repository's dispatch stays as it was.
+    ...(runway ? { return_run_details: true } : {}),
   });
   if (!r.ok) {
     console.error(`${NAME} ship: ${dispatchProblem(workflow, r.err)}`);

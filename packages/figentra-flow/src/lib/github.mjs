@@ -74,6 +74,7 @@ export function github(
     const r = spawn(command, args, {
       cwd: root,
       encoding: raw ? "buffer" : "utf8",
+      maxBuffer: 64 << 20, // an artifact's zip outgrows the 1 MiB default
       input: body === undefined ? undefined : JSON.stringify(body),
     });
     const err =

@@ -100,6 +100,18 @@ export const runIds = (api, repo, workflow, branch) =>
   listRuns(api, repo, workflow, branch).map((/** @type {any} */ r) => r.id);
 
 /**
+ * The run `id`, or undefined when GitHub could not be read (`gh api` prints an error body, so `json` alone is not enough).
+ * @param {import("./github.mjs").Api} api
+ * @param {string} repo
+ * @param {number | string} id
+ * @returns {any}
+ */
+function runById(api, repo, id) {
+  const r = api("GET", `/repos/${repo}/actions/runs/${id}`);
+  return r.ok ? r.json : undefined;
+}
+
+/**
  * The run of `workflow` a dispatch to `env` started: the earliest run on `branch` that is not in `before`, was created
  * at `since` or later, and whose deploy job names `env` (Runway's `Deploy (<env>)`); undefined until GitHub lists it.
  * A running run that has no jobs yet may be it: it is returned `provisional`, to be found again until its jobs name an
@@ -115,7 +127,10 @@ export function findRun(api, repo, { workflow, branch, since, before = [], env }
     .filter((/** @type {any} */ r) => !before.includes(r.id) && Date.parse(r.created_at) >= since)
     .sort((/** @type {any} */ a, /** @type {any} */ b) => a.id - b.id);
   for (const r of fresh) {
-    const jobs = api("GET", `/repos/${repo}/actions/runs/${r.id}/jobs?per_page=100`).json?.jobs;
+    const listed = api("GET", `/repos/${repo}/actions/runs/${r.id}/jobs?per_page=100`);
+    // A jobs read that failed says nothing: stop here and look again next poll, never skip to a later run.
+    if (!listed.ok) return undefined;
+    const jobs = listed.json?.jobs;
     // Only the environments a ship deploys: a run's skipped `Promote (production)` names no ship.
     const named = (jobs ?? [])
       .map((/** @type {any} */ j) => /\((dev|staging)\)$/.exec(j.name ?? "")?.[1])
@@ -230,9 +245,7 @@ export async function followRun(api, repo, options) {
     await sleep(pollMs);
     const was = run;
     const id = was && !was.provisional ? was.id : options.run;
-    run = id
-      ? (api("GET", `/repos/${repo}/actions/runs/${id}`).json ?? was)
-      : findRun(api, repo, options);
+    run = id ? (runById(api, repo, id) ?? was) : findRun(api, repo, options);
     if (run && !run.provisional && (!was || was.provisional)) log(`  run: ${run.html_url}`);
     if ((run?.status === "completed" && !run.provisional) || i >= polls) break;
   }
@@ -258,7 +271,7 @@ export function resolveShip(api, repo, ship) {
   if (ship.outcome !== "pending") return ship;
   const { workflow, branch, before, env } = ship;
   const run = ship.run
-    ? api("GET", `/repos/${repo}/actions/runs/${ship.run}`).json
+    ? runById(api, repo, ship.run)
     : workflow && branch
       ? findRun(api, repo, { workflow, branch, before, env, since: Date.parse(ship.at) - SKEW_MS })
       : undefined;
