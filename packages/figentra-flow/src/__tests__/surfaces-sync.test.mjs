@@ -73,7 +73,7 @@ test("sync: the stackra preset renders every surface, headed where the format al
     assert.ok(read(path).startsWith(`<!-- ${words} -->\n`), path);
   assert.match(read("CLAUDE.md"), /\n@AGENTS\.md\n$/);
   const settings = JSON.parse(read(".claude/settings.json"));
-  assert.ok(settings.hooks.Stop, "FR-19: the session's record");
+  assert.equal(settings.hooks.Stop, undefined, "STA-2131: no uncommitted record by default");
   assert.equal(settings.hooks.SessionEnd, undefined, "STA-2131: no push at session end by default");
   const lock = readLock(root);
   for (const path of files.filter(isSurface)) assert.ok(lock?.files[path], `${path} is locked`);
