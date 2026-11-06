@@ -374,6 +374,47 @@ test("machineOnlyProblems: a committed machine-only skill wherever it sits; not 
   assert.deepEqual(machineOnlyProblems(root, [{ ...machineOnly("tdd"), machineOnly: false }]), []);
 });
 
+test("machineOnlyProblems: a listed skill whose licence allows it may sit at .agents/skills/<id> (STA-2131 a)", (t) => {
+  const root = scratch(t);
+  spawnSync("git", ["init", "-q"], { cwd: root });
+  const dirs = [
+    ".agents/skills/tdd",
+    ".agents/skills/vitest",
+    ".agents/skills/animate",
+    ".agents/skills/heroui-react-pro",
+    ".claude/skills/tdd",
+    ".agents/skills/other",
+    ".agents/skills/mine",
+  ];
+  for (const d of dirs) {
+    mkdirSync(join(root, d), { recursive: true });
+    writeFileSync(
+      join(root, d, "SKILL.md"),
+      `---\nname: ${d.endsWith("other") ? "tdd" : "x"}\n---\n`,
+    );
+  }
+  spawnSync("git", ["add", ...dirs], { cwd: root });
+  const skills = [
+    { ...machineOnly("tdd"), licence: "MIT" },
+    { ...machineOnly("vitest"), licence: "Apache-2.0" },
+    machineOnly("animate"),
+    { ...machineOnly("heroui-react-pro"), licence: "HeroUI Pro License Agreement" },
+  ];
+  // Allowed licences at their own folder pass; the owner's own and a licence not allowed stay problems, as does a
+  // listed skill anywhere else or under another folder name; an unlisted skill is not this check's.
+  assert.deepEqual(machineOnlyProblems(root, skills), [
+    { dir: ".agents/skills/animate", id: "animate" },
+    { dir: ".agents/skills/heroui-react-pro", id: "heroui-react-pro" },
+    { dir: ".agents/skills/other", id: "tdd" },
+    { dir: ".claude/skills/tdd", id: "tdd" },
+  ]);
+  // The owner's entry allows a licence outside the allowed ones.
+  assert.deepEqual(
+    machineOnlyProblems(root, [{ ...machineOnly("animate"), ownerEntry: "owner 2026-11-06" }]),
+    [],
+  );
+});
+
 test("sync installs the preset's skills and locks their pins; a refusal writes nothing", (t) => {
   const dir = scratch(t);
   const root = governed(t, { own: true });

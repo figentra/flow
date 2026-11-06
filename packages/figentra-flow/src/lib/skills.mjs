@@ -4,7 +4,8 @@
  *   licence and digest; `installSkills` fetches each into a temporary folder, refuses a licence the preset has not
  *   allowed and a tree whose digest is not the pinned one, and only then moves the skills into the git-ignored
  *   `.agents/skills/.vendor/`. A `machineOnly` skill (HeroUI Pro's, Remotion's, the owner's own) is never installed
- *   or pinned; `machineOnlyProblems` finds one committed to a repository. `sync` installs before it writes anything
+ *   or pinned; `machineOnlyProblems` finds one committed to a repository (a freely licensed one may sit at
+ *   `.agents/skills/<id>`). `sync` installs before it writes anything
  *   else, and the lock's pins are `pinsOf` the list, so `diff` needs no fetch.
  * Boundary: `installSkills` writes only `.agents/skills/.vendor/` and the OS temp folder; `gitFetchTree` runs network
  *   git against public sources. Everything else reads.
@@ -244,7 +245,9 @@ function skillName(file) {
 
 /**
  * The machine-only skills committed to the repository at `root`: each tracked folder holding a `SKILL.md` (any case)
- * whose folder name or front-matter `name` is a machine-only id, in path order.
+ * whose folder name or front-matter `name` is a machine-only id, in path order. A repository may carry a listed skill
+ * at `.agents/skills/<id>` when its licence allows that (one of `ALLOWED_LICENCES`, or the owner's `ownerEntry`):
+ * the leader's decision a for STA-2131; a HeroUI Pro, Remotion or owner's-own skill stays a problem.
  * shortcut: only the repository is checked; FR-8's registry case waits for registry `skill` items (FR-12, after
  * 0.3.0), whose publish step must refuse them the same way.
  * @param {string} root
@@ -254,6 +257,11 @@ function skillName(file) {
  */
 export function machineOnlyProblems(root, skills) {
   const ids = new Set(skills.filter((s) => s.machineOnly).map((s) => s.id));
+  const carried = new Set(
+    skills
+      .filter((s) => s.machineOnly && !licenceProblem({ ...s, machineOnly: false }))
+      .map((s) => s.id),
+  );
   if (!ids.size) return [];
   const tracked = git(root, ["ls-files", "-z", "--", ":(icase)*skill.md"]);
   if (!tracked.ok)
@@ -267,7 +275,7 @@ export function machineOnlyProblems(root, skills) {
     if (!m) continue;
     const name = skillName(join(root, file));
     const id = ids.has(m[2]) ? m[2] : name && ids.has(name) ? name : undefined;
-    if (id) found.set(m[1], id);
+    if (id && !(carried.has(id) && m[1] === `.agents/skills/${id}`)) found.set(m[1], id);
   }
   return [...found.keys()].toSorted().map((dir) => ({ dir, id: found.get(dir) ?? "" }));
 }
