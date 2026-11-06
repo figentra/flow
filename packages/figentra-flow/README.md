@@ -124,8 +124,8 @@ imports only `node:` modules, so the guard runs on a checkout with no install (`
 `hooks` selects them by id: `guard` (`PreToolUse`: bash, paths and the plan gate; mandatory, so every profile gets
 it), `post-write` (`PostToolUse`), `prompt-hints` (`UserPromptSubmit`), `session-context` (`SessionStart`),
 `session-save` (`Stop`: `fflow session stop --save-only` writes the session's record) and `session-stop`
-(`SessionEnd`: `fflow session stop` commits the work as WIP and pushes it; rendered only when the config's
-`session.pushAtEnd` is `true`, see Configuration). The two session hooks run the installed package's CLI, so on a
+(`SessionEnd`: `fflow session stop` commits the work as WIP and pushes it); both are rendered only when the config's
+`session.pushAtEnd` is `true` (see Configuration). The two session hooks run the installed package's CLI, so on a
 checkout with no install they exit 0 and do nothing. `session-context` also prints the output of the config's
 `session.contextCommands`. The OpenCode guard plugin puts every shell, edit, read, glob and grep call to the same
 file, an ask counting as a deny; a grep or glob carries its searched folder (and a grep its `include` filter), so the
@@ -322,9 +322,10 @@ setting you have not made refuses and names it.
   `.agents/skills/.vendor/`. `hooks` selects Flow's agent hooks by id (see What `sync` owns); the guard is always
   rendered. Narrowing a profile deletes the rendered agents, skills and files it drops that nobody edited.
 
-- `session.pushAtEnd` (default `false`): `true` renders the `session-stop` hook, which commits the session's tracked
-  work as WIP and pushes it when the session ends. Off, no rendered hook commits or pushes; the `Stop` hook still
-  writes the session's record locally. The profile must select `session-stop` too.
+- `session.pushAtEnd` (default `false`): `true` renders the `session-save` hook, which writes the session's record each
+  turn, and the `session-stop` hook, which commits the session's tracked work as WIP and pushes it when the session
+  ends. Off, neither is rendered: no hook commits or pushes, and none leaves an uncommitted record in the worktree.
+  The profile must select them too.
 
 - `session.contextCommands` (default none): commands, each an argv list run with no shell in the repository, whose
   output the `SessionStart` context appends after the preset's invariants, for example

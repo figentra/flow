@@ -63,8 +63,11 @@ export const HOOKS = {
 
 /** The hooks every profile gets (FR-5). */
 const MANDATORY = ["guard"];
-/** The hooks that commit or push, rendered only when the config's `session.pushAtEnd` opts in (STA-2131). */
-const PUSHING = ["session-stop"];
+/**
+ * The session hooks, rendered only when the config's `session.pushAtEnd` opts in (STA-2131): the Stop hook writes the
+ * record only for the SessionEnd hook to commit, so alone it leaves every task worktree dirty.
+ */
+const PUSHING = ["session-save", "session-stop"];
 
 /**
  * The `hooks` block for the hook ids `profile` selects, the mandatory ones always; the pushing ones only when

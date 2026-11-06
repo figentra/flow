@@ -2,8 +2,8 @@
  * Figentra Flow file contract:
  * Purpose: hold `.claude/settings.json` to STA-1945 FR-7 and FR-19: the preset's settings with Flow's hooks first
  *   (the guard on every tool it checks, through `node` and the repository's guard bundle, so with no install (A-8),
- *   never `pnpm exec`; the Stop hook writing the session's record and, only when `session.pushAtEnd` opts in
- *   (STA-2131), the SessionEnd hook committing and pushing it), each event's preset entries after them; the
+ *   never `pnpm exec`; only when `session.pushAtEnd` opts in (STA-2131), the Stop hook writing the session's record
+ *   and the SessionEnd hook committing and pushing it), each event's preset entries after them; the
  *   profile's `hooks` selects them by id, the guard always (FR-5); the session hooks exit 0 silently on a checkout
  *   with no install (STA-2131); the config's `claudeCode` adds only `enabledPlugins` and `extraKnownMarketplaces`;
  *   a preset without the surface renders nothing, and one whose surface is not JSON is a ConfigError naming the file.
@@ -74,7 +74,7 @@ test("renderSettings: the stackra preset's permissions with Flow's guard and ses
   ]);
   for (const event of ["PostToolUse", "UserPromptSubmit", "SessionStart"])
     assert.equal(settings.hooks[event][0].hooks[0].command, `${GUARD} ${event}`);
-  // FR-19: every turn writes the record; with `session.pushAtEnd`, the session's end commits and pushes it.
+  // FR-19: with `session.pushAtEnd`, every turn writes the record and the session's end commits and pushes it.
   assert.equal(settings.hooks.Stop[0].hooks[0].command, cli("session stop --save-only"));
   assert.equal(settings.hooks.SessionEnd[0].hooks[0].command, cli("session stop"));
   for (const entries of Object.values(settings.hooks))
@@ -82,21 +82,25 @@ test("renderSettings: the stackra preset's permissions with Flow's guard and ses
       for (const h of entry.hooks) assert.doesNotMatch(h.command, /pnpm|npx/, h.command);
 });
 
-test("renderSettings: by default no hook commits or pushes; the Stop hook only writes the record (STA-2131)", () => {
+test("renderSettings: by default no session hook: none commits, pushes or leaves the record uncommitted (STA-2131)", () => {
   for (const config of [{}, { session: {} }, { session: { pushAtEnd: false } }]) {
     const settings = settingsOf(STACKRA, undefined, config);
     assert.equal(settings.hooks.SessionEnd, undefined, JSON.stringify(config));
+    assert.equal(settings.hooks.Stop, undefined, JSON.stringify(config));
     const commands = Object.values(settings.hooks).flatMap((entries) =>
       entries.flatMap((/** @type {any} */ e) => e.hooks.map((/** @type {any} */ h) => h.command)),
     );
     assert.deepEqual(
       commands.filter((c) => c.includes("session stop")),
-      [cli("session stop --save-only")],
+      [],
     );
   }
-  // a profile selecting session-stop by id still needs the opt-in
-  assert.deepEqual(Object.keys(settingsOf(NEUTRAL, ["session-stop"]).hooks), ["PreToolUse"]);
+  // a profile selecting the session hooks by id still needs the opt-in
+  assert.deepEqual(Object.keys(settingsOf(NEUTRAL, ["session-save", "session-stop"]).hooks), [
+    "PreToolUse",
+  ]);
   assert.equal(hookSettings().SessionEnd, undefined);
+  assert.equal(hookSettings().Stop, undefined);
 });
 
 test("renderSettings: the neutral preset gets the same hooks over its bare settings", () => {
