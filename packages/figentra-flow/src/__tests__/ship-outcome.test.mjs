@@ -118,6 +118,16 @@ const stubApi =
     return { ok: false, json: undefined, err: `unexpected ${path}` };
   };
 
+const done = {
+  id: 7,
+  status: "completed",
+  conclusion: "success",
+  head_sha: SHA,
+  created_at: "2026-11-06T10:00:05Z",
+  html_url: "https://github.com/figentra/pay/actions/runs/7",
+};
+const artifact = [{ id: 9, name: "runway-outcome-staging", expired: false }];
+
 test("ship outcome: unzipFile reads a deflated or stored entry, after any wrapper lines", () => {
   const zip = zipOf([["deploy-staging.json", MANIFEST]]);
   assert.deepEqual(
