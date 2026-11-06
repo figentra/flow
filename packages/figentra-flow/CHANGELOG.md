@@ -1,5 +1,12 @@
 # @figentra-oss/flow
 
+## 0.6.3
+
+### Patch Changes
+
+- aee4206: The stackra preset's test-infra skill and flow-gate command now name the `testbed` CLI from `@figentra/testbed`
+  (ADR 0522) for run, status, unlock and scale, in place of `stackra testbed`.
+
 ## 0.6.2
 
 ### Patch Changes
