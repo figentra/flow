@@ -2,9 +2,10 @@
  * Figentra Flow file contract:
  * Purpose: hold the OpenCode projection to STA-1945 FR-7: the stackra preset renders `opencode.jsonc` and the guard
  *   plugin as in the preset; the neutral preset renders neither. The plugin asks the repository's guard bundle, as
- *   Claude Code's hook does, with no install (A-8): a side door is refused (an ask too), the rest allowed, a
- *   repository without the bundle allowed; its shell refusal prints the reason without running any of the refused
- *   command.
+ *   Claude Code's hook does, with no install (A-8): a side door is refused (an ask too), the rest allowed; it fails
+ *   closed (STA-2131): a missing bundle, a timeout, a kill, a non-zero exit, no output or output that is not an
+ *   answer denies, naming why; a grep carries its searched folder and file filter, so the path rules apply to it;
+ *   its shell refusal prints the reason without running any of the refused command.
  * Boundary: temporary git repositories; runs `node` (the guard bundle) and `sh`; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
@@ -18,6 +19,7 @@ import { join } from "node:path";
 
 import plugin, {
   refusal,
+  searched,
 } from "../../assets/flow/presets/stackra/surfaces/opencode/plugins/fflow-guard.mjs";
 import { FLOW_ASSETS } from "../lib/flow-dir.mjs";
 import { GUARD_FILE, guardBundle } from "../lib/render-guard.mjs";
@@ -55,10 +57,66 @@ test("guard plugin: asks the repository's guard bundle; a side door is refused, 
   assert.match(refusal(root, root, "shell", "gh pr merge 12") ?? "", /fflow land/);
   assert.equal(refusal(root, root, "shell", "git status"), undefined);
   assert.equal(refusal(root, root, "webfetch", "https://example.com"), undefined);
-  // No bundle yet (before `sync`): allowed, as Claude Code allows on a hook that cannot run.
+});
+
+test("guard plugin (STA-2131): fails closed when the bundle is missing or does not answer", (t) => {
+  // `sync` writes the bundle beside the plugin and it needs no install, so a missing one is a broken checkout.
   const bare = repo();
   t.after(bare.dispose);
-  assert.equal(refusal(bare.root, bare.root, "shell", "gh pr merge 12"), undefined);
+  assert.match(
+    refusal(bare.root, bare.root, "shell", "git status") ?? "",
+    /fflow-guard\.mjs is missing; `fflow sync` writes it, so the call is denied/,
+  );
+  const root = installed(t);
+  for (const [body, why] of /** @type {[string, RegExp][]} */ ([
+    ["setTimeout(() => {}, 10000);", /timed out after 1500 ms/],
+    ["process.kill(process.pid, 'SIGKILL');", /was killed \(SIGKILL\)/],
+    ["process.exit(3);", /exited 3/],
+    ["", /printed nothing/],
+    ["console.log('ok');", /not JSON/],
+    ["console.log(JSON.stringify({ hookSpecificOutput: {} }));", /gave no decision/],
+  ])) {
+    writeFileSync(join(root, GUARD_FILE), body);
+    assert.match(refusal(root, root, "shell", "git status", {}, 1500) ?? "", why, body);
+  }
+});
+
+test("guard plugin (STA-2131): a grep carries its folder and filter, so the secret paths apply to it", async (t) => {
+  const root = installed(t);
+  assert.deepEqual(searched("grep", { pattern: "x", path: "src", include: "*.ts" }), {
+    path: "src",
+    glob: "*.ts",
+  });
+  assert.deepEqual(searched("glob", { pattern: "*.ts", path: "src", include: "x" }), {
+    path: "src",
+  });
+  assert.deepEqual(searched("grep", undefined), {});
+  const deny = /Secrets guard/;
+  assert.match(
+    refusal(root, root, "grep", "BEGIN", searched("grep", { path: join(root, ".dev.vars") })) ?? "",
+    deny,
+  );
+  assert.match(
+    refusal(root, root, "grep", "BEGIN", searched("grep", { path: root, include: "*.pem" })) ?? "",
+    deny,
+  );
+  assert.equal(refusal(root, root, "grep", "BEGIN", searched("grep", { path: root })), undefined);
+  // Through the permission hook, from the evaluation's metadata.
+  /** @type {Record<string, (e: any) => void>} */
+  const hooks = {};
+  await plugin.setup({
+    location: { directory: root },
+    permission: { hook: async (/** @type {string} */ n, /** @type {any} */ cb) => (hooks[n] = cb) },
+    shell: { hook: async (/** @type {string} */ n, /** @type {any} */ cb) => (hooks[n] = cb) },
+  });
+  const e = {
+    action: "grep",
+    resources: ["BEGIN"],
+    metadata: { pattern: "BEGIN", path: join(root, ".env") },
+    effect: "allow",
+  };
+  hooks.evaluate(e);
+  assert.equal(e.effect, "deny");
 });
 
 test("guard plugin (STA-2136): the stackra tables hold OpenCode to core's executor layer and its worktree", (t) => {

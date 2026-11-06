@@ -3,7 +3,9 @@
  * Purpose: `AGENTS.md` and `CLAUDE.md` (STA-1945 FR-7): the preset's shared blocks (`surfaces/agents-md/agents.md`,
  *   filled with `fill`, the README's Mustache subset) plus the repository's facts: its name, tagline, what it is and
  *   its architecture from `.flow/readme.yml`, the rendered preset's folder name, its spec folder and tracker from the
- *   configuration, and its own notes from the configuration's `agentsMd.facts` (one Markdown string). `CLAUDE.md` imports `AGENTS.md`, so both tools read one text.
+ *   configuration, and its own notes from the configuration's `agentsMd.facts` (one Markdown string); its
+ *   `agentsMd.land` (STA-2131) replaces the landing line of "How work flows", so a repository whose owner lands
+ *   differently is not contradicted. `CLAUDE.md` imports `AGENTS.md`, so both tools read one text.
  * Boundary: reads the preset's template and `.flow/readme.yml`; returns text, writes nothing (`sync` writes).
  * Runtime: node
  * Governing contract: STA-1945 (FR-7, AC-7, P-010).
@@ -37,6 +39,9 @@ export function renderAgentsMd(ctx) {
   const facts = config.agentsMd?.facts;
   if (facts !== undefined && typeof facts !== "string")
     throw new ConfigError(`${CONFIG_FILE}: agentsMd.facts must be one Markdown string`);
+  const land = config.agentsMd?.land;
+  if (land !== undefined && typeof land !== "string")
+    throw new ConfigError(`${CONFIG_FILE}: agentsMd.land must be one Markdown string`);
   const text = fill(readFileSync(template, "utf8"), {
     name: data.name ?? basename(ctx.root),
     tagline: data.tagline,
@@ -46,6 +51,7 @@ export function renderAgentsMd(ctx) {
     specs: config.specs?.dir ?? SPECS_DEFAULT,
     tracker: config.tracker,
     facts,
+    land,
   });
   return new Map([
     ["AGENTS.md", `${text.replace(/\n{3,}/g, "\n\n").trim()}\n`],

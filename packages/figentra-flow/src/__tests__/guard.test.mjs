@@ -10,7 +10,8 @@
  *   and the hook entry run the engine on the repository's preset tables (the neutral preset's when the preset has
  *   none), and a preset whose tables are empty still has the side doors, the secret files and its own configuration
  *   denied (FR-5); a rule or the plan gate that throws asks, tables that fail to load (or a table that is not a list)
- *   deny every tool call, and a payload without `cwd` is decided in the hook's folder.
+ *   deny every tool call, and a payload without `cwd` is decided in the hook's folder. An unattended caller
+ *   (`FFLOW_GUARD_UNATTENDED=1`, STA-2131) gets an explicit allow.
  * Boundary: temporary repositories; the hook entry runs as a child process; no network.
  * Runtime: node
  * Governing contract: ADR 0022; Stackra ADR 0503; STA-1729; STA-1945.
@@ -260,6 +261,28 @@ test("engine: the hook entry denies a side door with the command, and allows the
     undefined,
   );
   assert.equal(hook(r.root, "PreToolUse", "not json{"), undefined, "unparseable input allows");
+});
+
+test("engine (STA-2131): an unattended caller gets an explicit allow, so its silence means no answer", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  const run = (/** @type {Record<string, unknown>} */ payload) => {
+    const out = spawnSync(process.execPath, [ENTRY, "PreToolUse"], {
+      input: JSON.stringify({ cwd: r.root, ...payload }),
+      env: { ...process.env, CLAUDE_PROJECT_DIR: r.root, FFLOW_GUARD_UNATTENDED: "1" },
+      encoding: "utf8",
+    });
+    assert.equal(out.status, 0, out.stderr);
+    return JSON.parse(out.stdout).hookSpecificOutput;
+  };
+  assert.deepEqual(run({ tool_name: "Bash", tool_input: { command: "git status" } }), {
+    hookEventName: "PreToolUse",
+    permissionDecision: "allow",
+  });
+  assert.equal(
+    run({ tool_name: "Bash", tool_input: { command: "gh pr merge 12" } }).permissionDecision,
+    "deny",
+  );
 });
 
 test("engine: a secret file is denied to every file tool; an example and other files pass (P-012)", (t) => {

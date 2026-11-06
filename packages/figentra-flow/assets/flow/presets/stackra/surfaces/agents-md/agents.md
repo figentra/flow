@@ -33,7 +33,12 @@ Every change goes through Figentra Flow (`fflow`, the {{preset}} preset). Specs 
 - Spec the change with `/flow-specify`, `/flow-clarify` and `/flow-plan` (it writes the tasks too), then build it
   with `/flow-implement`.
 - Work in a worktree under `.claude/worktrees/<name>/`, made with `fflow start <key>`; never next to the repository.
+{{#land}}
+- {{land}}
+{{/land}}
+{{^land}}
 - Land with `fflow land <pr>`: it waits for the gate and removes the worktree after the merge.
+{{/land}}
 
 ## Rules
 

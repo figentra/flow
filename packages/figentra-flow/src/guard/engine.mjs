@@ -5,15 +5,17 @@
  *   repository's preset tables (the engine's side doors and the neutral path rules after them, for every preset), and
  *   `main`, which reads the payload on stdin and writes the hook's JSON answer.
  * Boundary: reads stdin, the repository's configuration and preset tables and git state; writes only the answer.
- *   Unparseable input and the engine's own errors allow (core's fail-open, kept for parity); a rule or the plan gate
- *   that throws asks; tables that fail to load deny every tool call (closed on the mandatory policies). A payload
- *   without `cwd` is decided in the hook's own folder (core resolved no relative path then; this resolves them, so
- *   it denies more, never less).
+ *   Unparseable input and the engine's own errors allow (core's fail-open, kept for parity), except for an
+ *   unattended caller (`FFLOW_GUARD_UNATTENDED=1`, STA-2131), which gets an explicit allow and a deny on an engine
+ *   error, so its silence means the guard did not answer; a rule or the plan gate that throws asks; tables that
+ *   fail to load deny every tool call (closed on the mandatory policies). A payload without `cwd` is decided in the
+ *   hook's own folder (core resolved no relative path then; this resolves them, so it denies more, never less).
  * Runtime: node
- * Governing contract: STA-1945 (FR-5, FR-7, AC-9, P-012).
+ * Governing contract: STA-1945 (FR-5, FR-7, AC-9, P-012); STA-2131.
  * Secrets: none.
  */
 import { git } from "../lib/git.mjs";
+import { ENV_PREFIX } from "../lib/product.mjs";
 import { ALLOW, decideBash } from "./bash.mjs";
 import { answer, readStdin } from "./io.mjs";
 import { decidePaths, PATH_TOOLS, WRITE_TOOLS } from "./paths.mjs";
@@ -30,6 +32,9 @@ import { loadTables } from "./tables.mjs";
  *   prompt?: string, source?: string, payload?: Record<string, any> }} HookEvent
  */
 /** @typedef {import("./bash.mjs").Decision} Decision */
+
+/** The environment variable an unattended caller sets: every PreToolUse answer is explicit, and closed on error. */
+export const UNATTENDED = `${ENV_PREFIX}GUARD_UNATTENDED`;
 
 /** A context decision, or allow when there is nothing to say. */
 const say = (/** @type {string | undefined} */ text) =>
@@ -74,7 +79,7 @@ export async function decide(event, tables) {
     case "UserPromptSubmit":
       return say(promptHints(event.prompt ?? "", tables.prompt));
     case "SessionStart":
-      return say(sessionContext(event.root, event.source, tables.session));
+      return say(sessionContext(event.root, event.source, tables.session, tables.contextCommands));
     default:
       return ALLOW;
   }
@@ -119,10 +124,31 @@ export async function main(name, modules) {
       );
     return 0;
   }
+  // An unattended caller (the OpenCode plugin) reads silence as a failure: it gets an explicit allow, and the
+  // engine's own error denies there instead of failing open.
+  const unattended = name === "PreToolUse" && process.env[UNATTENDED] === "1";
   try {
-    process.stdout.write(answer(name, await decide(event, tables)));
-  } catch {
-    // Intentionally silent: a bug in the engine never blocks work (core's fail-open).
+    const d = await decide(event, tables);
+    process.stdout.write(
+      unattended && d.decision === "allow"
+        ? JSON.stringify({
+            hookSpecificOutput: {
+              hookEventName: name,
+              permissionDecision: "allow",
+              ...(d.context ? { additionalContext: d.context } : {}),
+            },
+          })
+        : answer(name, d),
+    );
+  } catch (error) {
+    // Attended: intentionally silent, a bug in the engine never blocks work (core's fail-open).
+    if (unattended)
+      process.stdout.write(
+        answer(name, {
+          decision: "deny",
+          reason: `The guard failed (${/** @type {Error} */ (error)?.message}); an unattended call is denied.`,
+        }),
+      );
   }
   return 0;
 }
