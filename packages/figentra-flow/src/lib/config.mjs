@@ -19,6 +19,8 @@ import { CONFIG_FILE, LEGACY_CONFIG_FILE, NAME, NEVER_TOLERATED } from "./produc
 
 const str = { type: "string", minLength: 1 };
 const strs = { type: "array", items: str, minItems: 1 };
+/** The marketplace sources `claudeCode.extraKnownMarketplaces` may name: remote ones only (STA-2131). */
+export const MARKETPLACE_SOURCES = ["github", "git", "url"];
 /** A port block chosen by `kind`: one variant per adapter. */
 const port = (
   /** @type {Record<string, Record<string, unknown>>} */ variants,
@@ -228,7 +230,15 @@ export const SCHEMA = {
           additionalProperties: {
             type: "object",
             required: ["source"],
-            properties: { source: { type: "object" } },
+            // A remote source only: a local `directory` or `file` marketplace could hand the session a plugin whose
+            // hooks run beside the guard's, from files any branch can change.
+            properties: {
+              source: {
+                type: "object",
+                required: ["source"],
+                properties: { source: { enum: MARKETPLACE_SOURCES } },
+              },
+            },
           },
         },
       },

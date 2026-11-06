@@ -18,7 +18,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { ConfigError } from "./config.mjs";
+import { ConfigError, MARKETPLACE_SOURCES } from "./config.mjs";
 import { NAME, PACKAGE } from "./product.mjs";
 import { selects } from "./profiles.mjs";
 import { GUARD_FILE } from "./render-guard.mjs";
@@ -113,6 +113,11 @@ export function renderSettings(ctx) {
   const own = /** @type {NonNullable<import("./config.mjs").Config["claudeCode"]>} */ (
     ctx.config.claudeCode ?? {}
   );
+  for (const [name, entry] of Object.entries(own.extraKnownMarketplaces ?? {}))
+    if (!MARKETPLACE_SOURCES.includes(String(entry?.source?.source)))
+      throw new ConfigError(
+        `claudeCode.extraKnownMarketplaces.${name}: a marketplace source is one of ${MARKETPLACE_SOURCES.join(", ")}`,
+      );
   for (const key of /** @type {const} */ (["enabledPlugins", "extraKnownMarketplaces"]))
     if (own[key]) preset[key] = { ...preset[key], ...own[key] };
   return new Map([[SETTINGS_FILE, `${JSON.stringify({ ...preset, hooks }, null, 2)}\n`]]);

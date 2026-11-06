@@ -36,7 +36,11 @@ export function commandLines(root, commands) {
   const deadline = Date.now() + BUDGET_MS;
   /** @type {string[]} */
   const out = [];
-  for (const [file, ...args] of commands) {
+  for (const command of commands) {
+    // A malformed entry is skipped alone, so the rest of the context (the invariants included) still prints.
+    if (!Array.isArray(command) || !command.length || !command.every((a) => typeof a === "string"))
+      continue;
+    const [file, ...args] = command;
     const left = deadline - Date.now();
     if (left <= 0) break;
     const r = spawnSync(file, args, {

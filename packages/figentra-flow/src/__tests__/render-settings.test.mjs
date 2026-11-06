@@ -188,4 +188,15 @@ test("renderSettings (STA-2131): claudeCode carries the plugins and marketplaces
   // Without the block, neither key appears.
   assert.equal("enabledPlugins" in settingsOf(STACKRA), false);
   assert.equal("extraKnownMarketplaces" in settingsOf(STACKRA), false);
+  // A local marketplace could bring a plugin whose hooks run beside the guard's: refused.
+  for (const source of ["directory", "file", undefined])
+    assert.throws(
+      () =>
+        settingsOf(STACKRA, undefined, {
+          claudeCode: {
+            extraKnownMarketplaces: { local: { source: { source, path: "./.plugins" } } },
+          },
+        }),
+      /claudeCode\.extraKnownMarketplaces\.local: a marketplace source is one of github, git, url/,
+    );
 });

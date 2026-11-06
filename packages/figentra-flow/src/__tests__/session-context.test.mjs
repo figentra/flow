@@ -67,6 +67,9 @@ test("session (STA-2131): the repository's context commands append their output;
     lines.slice(1),
     Array.from({ length: MAX_LINES }, (_, i) => `digest ${i}`),
   );
+  // A malformed entry is skipped alone; the commands around it still print.
+  const odd = /** @type {string[][]} */ (/** @type {unknown} */ ([1, [], [node, 5], commands[0]]));
+  assert.deepEqual(commandLines(process.cwd(), odd), ["AI spend: $1.20 today"]);
   const stackra = presetRoot();
   const neutral = presetRoot("neutral");
   t.after(() => [stackra, neutral].forEach((d) => rmSync(d, { recursive: true, force: true })));

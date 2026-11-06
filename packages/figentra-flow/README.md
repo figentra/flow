@@ -335,7 +335,9 @@ setting you have not made refuses and names it.
 - `claudeCode` carries the repository's Claude Code plugins into `.claude/settings.json`: `enabledPlugins`
   (`{ "<plugin>@<marketplace>": true }`) and `extraKnownMarketplaces` (`{ "<name>": { "source": { … } } }`), merged
   over the preset's. Only these two keys are accepted: the hooks, permissions and environment stay the preset's and
-  Flow's (`guard.wiring`).
+  Flow's (`guard.wiring`). A marketplace's `source.source` must be `github`, `git` or `url`: an enabled plugin can
+  add its own hooks and MCP servers, so a local `directory` or `file` marketplace, which any branch could change, is
+  refused.
 
 - `agentsMd.facts` is the repository's own Markdown under "This repository" in `AGENTS.md`; `agentsMd.land`
   replaces the landing line of "How work flows" (by default, land with `fflow land <pr>`), for a repository whose

@@ -599,7 +599,13 @@
             "required": ["source"],
             "properties": {
               "source": {
-                "type": "object"
+                "type": "object",
+                "required": ["source"],
+                "properties": {
+                  "source": {
+                    "enum": ["github", "git", "url"]
+                  }
+                }
               }
             }
           }
