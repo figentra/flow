@@ -1,6 +1,7 @@
 /**
  * Figentra Flow file contract:
- * Purpose: core's `guard-bash` tests, ported (core 220f92c2, `.agents/hooks/__tests__/guard-bash.test.mjs`): the hook
+ * Purpose: core's `guard-bash` tests, ported (core 220f92c2, `.agents/hooks/__tests__/guard-bash.test.mjs`, and the
+ *   STA-2099 cases of core 2ea3f21e, STA-2136): the hook
  *   entry with the stackra tables decides every command as core's hook does (the secrets inbox and secret values,
  *   destructive git outside the session's own worktree, pushes, `changeset version`, deploys, `figentra
  *   bot|linear|secrets` and the rest of ADR 0293's tiers), and the in-process cases hold the preset's moved
@@ -3325,6 +3326,7 @@ test("deploys: only the QA/release session starts one; every other session and s
     "pnpm runway deploy cloudflare-workers --env staging",
     "pnpm runway promote 0123abc",
     "stackra deploy --product --env preview",
+    "stackra promote --to production --approved",
     "pnpm bot:gh -- workflow run deploy-static.yml -f environment=staging",
     "pnpm bot:gh -- workflow run promote.yml -f sha=0123abc",
     "pnpm bot:gh -- api -X POST repos/figentra/stackra/actions/workflows/deploy-registry.yml/dispatches -f ref=main",
@@ -3414,5 +3416,47 @@ test("deploys: deleting production data, touching a production secret and DNS ar
   }
   for (const c of ["wrangler kv key delete k --local", "wrangler d1 migrations list db --remote"])
     assert.notEqual(decision(c, worktree), "deny", c);
+  done();
+});
+
+test("gates: approving a waiting deployment or changing what gates it is denied for every role (STA-2099)", () => {
+  const { worktree, done } = repoWithWorktree();
+  // Through the bot wrapper: a raw `gh` is already denied for agents (the owner-login rule), so it would hide this one.
+  const runs = "repos/figentra/stackra/actions/runs/1";
+  for (const c of [
+    `pnpm bot:gh -- api -X POST ${runs}/pending_deployments -f state=approved`,
+    `pnpm bot:gh -- api ${runs}/pending_deployments --method POST --input body.json`,
+    "pnpm bot:gh -- api graphql -f query='mutation { approveDeployments(input: {}) { clientMutationId } }'",
+    "pnpm bot:gh -- api -X PUT repos/figentra/stackra/environments/production --input env.json",
+    "pnpm bot:gh -- api repos/figentra/flow/rulesets/1 -X DELETE",
+    "pnpm bot:gh -- api -X DELETE repos/figentra/pay/branches/main/protection",
+  ]) {
+    assert.equal(decision(c, worktree), "deny", c);
+    assert.equal(
+      run({ tool_input: { command: c }, cwd: worktree }, { STACKRA_ROLE: "qa-release" })
+        .permissionDecision,
+      "deny",
+      c,
+    );
+  }
+  for (const c of [
+    `pnpm bot:gh -- api ${runs}/pending_deployments`,
+    "pnpm bot:gh -- api repos/figentra/stackra/environments/production",
+    "pnpm bot:gh -- api repos/figentra/stackra/rulesets",
+  ])
+    assert.notEqual(decision(c, worktree), "deny", c);
+  done();
+});
+
+test("deploys: runway run by path, tsx or a script, and the secrets sync, are deploys (STA-2099)", () => {
+  const { worktree, done } = repoWithWorktree();
+  for (const c of [
+    "node packages/developer/runway/src/node/runway.ts promote abc123",
+    "tsx src/node/runway.ts deploy --env production",
+    "node -e \"import('./r.mjs').then((m) => m.runRunway(['x']))\"",
+    "runway secrets sync --env production",
+  ])
+    assert.equal(decision(c, worktree), "deny", c);
+  assert.notEqual(decision("node src/node/runway.ts deploy --dry-run", worktree), "deny");
   done();
 });

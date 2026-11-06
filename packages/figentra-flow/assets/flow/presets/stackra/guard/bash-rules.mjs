@@ -4,7 +4,8 @@
  * imports changed (`./inbox.mjs`, `./reviewer-agents.mjs`, and `isSecretPath` from `./path-rules.mjs`, where the
  * paths part moved) and `BASH_RULES` was added at the end: core's decision as the engine's rules. The engine's side
  * doors run after these rules for this preset too (FR-5). Change it together with core's copy until core's
- * migration PR removes that one.
+ * migration PR removes that one. STA-2136 brought it level with core 2ea3f21e: the deploy hardening and the gate
+ * rule of STA-2099.
  * Stackra file contract:
  * Purpose: The agent permission rules (ADR 0293), one module for `guard-bash.mjs`, `guard-paths.mjs` and the OpenCode
  *          guard (`.opencode/plugins/guard/decide.ts`), so the two tools never drift. Three tiers: allow, ask (a human
@@ -1566,7 +1567,9 @@ const EAS_DEPLOY = atName(
  */
 const PUBLISH = atName(String.raw`(?:${CLI("(?:npm|pnpm|yarn|changeset)")})?publish` + END);
 /** `pnpm runway deploy|promote`, the `runway` binary or its `runway.mjs` build (STA-268) without `--dry-run`; `plan` is a read. */
-const RUNWAY_DEPLOY = /\brunway(?:\.mjs)?\s+(?:--\s+)?(?:deploy|promote)\b(?![^|;&\n]*--dry-run)/;
+// STA-2099: also `node …/runway.ts`, tsx, the secrets sync, and a script that calls the runner directly.
+const RUNWAY_DEPLOY =
+  /\brunway(?:\.m?[jt]s)?\s+(?:--\s+)?(?:deploy|promote|secrets\s+sync)\b(?![^|;&\n]*--dry-run)|\brunRunway\b/;
 /** `pnpm secrets:import`, its script run directly, or the private CLI's `figentra secrets import` (ADR 0500). */
 const SECRETS_IMPORT = String.raw`\bsecrets(?::import|-import(?:\.mjs)?|\s+import)\b`;
 /** An import that writes: not `--list`, not `--dry-run` (the owner's keeper rule of 2026-10-31). */
@@ -1581,8 +1584,11 @@ const SECRETS_IMPORT_FORBIDDEN = new RegExp(
   String.raw`${SECRETS_IMPORT}[^|;&\n]*\s(?:--confirm\b|--env(?:=|\s+)prod(?:uction)?\b|--path(?:=|\s+)/ci/(?:gate|registry)(?:/|(?![\w-])))`,
   "i",
 );
-/** `stackra deploy …` (a product deploy, `--env <environment>`) without `--dry-run`. */
-const STACKRA_DEPLOY = /\bstackra\s+(?:--\s+)?deploy\b(?![^|;&\n]*--dry-run)/;
+/**
+ * `stackra deploy …` (a product deploy, `--env <environment>`) or `stackra promote …` (wraps runway's promote),
+ * without `--dry-run`.
+ */
+const STACKRA_DEPLOY = /\bstackra\s+(?:--\s+)?(?:deploy|promote)\b(?![^|;&\n]*--dry-run)/;
 /**
  * `gh` or `pnpm bot:gh` dispatching a workflow: `workflow run <file>` or `api … /dispatches` (raw text: the fields are
  * quoted values).
@@ -1613,11 +1619,8 @@ export function deployTarget(segment) {
   const nonproduction = NONPRODUCTION_ENVIRONMENTS.has(environment.toLowerCase());
   if (RUNWAY_DEPLOY.test(segment) || STACKRA_DEPLOY.test(segment)) {
     const promote = /\bpromote\b/.test(segment);
-    const what = promote
-      ? "runway promote"
-      : /\bstackra\s/.test(segment)
-        ? "stackra deploy"
-        : "runway deploy";
+    const tool = /\bstackra\s/.test(segment) ? "stackra" : "runway";
+    const what = `${tool} ${promote ? "promote" : "deploy"}`;
     return { what, ref, environment, production: promote || !nonproduction };
   }
   if (!WORKFLOW_DISPATCH.test(segment)) return null;
@@ -1655,6 +1658,23 @@ const PRODUCTION_FORBIDDEN = [
   /\bdns_records\b|\bflarectl\s+dns\b/,
   new RegExp(
     String.raw`(?:${BOT_GH}\s+(?:--\s+)?|(?:^|[\s;&|(])gh\s+)(?:(?:-R|--repo)(?:=|\s+)\S+\s+)?secret\s+(?:set|delete)\b`,
+  ),
+];
+/** A write flag of `gh api`: a POST, PUT, PATCH or DELETE method, a field or a body file. */
+const GH_API_WRITE = String.raw`(?:-X\s*|--method(?:=|\s+))(?:POST|PUT|PATCH|DELETE)\b|\s-[fF]\s|--(?:raw-)?field\b|--input\b`;
+/**
+ * Approving a waiting deployment (REST `pending_deployments`, GraphQL `approveDeployments`, a custom protection
+ * rule's callback) or writing the environment, ruleset or branch protection that gates it (STA-2099).
+ */
+const GATE_CHANGE = [
+  new RegExp(
+    String.raw`\bpending_deployments\b[^|;&\n]*(?:${GH_API_WRITE})|(?:${GH_API_WRITE})[^|;&\n]*\bpending_deployments\b`,
+    "i",
+  ),
+  /\b(?:approveDeployments|deployment_protection_rule)\b/,
+  new RegExp(
+    String.raw`\bapi\b[^|;&\n]*(?:-X\s*|--method(?:=|\s+))(?:PUT|PATCH|POST|DELETE)\b[^|;&\n]*\/(?:environments|rulesets|protection)\b|\bapi\b[^|;&\n]*\/(?:environments|rulesets|protection)\b[^|;&\n]*(?:-X\s*|--method(?:=|\s+))(?:PUT|PATCH|POST|DELETE)\b`,
+    "i",
   ),
 ];
 /**
@@ -1842,6 +1862,16 @@ const RULES = [
       (WRANGLER_D1_REMOTE.test(c) && /\b(?:DROP|DELETE|TRUNCATE)\b/i.test(c)),
     id: "production-forbidden",
     why: "Never, even with the owner's approval in a prompt (owner decision 2026-10-31): deleting production data (R2, D1, KV, or SQL `DROP`, `DELETE`, `TRUNCATE` on a remote D1), reading or rotating a production secret, or changing DNS. The owner does these by hand.",
+  },
+  {
+    // A GraphQL approval is a quoted query value, so it is read in the raw segments (as botGraphqlDelete).
+    rx: (c) =>
+      GATE_CHANGE.some((rx) => runsQuoted(c, rx)) ||
+      [dropMessages(c), ...runnable(c)].some((t) =>
+        segments(t).some((s) => GATE_CHANGE[1].test(s)),
+      ),
+    id: "gate-change",
+    why: "Agents log in as an environment reviewer (STA-2099), so approving a waiting deployment, or changing an environment, ruleset or branch protection, is the owner's by hand, even with approval in a prompt. Reading them is fine.",
   },
   {
     rx: (c) =>
