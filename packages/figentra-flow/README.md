@@ -79,7 +79,7 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow linear issue <spec.md>` / `tasks <tasks.md>`                   | the spec's Linear issue and one sub-issue per task; `--dry-run` needs no token                                                                                                                   |
 | `fflow start <STA-n> [--slug s] [--install] [--no-spec]`              | branch `figentra/sta-n-<slug>` from `origin/<default>` into `.claude/worktrees/sta-n-<slug>`; issue In Progress; the record's `start` (or `worktree` for a Tasked spec) committed and pushed; a key with no folder on `origin/<default>` (and none in the bug lane) gets `spec.md` from the spec template, committed with the record; `--no-spec` for trivial work (a trivial PR deletes a spec it turns out not to need) |
 | `fflow clean [--dry-run] [--adopt] [--fix-ignore] [--budget] [--all]` | removes finished worktrees (clean, saved, issue Done or idle 2 h), reports what it kept and the space freed; warns over `clean.budget`, and `--budget` sweeps idle merged or pushed trees safely |
-| `fflow guard [--print-settings]`                                      | the guard engine on the hook event on stdin: the preset's rules, the side doors and the secret files; `--print-settings` prints the hooks that wire `bin/fflow-guard.mjs` for four events        |
+| `fflow guard [--print-settings]`                                      | the guard engine on the hook event on stdin: the preset's rules, the side doors and the secret files; `--print-settings` prints the hooks that wire `.agents/hooks/fflow-guard.mjs` for four events |
 | `fflow init --workspace <dir>…`                                       | writes the workspace list (`~/.config/fflow/workspace.yaml`) that `--all` acts on                                                                                                                |
 | `fflow status [--repo p] [--json] [--offline]`                        | specs by status, worktrees, open PRs with their gate and review, and sessions, for every repository of the workspace                                                                             |
 | `fflow context [--repo <path> | --all] [--path <path>] [--query <phrase>] [--limit <n>] [--json]` | offline, bounded repository or collection navigation; no setup or network |
@@ -109,6 +109,7 @@ digest identifies it). Change the preset or `.flow/overrides/` and sync; `check`
 | `.agents/agents/`, `.agents/rules/` (`.claude/` with `--direct`) | `agents/` (as the profile selects), `rules/`                           |
 | `.agents/skills/<name>/` (`.claude/skills/` with `--direct`) | `skills/` (as the profile selects)                                         |
 | `.agents/reference/`, `.agents/routing.yaml`, `.agents/models.yaml` | `reference/`, `routing.yaml`, `models.yaml`                         |
+| `.agents/hooks/fflow-guard.mjs`                              | the guard engine and the preset's `guard/` tables, in one file (below)     |
 | `.claude/settings.json`                                      | `surfaces/settings.json` plus Flow's hooks, below                          |
 | `opencode.jsonc`, `.opencode/plugins/fflow-guard.mjs`        | `surfaces/opencode.jsonc` and `surfaces/opencode/`                         |
 | `.mcp.yaml`                                                  | `surfaces/mcp.yaml` plus the config's `mcp` servers (secrets by `$NAME`)   |
@@ -117,12 +118,14 @@ digest identifies it). Change the preset or `.flow/overrides/` and sync; `check`
 | `README.md`                                                  | `.flow/readme.yml` (see The README)                                        |
 | `.github/workflows/fflow-approve.yml`, `.github/CODEOWNERS`, `.github/workflows/fflow-baseline.yml` | `apps.owner`, `baseline` (see Landing and The gate) |
 
-Flow's hooks in `.claude/settings.json` run the installed package through `node`, never `pnpm exec`. A profile's
+Flow's hooks in `.claude/settings.json` run through `node`, never `pnpm exec`; the guard's four run
+`.agents/hooks/fflow-guard.mjs`, which `sync` writes with the guard engine and the preset's tables inside and which
+imports only `node:` modules, so the guard runs on a checkout with no install (`check` names a hand edit). A profile's
 `hooks` selects them by id: `guard` (`PreToolUse`: bash, paths and the plan gate; mandatory, so every profile gets
 it), `post-write` (`PostToolUse`), `prompt-hints` (`UserPromptSubmit`), `session-context` (`SessionStart`),
 `session-save` (`Stop`: `fflow session stop --save-only` writes the session's record) and `session-stop`
 (`SessionEnd`: `fflow session stop` commits the work as WIP and pushes it). The OpenCode guard plugin puts every
-shell, edit, read, glob and grep call to the same guard entry, an ask counting as a deny. With `lefthook.yml`
+shell, edit, read, glob and grep call to the same file, an ask counting as a deny. With `lefthook.yml`
 rendered, `sync` also pins `mise.toml`'s `npm:oxfmt` and `npm:oxlint` at the versions `pnpm-workspace.yaml`'s catalog
 pins.
 

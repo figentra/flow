@@ -1,11 +1,12 @@
 /**
  * Figentra Flow file contract:
  * Purpose: the guard plugin for OpenCode (STA-1945 FR-7): every shell, edit, read, glob and grep call is put to the
- *   installed guard entry (`node_modules/@figentra-oss/flow/bin/fflow-guard.mjs PreToolUse`) as the Claude Code hook
- *   puts it, so both assistants answer to one engine and one set of preset tables. An ask is a deny here: OpenCode
- *   runs unattended (`--auto` approves any ask). A shell command is decided again with its real working folder just
- *   before it runs. When the entry cannot run (no install yet), the call is allowed, as Claude Code allows on a hook
- *   that fails; the tables failing to load deny, as the engine itself does.
+ *   repository's guard bundle (`.agents/hooks/fflow-guard.mjs PreToolUse`, which `fflow sync` writes and which runs
+ *   with no install, A-8) as the Claude Code hook puts it, so both assistants answer to one engine and one set of
+ *   preset tables. An ask is a deny here: OpenCode runs unattended (`--auto` approves any ask). A shell command is
+ *   decided again with its real working folder just before it runs. When the bundle cannot run (missing until
+ *   `sync`), the call is allowed, as Claude Code allows on a hook that fails; the tables failing to load deny, as the
+ *   engine itself does.
  * Boundary: runs `node` with the event on stdin; reads its answer; changes only the call's effect or command.
  * Runtime: OpenCode v2 plugin (default export `{ id, setup }`, https://opencode.ai/v2/docs/build/plugins).
  * Governing contract: STA-1945 (FR-5, FR-7, P-010, P-012).
@@ -36,7 +37,7 @@ export function refusal(root, cwd, action, resource) {
   if (!tool) return undefined;
   const r = spawnSync(
     "node",
-    [join(root, "node_modules/@figentra-oss/flow/bin/fflow-guard.mjs"), "PreToolUse"],
+    [join(root, ".agents/hooks/fflow-guard.mjs"), "PreToolUse"],
     {
       cwd,
       input: JSON.stringify({ tool_name: tool[0], tool_input: { [tool[1]]: resource }, cwd }),

@@ -15,12 +15,17 @@ pre-commit:
         - "*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"
         - "*.{json,jsonc,json5,yaml,yml,toml,md,mdx}"
         - "*.{css,scss,less,html,graphql,vue}"
+      # The guard bundle `fflow sync` writes; the lock pins its bytes.
+      exclude:
+        - ".agents/hooks/fflow-guard.mjs"
       run: |
         sh -c 'if command -v mise >/dev/null 2>&1; then
         exec mise exec npm:oxfmt -- oxfmt --check --no-error-on-unmatched-pattern "$@"; fi;
         exec node_modules/.bin/oxfmt --check --no-error-on-unmatched-pattern "$@"' -- {staged_files}
     - name: oxlint
       glob: "*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"
+      exclude:
+        - ".agents/hooks/fflow-guard.mjs"
       run: |
         sh -c 'if command -v mise >/dev/null 2>&1; then exec mise exec npm:oxlint -- oxlint "$@"; fi; exec node_modules/.bin/oxlint "$@"' -- {staged_files}
 commit-msg:
