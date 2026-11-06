@@ -4,8 +4,9 @@
  *   licence and digest; `installSkills` fetches each into a temporary folder, refuses a licence the preset has not
  *   allowed and a tree whose digest is not the pinned one, and only then moves the skills into the git-ignored
  *   `.agents/skills/.vendor/`. A `machineOnly` skill (HeroUI Pro's, Remotion's, the owner's own) is never installed
- *   or pinned; `machineOnlyProblems` finds one committed to a repository. `sync` installs before it writes anything
- *   else, and the lock's pins are `pinsOf` the list, so `diff` needs no fetch.
+ *   or pinned; `machineOnlyProblems` finds one committed to a repository, except a listed skill whose licence lets a
+ *   repository carry it (`carriable`: a free licence or the owner's own) at `.agents/skills/<id>`. `sync` installs
+ *   before it writes anything else, and the lock's pins are `pinsOf` the list, so `diff` needs no fetch.
  * Boundary: `installSkills` writes only `.agents/skills/.vendor/` and the OS temp folder; `gitFetchTree` runs network
  *   git against public sources. Everything else reads.
  * Runtime: node
@@ -45,6 +46,9 @@ export const THIRD_PARTY = "third-party.yml";
 export const VENDOR = ".agents/skills/.vendor";
 /** The licences a skill installs under without the owner's entry. */
 export const ALLOWED_LICENCES = ["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC"];
+
+/** The licence of the owner's own skills ("the owner's own", maybe with a note): the owner's to commit. */
+const OWNER_OWN = /^the owner's own\b/;
 
 /** A skill id is a folder name: no path, no dot first. */
 const SKILL_ID = /^[a-z0-9][a-z0-9-]*$/;
@@ -117,6 +121,16 @@ export function licenceProblem(skill) {
   if (skill.machineOnly || skill.ownerEntry || ALLOWED_LICENCES.includes(skill.licence))
     return undefined;
   return `${skill.id}: its licence ${skill.licence} is not allowed (${ALLOWED_LICENCES.join(", ")}); only the owner's \`ownerEntry\` in the preset's ${THIRD_PARTY} allows it`;
+}
+
+/**
+ * Whether a repository may carry `skill` at `.agents/skills/<id>` (the leader's decision a, STA-2131): its licence
+ * allows redistribution (one `licenceProblem` passes: allowed, or with the owner's `ownerEntry`) or it is the owner's
+ * own. HeroUI Pro's licence (internal use only) and Remotion's (none declared) do not, so those stay problems.
+ * @param {ThirdPartySkill} skill
+ */
+function carriable(skill) {
+  return !licenceProblem({ ...skill, machineOnly: false }) || OWNER_OWN.test(skill.licence);
 }
 
 /**
@@ -244,7 +258,9 @@ function skillName(file) {
 
 /**
  * The machine-only skills committed to the repository at `root`: each tracked folder holding a `SKILL.md` (any case)
- * whose folder name or front-matter `name` is a machine-only id, in path order.
+ * whose front-matter `name` (else its folder name) is a machine-only id, in path order. Tolerated: a `carriable` skill
+ * at `.agents/skills/<id>` whose front-matter `name`, if any, is `<id>`; so a folder named like a free skill that
+ * holds a HeroUI Pro or Remotion skill is still reported.
  * shortcut: only the repository is checked; FR-8's registry case waits for registry `skill` items (FR-12, after
  * 0.3.0), whose publish step must refuse them the same way.
  * @param {string} root
@@ -254,6 +270,7 @@ function skillName(file) {
  */
 export function machineOnlyProblems(root, skills) {
   const ids = new Set(skills.filter((s) => s.machineOnly).map((s) => s.id));
+  const carried = new Set(skills.filter((s) => s.machineOnly && carriable(s)).map((s) => s.id));
   if (!ids.size) return [];
   const tracked = git(root, ["ls-files", "-z", "--", ":(icase)*skill.md"]);
   if (!tracked.ok)
@@ -266,8 +283,10 @@ export function machineOnlyProblems(root, skills) {
     const m = /^((?:.*\/)?([^/]+))\/skill\.md$/i.exec(file);
     if (!m) continue;
     const name = skillName(join(root, file));
-    const id = ids.has(m[2]) ? m[2] : name && ids.has(name) ? name : undefined;
-    if (id) found.set(m[1], id);
+    const id = name && ids.has(name) ? name : ids.has(m[2]) ? m[2] : undefined;
+    const tolerated =
+      carried.has(id ?? "") && m[1] === `.agents/skills/${id}` && (!name || name === id);
+    if (id && !tolerated) found.set(m[1], id);
   }
   return [...found.keys()].toSorted().map((dir) => ({ dir, id: found.get(dir) ?? "" }));
 }

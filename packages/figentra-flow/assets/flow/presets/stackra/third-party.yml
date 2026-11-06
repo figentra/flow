@@ -2,8 +2,11 @@
 # Purpose: the stackra preset's third-party skills (STA-1945 FR-8, D1). Each entry names its source and licence; one
 #          that `fflow sync` installs also pins a full commit id (`version`) and the `treeDigest` of its folder there
 #          (`digest`), and lands in the git-ignored `.agents/skills/.vendor/`. A licence outside MIT, Apache-2.0, BSD
-#          and ISC needs the owner's `ownerEntry`. A `machineOnly` skill is never installed, pinned or committed:
-#          `fflow doctor` names its source and `fflow check` refuses a committed copy.
+#          and ISC needs the owner's `ownerEntry`. A `machineOnly` skill is never installed or pinned: `fflow doctor`
+#          names its source. `fflow check` refuses a committed copy, except one whose licence lets a repository
+#          carry it (MIT, Apache-2.0, BSD, ISC, an `ownerEntry`, or "the owner's own") at `.agents/skills/<id>`
+#          with no other front-matter `name` (STA-2131). HeroUI Pro's and Remotion's never: their licences do not
+#          allow redistribution.
 # Owner: the owner (D1); a change here is a preset change, adopted with `fflow update`.
 # Secrets: none; the sources are public or the owner's own.
 skills:
