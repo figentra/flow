@@ -15,10 +15,13 @@
  *   move the head off the gated sha; the next commit (the review's, a session's stop) carries it.
  *   With `secrets.oidc` (STA-2134) no runner posts: the box gets only the check, no poster or job file, and this side
  *   posts nothing either; `fflow/gate` and its report come only from main's `fflow-approve.yml` `verdict` job, which
- *   mints the Flow App token over OIDC. Without it (a legacy repository) the poster runs as above until T137.
+ *   mints the Flow App token over OIDC, and so only for a configuration that renders that job (`rendersVerdict`):
+ *   otherwise, or with `--box`, `gate run` refuses (exit 2) before any box and records nothing. Without
+ *   `secrets.oidc` (a legacy repository) the poster runs as above until T137.
  * Boundary: runs no check on the caller's machine (FR-9). Refuses a dirty tree (Flow's record aside: it is never part of
  *   the gated commit), a detached head without `--ref`, a
- *   head that is not the remote branch tip, a missing runner and, with `--shards`, a workspace pattern or package
+ *   head that is not the remote branch tip, `secrets.oidc` without a rendered verdict job or with `--box`, a
+ *   missing runner and, with `--shards`, a workspace pattern or package
  *   folder it cannot read, before any box is claimed; a runner program that
  *   is not installed is refused after. Removes its temporary
  *   folder when the run ends.
@@ -41,6 +44,7 @@ import { loadConfig } from "../lib/config.mjs";
 import { schemeFor } from "../adapters/tracker/index.mjs";
 import { defaultBranch, git, remoteTip } from "../lib/git.mjs";
 import { endStage, RECORD_DIR } from "../lib/record.mjs";
+import { rendersVerdict } from "../lib/render.mjs";
 import {
   combine,
   MAX_SHARDS,
@@ -173,6 +177,16 @@ export async function gateRun(options) {
     };
   const loaded = loadConfig(root);
   if (loaded.errors.length) return { code: 2, problem: loaded.errors.join("; ") };
+  // STA-2134: under secrets.oidc only the verdict job posts the gate, so a run it never judges would never turn green.
+  if (loaded.config.secrets?.oidc && (box || !rendersVerdict(loaded.config)))
+    return {
+      code: 2,
+      problem: `secrets.oidc: ${STATUS_CONTEXT} comes only from ${APPROVE_WORKFLOW}'s verdict job, which ${
+        box
+          ? "never judges a --box run; drop --box"
+          : "is not rendered for this configuration; set runner.kind to github-actions and complete secrets.oidc (secrets.kind infisical, secrets.paths.gate) and apps.owner"
+      }, or remove secrets.oidc`,
+    };
   const branch = options.ref ?? git(root, ["branch", "--show-current"]).out;
   if (!branch) return { code: 2, problem: "the head is detached; pass --ref <branch>" };
   const sha = git(root, ["rev-parse", "HEAD"]).out;

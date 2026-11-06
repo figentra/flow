@@ -520,7 +520,10 @@ verdict and says that `fflow/gate` comes only from the `verdict` job of main's `
 GitHub OIDC and mints the Figentra Flow App token in process. The box gets no poster and no key. The poster above is
 for repositories without `secrets.oidc` and retires with T137. No path writes the gate's status or comment with a
 user's token (`GITHUB_TOKEN`, `GH_TOKEN` or a `gh` login): the poster needs the App's own key, and the verdict's mint
-refuses anywhere but main's approval job.
+refuses anywhere but main's approval job. That job judges only the gate workflow's run, so with `secrets.oidc`
+`gate run` refuses (exit 2, nothing recorded) unless the verdict job is rendered (below), and always with `--box`:
+switch the runner to `github-actions` and complete `secrets.oidc`, `paths.gate` and `apps.owner`, or remove
+`secrets.oidc`.
 
 ### The github-actions runner's verdict
 
