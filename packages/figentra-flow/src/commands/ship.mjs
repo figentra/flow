@@ -7,7 +7,7 @@
  *   environment's approval, which is the owner's. Run in a landed task's checkout (its record at `land`, `release` or
  *   `ship`), a dispatch ends the ship stage in Flow's record there, committed and pushed (`recordShip`, STA-1945 FR-14).
  *   In a Runway product (a `runway.yaml` at the root) it then follows the run it started for up to `--wait` minutes
- *   (default 10) and records its outcome from the `runway-outcome` artifact (`lib/ship-outcome.mjs`, STA-2137): the
+ *   (default 10) and records its outcome from the `runway-outcome-<env>` artifact (`lib/ship-outcome.mjs`, STA-2137): the
  *   stage is done only on success, active while the run is pending (`fflow status` re-reads it), else failed; a run
  *   without the artifact is `no outcome artifact`. Exit 0 on success, 4 pending, 1 otherwise. Without `runway.yaml`
  *   the dispatch alone ends the stage, as before.
@@ -28,7 +28,7 @@ import { connect } from "./land.mjs";
 import { NAME } from "../lib/product.mjs";
 import { defaultBranch, git, remoteTip } from "../lib/git.mjs";
 import { endStage, readRecord, RecordError } from "../lib/record.mjs";
-import { followRun, shipState } from "../lib/ship-outcome.mjs";
+import { followRun, runIds, shipState, SKEW_MS } from "../lib/ship-outcome.mjs";
 
 /** The environments `ship` deploys; anything else, production first, is refused. */
 export const SHIP_ENVIRONMENTS = ["dev", "staging"];
@@ -135,8 +135,10 @@ export async function run(args) {
     console.log(`${NAME} ship: would dispatch ${workflow} for ${target}`);
     return 0;
   }
-  // Back by a minute for clock skew with GitHub; the earliest run at the tip after it is this dispatch's.
-  const since = Date.now() - 60_000;
+  const runway = existsSync(join(root, "runway.yaml"));
+  // The runs listed before the dispatch are not its run, whatever else matches (another ship, another session).
+  const before = runway ? runIds(api, /** @type {string} */ (repo), workflow, branch) : [];
+  const dispatched = Date.now();
   const r = api("POST", `/repos/${repo}/actions/workflows/${workflow}/dispatches`, {
     ref: branch,
     inputs: { environment: env },
@@ -146,22 +148,29 @@ export async function run(args) {
     return 1;
   }
   console.log(`${NAME} ship: dispatched ${workflow} for ${target}`);
-  if (existsSync(join(root, "runway.yaml"))) {
+  if (runway) {
     const followed = await followRun(api, /** @type {string} */ (repo), {
       workflow,
       branch,
       sha: tip,
-      since,
+      since: dispatched - SKEW_MS,
+      before,
       env: /** @type {string} */ (env),
       polls: Math.max(1, Math.ceil((wait * 60_000) / POLL_MS)),
       pollMs: POLL_MS,
       log: console.log,
     });
-    const ship = { ...followed, at: new Date().toISOString() };
+    const ship = {
+      ...followed,
+      sha: followed.sha ?? tip,
+      at: new Date(dispatched).toISOString(),
+      // No run listed yet: what `fflow status` needs to find it later.
+      ...(followed.run ? {} : { workflow, branch, before }),
+    };
     const writes =
       ship.written === undefined ? "" : `; ${ship.written} KV row(s), ${ship.uploaded} upload(s)`;
     console.log(
-      `${NAME} ship: ${env} ${ship.outcome}${ship.sha ? ` at ${ship.sha.slice(0, 12)}` : ""}${writes}`,
+      `${NAME} ship: ${env} ${ship.outcome} at ${ship.sha.slice(0, 12)}${writes}${ship.problem ? ` (${ship.problem})` : ""}`,
     );
     const unsaved = recordShip(root, ship);
     if (unsaved) console.error(`${NAME} ship: warning: the record was not saved (${unsaved})`);

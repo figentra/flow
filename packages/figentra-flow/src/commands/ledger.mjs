@@ -36,16 +36,22 @@ export function ledger(records, since) {
         .filter(
           (h) => h.state === "done" && DONE[h.stage] && (!since || h.at.slice(0, 10) >= since),
         )
-        .map((h) => ({
-          day: h.at.slice(0, 10),
-          track,
-          what: DONE[h.stage],
-          repo,
-          key,
-          prs: record.prs,
-          // STA-2137: a Runway ship's outcome; the stage is done only when it succeeded
-          ...(h.stage === "ship" && record.ships?.length ? { ship: record.ships.at(-1) } : {}),
-        }));
+        .map((h) => {
+          // STA-2137: a Runway ship's own outcome: the newest ship dispatched before this row was dated
+          const ship =
+            h.stage === "ship"
+              ? (record.ships ?? []).filter((s) => s.at <= h.at).at(-1)
+              : undefined;
+          return {
+            day: h.at.slice(0, 10),
+            track,
+            what: DONE[h.stage],
+            repo,
+            key,
+            prs: record.prs,
+            ...(ship ? { ship } : {}),
+          };
+        });
     })
     .sort((a, b) => `${a.day} ${a.track} ${a.key}`.localeCompare(`${b.day} ${b.track} ${b.key}`));
   return { rows, problems: records.filter((r) => r.problem) };

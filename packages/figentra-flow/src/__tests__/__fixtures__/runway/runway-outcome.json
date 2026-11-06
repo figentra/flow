@@ -1,0 +1,13 @@
+{
+  "schema": "runway.outcome/v1",
+  "repository": "figentra/pay",
+  "environment": "staging",
+  "sourceSha": "4f1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c",
+  "status": "deployed",
+  "workflowRun": {
+    "id": 7,
+    "attempt": 1,
+    "url": "https://github.com/figentra/pay/actions/runs/7"
+  },
+  "manifest": "deploy-staging.json"
+}

@@ -7,7 +7,8 @@
  *   when more sessions build than the cap allows. With `live`, the running agent sessions by title, state, worktree and
  *   stage (STA-1945 FR-20), and a warning for each title off ADR 0001's pattern or at odds with its record. With a
  *   roster, each spec's role and owner stops, and `byRole`: the specs grouped by role with their sessions and counts
- *   (AC-050). `ships`: each record's newest ship and its outcome, a pending one re-read from its run (STA-2137).
+ *   (AC-050). `ships`: in a Runway product (a `runway.yaml` at the root), each record's newest ship and its outcome, a pending
+ *   one re-read from its run (STA-2137).
  * Boundary: reads git, the spec files and GitHub (through the credentials port; never with `offline`); stores nothing,
  *   writes nothing. A repository that is missing or unreadable, and a GitHub failure, are reported in place.
  * Runtime: node
@@ -240,8 +241,8 @@ export function repoSnapshot(repo, { api, offline = false, now = Date.now(), bus
     prsProblem,
     sessions,
     live: live ? liveSessions(root, live) : undefined,
-    // STA-2137: each record's newest ship (a Runway product's), a pending one re-read from its run
-    ships: shipsOf(root, slug, gh),
+    // STA-2137: each record's newest ship, in a Runway product only (undefined drops out of `status --json`)
+    ships: existsSync(join(root, "runway.yaml")) ? shipsOf(root, slug, gh) : undefined,
     // A plain property, not a conditional spread: it keeps this and the error return one normalized union type.
     byRole: team ? rolesOf([...specs.values()], trees, prs, team) : undefined,
   };

@@ -212,6 +212,7 @@ export function tablesOf(repo, verbose) {
                 uploaded: s.uploaded ?? "",
                 url: s.url ?? "",
                 notes: [
+                  s.problem ?? null,
                   s.conclusion ? `run ${s.conclusion}` : null,
                   s.smoke ? `smoke ${s.smoke}` : null,
                   s.rollback ? `rollback to ${s.rollback.slice(0, 12)}` : null,
