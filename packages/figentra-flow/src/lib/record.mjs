@@ -1,8 +1,8 @@
 /**
  * Figentra Flow file contract:
  * Purpose: Flow's record (FR-14): `.flow/record/<key>.json` on the task's branch, holding the task's stage and state,
- *   approvals, sessions, commits, PRs, gate and review results, open owner asks, task evidence and its dated stage
- *   history. `readRecord` and `updateRecord` read and write it against `RECORD_SCHEMA` (shipped as
+ *   approvals, sessions, commits, PRs, gate and review results, open owner asks, task evidence, its dated stage
+ *   history and its ships' outcomes (STA-2137). `readRecord` and `updateRecord` read and write it against `RECORD_SCHEMA` (shipped as
  *   `schema/record.schema.json`), `updateRecord` dating each change of stage or state in `history` (FR-21);
  *   `readRecordAt` reads it from a branch with no checkout; `commitRecord` commits it (with the tracked changes for a
  *   session's stop) and pushes the branch through the credentials port (FR-19); `endStage` is what each stage command
@@ -128,6 +128,24 @@ export const RECORD_SCHEMA = {
       state: { enum: ["active", "waiting", "done", "failed"] },
       at: str,
     }),
+    // STA-2137: each `fflow ship` of a Runway product, with its run's outcome (absent in older records)
+    ships: list(
+      {
+        env: str,
+        at: str,
+        outcome: str,
+        run: { type: "integer", minimum: 1 },
+        url: str,
+        conclusion: str,
+        sha: str,
+        written: { type: "integer", minimum: 0 },
+        uploaded: { type: "integer", minimum: 0 },
+        held: { type: "array", items: str },
+        smoke: str,
+        rollback: str,
+      },
+      ["env", "at", "outcome"],
+    ),
   },
 };
 
@@ -142,7 +160,8 @@ export const RECORD_SCHEMA = {
  *     blocking?: { id: string, file: string, text: string }[] }[], asks: { what: string, command: string }[],
  *   tasks: Record<string, { command: string, exit: number, ms?: number, head: string, clean: boolean, digest: string, at: string, error?: string }[]>,
  *   started?: Record<string, { at: string, head: string, docs: string, session?: string }>,
- *   history?: { stage: Stage, state: "active" | "waiting" | "done" | "failed", at: string }[] }} FlowRecord
+ *   history?: { stage: Stage, state: "active" | "waiting" | "done" | "failed", at: string }[],
+ *   ships?: import("./ship-outcome.mjs").Ship[] }} FlowRecord
  */
 
 /** Raised for a key that is not one, or a record that is not valid JSON or fails its schema. */

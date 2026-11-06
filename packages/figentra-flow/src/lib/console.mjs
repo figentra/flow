@@ -897,6 +897,8 @@ class ShipCommand extends Command({
   environment = undefined;
   /** @type {string | undefined} */
   workflow = undefined;
+  /** @type {string | undefined} */
+  wait = undefined;
   dryRun = false;
 
   async handle() {
@@ -905,6 +907,7 @@ class ShipCommand extends Command({
     const args = [
       ...(this.environment === undefined ? [] : [this.environment]),
       ...(this.workflow === undefined ? [] : ["--workflow", this.workflow]),
+      ...(this.wait === undefined ? [] : ["--wait", this.wait]),
       ...(this.dryRun ? ["--dry-run"] : []),
     ];
     return refusing(() => run(args));
@@ -919,6 +922,10 @@ Option({ description: "The deploy workflow under .github/workflows/ (default dep
   "workflow",
 );
 Str()(ShipCommand.prototype, "workflow");
+Option({
+  description: "Minutes to follow a Runway product's deploy run for its outcome (default 10)",
+})(ShipCommand.prototype, "wait");
+Str()(ShipCommand.prototype, "wait");
 Option({ description: "Name the dispatch; make none" })(ShipCommand.prototype, "dryRun");
 
 class ReleaseCommand extends Command({

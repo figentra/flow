@@ -90,3 +90,21 @@ test("body: the JSON after a wrapper's leading lines", () => {
   assert.deepEqual(bodyOf("> stackra@ bot:gh\nINF injecting\n[1,2]\n"), [1, 2]);
   assert.equal(bodyOf("no json"), undefined);
 });
+
+test("credentials: a raw call keeps the body as bytes (an artifact's zip, STA-2137)", (t) => {
+  const solo = folder({}, { credentials: { kind: "gh-user" } });
+  t.after(() => rmSync(solo, { recursive: true }));
+  const zip = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0xff, 0x00]);
+  /** @type {string[]} */
+  const encodings = [];
+  /** @type {import("../lib/github.mjs").Spawn} */
+  const spawn = (_command, _args, options) => {
+    encodings.push(options.encoding);
+    return { status: 0, stdout: zip, stderr: Buffer.from("") };
+  };
+  const r = github(solo, { spawn })("GET", "/repos/o/r/actions/artifacts/9/zip", undefined, {
+    raw: true,
+  });
+  assert.deepEqual(r, { ok: true, json: undefined, err: "", bytes: zip });
+  assert.deepEqual(encodings, ["buffer"]);
+});

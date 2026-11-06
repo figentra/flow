@@ -3,7 +3,7 @@
  * Purpose: `fflow ledger [--since <YYYY-MM-DD>] [--repo <path>] [--json]` (FR-21, AC-42, P-026): what landed, released
  *   and shipped across the workspace (or the repository named, or the current one), by day and track: each record's
  *   history entries that finished `land`, `release` or `ship` (on or after `--since`, a UTC day), under the track its
- *   sessions' titles name (ADR 0001). Exit 0, 1 when a record could not be read (listed as a problem), 2 usage. The
+ *   sessions' titles name (ADR 0001); a Runway ship shows its environment and outcome (STA-2137). Exit 0, 1 when a record could not be read (listed as a problem), 2 usage. The
  *   options are declared in src/lib/console.mjs; `refusal` names a `--since` that is not a day, and `handle` runs them.
  * Boundary: read-only; reads Flow's records only (`allRecords`), no network.
  * Runtime: node
@@ -43,6 +43,8 @@ export function ledger(records, since) {
           repo,
           key,
           prs: record.prs,
+          // STA-2137: a Runway ship's outcome; the stage is done only when it succeeded
+          ...(h.stage === "ship" && record.ships?.length ? { ship: record.ships.at(-1) } : {}),
         }));
     })
     .sort((a, b) => `${a.day} ${a.track} ${a.key}`.localeCompare(`${b.day} ${b.track} ${b.key}`));
@@ -65,7 +67,8 @@ export function render({ rows, problems }) {
     }
     if (r.track !== track) out.push(`  ${(track = r.track)}`);
     const prs = r.prs.length ? ` (#${r.prs.join(", #")})` : "";
-    out.push(`    ${r.what} ${r.key.toUpperCase()}${prs} ${r.repo}`);
+    const ship = "ship" in r && r.ship ? ` (${r.ship.env} ${r.ship.outcome})` : "";
+    out.push(`    ${r.what} ${r.key.toUpperCase()}${prs} ${r.repo}${ship}`);
   }
   for (const p of problems)
     out.push(`problem: ${[p.repo, p.from].filter(Boolean).join(" ")}: ${p.problem}`);

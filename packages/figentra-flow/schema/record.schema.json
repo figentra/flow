@@ -183,6 +183,28 @@
           "at": { "type": "string", "minLength": 1 }
         }
       }
+    },
+    "ships": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["env", "at", "outcome"],
+        "properties": {
+          "env": { "type": "string", "minLength": 1 },
+          "at": { "type": "string", "minLength": 1 },
+          "outcome": { "type": "string", "minLength": 1 },
+          "run": { "type": "integer", "minimum": 1 },
+          "url": { "type": "string", "minLength": 1 },
+          "conclusion": { "type": "string", "minLength": 1 },
+          "sha": { "type": "string", "minLength": 1 },
+          "written": { "type": "integer", "minimum": 0 },
+          "uploaded": { "type": "integer", "minimum": 0 },
+          "held": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+          "smoke": { "type": "string", "minLength": 1 },
+          "rollback": { "type": "string", "minLength": 1 }
+        }
+      }
     }
   }
 }

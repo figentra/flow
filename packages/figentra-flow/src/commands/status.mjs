@@ -187,6 +187,43 @@ export function tablesOf(repo, verbose) {
         gates: s.gates.map((/** @type {any} */ g) => g ?? "none").join(", ") || "none",
       })),
     },
+    // STA-2137: only a repository that has shipped through Runway has rows, so others print nothing new
+    ...(repo.ships?.length
+      ? [
+          {
+            title: "Ships",
+            columns: [
+              { header: "Key", key: "key" },
+              { header: "Env", key: "env" },
+              { header: "Outcome", key: "outcome" },
+              { header: "Revision", key: "sha" },
+              { header: "KV rows", key: "written" },
+              { header: "Uploads", key: "uploaded" },
+              { header: "Run", key: "url" },
+              { header: "Notes", key: "notes" },
+            ],
+            rows: repo.ships.map(
+              (/** @type {import("../lib/ship-outcome.mjs").Ship & { key: string }} */ s) => ({
+                key: s.key.toUpperCase(),
+                env: s.env,
+                outcome: s.outcome,
+                sha: s.sha?.slice(0, 12) ?? "",
+                written: s.written ?? "",
+                uploaded: s.uploaded ?? "",
+                url: s.url ?? "",
+                notes: [
+                  s.conclusion ? `run ${s.conclusion}` : null,
+                  s.smoke ? `smoke ${s.smoke}` : null,
+                  s.rollback ? `rollback to ${s.rollback.slice(0, 12)}` : null,
+                  s.held?.length ? `held: ${s.held.join(", ")}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(", "),
+              }),
+            ),
+          },
+        ]
+      : []),
     ...(repo.live
       ? [
           {
