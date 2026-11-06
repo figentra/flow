@@ -17,8 +17,8 @@ import { ConfigError, loadConfig, need } from "./config.mjs";
  * @typedef {{ ok: boolean, json: any, err: string, bytes?: Buffer }} ApiResult `bytes`: the body of a `raw` call
  * @typedef {(method: string, path: string, body?: unknown, options?: { raw?: boolean }) => ApiResult} Api
  * @typedef {(command: string, args: string[], options: { cwd: string, encoding: "utf8" | "buffer",
- *   input?: string }) => { status: number | null, stdout?: string | Buffer, stderr?: string | Buffer,
- *   error?: Error }} Spawn
+ *   input?: string, maxBuffer?: number }) => { status: number | null, stdout?: string | Buffer,
+ *   stderr?: string | Buffer, error?: Error }} Spawn
  */
 
 /** The JSON body in `gh api`'s output, skipping any lines a wrapper printed before it. */
