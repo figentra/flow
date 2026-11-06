@@ -1,10 +1,11 @@
 /**
  * Figentra Flow file contract:
  * Purpose: hold `.claude/settings.json` to STA-1945 FR-7 and FR-19: the preset's settings with Flow's hooks first
- *   (the guard on every tool it checks, through `node` and the installed entry, never `pnpm exec`; the Stop hook
- *   writing the session's record and, only when `session.pushAtEnd` opts in (STA-2131), the SessionEnd hook
- *   committing and pushing it), each event's preset entries after them; the profile's `hooks` selects them by id,
- *   the guard always (FR-5); a preset without the surface renders nothing, and one whose surface is not JSON is a ConfigError naming the file.
+ *   (the guard on every tool it checks, through `node` and the repository's guard bundle, so with no install (A-8),
+ *   never `pnpm exec`; the Stop hook writing the session's record and, only when `session.pushAtEnd` opts in
+ *   (STA-2131), the SessionEnd hook committing and pushing it), each event's preset entries after them; the
+ *   profile's `hooks` selects them by id, the guard always (FR-5); a preset without the surface renders nothing,
+ *   and one whose surface is not JSON is a ConfigError naming the file.
  * Boundary: pure functions over the bundled presets and temporary folders; no process, no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
@@ -23,6 +24,7 @@ import { hookSettings, renderSettings, SETTINGS_FILE } from "../lib/render-setti
 const STACKRA = join(FLOW_ASSETS, "presets/stackra");
 const NEUTRAL = join(FLOW_ASSETS, "presets/neutral");
 const ENTRY = 'node "$CLAUDE_PROJECT_DIR/node_modules/@figentra-oss/flow/bin';
+const GUARD = 'node "$CLAUDE_PROJECT_DIR/.agents/hooks/fflow-guard.mjs"';
 /** @param {string[]} hooks */
 const profile = (hooks) => ({ name: "p", agents: ["*"], skills: ["*"], hooks });
 const PUSH = { session: { pushAtEnd: true } };
@@ -62,9 +64,11 @@ test("renderSettings: the stackra preset's permissions with Flow's guard and ses
   assert.deepEqual(settings.hooks.PreToolUse, [
     {
       matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit|Read|Grep|Glob",
-      hooks: [{ type: "command", command: `${ENTRY}/fflow-guard.mjs" PreToolUse`, timeout: 5 }],
+      hooks: [{ type: "command", command: `${GUARD} PreToolUse`, timeout: 5 }],
     },
   ]);
+  for (const event of ["PostToolUse", "UserPromptSubmit", "SessionStart"])
+    assert.equal(settings.hooks[event][0].hooks[0].command, `${GUARD} ${event}`);
   // FR-19: every turn writes the record; with `session.pushAtEnd`, the session's end commits and pushes it.
   assert.equal(
     settings.hooks.Stop[0].hooks[0].command,

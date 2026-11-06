@@ -134,6 +134,7 @@ test("sync: renders only the named profile's skills, agents and hooks, and the l
   writeFileSync(join(root, OWN_PRESET, "preset.yml"), LEAN);
   const { files } = sync(root, { direct: true, log: () => {} });
   assert.deepEqual(files.toSorted(), [
+    ".agents/hooks/fflow-guard.mjs",
     ".claude/agents/git-steward.md",
     ".claude/rules/worktrees.md",
     ".claude/settings.json",

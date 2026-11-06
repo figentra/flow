@@ -1,10 +1,11 @@
 /**
  * Figentra Flow file contract:
  * Purpose: hold the OpenCode projection to STA-1945 FR-7: the stackra preset renders `opencode.jsonc` and the guard
- *   plugin as in the preset; the neutral preset renders neither. The plugin asks the installed guard entry, as Claude
- *   Code's hook does: a side door is refused (an ask too), the rest allowed, a repository without the install
- *   allowed; its shell refusal prints the reason without running any of the refused command.
- * Boundary: temporary git repositories; runs `node` (the guard entry) and `sh`; no network.
+ *   plugin as in the preset; the neutral preset renders neither. The plugin asks the repository's guard bundle, as
+ *   Claude Code's hook does, with no install (A-8): a side door is refused (an ask too), the rest allowed, a
+ *   repository without the bundle allowed; its shell refusal prints the reason without running any of the refused
+ *   command.
+ * Boundary: temporary git repositories; runs `node` (the guard bundle) and `sh`; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945.
  */
@@ -12,27 +13,26 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import plugin, {
   refusal,
 } from "../../assets/flow/presets/stackra/surfaces/opencode/plugins/fflow-guard.mjs";
 import { FLOW_ASSETS } from "../lib/flow-dir.mjs";
+import { GUARD_FILE, guardBundle } from "../lib/render-guard.mjs";
 import { OPENCODE_FILE, renderOpencode } from "../lib/render-opencode.mjs";
 import { repo } from "./__fixtures__/repo.mjs";
 
 const STACKRA = join(FLOW_ASSETS, "presets/stackra");
 const NEUTRAL = join(FLOW_ASSETS, "presets/neutral");
-const PACKAGE_DIR = fileURLToPath(new URL("../..", import.meta.url));
 
-/** A repository with this package installed as `node_modules/@figentra-oss/flow`. */
+/** A repository holding the guard bundle `sync` writes, and no install. */
 function installed(/** @type {import("node:test").TestContext} */ t) {
   const r = repo();
   t.after(r.dispose);
-  mkdirSync(join(r.root, "node_modules/@figentra-oss"), { recursive: true });
-  symlinkSync(PACKAGE_DIR, join(r.root, "node_modules/@figentra-oss/flow"));
+  mkdirSync(join(r.root, ".agents/hooks"), { recursive: true });
+  writeFileSync(join(r.root, GUARD_FILE), guardBundle(NEUTRAL));
   return r.root;
 }
 
@@ -50,12 +50,12 @@ test("renderOpencode: the stackra preset's opencode.jsonc and guard plugin, as i
   assert.equal(renderOpencode({ root: "/repo", config: {}, presetDir: NEUTRAL }).size, 0);
 });
 
-test("guard plugin: asks the installed guard entry; a side door is refused, the rest allowed", (t) => {
+test("guard plugin: asks the repository's guard bundle; a side door is refused, the rest allowed", (t) => {
   const root = installed(t);
   assert.match(refusal(root, root, "shell", "gh pr merge 12") ?? "", /fflow land/);
   assert.equal(refusal(root, root, "shell", "git status"), undefined);
   assert.equal(refusal(root, root, "webfetch", "https://example.com"), undefined);
-  // No install yet: allowed, as Claude Code allows on a hook that cannot run.
+  // No bundle yet (before `sync`): allowed, as Claude Code allows on a hook that cannot run.
   const bare = repo();
   t.after(bare.dispose);
   assert.equal(refusal(bare.root, bare.root, "shell", "gh pr merge 12"), undefined);

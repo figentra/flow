@@ -16,6 +16,9 @@ pre-commit:
         - "*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"
         - "*.{json,jsonc,json5,yaml,yml,toml,md,mdx}"
         - "*.{css,scss,less,html,graphql,vue}"
+      # The guard bundle `fflow sync` writes; the lock pins its bytes.
+      exclude:
+        - ".agents/hooks/fflow-guard.mjs"
       run: |
         sh -c 'command -v mise >/dev/null 2>&1 || { echo "oxfmt skipped: mise not installed; CI checks"; exit 0; };
         exec mise exec npm:oxfmt -- oxfmt --check --no-error-on-unmatched-pattern "$@"' -- {staged_files}
@@ -25,6 +28,7 @@ pre-commit:
       exclude:
         - ".agents/skills/**"
         - ".agents/reference/**"
+        - ".agents/hooks/fflow-guard.mjs"
       run: |
         if [ ! -d node_modules/@stackra/oxlint-config ] && grep -qs @stackra/oxlint-config .oxlintrc.json .oxlintrc.jsonc; then
           echo "oxlint skipped: its config extends @stackra/oxlint-config and no workspace install has it; CI lints this commit"

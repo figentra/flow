@@ -225,14 +225,13 @@ test("guard: other git commands and commands outside a repository pass", (t) => 
   assert.equal(decide("git worktree add ../x", outside), undefined);
 });
 
-test("guard: the settings wire every guard event to the hook entry, not pnpm exec", () => {
+test("guard: the settings wire every guard event to the repository's guard bundle, not pnpm exec", () => {
   assert.deepEqual(SETTINGS.hooks.PreToolUse[0], {
     matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit|Read|Grep|Glob",
     hooks: [
       {
         type: "command",
-        command:
-          'node "$CLAUDE_PROJECT_DIR/node_modules/@figentra-oss/flow/bin/fflow-guard.mjs" PreToolUse',
+        command: 'node "$CLAUDE_PROJECT_DIR/.agents/hooks/fflow-guard.mjs" PreToolUse',
         timeout: 5,
       },
     ],

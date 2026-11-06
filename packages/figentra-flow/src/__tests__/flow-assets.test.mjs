@@ -137,6 +137,7 @@ test("writeRendered: every comment-capable file starts with its header, and the 
     assert.equal(lock.files[path], digestOf(text), `${path} is locked as written`);
     const style = commentStyle(path);
     if (style === "#") assert.ok(text.startsWith(`# ${words}\n`), path);
+    else if (style === "//") assert.ok(text.startsWith(`// ${words}\n`), path);
     else if (style === "frontmatter")
       assert.ok(
         text.startsWith(`---\n# ${words}\n`) || text.startsWith(`<!-- ${words} -->\n`),

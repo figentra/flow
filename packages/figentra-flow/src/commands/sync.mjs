@@ -28,7 +28,7 @@ import { fileURLToPath } from "node:url";
 
 import { NAME } from "../lib/product.mjs";
 import { ConfigError } from "../lib/config.mjs";
-import { presetSource } from "../lib/flow-dir.mjs";
+import { BUNDLED, presetSource } from "../lib/flow-dir.mjs";
 import { LockError, NewerLockError, readLock } from "../lib/lock.mjs";
 import { incompatibility } from "../lib/preset-package.mjs";
 import { catalogPins, LEFTHOOK_FILE, pinTools } from "../lib/render-lefthook.mjs";
@@ -47,8 +47,8 @@ import { runIn } from "../lib/workspace-run.mjs";
 /** The package's assets folder. */
 export const ASSETS = fileURLToPath(new URL("../../assets", import.meta.url));
 
-/** The presets bundled with Flow. */
-export const BUNDLED = ["neutral", "stackra"];
+// Moved to lib/flow-dir.mjs so lib/spec-check.mjs reads it without this command (STA-2131).
+export { BUNDLED };
 
 /** Raised when `sync` would adopt a preset the lock does not record; `fflow update` adopts it. */
 export class SyncRefusal extends Error {}
