@@ -264,6 +264,18 @@ test("verdict: an API or mint failure exits 1 and names the path, never a value"
   );
 });
 
+test("verdict: off main's approval job, a user's GITHUB_TOKEN posts nothing; the mint refuses (STA-2134)", async () => {
+  const w = world();
+  const { withToken: _, ...deps } = w.deps;
+  /** @type {string[]} */
+  const logs = [];
+  const workstation = { ...ENV, GITHUB_TOKEN: "ghp_a-users-token-123" };
+  assert.equal(await main(workstation, { ...deps, log: (s) => logs.push(s) }), 1);
+  assert.deepEqual(w.posts(), [], "the user's token only reads");
+  assert.match(logs.join("\n"), /app-token: refused: not a GitHub Actions job/);
+  assert.doesNotMatch(logs.join("\n"), /ghp_/);
+});
+
 test("verdict: decide reads the run, its PR, its latest jobs, files and nothing else", async () => {
   const w = world();
   const v = await decide({

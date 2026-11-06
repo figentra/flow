@@ -151,3 +151,29 @@ test("driftOf: each owned file that changed by a byte or is missing", (t) => {
     { path: "c.yml", kind: "missing" },
   ]);
 });
+
+test("driftOf: AGENTS.md is read without core's trailing agents-sync rules block (STA-2131 b)", (t) => {
+  const root = temp(t);
+  const rendered = "# Agents\n\nFlow's text.\n";
+  const block =
+    "<!-- BEGIN generated from .agents/rules by tools/scripts/agents-sync.mjs — edit the sources, not this block -->\n\n## Repository rules\n- a rule\n\n<!-- END generated from .agents/rules -->";
+  const lock = upgradeLock({});
+  lock.files = { "AGENTS.md": digestOf(rendered), "other.md": digestOf(rendered) };
+  // As agents-sync appends it: the rendered text, trimmed, a blank line, the block and a newline.
+  fill(root, [
+    ["AGENTS.md", `${rendered.trimEnd()}\n\n${block}\n`],
+    ["other.md", `${rendered.trimEnd()}\n\n${block}\n`],
+  ]);
+  assert.deepEqual(driftOf(root, lock), [{ path: "other.md", kind: "changed" }]);
+  // Anything outside the block still counts: an edit before it, text after it, or a block mid-file.
+  for (const text of [
+    `# Agents\n\nFlow's text!\n\n${block}\n`,
+    `${rendered.trimEnd()}\n\n${block}\nmore\n`,
+    `# Agents\n\n${block}\n\nFlow's text.\n`,
+    // Hand text between two blocks: only the tail block is read away.
+    `${rendered.trimEnd()}\n\n${block}\nhand edit\n\n${block}\n`,
+  ]) {
+    fill(root, [["AGENTS.md", text]]);
+    assert.deepEqual(driftOf(root, lock)[0], { path: "AGENTS.md", kind: "changed" }, text);
+  }
+});

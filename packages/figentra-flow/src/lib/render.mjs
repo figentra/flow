@@ -310,10 +310,10 @@ function renderPreset(root, direct, overrides) {
             },
           }
         : {}),
-      ...(oidc && runner?.kind === "github-actions"
+      ...(oidc && rendersVerdict(config)
         ? {
             verdict: {
-              gatePath: `.github/workflows/${runner.workflow ?? GATE_WORKFLOW}`,
+              gatePath: `.github/workflows/${runner?.workflow ?? GATE_WORKFLOW}`,
               owner: apps.owner,
               defaultBranch: defaultBranch(root),
               oidc,
@@ -326,6 +326,20 @@ function renderPreset(root, direct, overrides) {
   out.set(".github/CODEOWNERS", codeowners(apps.owner, ownerOnly));
   return out;
 }
+
+/**
+ * Whether `fflow-approve.yml` gets the `verdict` job that posts `fflow/gate` (PR F): an owner, an Infisical
+ * `secrets.oidc` with `paths.gate`, and a `github-actions` runner. `gate run` refuses `secrets.oidc` without it.
+ * @param {any} config
+ */
+export const rendersVerdict = ({ apps, runner, secrets } = {}) =>
+  Boolean(
+    apps?.owner &&
+    secrets?.kind === "infisical" &&
+    secrets.oidc &&
+    secrets.paths?.gate &&
+    runner?.kind === "github-actions",
+  );
 
 /**
  * The integrity the repository's lockfile records for `pkg@version` (`pnpm-lock.yaml`, else `package-lock.json`), or

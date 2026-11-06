@@ -42,4 +42,8 @@ You **MUST** consider the user input before proceeding (if not empty).
 ## Rules
 
 - Never post `fflow/gate` yourself and never call the poster: only `fflow gate run` posts it.
+- With `secrets.oidc` in `flow.config.json`, `fflow gate run` posts nothing either: `fflow/gate` and its report
+  come only from the `verdict` job of main's `fflow-approve.yml` (GitHub OIDC, the Figentra Flow App), never under
+  a user's login or token. It refuses (exit 2) unless the runner is `github-actions` with that job rendered, and
+  with `--box`; report the refusal to the owner, never work around it.
 - Never run the check set on this machine to stand in for the gate.

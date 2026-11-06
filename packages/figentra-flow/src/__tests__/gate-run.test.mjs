@@ -236,6 +236,72 @@ test("gate run with a caller-posting runner (C1): the box gets only the check; t
   assert.match(unposted.problem ?? "", /was not posted \(poster exit 4\)/);
 });
 
+test("gate run with secrets.oidc and no rendered verdict job, or with --box: refused before any box, nothing recorded (STA-2134)", async (t) => {
+  const oidc = { kind: "infisical", paths: { gate: "/ci/gate" }, oidc: { audience: "fflow-ci" } };
+  for (const { config, box, cause } of [
+    {
+      config: {
+        runner: { kind: "command", run: ["stackra", "run", "{flags}"] },
+        apps: { owner: "o" },
+      },
+      box: undefined,
+      cause: /not rendered.*github-actions/,
+    },
+    {
+      config: { runner: { kind: "github-actions" }, apps: { owner: "o" } },
+      box: "box1",
+      cause: /--box/,
+    },
+  ]) {
+    const r = ghRepo({ [CONFIG_FILE]: JSON.stringify({ version: 1, secrets: oidc, ...config }) });
+    t.after(r.dispose);
+    sh(r.root, "push", "-q", "origin", "main");
+    let ran = 0;
+    const result = await gateRun({
+      cwd: r.root,
+      tip: tipOf(r.origin),
+      box,
+      runner: fake(() => ++ran),
+      post: () => assert.fail("nothing posts here"),
+    });
+    assert.equal(result.code, 2);
+    assert.equal(result.sha, undefined, "no sha, so run() records nothing");
+    assert.match(result.problem ?? "", cause);
+    assert.match(result.problem ?? "", /remove secrets\.oidc/);
+    assert.equal(ran, 0, "no box was claimed");
+  }
+});
+
+test("gate run with secrets.oidc and a rendered verdict job: the check runs, nothing posts here (STA-2134)", async (t) => {
+  const r = ghRepo({
+    [CONFIG_FILE]: JSON.stringify({
+      version: 1,
+      runner: { kind: "github-actions" },
+      apps: { owner: "o" },
+      secrets: { kind: "infisical", paths: { gate: "/ci/gate" }, oidc: { audience: "fflow-ci" } },
+    }),
+  });
+  t.after(r.dispose);
+  sh(r.root, "push", "-q", "origin", "main");
+  /** @type {any[]} */
+  const boxes = [];
+  let posted = 0;
+  const runner = fake((job) => {
+    boxes.push({
+      command: job.command,
+      poster: existsSync(join(job.dir, ".fflow-gate", "post.mjs")),
+      job: existsSync(join(job.dir, ".fflow-gate", "job.json")),
+    });
+    return 1;
+  });
+  const result = await gateRun({ cwd: r.root, tip: tipOf(r.origin), runner, post: () => ++posted });
+  assert.deepEqual(result, { code: 1, sha: sh(r.root, "rev-parse", "HEAD") });
+  assert.equal(posted, 0, "only fflow-approve.yml's verdict job posts the gate");
+  assert.equal(boxes.length, 1);
+  assert.deepEqual(boxes[0], { command: boxes[0].command, poster: false, job: false });
+  assert.doesNotMatch(boxes[0].command, /post\.mjs|GATE_RUN|infisical/);
+});
+
 test("box command: the check's log and exit are kept for the poster; the secrets port wraps the poster", () => {
   assert.equal(
     boxCommand("pnpm verify"),

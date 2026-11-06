@@ -60,7 +60,7 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow diff`                                                          | prints every file `sync` or `update` would add, change or delete, with the lines; writes nothing |
 | `fflow validate`                                                      | checks `flow.config.json` and `.flow/overrides/` against their schemas and the mandatory policies, naming each field, target or policy that breaks them and a `profile` the preset lacks; writes nothing |
 | `… --workspace <dir>`                                                 | runs `sync`, `update`, `check`, `diff` or `validate` in every repository under `<dir>` that has `flow.config.json`, one line each |
-| `fflow gate run [--ref b] [--box host] [--shards n] [-- flags]`       | the repository's checks through the configured runner (or on `--box`) at the pushed head, fanned out by package shard with `--shards`; one `fflow/gate` is posted as the gate App; the verdict goes into the task's record, uncommitted (a commit would move the gated head) |
+| `fflow gate run [--ref b] [--box host] [--shards n] [-- flags]`       | the repository's checks through the configured runner (or on `--box`) at the pushed head, fanned out by package shard with `--shards`; one `fflow/gate` is posted as the gate App (with `secrets.oidc`, only by `fflow-approve.yml`'s verdict job); the verdict goes into the task's record, uncommitted (a commit would move the gated head) |
 | `fflow plan <key> --input \| --record <tasks.md>`                     | the plan workflow's input (FRs, ACs, documents, size budget), and its tasks.md written only when every FR and AC is covered within the budget and `gate tasks` passes                         |
 | `fflow review <pr> --input \| --record <findings.json>`               | the review workflow's input, and its verified findings recorded; `land` refuses a confirmed blocking one                                                                                         |
 | `fflow hooks run <pre-commit\|commit-msg\|pre-push>`                  | the stage's lefthook jobs here with the workspace install, else on the runner's box for the staged tree; the commit gets a `Hooks-Run:` trailer                                                  |
@@ -124,7 +124,8 @@ imports only `node:` modules, so the guard runs on a checkout with no install (`
 `hooks` selects them by id: `guard` (`PreToolUse`: bash, paths and the plan gate; mandatory, so every profile gets
 it), `post-write` (`PostToolUse`), `prompt-hints` (`UserPromptSubmit`), `session-context` (`SessionStart`),
 `session-save` (`Stop`: `fflow session stop --save-only` writes the session's record) and `session-stop`
-(`SessionEnd`: `fflow session stop` commits the work as WIP and pushes it). The OpenCode guard plugin puts every
+(`SessionEnd`: `fflow session stop` commits the work as WIP and pushes it; rendered only when the config's
+`session.pushAtEnd` is `true`, see Configuration). The OpenCode guard plugin puts every
 shell, edit, read, glob and grep call to the same file, an ask counting as a deny. With `lefthook.yml`
 rendered, `sync` also pins `mise.toml`'s `npm:oxfmt` and `npm:oxlint` at the versions `pnpm-workspace.yaml`'s catalog
 pins.
@@ -315,6 +316,10 @@ setting you have not made refuses and names it.
   `third-party.yml` is selected by its id in `skills`, and `sync` removes one a profile drops from
   `.agents/skills/.vendor/`. `hooks` selects Flow's agent hooks by id (see What `sync` owns); the guard is always
   rendered. Narrowing a profile deletes the rendered agents, skills and files it drops that nobody edited.
+
+- `session.pushAtEnd` (default `false`): `true` renders the `session-stop` hook, which commits the session's tracked
+  work as WIP and pushes it when the session ends. Off, no rendered hook commits or pushes; the `Stop` hook still
+  writes the session's record locally. The profile must select `session-stop` too.
 
 - `specs` sets where specs live: `dir` (default `.agents/specs`) and `bugsDir` (default `.agents/specs/bugs`).
 
@@ -517,6 +522,16 @@ poster posts the `fflow/gate` commit status and one PR comment as the gate App t
 the box, through the secrets port (for us, a dedicated Infisical project only the box identity reads). The poster posts only while that commit is still the branch tip, and never `success` unless the
 check exited 0. Nothing secret reaches the comment or the log. Exit codes: 0 green, 1 red, 2 refused, 4 not posted,
 5 stale, 73 every box busy, 75 no healthy box.
+
+With `secrets.oidc`, no box and no workstation posts the gate (STA-2134). `gate run` runs the check, records the
+verdict and says that `fflow/gate` comes only from the `verdict` job of main's `fflow-approve.yml`, which signs in over
+GitHub OIDC and mints the Figentra Flow App token in process. The box gets no poster and no key. The poster above is
+for repositories without `secrets.oidc` and retires with T137. No path writes the gate's status or comment with a
+user's token (`GITHUB_TOKEN`, `GH_TOKEN` or a `gh` login): the poster needs the App's own key, and the verdict's mint
+refuses anywhere but main's approval job. That job judges only the gate workflow's run, so with `secrets.oidc`
+`gate run` refuses (exit 2, nothing recorded) unless the verdict job is rendered (below), and always with `--box`:
+switch the runner to `github-actions` and complete `secrets.oidc`, `paths.gate` and `apps.owner`, or remove
+`secrets.oidc`.
 
 ### The github-actions runner's verdict
 

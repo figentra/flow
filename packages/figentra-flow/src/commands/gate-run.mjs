@@ -13,9 +13,15 @@
  *   shard only. A run that reached a verdict ends the gate stage in Flow's record on the task's branch (`recordGate`,
  *   STA-1945 FR-14): the verdict on the sha, `gate` done or failed, written but not committed, since a commit would
  *   move the head off the gated sha; the next commit (the review's, a session's stop) carries it.
+ *   With `secrets.oidc` (STA-2134) no runner posts: the box gets only the check, no poster or job file, and this side
+ *   posts nothing either; `fflow/gate` and its report come only from main's `fflow-approve.yml` `verdict` job, which
+ *   mints the Flow App token over OIDC, and so only for a configuration that renders that job (`rendersVerdict`):
+ *   otherwise, or with `--box`, `gate run` refuses (exit 2) before any box and records nothing. Without
+ *   `secrets.oidc` (a legacy repository) the poster runs as above until T137.
  * Boundary: runs no check on the caller's machine (FR-9). Refuses a dirty tree (Flow's record aside: it is never part of
  *   the gated commit), a detached head without `--ref`, a
- *   head that is not the remote branch tip, a missing runner and, with `--shards`, a workspace pattern or package
+ *   head that is not the remote branch tip, `secrets.oidc` without a rendered verdict job or with `--box`, a
+ *   missing runner and, with `--shards`, a workspace pattern or package
  *   folder it cannot read, before any box is claimed; a runner program that
  *   is not installed is refused after. Removes its temporary
  *   folder when the run ends.
@@ -38,6 +44,7 @@ import { loadConfig } from "../lib/config.mjs";
 import { schemeFor } from "../adapters/tracker/index.mjs";
 import { defaultBranch, git, remoteTip } from "../lib/git.mjs";
 import { endStage, RECORD_DIR } from "../lib/record.mjs";
+import { rendersVerdict } from "../lib/render.mjs";
 import {
   combine,
   MAX_SHARDS,
@@ -49,6 +56,7 @@ import {
   workspacePackages,
 } from "../lib/shards.mjs";
 import {
+  APPROVE_WORKFLOW,
   CONFIG_FILE,
   ENV_PREFIX,
   GATE_DIR,
@@ -169,6 +177,16 @@ export async function gateRun(options) {
     };
   const loaded = loadConfig(root);
   if (loaded.errors.length) return { code: 2, problem: loaded.errors.join("; ") };
+  // STA-2134: under secrets.oidc only the verdict job posts the gate, so a run it never judges would never turn green.
+  if (loaded.config.secrets?.oidc && (box || !rendersVerdict(loaded.config)))
+    return {
+      code: 2,
+      problem: `secrets.oidc: ${STATUS_CONTEXT} comes only from ${APPROVE_WORKFLOW}'s verdict job, which ${
+        box
+          ? "never judges a --box run; drop --box"
+          : "is not rendered for this configuration; set runner.kind to github-actions and complete secrets.oidc (secrets.kind infisical, secrets.paths.gate) and apps.owner"
+      }, or remove secrets.oidc`,
+    };
   const branch = options.ref ?? git(root, ["branch", "--show-current"]).out;
   if (!branch) return { code: 2, problem: "the head is detached; pass --ref <branch>" };
   const sha = git(root, ["rev-parse", "HEAD"]).out;
@@ -227,9 +245,11 @@ export async function gateRun(options) {
       if (!r.ok) return { code: 2, problem: `git ${args.join(" ")} failed: ${r.err}` };
     }
     const callerPosts = runner.posts === "caller";
+    // STA-2134: with `secrets.oidc` only the verdict job posts the gate; neither a box nor this workstation does.
+    const verdictPosts = Boolean(loaded.config.secrets?.oidc);
     mkdirSync(join(dir, GATE_DIR));
     // A caller-posting runner's box gets neither the poster nor the job file: it runs the check and returns its exit.
-    if (!callerPosts) copyFileSync(POSTER, join(dir, GATE_DIR, "post.mjs"));
+    if (!callerPosts && !verdictPosts) copyFileSync(POSTER, join(dir, GATE_DIR, "post.mjs"));
     const job = {
       sha,
       branch,
@@ -241,10 +261,11 @@ export async function gateRun(options) {
     };
     const writeJob = () =>
       writeFileSync(join(dir, GATE_DIR, "job.json"), `${JSON.stringify(job, null, 2)}\n`);
-    if (!callerPosts) writeJob();
+    if (!callerPosts && !verdictPosts) writeJob();
     // A box-side poster runs under the secrets port's `gate` scope unless the runner brings its own.
     const wrap = runner.wraps ? (/** @type {string} */ c) => secrets.wrap(c, "gate") : undefined;
-    const command = callerPosts ? checkCommand(dir) : boxCommand(checkCommand(dir), { wrap });
+    const command =
+      callerPosts || verdictPosts ? checkCommand(dir) : boxCommand(checkCommand(dir), { wrap });
     const each = {
       dir,
       command,
@@ -274,6 +295,12 @@ export async function gateRun(options) {
         problem: `\`${runner.program}\` is not on PATH (the ${runner.kind} runner); install it, set "runner", or pass --box <ssh host>`,
         sha,
       };
+    if (verdictPosts) {
+      console.error(
+        `${NAME} gate run: nothing posted here: ${STATUS_CONTEXT} comes only from ${APPROVE_WORKFLOW}'s verdict job (secrets.oidc)`,
+      );
+      return { code, sha };
+    }
     if (!callerPosts) return { code, sha };
     // C1: the box returned the check's exit code; this side posts it, under the `gate` scope, then removes the poster.
     writeJob();
