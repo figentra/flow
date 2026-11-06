@@ -31,7 +31,12 @@ const OUTPUTS = {
   "guard.secrets": [],
   "guard.tenancy": [],
   "owner-only": [".github/CODEOWNERS", `.github/workflows/${APPROVE_WORKFLOW}`],
-  "guard.wiring": [".claude/settings.json", "opencode.jsonc", ".opencode/plugins/fflow-guard.mjs"],
+  "guard.wiring": [
+    ".claude/settings.json",
+    "opencode.jsonc",
+    ".opencode/plugins/fflow-guard.mjs",
+    ".agents/hooks/fflow-guard.mjs",
+  ],
 };
 
 /**

@@ -38,7 +38,7 @@ fixtures, golden files and the gen/Explorer conformance tests.
 4. The validation pass rejects duplicate paths, an action without permission, risk or `actors`, an unversioned event,
    exposed PII, a missing module key, an undeclared IPC channel (0090, 0098, 0131, 0251).
 5. Gen and the Explorers agree, by the conformance test (0144).
-6. Run `pnpm --filter <package> test typecheck build`, then `pnpm verify`.
+6. Run `pnpm turbo run test typecheck build --filter=<package>`, then `pnpm verify`.
 
 ## Never
 

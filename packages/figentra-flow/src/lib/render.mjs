@@ -21,7 +21,8 @@
  *   With a `.flow/readme.yml`, `README.md` is rendered too (STA-1879). The lock pins the third-party skills the profile
  *   selects, which `sync` installs into the git-ignored `.agents/skills/.vendor/` (STA-1945 FR-8). Each surface the
  *   preset's `surfaces/` has is rendered by its `render-*.mjs` (FR-7): `.claude/settings.json` with the hooks the
- *   profile selects, the OpenCode projection and its guard plugin, `.mcp.yaml`, `AGENTS.md` and `CLAUDE.md`, and
+ *   profile selects, the guard bundle they run (`.agents/hooks/fflow-guard.mjs`, A-8), the OpenCode projection and its
+ *   guard plugin, `.mcp.yaml`, `AGENTS.md` and `CLAUDE.md`, and
  *   `lefthook.yml`; a preset without `surfaces/` renders what it did before.
  * Boundary: `render` and `installProblems` read; `writeRendered` writes the rendered files and the lock and removes
  *   spec-kit's rendered `speckit-*` skills and commands, and every owned file the lock lists that it no longer renders
@@ -81,6 +82,7 @@ import {
 import { withHeader } from "./provenance.mjs";
 import { renderReadme } from "./readme.mjs";
 import { renderAgentsMd } from "./render-agents-md.mjs";
+import { renderGuard } from "./render-guard.mjs";
 import { renderLefthook } from "./render-lefthook.mjs";
 import { renderMcp } from "./render-mcp.mjs";
 import { renderOpencode } from "./render-opencode.mjs";
@@ -99,7 +101,14 @@ import { parseYaml, YamlError } from "./yaml.mjs";
  */
 
 /** The surface renderers `sync` runs, in the order their files are written (STA-1945 FR-7). */
-const SURFACES = [renderSettings, renderOpencode, renderMcp, renderAgentsMd, renderLefthook];
+const SURFACES = [
+  renderGuard,
+  renderSettings,
+  renderOpencode,
+  renderMcp,
+  renderAgentsMd,
+  renderLefthook,
+];
 
 /** The commands, in workflow order; `plan` writes tasks.md too, so there is no `tasks` (STA-1945 FR-15). */
 export const VERBS = [
@@ -287,6 +296,7 @@ function renderPreset(root, direct, overrides) {
       // The gate's status counts only from the gate App; a repository adds its own sources in `approve.checks`.
       trusted: { ...(gate ? { [STATUS_CONTEXT]: gate } : {}), ...approve?.checks },
       ownerOnly,
+      tolerate: approve?.tolerate,
       ...(oidc
         ? {
             lane: {
@@ -300,10 +310,10 @@ function renderPreset(root, direct, overrides) {
             },
           }
         : {}),
-      ...(oidc && runner?.kind === "github-actions"
+      ...(oidc && rendersVerdict(config)
         ? {
             verdict: {
-              gatePath: `.github/workflows/${runner.workflow ?? GATE_WORKFLOW}`,
+              gatePath: `.github/workflows/${runner?.workflow ?? GATE_WORKFLOW}`,
               owner: apps.owner,
               defaultBranch: defaultBranch(root),
               oidc,
@@ -316,6 +326,20 @@ function renderPreset(root, direct, overrides) {
   out.set(".github/CODEOWNERS", codeowners(apps.owner, ownerOnly));
   return out;
 }
+
+/**
+ * Whether `fflow-approve.yml` gets the `verdict` job that posts `fflow/gate` (PR F): an owner, an Infisical
+ * `secrets.oidc` with `paths.gate`, and a `github-actions` runner. `gate run` refuses `secrets.oidc` without it.
+ * @param {any} config
+ */
+export const rendersVerdict = ({ apps, runner, secrets } = {}) =>
+  Boolean(
+    apps?.owner &&
+    secrets?.kind === "infisical" &&
+    secrets.oidc &&
+    secrets.paths?.gate &&
+    runner?.kind === "github-actions",
+  );
 
 /**
  * The integrity the repository's lockfile records for `pkg@version` (`pnpm-lock.yaml`, else `package-lock.json`), or

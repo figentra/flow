@@ -24,7 +24,7 @@ import {
   HARNESS_IDS,
   OPENCODE_ASK,
 } from "../adapters/harness/index.mjs";
-import { sync } from "../commands/sync.mjs";
+import { project, sync } from "../commands/sync.mjs";
 import { SCHEMA, validate } from "../lib/config.mjs";
 import { FLOW_ASSETS } from "../lib/flow-dir.mjs";
 import { digestOf, readLock } from "../lib/lock.mjs";
@@ -215,4 +215,15 @@ test("harness: Copilot, Cursor and Codex get their own files with the text table
   assert.ok(again.removed.includes(".cursor/commands/flow-clarify.md"));
   assert.equal(existsSync(join(root, ".cursor/commands")), false);
   assert.deepEqual(installProblems(root), []);
+});
+
+test("harness: Codex's native skills need no projector and retain repository guidance", (t) => {
+  const root = governed(t, { config: { harnesses: ["codex"] } });
+  const files = render(root, { direct: true });
+  assert.ok(files.has(".agents/skills/flow-plan/SKILL.md"));
+  assert.match(files.get("AGENTS.md"), /fflow context/);
+  assert.match(files.get("AGENTS.md"), /Preserve existing mandatory member guidance/);
+  const lines = [];
+  assert.equal(project(root, false, { log: (line) => lines.push(line), quiet: true }), 0);
+  assert.match(lines.join("\n"), /ready for Codex/);
 });

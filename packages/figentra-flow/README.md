@@ -28,13 +28,18 @@ closest one and exits 2. A failure is one error block: what failed, why, the fix
 under `NO_COLOR` or in a pipe, and `doctor`, `status` and `status --metrics` take `--json`, which writes one document,
 `{ "ok", "data" }`. That is a breaking change for scripts: `doctor --json` no longer writes
 `{ "schema": "fflow.doctor/1", "checks" }` (its check rows, each with `id`, `ok`, `status` and `group`, are `data`), and
-`status --json` and `status --metrics --json` put the snapshot and the metrics in `data`.
+`status --json` and `status --metrics --json` put the snapshot and the metrics in `data`. So do `spec … --json`
+(`{ "ok", "data": { "FEATURE_DIR", … } }`), `release --json` and `release --preflight --json`: their documents, unchanged,
+are now `data`; `spec template <name> --json` writes the template's text as `data`, one string.
 
 `doctor`, `status`, `next`, `resume`, `task start`, `task done`, `task wave`, `todo`, `ledger`, `session stop`, the
-governance commands (`update`, `check`, `diff`, `validate`) and the stage commands (`plan`, `review`) are ported to the
-engine (`next` takes `--json` too). Every other command is passthrough, keeping its own flags and output until it is
-ported: `adr`, `app`, `clean`, `gate`, `guard`, `hooks`, `init`, `land`, `linear`, `mcp`, `migrate`, `parse`, `readme`,
-`release`, `ship`, `spec`, `start`, `sync`, `team`, `trace` and `train`.
+governance commands (`sync`, `update`, `check`, `diff`, `validate`), the stage commands (`plan`, `review`), `init`,
+`migrate`, `trace`, `adr`, `start`, `mcp`, `readme`, `team check`, `land`, the `train` steps (`train open`, `add`,
+`close`, `build`, `eject`, `depart`, `status`), `gate`, `parse`, `guard`, `hooks run`, `spec`, `linear`, `clean`,
+`ship`, `release` and `app create`: every command is declared on the engine, none is passthrough (`next` and
+`trace trace` take `--json` too; `trace trace --json` now writes the matrix as `data`, and `spec` and `release` hand
+their `--json` document to the `{ "ok", "data" }` envelope above). Bare `fflow train`, `fflow team` and `fflow hooks`
+are unknown commands and exit 2. A command refuses a flag it does not declare (exit 2) instead of ignoring it.
 
 `@stackra/console` and `@stackra/validation` (0.7.1) are runtime dependencies of Flow (ADR 0506 decision 8, owner
 2026-11-03; this replaces STA-1945 NFR-1's "no runtime dependency, an optional peer"). They come from the Stackra
@@ -55,14 +60,14 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow diff`                                                          | prints every file `sync` or `update` would add, change or delete, with the lines; writes nothing |
 | `fflow validate`                                                      | checks `flow.config.json` and `.flow/overrides/` against their schemas and the mandatory policies, naming each field, target or policy that breaks them and a `profile` the preset lacks; writes nothing |
 | `… --workspace <dir>`                                                 | runs `sync`, `update`, `check`, `diff` or `validate` in every repository under `<dir>` that has `flow.config.json`, one line each |
-| `fflow gate run [--ref b] [--box host] [--shards n] [-- flags]`       | the repository's checks through the configured runner (or on `--box`) at the pushed head, fanned out by package shard with `--shards`; one `fflow/gate` is posted as the gate App; the verdict goes into the task's record, uncommitted (a commit would move the gated head) |
+| `fflow gate run [--ref b] [--box host] [--shards n] [-- flags]`       | the repository's checks through the configured runner (or on `--box`) at the pushed head, fanned out by package shard with `--shards`; one `fflow/gate` is posted as the gate App (with `secrets.oidc`, only by `fflow-approve.yml`'s verdict job); the verdict goes into the task's record, uncommitted (a commit would move the gated head) |
 | `fflow plan <key> --input \| --record <tasks.md>`                     | the plan workflow's input (FRs, ACs, documents, size budget), and its tasks.md written only when every FR and AC is covered within the budget and `gate tasks` passes                         |
 | `fflow review <pr> --input \| --record <findings.json>`               | the review workflow's input, and its verified findings recorded; `land` refuses a confirmed blocking one                                                                                         |
 | `fflow hooks run <pre-commit\|commit-msg\|pre-push>`                  | the stage's lefthook jobs here with the workspace install, else on the runner's box for the staged tree; the commit gets a `Hooks-Run:` trailer                                                  |
 | `fflow land [<pr>] [--stack] [--dry-run] [--manual-ok] [--wait <m>] [--no-wait]` | squash-merges a PR that is green on `fflow/gate` from the gate App on its head and has its approvals, or asks main's land lane with `fflow:land` and waits for its merge; Linear Done, worktree and branch removed |
 | `fflow adr reserve <slug> --issue <key> [--owner <who>]`              | under the `adr` queue lock (`flow/queue/adr`, stale after 15 minutes), lands the next number of the preset's `queues.adr` file on the default branch, then prints only it on stdout; a reservation that does not land is withdrawn |
 | `fflow train <open\|add\|close\|build\|eject\|depart\|status>`        | the release train: board green PRs, cut off, build `train/<version>` by merge commits with bisect ejection, depart by fast-forward (see [Release trains](#release-trains))                       |
-| `fflow ship <dev\|staging> [--workflow f] [--dry-run]`                | dispatches the product's Runway deploy workflow (`deploy.yml`, input `environment`) on main; production is refused: the owner promotes. In a landed task's checkout it records `ship` done there |
+| `fflow ship <dev\|staging> [--workflow f] [--wait m] [--resolve] [--dry-run]` | dispatches the product's Runway deploy workflow (`deploy.yml`, input `environment`) on main; production is refused: the owner promotes. In a landed task's checkout it records `ship` there; with a `runway.yaml` it takes the run id GitHub's dispatch answers with (else finds the run), writes it to the record at once, follows the run and records its `runway-outcome-<env>` artifact (done only when Runway reports `deployed` for that environment and the run's revision; a GitHub error reading the artifact keeps the ship pending). A ship still pending when `--wait` ends: `fflow ship <env> --resolve` dispatches nothing, re-reads that newest ship's run and writes its outcome into the record (committed and pushed); `fflow status` only shows it |
 | `fflow release [--json] [--offline] [--preflight]`                    | what the next release would publish: pending changesets and next versions, the version PR, the Release workflow's last run and its notices, the registry's versions; it publishes nothing. `--preflight`: whether the owner may merge the version PR now (see [Release preflight](#release-preflight)) |
 | `fflow preset add <pkg> [--dry-run]`                                  | installs a preset package as a dev dependency with the package manager whose lockfile the repository has (pnpm when none), then sets `"preset": "<pkg>"` in `flow.config.json`; run `fflow sync` after. `--dry-run` prints both and runs nothing |
 | `fflow doctor [--json] [--offline]`                                   | checks Node, git, the configuration, the preset (installed, and this Flow inside its declared range), the `.flow/` install, the ignored worktree folder, the roster and the credentials, grouped (Machine, Repo, Flow, GitHub), each with its fix                 |
@@ -72,11 +77,12 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow trace trace <dir>` / `drift` / `ci`                            | the FR/P → task → `@covers` test matrix, spec-vs-diff drift, the Done rules                                                                                                                      |
 | `fflow parse <file>`                                                  | what the parsers read from a `spec.md`, `plan.md`, `tasks.md` or `routing.yaml`, as JSON                                                                                                         |
 | `fflow linear issue <spec.md>` / `tasks <tasks.md>`                   | the spec's Linear issue and one sub-issue per task; `--dry-run` needs no token                                                                                                                   |
-| `fflow start <STA-n> [--slug s] [--install]`                          | branch `figentra/sta-n-<slug>` from `origin/<default>` into `.claude/worktrees/sta-n-<slug>`; issue In Progress; the record's `start` (or `worktree` for a Tasked spec) committed and pushed |
+| `fflow start <STA-n> [--slug s] [--install] [--no-spec]`              | branch `figentra/sta-n-<slug>` from `origin/<default>` into `.claude/worktrees/sta-n-<slug>`; issue In Progress; the record's `start` (or `worktree` for a Tasked spec) committed and pushed; a key with no folder on `origin/<default>` (and none in the bug lane) gets `spec.md` from the spec template, committed with the record; `--no-spec` for trivial work (a trivial PR deletes a spec it turns out not to need) |
 | `fflow clean [--dry-run] [--adopt] [--fix-ignore] [--budget] [--all]` | removes finished worktrees (clean, saved, issue Done or idle 2 h), reports what it kept and the space freed; warns over `clean.budget`, and `--budget` sweeps idle merged or pushed trees safely |
-| `fflow guard [--print-settings]`                                      | the guard engine on the hook event on stdin: the preset's rules, the side doors and the secret files; `--print-settings` prints the hooks that wire `bin/fflow-guard.mjs` for four events        |
+| `fflow guard [--print-settings]`                                      | the guard engine on the hook event on stdin: the preset's rules, the side doors and the secret files; `--print-settings` prints the hooks that wire `.agents/hooks/fflow-guard.mjs` for four events |
 | `fflow init --workspace <dir>…`                                       | writes the workspace list (`~/.config/fflow/workspace.yaml`) that `--all` acts on                                                                                                                |
 | `fflow status [--repo p] [--json] [--offline]`                        | specs by status, worktrees, open PRs with their gate and review, and sessions, for every repository of the workspace                                                                             |
+| `fflow context [--repo <path> | --all] [--path <path>] [--query <phrase>] [--limit <n>] [--json]` | offline, bounded repository or collection navigation; no setup or network |
 | `fflow mcp`                                                           | an MCP server over stdio: status, spec, trace, worktrees, metrics, a spec's open questions, a docs lookup, and the one writer, recording an answer                                               |
 | `fflow next [<key>] [--json]`                                         | the task's stage and the command that moves it on, from Flow's record on the key's worktree or branch; back at approval when an approved document changed since |
 | `fflow resume <key>`                                                  | re-enters the stage a stopped session left half done: the task's worktree, fast-forwarded to its pushed branch                                                                                   |
@@ -103,6 +109,7 @@ digest identifies it). Change the preset or `.flow/overrides/` and sync; `check`
 | `.agents/agents/`, `.agents/rules/` (`.claude/` with `--direct`) | `agents/` (as the profile selects), `rules/`                           |
 | `.agents/skills/<name>/` (`.claude/skills/` with `--direct`) | `skills/` (as the profile selects)                                         |
 | `.agents/reference/`, `.agents/routing.yaml`, `.agents/models.yaml` | `reference/`, `routing.yaml`, `models.yaml`                         |
+| `.agents/hooks/fflow-guard.mjs`                              | the guard engine and the preset's `guard/` tables, in one file (below)     |
 | `.claude/settings.json`                                      | `surfaces/settings.json` plus Flow's hooks, below                          |
 | `opencode.jsonc`, `.opencode/plugins/fflow-guard.mjs`        | `surfaces/opencode.jsonc` and `surfaces/opencode/`                         |
 | `.mcp.yaml`                                                  | `surfaces/mcp.yaml` plus the config's `mcp` servers (secrets by `$NAME`)   |
@@ -111,12 +118,15 @@ digest identifies it). Change the preset or `.flow/overrides/` and sync; `check`
 | `README.md`                                                  | `.flow/readme.yml` (see The README)                                        |
 | `.github/workflows/fflow-approve.yml`, `.github/CODEOWNERS`, `.github/workflows/fflow-baseline.yml` | `apps.owner`, `baseline` (see Landing and The gate) |
 
-Flow's hooks in `.claude/settings.json` run the installed package through `node`, never `pnpm exec`. A profile's
+Flow's hooks in `.claude/settings.json` run through `node`, never `pnpm exec`; the guard's four run
+`.agents/hooks/fflow-guard.mjs`, which `sync` writes with the guard engine and the preset's tables inside and which
+imports only `node:` modules, so the guard runs on a checkout with no install (`check` names a hand edit). A profile's
 `hooks` selects them by id: `guard` (`PreToolUse`: bash, paths and the plan gate; mandatory, so every profile gets
 it), `post-write` (`PostToolUse`), `prompt-hints` (`UserPromptSubmit`), `session-context` (`SessionStart`),
 `session-save` (`Stop`: `fflow session stop --save-only` writes the session's record) and `session-stop`
-(`SessionEnd`: `fflow session stop` commits the work as WIP and pushes it). The OpenCode guard plugin puts every
-shell, edit, read, glob and grep call to the same guard entry, an ask counting as a deny. With `lefthook.yml`
+(`SessionEnd`: `fflow session stop` commits the work as WIP and pushes it; rendered only when the config's
+`session.pushAtEnd` is `true`, see Configuration). The OpenCode guard plugin puts every
+shell, edit, read, glob and grep call to the same file, an ask counting as a deny. With `lefthook.yml`
 rendered, `sync` also pins `mise.toml`'s `npm:oxfmt` and `npm:oxlint` at the versions `pnpm-workspace.yaml`'s catalog
 pins.
 
@@ -307,6 +317,10 @@ setting you have not made refuses and names it.
   `.agents/skills/.vendor/`. `hooks` selects Flow's agent hooks by id (see What `sync` owns); the guard is always
   rendered. Narrowing a profile deletes the rendered agents, skills and files it drops that nobody edited.
 
+- `session.pushAtEnd` (default `false`): `true` renders the `session-stop` hook, which commits the session's tracked
+  work as WIP and pushes it when the session ends. Off, no rendered hook commits or pushes; the `Stop` hook still
+  writes the session's record locally. The profile must select `session-stop` too.
+
 - `specs` sets where specs live: `dir` (default `.agents/specs`) and `bugsDir` (default `.agents/specs/bugs`).
 
 - `harnesses` names the tools `sync --direct` renders the `flow-*` commands for (see Harnesses below). Without it,
@@ -337,9 +351,63 @@ tools in `flow.config.json` and run `fflow sync --direct`:
 Where a tool's question tool is unavailable, the command still carries the text table to ask with. Every file has the
 provenance header and its digest in `.flow/lock.json`, and a tool removed from the list takes its unedited commands
 with it. Without `harnesses`, nothing changes: `--direct` renders Claude Code's and OpenCode's files and a plain `sync`
-the neutral `.agents/skills/` documents, both with the text table, byte for byte as before. A plain `sync` ignores
-`harnesses`: the repository's own projector places those documents. Answers are recorded in the spec, never only in a
+the neutral `.agents/skills/` documents, both with the text table. A plain `sync` ignores `harnesses`: Codex reads
+these documents natively; a repository projector may place them for other clients. Answers are recorded in the spec, never only in a
 tool's chat; the MCP server's `fflow_clarification_record` (under Status) writes them the same way from any tool.
+
+### Codex
+
+Codex uses the existing `codex` harness, `AGENTS.md` and `.agents/skills/`; Flow adds no second Codex adapter or
+home-directory prompt files. A plain `fflow sync` renders native skills. For a mixed setup, include `"codex"` in
+`harnesses` and use `fflow sync --direct`. Review `fflow diff` before updating an existing governed setup.
+
+Open Codex in the target repository and invoke a rendered skill such as `$flow-plan`. Root instructions do not mean
+all nested instructions or linked rules have already been read: use the context route below for the paths being edited.
+Flow's Claude-specific hooks and `.mcp.yaml` are not evidence of Codex hook enforcement or MCP registration. Register
+`fflow mcp` in the client's own MCP configuration if needed; CLI context lookup works without MCP. Client-level loading
+and enforcement still need a clean-checkout smoke test on the installed Codex version.
+
+## Task context and documentation boundaries
+
+```sh
+fflow context --json                                    # current checkout, no registry required
+fflow context --path packages/figentra-flow --limit 10   # scoped instructions and navigation
+fflow context --repo ../service --query payments --json # explicit standalone checkout
+fflow context --all --query payments --json             # existing fflow workspace registry
+```
+
+Discovery reads Git's tracked and non-ignored untracked paths, plus package names/descriptions. It returns up to 20
+matches per repository (1–100), at most 25 registered repositories, each repository's HEAD/branch and dirty flag,
+ancestor instruction paths (including `AGENTS.override.md`), entry points and explicit missing/invalid metadata.
+Results are uncached and describe the working tree; HEAD alone is insufficient when dirty. Narrow the query or select
+one repository when truncated. It does not fetch, install, run scripts, load private document bodies, follow symlinks,
+or traverse dependencies/build outputs. Paths are classified for navigation; no inferred owner or consumer graph is
+presented as fact. Package fixtures can appear; confirm the actual workspace membership from its manifest.
+
+Use `fflow_context` over MCP for the same result. Query matching is by path/name/description, not document contents;
+use the existing `fflow_docs_lookup` for bounded prose search. With no matches, use repository search and report the
+missing route. Ignored files, custom instruction filenames and ancestor instructions outside the checkout are not
+indexed: the client/user's applicable instructions still govern. Missing repositories and malformed package metadata
+make the CLI exit 1; invalid options exit 2. A truncated result alone is not a failure.
+
+| Boundary | Minimum useful guidance |
+| --- | --- |
+| Repository | README navigation, scoped AGENTS constraints, pinned guidance and allowed verification environment |
+| Package/service | Purpose and owner, public exports/API/events, dependencies, failure boundaries, one example and tests |
+| Component family | Import/type and playground routes; composition, accessibility, platform and state behavior relevant to the component |
+| Capability | Existing catalogue entry connecting step owners, contracts, consumers, authorization and failure behavior, and test evidence |
+| Skill/role | Narrow trigger, prerequisites/version compatibility, procedure/responsibility, output, verification and failure route |
+
+Add guidance at real ownership or contract boundaries, not per ordinary folder or function. Preserve existing member
+requirements. README explains use, AGENTS governs work, ADR explains decisions, contracts specify behavior and tests
+supply revision-specific evidence. A newer timestamp alone does not supersede a decision. Update generated sources,
+not projections. Treat release/deployment status as unknown until matching evidence exists.
+
+For this package's context capability, the route is `src/lib/context.mjs` → `src/commands/context.mjs` and
+`src/commands/mcp.mjs`; `src/lib/console.mjs` declares CLI options. `src/__tests__/context.test.mjs` covers scoped
+instructions, metadata, bounds, missing checkouts and symlinks; help and MCP tests cover the entry contracts. The
+preset `surfaces/agents-md/agents.md` sources project the navigation procedure. Run `pnpm verify` and the packed e2e
+in CI/the allowed runner, not on a workstation. Test files being present is not evidence that they passed.
 
 ## Presets
 
@@ -455,6 +523,16 @@ the box, through the secrets port (for us, a dedicated Infisical project only th
 check exited 0. Nothing secret reaches the comment or the log. Exit codes: 0 green, 1 red, 2 refused, 4 not posted,
 5 stale, 73 every box busy, 75 no healthy box.
 
+With `secrets.oidc`, no box and no workstation posts the gate (STA-2134). `gate run` runs the check, records the
+verdict and says that `fflow/gate` comes only from the `verdict` job of main's `fflow-approve.yml`, which signs in over
+GitHub OIDC and mints the Figentra Flow App token in process. The box gets no poster and no key. The poster above is
+for repositories without `secrets.oidc` and retires with T137. No path writes the gate's status or comment with a
+user's token (`GITHUB_TOKEN`, `GH_TOKEN` or a `gh` login): the poster needs the App's own key, and the verdict's mint
+refuses anywhere but main's approval job. That job judges only the gate workflow's run, so with `secrets.oidc`
+`gate run` refuses (exit 2, nothing recorded) unless the verdict job is rendered (below), and always with `--box`:
+switch the runner to `github-actions` and complete `secrets.oidc`, `paths.gate` and `apps.owner`, or remove
+`secrets.oidc`.
+
 ### The github-actions runner's verdict
 
 With the `github-actions` runner, the PR's own workflow runs the check but cannot post the status: it holds only
@@ -566,6 +644,29 @@ The workflow runs `approve-check.mjs` from this package, at the version `sync` p
 everything at the checked head: the files from the merge base, and each required check from its trusted source. A
 trusted source is the App the ruleset pins (`integration_id`), or the login `approve.checks` or the gate App names.
 The author must not be the approving App.
+
+On a red main the check can compare failures with main's recorded baseline (STA-1945). It excuses nothing by
+default. A required check that fails on the head is tolerated only when all of these hold:
+
+- `approve.tolerate` in the config lists its context;
+- from its trusted source, it concluded `failure` on the commit that left the base's nearest baseline too;
+- the ruleset requires the `Baseline` check and it is green on the head, since that check compares each task.
+
+A check that is not listed, or that passed, never ran, or was only cancelled or timed out on the baseline, still
+refuses. With no baseline, or an empty list, every required check must be green, `Baseline` included. The approval
+names the baseline's commit and the checks it tolerated.
+
+The tolerance is per check, not per task: a listed check red on main for one reason and on the PR for another passes.
+So list only checks that run no more than the `baseline.tasks` Baseline compares:
+
+```json
+"approve": { "tolerate": ["lint", "typecheck"] }
+```
+
+`Baseline` and `fflow/gate` are never tolerated: `Baseline` is the comparison, and `fflow/gate` runs the whole check
+command, so a red-main repository requires `Baseline` instead of it. The config schema refuses a list naming either,
+`sync` refuses to render it, and the check refuses it too. `sync` renders the list into the workflow as `TOLERATE`; a
+value that is not a JSON list of names refuses the approval.
 
 The workflow then either approves at that head or comments the reasons. After approving, it re-reads the PR and
 dismisses its own review if the head moved. The App's id and key are secrets of that environment, under names of
@@ -719,7 +820,7 @@ the preset lag (the locked version against the installed one), the overrides by 
 without a lock is "not synced", never skipped. It reads the repositories only; `--json` writes `{ repos: [...] }`. The
 exit code is 1 when a repository drifts or holds an override past its review date.
 
-`fflow mcp` is an MCP server over stdio for agents. It offers eight tools, each returning JSON. Seven read:
+`fflow mcp` is an MCP server over stdio for agents. It offers nine tools, each returning JSON. Eight read:
 
 | Tool                   | Arguments                    | What it returns                                                                       |
 | ---------------------- | ---------------------------- | ------------------------------------------------------------------------------------- |
@@ -729,6 +830,7 @@ exit code is 1 when a repository drifts or holds an override past its review dat
 | `fflow_worktrees`      | `repo?`                      | each repository's worktrees                                                           |
 | `fflow_metrics`        | `since?` (days)              | delivery metrics                                                                      |
 | `fflow_questions_list` | `repo`, `key`                | each live `[NEEDS CLARIFICATION: …]` marker and unanswered Clarifications question    |
+| `fflow_context` | `repo?`, `all?`, `query?`, `path?`, `limit?` | offline navigation with checkout revisions, dirty state and scoped instruction paths |
 | `fflow_docs_lookup`    | `repo`, `query`, `limit?`    | matching lines of `.agents/specs`, `docs/` and `.flow/` text (at most 100; no links)  |
 
 One writes: `fflow_clarification_record` (`repo`, `key`, `question`, `answer?`, `marker?`) records one answer in the

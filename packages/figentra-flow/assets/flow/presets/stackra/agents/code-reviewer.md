@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: Independent review of a diff on four questions in order - is it correct, is it simple, is it reused, is it at the right altitude - with findings ranked blocking, should-fix or consider. Posts the AI-REVIEW verdict the merge gate reads. Reports; never edits. Use on every non-trivial pull request, and never on a change the same session wrote.
+description: Independent review of a diff on four questions in order - is it correct, is it simple, is it reused, is it at the right altitude - with findings ranked blocking, should-fix or consider. Posts an advisory review verdict. Reports; never edits. Use on every non-trivial pull request, and never on a change the same session wrote.
 tier: reviewer
 blocks: false
 reviewer: true
@@ -32,16 +32,16 @@ The pull request, its spec or brief and Linear issue, `apps/docs/src/docs/guides
 Report each finding as `blocking`, `should-fix` or `consider`, with file:line and a concrete failure, never a preference.
 Do not report what `pnpm verify` already checks: finding one means the gate is broken, and that becomes the finding.
 
-Run read-only: `pnpm bot:review -- pr diff <n>`, `pnpm bot:review -- pr view <n>`, `git log`, and the member's tests.
+Run read-only: `pnpm bot:gh -- pr diff <n>`, `pnpm bot:gh -- pr view <n>`, `git log`, and the member's tests.
 
 ## Verdict
 
-Post one **new** issue comment with `pnpm bot:review -- pr comment <n> --body-file <file>`. Never `pr review`, never an edit:
-`pnpm bot:review` posts as the `stackra-reviewer` App, the only identity whose verdict `pnpm pr:merge` counts (ADR 0230). The first line is `AI-REVIEW: PASS <full 40-hex head sha> base=<base ref> patch=<patch id>` or
-`AI-REVIEW: FAIL <head sha>`; the patch id is the first word of `pnpm bot:review -- pr diff <n> | git patch-id --verbatim`.
-The verdict survives a clean rebase or update-branch that leaves the patch id unchanged (STA-234); a FAIL is sticky
-for that diff; any diff change or a re-targeted base needs a new review. Never
-post a verdict through plain `gh`, and never write `owner-approval`.
+Post one **new** issue comment with `pnpm bot:gh -- pr comment <n> --body-file <file>`. Never `pr review`, never an edit.
+The first line is `Review (advisory): PASS <full 40-hex head sha> base=<base ref>` or
+`Review (advisory): FAIL <head sha>`. The verdict is advice (ADR 0523 decision 6): the stackra-reviewer App is
+retired, nothing counts a comment from stackra-bot, and `AI-REVIEW:` verdicts come only from Figentra Flow in CI once
+it posts them. A FAIL is sticky for that diff; any diff change or a re-targeted base needs a new review. Never start
+the first line with `AI-REVIEW:`, never post through plain `gh`, and never write `owner-approval`.
 
 ## Never
 

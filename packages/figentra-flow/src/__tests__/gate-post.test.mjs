@@ -3,7 +3,8 @@
  * Purpose: hold the box poster to its contract: `success` only for exit 0, `failure` otherwise, on the checked sha;
  *   nothing posted when the tip moved or no token can be minted; one PR comment updated, not duplicated; the JWT
  *   signed with the App key; and no secret (the key, the JWT, the installation token, a secret-looking environment
- *   value) in any posted body or printed line.
+ *   value) in any posted body or printed line. STA-2134: a user's ambient token never posts the gate, and no source
+ *   file but the poster and the verdict writes `fflow/gate` or the gate's comment, neither through `gh`.
  * Boundary: an injected fetch and a throwaway key generated here; no network.
  * Runtime: node
  * Governing contract: ADR 0022; Stackra ADR 0503; STA-1729 phase 2.
@@ -12,6 +13,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createVerify, generateKeyPairSync } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import { appJwt, post, redact } from "../lib/gate-post.mjs";
 import { ENV_PREFIX, GATE_MARKER as MARKER, STATUS_CONTEXT as CONTEXT } from "../lib/product.mjs";
@@ -174,4 +177,43 @@ test("redact: secret-looking values (and each line of a key) become ***, others 
   assert.equal(out.includes("uniwind-secret-value"), false);
   assert.equal(out.includes(privateKey.split("\n")[1]), false);
   assert.match(out, /plain-value/);
+});
+
+test("post: a user's ambient token (GITHUB_TOKEN, GH_TOKEN) never posts the gate (STA-2134)", async () => {
+  const { calls, fetch } = github();
+  const env = { GITHUB_TOKEN: "ghp_a-users-token-123", GH_TOKEN: "gho_a-users-token-456" };
+  const result = await post({ job: JOB, exit: 0, env, fetch, now: NOW });
+  assert.equal(result.code, 4);
+  assert.deepEqual(calls, [], "no call at all without the App's own key");
+});
+
+test("only the poster and the verdict write fflow/gate or its comment, and neither through gh (STA-2134)", () => {
+  const src = fileURLToPath(new URL("..", import.meta.url));
+  const files = /** @type {string[]} */ (readdirSync(src, { recursive: true }))
+    .filter((f) => f.endsWith(".mjs") && !f.startsWith("__tests__"))
+    .map((f) => ({ f: f.split("\\").join("/"), text: readFileSync(`${src}/${f}`, "utf8") }));
+  const having = (/** @type {RegExp} */ re) =>
+    files
+      .filter((x) => re.test(x.text))
+      .map((x) => x.f)
+      .sort();
+  // A commit status write is `POST /repos/<repo>/statuses/<sha>`; approve-check's is `fflow/land`'s, minted.
+  assert.deepEqual(having(/\/statuses\/\$\{/), [
+    "lib/approve-check.mjs",
+    "lib/gate-post.mjs",
+    "lib/verdict.mjs",
+  ]);
+  // The gate's context and comment marker reach a write only through the poster's job file or the verdict.
+  assert.deepEqual(having(/context: STATUS_CONTEXT\b/), [
+    "commands/gate-run.mjs",
+    "lib/verdict.mjs",
+  ]);
+  assert.deepEqual(having(/\bGATE_MARKER\b/), ["commands/gate-run.mjs", "lib/product.mjs"]);
+  for (const f of ["lib/gate-post.mjs", "lib/verdict.mjs", "lib/app-token.mjs"])
+    assert.doesNotMatch(
+      files.find((x) => x.f === f)?.text ?? "",
+      // Imports and reads only: the contracts may name `gh` and `GH_TOKEN` to say they never use them.
+      /"node:child_process"|\/github\.mjs"|\/credentials\.mjs"|\.GH_TOKEN\b/,
+      `${f} has no path to gh's ambient login`,
+    );
 });

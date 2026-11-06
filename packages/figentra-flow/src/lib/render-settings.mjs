@@ -2,13 +2,15 @@
  * Figentra Flow file contract:
  * Purpose: `.claude/settings.json` (STA-1945 FR-7, FR-19): the preset's `surfaces/settings.json` (its permissions,
  *   environment and the like) with Flow's hooks first under `hooks`, each event's preset entries after them. Flow's
- *   hooks run the installed package's entries through `node`, never `pnpm exec` (NFR-2): the guard (`PreToolUse`),
- *   its post-write checks, prompt hints and session context, and the session's record (`Stop`, `--save-only`) and
- *   its WIP commit and push (`SessionEnd`). The profile's `hooks` selects them by id; the guard is mandatory (FR-5),
- *   so every profile gets it. Strict JSON carries no provenance header; the lock's digest identifies the file.
+ *   hooks run through `node`, never `pnpm exec` (NFR-2): the guard (`PreToolUse`), its post-write checks, prompt
+ *   hints and session context run the repository's own `.agents/hooks/fflow-guard.mjs` (`render-guard.mjs`), so they
+ *   run with no install (A-8); the session's record (`Stop`, `--save-only`) and, only when the config's
+ *   `session.pushAtEnd` is true, its WIP commit and push (`SessionEnd`; STA-2131) run the installed package's CLI.
+ *   The profile's `hooks` selects them by id; the guard is mandatory (FR-5), so every profile gets it. Strict JSON
+ *   carries no provenance header; the lock's digest identifies the file.
  * Boundary: reads the preset's file; returns text, writes nothing (`sync` writes).
  * Runtime: node
- * Governing contract: STA-1945 (FR-5, FR-6, FR-7, FR-19, AC-6, AC-7, AC-18, P-009, P-010).
+ * Governing contract: STA-1945 (FR-5, FR-6, FR-7, FR-19, NFR-2, A-8, AC-6, AC-7, AC-18, P-009, P-010); STA-2131.
  * Secrets: none.
  */
 import { existsSync, readFileSync } from "node:fs";
@@ -17,6 +19,7 @@ import { join } from "node:path";
 import { ConfigError } from "./config.mjs";
 import { NAME, PACKAGE } from "./product.mjs";
 import { selects } from "./profiles.mjs";
+import { GUARD_FILE } from "./render-guard.mjs";
 
 /** The rendered file. */
 export const SETTINGS_FILE = ".claude/settings.json";
@@ -24,7 +27,8 @@ export const SETTINGS_FILE = ".claude/settings.json";
 /** A command running one of the installed package's entries. */
 const bin = (/** @type {string} */ entry, /** @type {string} */ args) =>
   `node "$CLAUDE_PROJECT_DIR/node_modules/${PACKAGE}/bin/${entry}.mjs" ${args}`;
-const guard = (/** @type {string} */ event) => bin(`${NAME}-guard`, event);
+/** A command running the repository's guard bundle for one event: it needs no install (A-8). */
+const guard = (/** @type {string} */ event) => `node "$CLAUDE_PROJECT_DIR/${GUARD_FILE}" ${event}`;
 
 /**
  * Flow's hooks by the id a profile selects them by, in the order they are written (the guard's timeouts are core's).
@@ -52,21 +56,30 @@ export const HOOKS = {
 
 /** The hooks every profile gets (FR-5). */
 const MANDATORY = ["guard"];
+/** The hooks that commit or push, rendered only when the config's `session.pushAtEnd` opts in (STA-2131). */
+const PUSHING = ["session-stop"];
 
 /**
- * The `hooks` block for the hook ids `profile` selects, the mandatory ones always.
+ * The `hooks` block for the hook ids `profile` selects, the mandatory ones always; the pushing ones only when
+ * `config.session.pushAtEnd` is true.
  * @param {import("./profiles.mjs").Profile} [profile] defaults to selecting all
+ * @param {import("./config.mjs").Config} [config]
  * @returns {Record<string, { matcher?: string, hooks: { type: "command", command: string, timeout: number }[] }[]>}
  */
-export function hookSettings(profile = { name: "*", agents: [], skills: [], hooks: ["*"] }) {
+export function hookSettings(
+  profile = { name: "*", agents: [], skills: [], hooks: ["*"] },
+  config = {},
+) {
   /** @type {ReturnType<typeof hookSettings>} */
   const out = {};
-  for (const [id, { event, matcher, command, timeout }] of Object.entries(HOOKS))
+  for (const [id, { event, matcher, command, timeout }] of Object.entries(HOOKS)) {
+    if (PUSHING.includes(id) && config.session?.pushAtEnd !== true) continue;
     if (MANDATORY.includes(id) || selects(profile, "hooks", id))
       (out[event] ??= []).push({
         ...(matcher ? { matcher } : {}),
         hooks: [{ type: "command", command, timeout }],
       });
+  }
   return out;
 }
 
@@ -85,7 +98,7 @@ export function renderSettings(ctx) {
   } catch (error) {
     throw new ConfigError(`${file}: ${/** @type {Error} */ (error).message}`);
   }
-  const hooks = hookSettings(ctx.profile);
+  const hooks = hookSettings(ctx.profile, ctx.config);
   for (const [event, entries] of Object.entries(preset.hooks ?? {}))
     hooks[event] = [...(hooks[event] ?? []), ...entries];
   return new Map([[SETTINGS_FILE, `${JSON.stringify({ ...preset, hooks }, null, 2)}\n`]]);

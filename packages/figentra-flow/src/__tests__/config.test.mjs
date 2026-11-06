@@ -9,7 +9,7 @@
  * Runtime: node
  * Governing contract: ADR 0022; STA-1729 phase A (A1); STA-1945 (FR-6).
  */
-// @covers sta-1729:FR-11 sta-1729:AC-035 sta-1729:AC-036 sta-1729:AC-042 sta-1729:P-011
+// @covers sta-1729:FR-11 sta-1729:AC-035 sta-1729:AC-036 sta-1729:AC-042 sta-1729:P-011 sta-1945:FR-22
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -99,6 +99,23 @@ test("schema: unknown keys, wrong kinds, wrong types and missing fields are refu
     /^artifacts\.maxBytes: must be at least 1$/m,
   );
   assert.match(problems({ version: 2 }), /^version: must be 1$/m);
+});
+
+test("schema: approve.tolerate takes check names, but never Baseline or the gate's context", () => {
+  const problems = (/** @type {unknown} */ tolerate) =>
+    validate(SCHEMA, { ...FIGENTRA, approve: { tolerate } }).join("\n");
+  assert.equal(problems(["lint", "typecheck"]), "");
+  assert.equal(problems([]), "");
+  assert.match(
+    problems(["lint", "Baseline"]),
+    /^approve\.tolerate\[1\]: must not be one of Baseline, fflow\/gate$/m,
+  );
+  assert.match(
+    problems(["fflow/gate"]),
+    /^approve\.tolerate\[0\]: must not be one of Baseline, fflow\/gate$/m,
+  );
+  assert.match(problems("lint"), /^approve\.tolerate: must be a array$/m);
+  assert.match(problems([""]), /^approve\.tolerate\[0\]: must not be empty$/m);
 });
 
 // @covers sta-1945:FR-6 sta-1945:AC-6 sta-1945:P-009

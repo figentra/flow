@@ -83,9 +83,10 @@ export async function decide(event, tables) {
 /**
  * The hook: reads the payload on stdin, decides `name` and writes the answer. Always exits 0.
  * @param {string} name the hook event name
+ * @param {import("./tables.mjs").GuardModules} [modules] the preset's guard modules (the bundle's); else its folder's
  * @returns {Promise<number>}
  */
-export async function main(name) {
+export async function main(name, modules) {
   const payload = await readStdin();
   const cwd = typeof payload.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
   const top = process.env.CLAUDE_PROJECT_DIR
@@ -107,7 +108,7 @@ export async function main(name) {
   };
   let tables;
   try {
-    tables = await loadTables(root);
+    tables = await loadTables(root, modules);
   } catch (error) {
     if (name === "PreToolUse")
       process.stdout.write(

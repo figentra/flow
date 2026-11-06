@@ -1,7 +1,7 @@
 /**
  * Figentra Flow file contract:
  * Purpose: hold `fflow mcp` to AC-033 and the MCP shapes of `initialize`, `tools/list` and `tools/call`: the
- *   tool list is exactly the seven read tools and the one writer, `clarification_record` (STA-2098 H4; the
+ *   tool list is exactly the eight read tools and the one writer, `clarification_record` (STA-2098 H4; the
  *   question tools themselves are `questions.test.mjs`'s), each call returns one text item holding the reader's JSON, a reader's
  *   own failure is `isError`, and an unknown method, an unknown tool, bad arguments or a malformed request is a JSON-RPC
  *   error; notifications get no answer.
@@ -58,7 +58,7 @@ test("mcp: initialize negotiates the protocol and announces only tools; notifica
   assert.deepEqual((await call(3, "ping"))?.result, {});
 });
 
-test("mcp: the tool list is exactly seven read tools and one writer, clarification_record (AC-033, STA-2098)", async () => {
+test("mcp: the tool list is exactly eight read tools and one writer, clarification_record (AC-033, STA-2098)", async () => {
   const listed = (await call(1, "tools/list"))?.result.tools;
   const reads = [
     "fflow_status",
@@ -68,6 +68,7 @@ test("mcp: the tool list is exactly seven read tools and one writer, clarificati
     "fflow_metrics",
     "fflow_questions_list",
     "fflow_docs_lookup",
+    "fflow_context",
   ];
   const writes = ["fflow_clarification_record"];
   assert.deepEqual(

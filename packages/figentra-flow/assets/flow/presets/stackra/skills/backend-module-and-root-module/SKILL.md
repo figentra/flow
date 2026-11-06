@@ -114,4 +114,4 @@ const action = app.get(CancelOrderAction);
 
 ## Check
 
-`pnpm validate`, `pnpm --filter <member> test`, `pnpm verify`.
+`pnpm validate`, `pnpm turbo run test --filter=<member>`, `pnpm verify`.

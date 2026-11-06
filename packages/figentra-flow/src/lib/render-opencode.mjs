@@ -2,7 +2,7 @@
  * Figentra Flow file contract:
  * Purpose: the OpenCode projection (STA-1945 FR-7): the preset's `surfaces/opencode.jsonc` as `opencode.jsonc` and
  *   every file under its `surfaces/opencode/` as `.opencode/<path>`, the guard plugin
- *   (`.opencode/plugins/fflow-guard.mjs`, which asks the installed `fflow-guard` entry, as Claude Code's hook does)
+ *   (`.opencode/plugins/fflow-guard.mjs`, which asks the repository's guard bundle, as Claude Code's hook does)
  *   among them. Both carry the provenance header (`//`).
  * Boundary: reads the preset's files; returns text, writes nothing (`sync` writes).
  * Runtime: node

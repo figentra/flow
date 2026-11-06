@@ -1,7 +1,7 @@
 # Figentra Flow: agent guide
 
-One pnpm workspace, one package: `packages/figentra-flow` (`fflow`, binaries `fflow` and `fflow`). Published publicly on npmjs as
-`fflow` from `.github/workflows/release.yml` (the owner's decision of 2026-10-31).
+One pnpm workspace, one package: `packages/figentra-flow` (`@figentra-oss/flow`, binaries `fflow` and deprecated `figentra-flow`). The manifest and
+`.github/workflows/release.yml` describe publication; a checkout version alone is not release evidence.
 
 | Path                                   | What                                                                                                                                                                                                                                                                                                                                                                                                             |
 | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -13,7 +13,7 @@ One pnpm workspace, one package: `packages/figentra-flow` (`fflow`, binaries `ff
 ## Rules
 
 - Commands run in the repository they act on: `ROOT` is the working directory.
-- Plain ESM JavaScript with JSDoc, no runtime dependencies; `tsc` checks it (`checkJs`) and emits the declarations.
+- Plain ESM JavaScript with JSDoc; runtime dependencies are `undici`, `@stackra/console` and `@stackra/validation`; `tsc` checks it (`checkJs`) and emits the declarations.
 - Tests are `node:test` files in `src/__tests__/`, next to their subjects; no network, no real Linear call.
 - `assets/flow/` is Flow's own: change a preset's template or command there; `fflow sync` renders it, and the `derived-from` line stays until a file is rewritten from scratch (ADR 0510).
 - Secrets: `fflow linear` reads `LINEAR_AGENT_TOKEN` or `LINEAR_API_KEY` from the environment, which the calling
@@ -32,3 +32,11 @@ run before the merge and no waiting on CI: open the pull request and merge it ri
 `test` job runs the package's tests on every pull request and push to main; it is not a required check, so a red
 `test` never blocks a merge, but it is fixed before the work counts as done. Nothing installs or tests on a
 workstation.
+
+## Task navigation
+
+Use `fflow context --path packages/figentra-flow --json` for bounded navigation, or repository search before Flow
+is installed. Read [the package context guide](packages/figentra-flow/README.md#task-context-and-documentation-boundaries)
+for owners, examples, verification and standalone/collection behavior. Change preset guidance in
+`assets/flow/presets/*/surfaces/agents-md/agents.md`, not consumers' rendered instructions. Codex already uses the
+harness in `src/adapters/harness/index.mjs`; do not add a duplicate adapter. These paths are relative to the package.

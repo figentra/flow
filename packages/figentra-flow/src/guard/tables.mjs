@@ -2,8 +2,9 @@
  * Figentra Flow file contract:
  * Purpose: the guard engine's tables: the repository's preset's `guard/` modules (`bash-rules.mjs` → `BASH_RULES`,
  *   `path-rules.mjs` → `PATH_RULES` and `PLAN_GATED`, the source paths of the plan gate, `hints.mjs` → `PROMPT`
- *   and `SESSION`), each falling back to the neutral preset's module when the preset has none. The engine's own rules
- *   (the side doors, the neutral path rules) are not table data: `decideBash` and `decidePaths` add them to any table.
+ *   and `SESSION`), each falling back to the neutral preset's module when the preset has none, read from disk or, in
+ *   the guard bundle (`render-guard.mjs`), from the modules it carries. The engine's own rules (the side doors, the
+ *   neutral path rules) are not table data: `decideBash` and `decidePaths` add them to any table.
  * Boundary: reads the configuration and imports preset modules; throws when the configuration did not load, when a
  *   module fails to load or when a rule table is not a list, so the engine denies (closed on the mandatory policies).
  * Runtime: node
@@ -24,16 +25,21 @@ import { FLOW_ASSETS, presetDir } from "../lib/flow-dir.mjs";
 
 const NEUTRAL = join(FLOW_ASSETS, "presets", "neutral", "guard");
 
+/** The preset's `guard/` modules the tables come from. */
+export const TABLE_FILES = ["bash-rules.mjs", "path-rules.mjs", "hints.mjs"];
+
 /**
- * One export of a preset's guard module, or of the neutral preset's when the preset has no such file.
+ * The file a preset's guard module loads from: the preset's, else the neutral preset's; undefined when neither has it.
  * @param {string} dir the preset's `guard/` folder
- * @param {string} file
- * @param {string} name
+ * @param {string} file one of `TABLE_FILES`
  */
-async function table(dir, file, name) {
-  const path = [join(dir, file), join(NEUTRAL, file)].find((p) => existsSync(p));
-  return path ? (await import(pathToFileURL(path).href))[name] : undefined;
-}
+export const tableFile = (dir, file) =>
+  [join(dir, file), join(NEUTRAL, file)].find((p) => existsSync(p));
+
+/**
+ * A guard module of the preset by its file name (one of `TABLE_FILES`), or undefined when it has none.
+ * @typedef {(file: string) => Promise<Record<string, any> | undefined>} GuardModules
+ */
 
 /**
  * A rule table that must be a list (missing is empty).
@@ -48,22 +54,30 @@ function list(value, name) {
 }
 
 /**
- * The guard tables of the repository at `root`.
+ * The guard tables of the repository at `root`, from `modules` or else the preset's folder.
  * shortcut: the profile's selection (T034, landed) is ignored on purpose, so every rule applies (closed), and
  *   `extend` overrides (PR 2) are not applied; both join here with T037/PR 2.
  * @param {string} root
+ * @param {GuardModules} [modules]
  * @returns {Promise<GuardTables>}
  */
-export async function loadTables(root) {
+export async function loadTables(root, modules) {
   const { config, errors } = loadConfig(root);
   // A configuration that did not load (both names, bad JSON) must not fall back to the neutral tables.
   if (errors.length && config.preset === undefined) throw new Error(errors.join("; "));
-  const dir = join(presetDir(root), "guard");
+  const load =
+    modules ??
+    (async (/** @type {string} */ file) => {
+      const path = tableFile(join(presetDir(root), "guard"), file);
+      return path ? import(pathToFileURL(path).href) : undefined;
+    });
+  const table = async (/** @type {string} */ file, /** @type {string} */ name) =>
+    (await load(file))?.[name];
   return {
-    bash: list(await table(dir, "bash-rules.mjs", "BASH_RULES"), "BASH_RULES"),
-    paths: list(await table(dir, "path-rules.mjs", "PATH_RULES"), "PATH_RULES"),
-    planGated: await table(dir, "path-rules.mjs", "PLAN_GATED"),
-    prompt: await table(dir, "hints.mjs", "PROMPT"),
-    session: await table(dir, "hints.mjs", "SESSION"),
+    bash: list(await table("bash-rules.mjs", "BASH_RULES"), "BASH_RULES"),
+    paths: list(await table("path-rules.mjs", "PATH_RULES"), "PATH_RULES"),
+    planGated: await table("path-rules.mjs", "PLAN_GATED"),
+    prompt: await table("hints.mjs", "PROMPT"),
+    session: await table("hints.mjs", "SESSION"),
   };
 }

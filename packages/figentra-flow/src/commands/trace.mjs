@@ -181,7 +181,16 @@ const readInRepo = (/** @type {string} */ p) => {
 const contracts = (/** @type {{ spec: string, plan: string }} */ s) =>
   contractDrift(s.plan.trim() ? s.plan : s.spec, readInRepo);
 
-export function run([mode, ...args]) {
+/**
+ * `fflow trace trace <dir> [--json] | drift <dir> [--base=ref] | ci [--base=ref]`.
+ * @param {string[]} argv
+ * @param {{ json?: (matrix: unknown) => void }} [seams] `json`: where `--json` writes the matrix (the console's
+ *   document, in the CLI)
+ */
+export function run(
+  [mode, ...args],
+  { json = (matrix) => console.log(JSON.stringify(matrix, null, 2)) } = {},
+) {
   const base = args.find((a) => a.startsWith("--base="))?.slice(7) ?? "origin/main";
   const dir = args.find((a) => !a.startsWith("--"));
   const changed = () => {
@@ -192,7 +201,7 @@ export function run([mode, ...args]) {
   if (mode === "trace" && dir) {
     const loaded = load(resolve(dir));
     const t = trace({ ...loaded, tests: testsText() });
-    if (args.includes("--json")) return (console.log(JSON.stringify(t, null, 2)), 0);
+    if (args.includes("--json")) return (json(t), 0);
     for (const r of /** @type {{ id: string, tasks: string[], tested: boolean, via?: string[] }[]} */ ([
       ...t.frs,
       ...t.ps,

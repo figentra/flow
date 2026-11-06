@@ -5,7 +5,8 @@
  *   locked digest, the lock is unreadable or names another Flow version, the config is invalid or names a profile
  *   the preset lacks, the profile differs from the lock's (FR-6), a spec-kit file is left, an override is invalid
  *   (what `validate` refuses, a mandatory policy off among it), the overrides differ from the lock's digest (changed
- *   without a `sync`), an override's review date has passed, or a machine-only skill is committed (FR-8, D1). It
+ *   without a `sync`), an override's review date has passed, or a machine-only skill is committed (FR-8, D1; one whose licence lets a repository carry it may sit at
+ *   `.agents/skills/<id>`, STA-2131). It
  *   warns from 14 days before a review date (STA-1945 FR-4, FR-5, AC-4). Against each Flow record of the checkout
  *   (FR-23, T024) it fails on a task ticked `[x]` without passing evidence (AC-22) and on a task in progress whose
  *   spec, plan or tasks changed since it started (AC-24), each named with its fix; `fflow task start` resets such a
