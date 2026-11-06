@@ -238,13 +238,20 @@ test("gate run with a caller-posting runner (C1): the box gets only the check; t
 
 test("gate run with secrets.oidc and no rendered verdict job, or with --box: refused before any box, nothing recorded (STA-2134)", async (t) => {
   const oidc = { kind: "infisical", paths: { gate: "/ci/gate" }, oidc: { audience: "fflow-ci" } };
-  for (const [config, box, cause] of [
-    [
-      { runner: { kind: "command", run: ["stackra", "run", "{flags}"] }, apps: { owner: "o" } },
-      undefined,
-      /not rendered.*github-actions/,
-    ],
-    [{ runner: { kind: "github-actions" }, apps: { owner: "o" } }, "box1", /--box/],
+  for (const { config, box, cause } of [
+    {
+      config: {
+        runner: { kind: "command", run: ["stackra", "run", "{flags}"] },
+        apps: { owner: "o" },
+      },
+      box: undefined,
+      cause: /not rendered.*github-actions/,
+    },
+    {
+      config: { runner: { kind: "github-actions" }, apps: { owner: "o" } },
+      box: "box1",
+      cause: /--box/,
+    },
   ]) {
     const r = ghRepo({ [CONFIG_FILE]: JSON.stringify({ version: 1, secrets: oidc, ...config }) });
     t.after(r.dispose);
