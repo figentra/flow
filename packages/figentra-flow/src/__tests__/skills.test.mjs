@@ -374,38 +374,53 @@ test("machineOnlyProblems: a committed machine-only skill wherever it sits; not 
   assert.deepEqual(machineOnlyProblems(root, [{ ...machineOnly("tdd"), machineOnly: false }]), []);
 });
 
-test("machineOnlyProblems: a listed skill whose licence allows it may sit at .agents/skills/<id> (STA-2131 a)", (t) => {
+test("machineOnlyProblems: a listed skill whose licence lets a repository carry it may sit at .agents/skills/<id> (STA-2131 a)", (t) => {
   const root = scratch(t);
   spawnSync("git", ["init", "-q"], { cwd: root });
-  const dirs = [
-    ".agents/skills/tdd",
-    ".agents/skills/vitest",
-    ".agents/skills/animate",
-    ".agents/skills/heroui-react-pro",
-    ".claude/skills/tdd",
-    ".agents/skills/other",
-    ".agents/skills/mine",
+  /** @type {[string, string | undefined][]} each folder and its front-matter name */
+  const folders = [
+    [".agents/skills/tdd", "tdd"],
+    [".agents/skills/vitest", undefined],
+    [".agents/skills/accessibility", "accessibility"],
+    [".agents/skills/expo-design-system", "expo-design-system"],
+    [".agents/skills/animate", "animate"],
+    [".agents/skills/heroui-react-pro", "heroui-react-pro"],
+    [".agents/skills/remotion-render", "remotion-render"],
+    [".claude/skills/tdd", "tdd"],
+    [".agents/skills/other", "tdd"],
+    [".agents/skills/changesets", "heroui-react-pro"],
+    [".agents/skills/turborepo", "someone-elses"],
+    [".agents/skills/mine", "mine"],
   ];
-  for (const d of dirs) {
+  for (const [d, name] of folders) {
     mkdirSync(join(root, d), { recursive: true });
-    writeFileSync(
-      join(root, d, "SKILL.md"),
-      `---\nname: ${d.endsWith("other") ? "tdd" : "x"}\n---\n`,
-    );
+    writeFileSync(join(root, d, "SKILL.md"), name ? `---\nname: ${name}\n---\n` : "# A skill\n");
   }
-  spawnSync("git", ["add", ...dirs], { cwd: root });
+  spawnSync("git", ["add", ...folders.map(([d]) => d)], { cwd: root });
+  // Shaped like stackra core's entries: free licences, the owner's own (core's accessibility and
+  // expo-design-system), HeroUI Pro's and Remotion's.
+  const owners = { licence: "the owner's own (its front matter says MIT)" };
   const skills = [
     { ...machineOnly("tdd"), licence: "MIT" },
     { ...machineOnly("vitest"), licence: "Apache-2.0" },
+    { ...machineOnly("changesets"), licence: "MIT" },
+    { ...machineOnly("turborepo"), licence: "MIT" },
+    { ...machineOnly("accessibility"), ...owners },
+    { ...machineOnly("expo-design-system"), ...owners },
     machineOnly("animate"),
     { ...machineOnly("heroui-react-pro"), licence: "HeroUI Pro License Agreement" },
+    { ...machineOnly("remotion-render"), licence: "none declared (Remotion company licence)" },
   ];
-  // Allowed licences at their own folder pass; the owner's own and a licence not allowed stay problems, as does a
-  // listed skill anywhere else or under another folder name; an unlisted skill is not this check's.
+  // Free licences and the owner's own at their own folder pass. Still reported: a licence that does not allow it,
+  // a listed skill anywhere else or under another folder's name, and a free skill's folder holding another skill
+  // (a Pro one or one the list lacks). An unlisted skill is not this check's.
   assert.deepEqual(machineOnlyProblems(root, skills), [
     { dir: ".agents/skills/animate", id: "animate" },
+    { dir: ".agents/skills/changesets", id: "heroui-react-pro" },
     { dir: ".agents/skills/heroui-react-pro", id: "heroui-react-pro" },
     { dir: ".agents/skills/other", id: "tdd" },
+    { dir: ".agents/skills/remotion-render", id: "remotion-render" },
+    { dir: ".agents/skills/turborepo", id: "turborepo" },
     { dir: ".claude/skills/tdd", id: "tdd" },
   ]);
   // The owner's entry allows a licence outside the allowed ones.

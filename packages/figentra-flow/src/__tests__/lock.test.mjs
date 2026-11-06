@@ -170,6 +170,8 @@ test("driftOf: AGENTS.md is read without core's trailing agents-sync rules block
     `# Agents\n\nFlow's text!\n\n${block}\n`,
     `${rendered.trimEnd()}\n\n${block}\nmore\n`,
     `# Agents\n\n${block}\n\nFlow's text.\n`,
+    // Hand text between two blocks: only the tail block is read away.
+    `${rendered.trimEnd()}\n\n${block}\nhand edit\n\n${block}\n`,
   ]) {
     fill(root, [["AGENTS.md", text]]);
     assert.deepEqual(driftOf(root, lock)[0], { path: "AGENTS.md", kind: "changed" }, text);

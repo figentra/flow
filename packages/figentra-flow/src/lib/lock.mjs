@@ -170,11 +170,12 @@ export function upgradeLock(v1) {
 /**
  * The rules block stackra/core's `tools/scripts/agents-sync.mjs` appends to `AGENTS.md` after `sync` renders it
  * (`\n\n<block>\n` at the end of the file): `driftOf` reads `AGENTS.md` without it, so only the rest must match.
+ * One block only, the file's tail: no BEGIN or END marker inside it, so hand text between two blocks stays drift.
  * shortcut: one consumer's block, by its marker text, tolerated only at the end of the root `AGENTS.md`; remove it
  * when STA-2098 H6 (T149) retires agents-sync.
  */
 const RULES_BLOCK =
-  /\n\n<!-- BEGIN generated from \.agents\/rules[^\n]*-->\n[\s\S]*?\n<!-- END generated from \.agents\/rules -->\n$/;
+  /\n\n<!-- BEGIN generated from \.agents\/rules[^\n]*-->\n(?:(?!<!-- (?:BEGIN|END) generated from \.agents\/rules)[\s\S])*\n<!-- END generated from \.agents\/rules -->\n$/;
 
 /**
  * The owned files that differ from the lock: changed (any byte, header or no header; `AGENTS.md` outside core's
