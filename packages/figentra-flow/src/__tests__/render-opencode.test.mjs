@@ -22,7 +22,7 @@ import plugin, {
 import { FLOW_ASSETS } from "../lib/flow-dir.mjs";
 import { GUARD_FILE, guardBundle } from "../lib/render-guard.mjs";
 import { OPENCODE_FILE, renderOpencode } from "../lib/render-opencode.mjs";
-import { repo } from "./__fixtures__/repo.mjs";
+import { repo, sh } from "./__fixtures__/repo.mjs";
 
 const STACKRA = join(FLOW_ASSETS, "presets/stackra");
 const NEUTRAL = join(FLOW_ASSETS, "presets/neutral");
@@ -59,6 +59,44 @@ test("guard plugin: asks the repository's guard bundle; a side door is refused, 
   const bare = repo();
   t.after(bare.dispose);
   assert.equal(refusal(bare.root, bare.root, "shell", "gh pr merge 12"), undefined);
+});
+
+test("guard plugin (STA-2136): the stackra tables hold OpenCode to core's executor layer and its worktree", (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  const wt = join(r.root, "..", "wt");
+  sh(r.root, "worktree", "add", "-q", "-b", "feature/x", wt);
+  for (const dir of [r.root, wt]) {
+    mkdirSync(join(dir, ".agents/hooks"), { recursive: true });
+    writeFileSync(join(dir, GUARD_FILE), guardBundle(STACKRA));
+  }
+  // The executor rules core's OpenCode guard passes, and its executor layer.
+  assert.match(refusal(wt, wt, "shell", "npx cowsay hi") ?? "", /registry code/);
+  assert.match(refusal(wt, wt, "shell", "pnpm bot:gh -- pr view 1") ?? "", /lead's/);
+  assert.ok(refusal(wt, wt, "shell", "curl -s https://example.com"));
+  assert.equal(refusal(wt, wt, "shell", "git status"), undefined);
+  // Edits: inside the session's worktree only, and never in the main checkout unless STACKRA_ALLOW_MAIN=1.
+  assert.equal(refusal(wt, wt, "edit", "notes.md"), undefined);
+  assert.equal(refusal(wt, wt, "edit", join(wt, "notes.md")), undefined);
+  assert.match(
+    refusal(wt, wt, "edit", join(r.root, "README.md")) ?? "",
+    /outside this session's worktree/,
+  );
+  assert.match(
+    refusal(wt, wt, "edit", "../main/README.md") ?? "",
+    /outside this session's worktree/,
+  );
+  assert.match(refusal(r.root, r.root, "edit", "README.md") ?? "", /main checkout/);
+  const before = process.env.STACKRA_ALLOW_MAIN;
+  process.env.STACKRA_ALLOW_MAIN = "1";
+  try {
+    assert.equal(refusal(r.root, r.root, "edit", "README.md"), undefined);
+  } finally {
+    if (before === undefined) delete process.env.STACKRA_ALLOW_MAIN;
+    else process.env.STACKRA_ALLOW_MAIN = before;
+  }
+  // Reading is not editing: the main checkout stays readable.
+  assert.equal(refusal(r.root, r.root, "read", "README.md"), undefined);
 });
 
 test("guard plugin: denies at the permission layer and replaces a refused shell command with its reason", async (t) => {
