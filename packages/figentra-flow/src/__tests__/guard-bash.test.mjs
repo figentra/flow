@@ -3500,6 +3500,17 @@ test("executor (STA-2136): the OpenCode path denies the executor rules; the Clau
   assert.equal(asExecutor("git status"), "allow");
 });
 
+test("executor (STA-2136): the OpenCode path takes no role from the session that started it", () => {
+  const { worktree, done } = repoWithWorktree();
+  const c = "pnpm runway deploy cloudflare-workers --env staging";
+  const qa = (extra) =>
+    run({ tool_input: { command: c }, cwd: worktree }, { STACKRA_ROLE: "qa-release", ...extra })
+      .permissionDecision;
+  assert.equal(qa({}), "allow", "the qa-release Claude path keeps its role");
+  assert.equal(qa(EXECUTOR), "deny", "an OpenCode executor never inherits qa-release");
+  done();
+});
+
 test("executor (STA-2136): core's executor layer denies the lead's commands on the OpenCode path only", () => {
   const { worktree, done } = repoWithWorktree();
   for (const c of [

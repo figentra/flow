@@ -2498,16 +2498,20 @@ function withoutPrograms(words) {
  * @param {Record<string, any>} payload
  */
 export function payloadOptions(cwd, payload) {
+  // Core's OpenCode guard passes no role and no scratchpad: an executor never inherits a lead's (STA-2136).
+  const executor = isExecutor();
   return {
     cwd,
     agentType: String(payload.agent_type ?? ""),
-    role: String(process.env.STACKRA_ROLE ?? ""),
-    scratchpad: sessionScratchpad({
-      scratchpadDir: typeof payload.scratchpad_dir === "string" ? payload.scratchpad_dir : "",
-      sessionIds: [payload.session_id, process.env.CLAUDE_CODE_SESSION_ID],
-      projectDirs: [process.env.CLAUDE_PROJECT_DIR, cwd],
-    }),
-    executor: isExecutor(),
+    role: executor ? "" : String(process.env.STACKRA_ROLE ?? ""),
+    scratchpad: executor
+      ? ""
+      : sessionScratchpad({
+          scratchpadDir: typeof payload.scratchpad_dir === "string" ? payload.scratchpad_dir : "",
+          sessionIds: [payload.session_id, process.env.CLAUDE_CODE_SESSION_ID],
+          projectDirs: [process.env.CLAUDE_PROJECT_DIR, cwd],
+        }),
+    executor,
   };
 }
 
