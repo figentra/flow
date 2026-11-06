@@ -141,14 +141,16 @@ export function guardBundle(presetDir) {
     throw new Error("src/lib/product.mjs no longer reads package.json as the guard bundle expects");
   files["src/lib/product.mjs"] = product.replace(READS_MANIFEST, () => manifest.trim());
   const bare = Object.fromEntries(Object.entries(into.exports).filter(([, path]) => path in files));
+  // `<` escaped: the sources' `<!-- flow:` and HTML markers must not read as markers in a rendered file.
+  const json = (/** @type {unknown} */ value) => JSON.stringify(value).replaceAll("<", "\\u003c");
   return `// The guard, self-contained (STA-1945 NFR-2, A-8): \`node ${GUARD_FILE} <event>\` runs with no install.
 import { registerHooks } from "node:module";
 
 process.exit(
   await (${boot})(
-    ${JSON.stringify(files)},
-    ${JSON.stringify(bare)},
-    ${JSON.stringify(guard)},
+    ${json(files)},
+    ${json(bare)},
+    ${json(guard)},
     process.argv[2] ?? "",
     registerHooks,
     new URL("./${NAME}-guard/", import.meta.url).href,

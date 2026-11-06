@@ -76,10 +76,7 @@ for (const preset of ["stackra", "neutral"])
       hook(root, "PreToolUse", { tool_name: "Bash", tool_input: { command } });
     const denied = bash("gh pr merge 12");
     assert.equal(denied?.permissionDecision, "deny");
-    assert.match(
-      denied?.permissionDecisionReason,
-      /fflow land <pr>[^]*Blocked command: gh pr merge 12/,
-    );
+    assert.match(denied?.permissionDecisionReason, /Blocked command: gh pr merge 12$/);
     assert.equal(bash("git status"), undefined);
     assert.equal(
       hook(root, "PreToolUse", { tool_name: "Read", tool_input: { file_path: join(root, ".env") } })
