@@ -3,9 +3,9 @@
  * Purpose: hold the guard bundle to STA-1945 NFR-2 as amended by A-8 (STA-2131): `sync` writes
  *   `.agents/hooks/fflow-guard.mjs` and locks it; the rendered Claude Code hooks and the OpenCode plugin run that
  *   file; it imports only `node:` modules and, in a folder with no node_modules, denies a side door, allows the rest,
- *   gives the preset's prompt hints and runs the plan gate, on the stackra and the neutral preset; `check` names a
- *   hand edit.
- * Boundary: temporary folders; the bundle runs as a child process; no network.
+ *   gives the preset's prompt hints and runs the plan gate, on the stackra and the neutral preset; oxfmt leaves it
+ *   as rendered; `check` names a hand edit.
+ * Boundary: temporary folders; the bundle and the workspace's oxfmt run as child processes; no network.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1945; STA-2131.
  */
@@ -13,8 +13,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { check } from "../commands/check.mjs";
 import { sync } from "../commands/sync.mjs";
@@ -70,7 +80,9 @@ for (const preset of ["stackra", "neutral"])
   test(`guard bundle: with no install it denies a side door and allows the rest (${preset})`, (t) => {
     const root = synced(t, preset);
     assert.ok(!existsSync(join(root, "node_modules")));
-    const imports = readFileSync(join(root, GUARD_FILE), "utf8").match(/^import .*$/gm);
+    // The bundle's own imports: the embedded modules' lines (in template literals) come after `FILES`.
+    const text = readFileSync(join(root, GUARD_FILE), "utf8");
+    const imports = text.slice(0, text.indexOf("\nconst FILES = ")).match(/^import .*$/gm);
     assert.deepEqual(imports, ['import { registerHooks } from "node:module";']);
     const bash = (/** @type {string} */ command) =>
       hook(root, "PreToolUse", { tool_name: "Bash", tool_input: { command } });
@@ -108,6 +120,21 @@ test("guard bundle: the stackra preset's hints and plan gate run from the bundle
   // The gate's own check ran: it names the unanswered Impact fields, so its modules loaded from the bundle.
   assert.match(write()?.permissionDecisionReason, /Impact: `Apps touched` is missing/);
 });
+
+/** The workspace's oxfmt (a root dev dependency), the formatter a synced repository runs as `oxfmt --check .`. */
+const OXFMT = fileURLToPath(new URL("../../../../node_modules/.bin/oxfmt", import.meta.url));
+
+for (const preset of ["stackra", "neutral"])
+  test(`guard bundle: oxfmt leaves it as rendered (${preset})`, (t) => {
+    if (!existsSync(OXFMT)) return t.skip("oxfmt is not installed");
+    const root = synced(t, preset);
+    // A folder with no oxfmt config: oxfmt's defaults (printWidth 100, Stackra's too).
+    const dir = mkdtempSync(join(tmpdir(), "flow-guard-fmt-"));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    copyFileSync(join(root, GUARD_FILE), join(dir, "fflow-guard.mjs"));
+    const r = spawnSync(OXFMT, ["--check", "fflow-guard.mjs"], { cwd: dir, encoding: "utf8" });
+    assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  });
 
 test("guard bundle: check names a hand edit", (t) => {
   const root = synced(t, "neutral");

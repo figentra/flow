@@ -53,14 +53,14 @@ const READS_MANIFEST =
  * @param {Record<string, string>} bare
  * @param {Record<string, string>} guard
  * @param {string} event
- * @param {typeof import("node:module").registerHooks} registerHooks
+ * @param {typeof import("node:module").registerHooks} register
  * @param {string} base
  * @returns {Promise<number>}
  */
-export async function boot(files, bare, guard, event, registerHooks, base) {
+export async function boot(files, bare, guard, event, register, base) {
   const url = (/** @type {string} */ path) => new URL(path, base).href;
   const sources = new Map(Object.entries(files).map(([path, text]) => [url(path), text]));
-  registerHooks({
+  register({
     resolve(specifier, context, next) {
       const to = bare[specifier]
         ? url(bare[specifier])
@@ -115,6 +115,25 @@ function collect(file, into) {
 }
 
 /**
+ * A module's text as a template literal: oxfmt leaves a template's lines as they are, so the bundle is stable under
+ * a repository's `oxfmt --check`. `<` escaped: the sources' `<!-- flow:` and HTML markers must not read as
+ * markers in a rendered file.
+ * @param {string} text
+ */
+const source = (text) =>
+  `\`${text.replaceAll("\\", "\\\\").replaceAll("`", "\\`").replaceAll("${", "\\${").replaceAll("<", "\\u003c")}\``;
+
+/**
+ * An object literal laid out as oxfmt prints it: one quoted key per line, a trailing comma; `{}` when empty.
+ * @param {Record<string, string>} entries
+ * @param {(value: string) => string} value
+ */
+const object = (entries, value) => {
+  const lines = Object.entries(entries).map(([k, v]) => `  ${JSON.stringify(k)}: ${value(v)},\n`);
+  return lines.length ? `{\n${lines.join("")}}` : "{}";
+};
+
+/**
  * The bundle's text for the preset at `presetDir`.
  * @param {string} presetDir
  * @returns {string}
@@ -141,21 +160,22 @@ export function guardBundle(presetDir) {
     throw new Error("src/lib/product.mjs no longer reads package.json as the guard bundle expects");
   files["src/lib/product.mjs"] = product.replace(READS_MANIFEST, () => manifest.trim());
   const bare = Object.fromEntries(Object.entries(into.exports).filter(([, path]) => path in files));
-  // `<` escaped: the sources' `<!-- flow:` and HTML markers must not read as markers in a rendered file.
-  const json = (/** @type {unknown} */ value) => JSON.stringify(value).replaceAll("<", "\\u003c");
-  return `// The guard, self-contained (STA-1945 NFR-2, A-8): \`node ${GUARD_FILE} <event>\` runs with no install.
+  // Lint: stackra's file-contract and docblock-shape rules do not fit a rendered bundle (its header is fflow's).
+  return `/* oxlint-disable stackra/file-contract, stackra/docblock-shape -- rendered by ${NAME} sync, its bytes locked */
+// The guard, self-contained (STA-1945 NFR-2, A-8): \`node ${GUARD_FILE} <event>\` runs with no install.
 import { registerHooks } from "node:module";
 
-process.exit(
-  await (${boot})(
-    ${json(files)},
-    ${json(bare)},
-    ${json(guard)},
-    process.argv[2] ?? "",
-    registerHooks,
-    new URL("./${NAME}-guard/", import.meta.url).href,
-  ),
-);
+const FILES = ${object(files, source)};
+
+const BARE = ${object(bare, JSON.stringify)};
+
+const GUARD = ${object(guard, JSON.stringify)};
+
+const BASE = new URL("./${NAME}-guard/", import.meta.url).href;
+
+process.exit(await boot(FILES, BARE, GUARD, process.argv[2] ?? "", registerHooks, BASE));
+
+${boot}
 `;
 }
 
