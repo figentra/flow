@@ -18,7 +18,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 ## Outline
 
 1. **Ready**: the head is committed and pushed (`fflow gate run` refuses a dirty tree or an unpushed head).
-2. **Slots**: run `stackra testbed status --json`. Add up `heavy.free` and `light.free` over the regions with
+2. **Slots**: run `testbed status --json`. Add up `heavy.free` and `light.free` over the regions with
    `"reachable": true`: that is N, the shards to run, at least 1 and at most 12. A call over the cap waits inside
    `run`, so N is the fan-out, not a limit on correctness.
 3. **Fan out**: run `fflow gate run --shards <N>` in the worktree. It deals the workspace's packages into N shards,
@@ -33,7 +33,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - 124: the 3-hour limit; red. Run with more shards, or make the check faster.
    - 73 (no free slot) or 75 (no healthy box), still after the gate's one retry: an infrastructure failure, never a
      test failure, so nothing is posted, unless another shard failed (then the status is red). Wait, then start
-     again at step 2; if 75 persists, report `stackra testbed status`.
+     again at step 2; if 75 persists, report `testbed status`.
    - 2: the testbed refused the call (usage); report it.
 5. **Ordering**: the testbed keeps no queue across calls, so the gate owns the order: one `gate run` per head at a
    time; a new push needs a new gate.
