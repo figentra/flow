@@ -272,7 +272,7 @@ setting you have not made refuses and names it.
   - `ssh` with `host`, the same as `--box <host>` for one run;
   - `local`, the caller's machine;
   - `command` with `run`, an argument list where `{label}`, `{dir}` and `{command}` are replaced and `{flags}` takes
-    the arguments after `gate run --`. Ours is `["stackra", "testbed", "run", "{label}", "{dir}", "{command}", "{flags}"]`.
+    the arguments after `gate run --`. Ours is `["testbed", "run", "{label}", "{dir}", "{command}", "{flags}"]`.
     A command runner brings its own secrets; `"secrets": true` wraps the poster with the secrets port as `ssh` and
     `local` do.
 

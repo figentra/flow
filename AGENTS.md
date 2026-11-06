@@ -28,7 +28,7 @@ Owner decision 2026-11-03 (STA-2083, replaces "Tests run on the box"): nothing w
 run before the merge and no waiting on CI: open the pull request and merge it right away
 (`gh pr merge --squash --admin`), then add the Linear label `needs-testing` to its STA issue and a
 `Needs testing: <what to run>` line to the pull request body. The tester lane later runs those tests on the box
-(`stackra testbed run "FLOW STA-n" . "pnpm verify"`) and removes the label. Since 2026-11-04 (owner default O4) CI's
+(`testbed run "FLOW STA-n" . "pnpm verify"`) and removes the label. Since 2026-11-04 (owner default O4) CI's
 `test` job runs the package's tests on every pull request and push to main; it is not a required check, so a red
 `test` never blocks a merge, but it is fixed before the work counts as done. Nothing installs or tests on a
 workstation.
