@@ -45,7 +45,8 @@ import {
   runsOpaque,
   stripHeredocs,
 } from "./inbox.mjs";
-import { isSecretPath } from "./path-rules.mjs";
+import { decideExecutor } from "./executor.mjs";
+import { isExecutor, isSecretPath } from "./path-rules.mjs";
 import { REVIEWER_AGENTS } from "./reviewer-agents.mjs";
 
 /** The home directory, read once: `homedir()` is a system call, and every word is checked against it. */
@@ -2491,7 +2492,8 @@ function withoutPrograms(words) {
 /**
  * `decideBash`'s options from the hook payload, moved from core's `guard-bash.mjs`: the shell's directory, the agent
  * type, the session's role (`STACKRA_ROLE` in the hook's environment, which is the session's, so an agent cannot set
- * it; owner decision 2026-10-31) and its scratchpad.
+ * it; owner decision 2026-10-31), its scratchpad, and whether an OpenCode executor runs it (`isExecutor`, which core's
+ * OpenCode guard always passes).
  * @param {string} cwd
  * @param {Record<string, any>} payload
  */
@@ -2505,13 +2507,16 @@ export function payloadOptions(cwd, payload) {
       sessionIds: [payload.session_id, process.env.CLAUDE_CODE_SESSION_ID],
       projectDirs: [process.env.CLAUDE_PROJECT_DIR, cwd],
     }),
+    executor: isExecutor(),
   };
 }
 
 /**
  * Core's decision as the engine's rules: one rule for its deny, one for its ask, deciding once per call. `extra`
  * overrides `decideBash`'s options (the differential test lifts `deadlineMs` and names the scratchpad, as core's did).
- * @param {{ deadlineMs?: number, scratchpad?: string, role?: string }} [extra]
+ * An executor's command that core's rules do not deny is put to the executor layer too (`decideExecutor`), as core's
+ * OpenCode guard does.
+ * @param {{ deadlineMs?: number, scratchpad?: string, role?: string, executor?: boolean }} [extra]
  * @returns {import("@figentra-oss/flow/guard").BashRule[]}
  */
 export function bashRules(extra = {}) {
@@ -2522,13 +2527,15 @@ export function bashRules(extra = {}) {
     /** @type {string} */ cwd,
     /** @type {{ payload?: Record<string, any> } | undefined} */ how,
   ) => {
-    if (last?.command !== command || last.cwd !== cwd || last.how !== how)
-      last = {
-        command,
-        cwd,
-        how,
-        d: decideBash(command, { ...payloadOptions(cwd, how?.payload ?? {}), ...extra }),
-      };
+    if (last?.command !== command || last.cwd !== cwd || last.how !== how) {
+      const options = { ...payloadOptions(cwd, how?.payload ?? {}), ...extra };
+      let d = decideBash(command, options);
+      if (options.executor && d.decision !== "deny") {
+        const e = decideExecutor(command);
+        if (e.decision === "deny") d = e;
+      }
+      last = { command, cwd, how, d };
+    }
     return last.d;
   };
   /** Core's reason when it decided `decision`, else false. */

@@ -25,6 +25,7 @@ import { presetRoot, runHook, stackraGuard } from "./__fixtures__/guard.mjs";
 
 const { HUMAN_ASKS, UNATTENDED_HINT, decideBash, sessionScratchpad, unattended } =
   await stackraGuard("bash-rules.mjs");
+const { decideExecutor } = await stackraGuard("executor.mjs");
 
 /** The folder whose configuration picks the stackra preset, so the hook entry loads its tables. */
 const STACKRA = presetRoot();
@@ -3459,4 +3460,89 @@ test("deploys: runway run by path, tsx or a script, and the secrets sync, are de
     assert.equal(decision(c, worktree), "deny", c);
   assert.notEqual(decision("node src/node/runway.ts deploy --dry-run", worktree), "deny");
   done();
+});
+
+test("gates: a protection rule's callback, and a pending_deployments field or body with no -X, are denied (STA-2099)", () => {
+  const { worktree, done } = repoWithWorktree();
+  const runs = "repos/o/r/actions/runs/1";
+  for (const c of [
+    `pnpm bot:gh -- api ${runs}/deployment_protection_rule -f environment_name=production -f state=approved`,
+    `pnpm bot:gh -- api ${runs}/pending_deployments -f state=approved`,
+    `pnpm bot:gh -- api ${runs}/pending_deployments -F state=approved`,
+    `pnpm bot:gh -- api ${runs}/pending_deployments --input body.json`,
+  ]) {
+    const out = run({ tool_input: { command: c }, cwd: worktree });
+    assert.equal(out.permissionDecision, "deny", c);
+    assert.match(out.permissionDecisionReason, /STA-2099/, c);
+  }
+  done();
+});
+
+/** The environment the OpenCode guard plugin runs the hook with (STA-2136): an unattended executor. */
+const EXECUTOR = { STACKRA_EXECUTOR: "1" };
+/** The hook's permissionDecision for `command` on the OpenCode path. */
+const asExecutor = (command, cwd = root) =>
+  run({ tool_input: { command }, cwd }, EXECUTOR).permissionDecision;
+
+test("executor (STA-2136): the OpenCode path denies the executor rules; the Claude path still allows them", () => {
+  for (const c of [
+    "npx cowsay hi",
+    "pnpm dlx cowsay hi",
+    "eas build --platform ios",
+    "wrangler secret list",
+    "wrangler d1 execute db --remote --command 'select 1'",
+    "encore env create staging",
+  ]) {
+    assert.equal(asExecutor(c), "deny", c);
+    assert.equal(decision(c, root), "allow", c);
+  }
+  assert.equal(asExecutor("pnpm secrets:import --confirm"), "deny");
+  assert.equal(asExecutor("git status"), "allow");
+});
+
+test("executor (STA-2136): core's executor layer denies the lead's commands on the OpenCode path only", () => {
+  const { worktree, done } = repoWithWorktree();
+  for (const c of [
+    "curl -s https://example.com",
+    "wget https://example.com/x",
+    "git branch -D feature/y",
+    "git worktree prune",
+    "docker compose down -v",
+    "encore secret set --type dev X",
+    "pnpm bot:gh -- pr view 1",
+    "pnpm linear comment STA-1 x",
+    "pnpm bot:review -- 1",
+    "pnpm bot:git -- fetch origin && echo x",
+    "pnpm bot:git -- push origin main",
+    "figentra bot gh pr view 1",
+    "figentra pr merge 1",
+    "figentra linear comment STA-1 x",
+    "pnpm exec figentra secrets import --list",
+  ])
+    assert.equal(asExecutor(c, worktree), "deny", c);
+  // The Claude path is unchanged: the wrappers stay allowed there (STA-400).
+  for (const c of ["pnpm bot:gh -- pr view 1", "pnpm linear comment STA-1 x"])
+    assert.equal(decision(c, root), "allow", c);
+  done();
+});
+
+test("executor (STA-2136): the layer allows the executor's own fetch and push, exactly, and plain work", () => {
+  for (const c of [
+    "pnpm bot:git -- fetch origin",
+    "pnpm bot:git -- fetch origin main",
+    "pnpm bot:git -- push origin HEAD",
+    "pnpm bot:git -- push --force-with-lease origin HEAD",
+    "git status",
+    "git submodule status",
+    "grep -n 'figentra bot' a.mjs",
+  ])
+    assert.equal(decideExecutor(c).decision, "allow", c);
+  for (const c of [
+    "FOO=1 pnpm bot:git -- push origin HEAD",
+    "pnpm bot:git -- push origin HEAD:main",
+    "echo $(curl -s https://example.com)",
+    "sh -c 'git push origin HEAD'",
+    "export -p",
+  ])
+    assert.equal(decideExecutor(c).decision, "deny", c);
 });

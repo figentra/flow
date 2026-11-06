@@ -4,9 +4,10 @@
  *   repository's guard bundle (`.agents/hooks/fflow-guard.mjs PreToolUse`, which `fflow sync` writes and which runs
  *   with no install, A-8) as the Claude Code hook puts it, so both assistants answer to one engine and one set of
  *   preset tables. An ask is a deny here: OpenCode runs unattended (`--auto` approves any ask). A shell command is
- *   decided again with its real working folder just before it runs. When the bundle cannot run (missing until
- *   `sync`), the call is allowed, as Claude Code allows on a hook that fails; the tables failing to load deny, as the
- *   engine itself does.
+ *   decided again with its real working folder just before it runs. The call runs with `STACKRA_EXECUTOR=1`, so the
+ *   stackra tables hold it to core's executor layer (lead-only commands, edits only inside the session's worktree,
+ *   none in the main checkout). When the bundle cannot run (missing until `sync`), the call is allowed, as Claude
+ *   Code allows on a hook that fails; the tables failing to load deny, as the engine itself does.
  * Boundary: runs `node` with the event on stdin; reads its answer; changes only the call's effect or command.
  * Runtime: OpenCode v2 plugin (default export `{ id, setup }`, https://opencode.ai/v2/docs/build/plugins).
  * Governing contract: STA-1945 (FR-5, FR-7, P-010, P-012).
@@ -42,7 +43,8 @@ export function refusal(root, cwd, action, resource) {
       cwd,
       input: JSON.stringify({ tool_name: tool[0], tool_input: { [tool[1]]: resource }, cwd }),
       encoding: "utf8",
-      env: { ...process.env, CLAUDE_PROJECT_DIR: root },
+      // An OpenCode session is an unattended executor: core's executor rules and layer apply (STA-2136).
+      env: { ...process.env, CLAUDE_PROJECT_DIR: root, STACKRA_EXECUTOR: "1" },
       timeout: 5000,
     },
   );
