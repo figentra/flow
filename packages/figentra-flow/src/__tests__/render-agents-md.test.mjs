@@ -2,7 +2,7 @@
  * Figentra Flow file contract:
  * Purpose: hold AGENTS.md and CLAUDE.md to STA-1945 FR-7: the stackra preset's shared blocks filled with the
  *   repository's facts (`.flow/readme.yml`, the configuration's preset, spec folder, tracker and `agentsMd.facts`);
- *   a fact the repository lacks drops its block; CLAUDE.md imports AGENTS.md; the neutral preset's blocks name no
+ *   a fact the repository lacks drops its block; `agentsMd.land` replaces the landing line (STA-2131); CLAUDE.md imports AGENTS.md; the neutral preset's blocks name no
  *   brand; a preset without the surface renders nothing.
  * Boundary: temporary folders; no process, no network.
  * Runtime: node
@@ -63,6 +63,28 @@ test("renderAgentsMd: without readme data, tracker or facts, their blocks go and
   // The preset named is the one rendered, whatever the configuration omits.
   assert.match(text, /the stackra preset\)\. Specs live in `\.agents\/specs\/`\./);
   assert.doesNotMatch(text, /## What it is|## Architecture|## This repository|branches are/);
+});
+
+test("renderAgentsMd (STA-2131): agentsMd.land replaces the landing line; without it, fflow land", (t) => {
+  const root = temp(t);
+  const land =
+    "Merge right away with the admin merge and label the issue `needs-testing` (STA-2083).";
+  for (const presetDir of [STACKRA, NEUTRAL]) {
+    const text =
+      renderAgentsMd({ root, config: { agentsMd: { land } }, presetDir }).get("AGENTS.md") ?? "";
+    assert.ok(text.includes(`never next to the repository.\n- ${land}\n\n## Rules`), presetDir);
+    assert.doesNotMatch(text, /Land with `fflow land <pr>`/);
+    assert.match(
+      renderAgentsMd({ root, config: {}, presetDir }).get("AGENTS.md") ?? "",
+      /\n- Land with `fflow land <pr>`: it waits for the gate/,
+    );
+  }
+  assert.throws(
+    () => renderAgentsMd({ root, config: { agentsMd: { land: 1 } }, presetDir: STACKRA }),
+    (error) =>
+      error instanceof ConfigError &&
+      error.message === "flow.config.json: agentsMd.land must be one Markdown string",
+  );
 });
 
 test("renderAgentsMd: agentsMd.facts that is not one string is a ConfigError", (t) => {

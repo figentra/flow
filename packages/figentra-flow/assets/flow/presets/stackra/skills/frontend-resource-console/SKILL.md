@@ -87,5 +87,5 @@ export class OrderResource extends Resource(Order, {
 
 ## Check
 
-`pnpm --filter @figentra/console test typecheck build`, then `pnpm verify`. Review: `design-brand-reviewer`,
+`pnpm turbo run test typecheck build --filter=@figentra/console`, then `pnpm verify`. Review: `design-brand-reviewer`,
 `accessibility-reviewer`, `performance-reviewer`.

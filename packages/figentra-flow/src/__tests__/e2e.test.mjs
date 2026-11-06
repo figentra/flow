@@ -95,7 +95,8 @@ test("e2e: the packed package installs .flow/ and carries one spec from gate dir
     specFile,
     "# Spec\n\n**Status**: Draft\n**Issue**: STA-1\n**Clarifications status**: pending\n",
   );
-  const paths = JSON.parse(flow(repo, ["spec", "paths", "--json", "--paths-only"]).out);
+  // `--json` is the engine's one `{ ok, data }` document; the spec's keys are its `data`.
+  const paths = JSON.parse(flow(repo, ["spec", "paths", "--json", "--paths-only"]).out).data;
   assert.equal(paths.FEATURE_SPEC, specFile);
 
   const refused = flow(repo, ["spec", "setup-plan", "--json"]);
@@ -104,8 +105,11 @@ test("e2e: the packed package installs .flow/ and carries one spec from gate dir
   writeFileSync(specFile, readFileSync(specFile, "utf8").replace("pending", "complete"));
   const plan = flow(repo, ["spec", "setup-plan", "--json"]);
   assert.equal(plan.status, 0, plan.err);
-  assert.equal(JSON.parse(plan.out).IMPL_PLAN, join(repo, ".agents/specs/sta-1-widget/plan.md"));
-  const tasks = JSON.parse(flow(repo, ["spec", "setup-tasks", "--json"]).out);
+  assert.equal(
+    JSON.parse(plan.out).data.IMPL_PLAN,
+    join(repo, ".agents/specs/sta-1-widget/plan.md"),
+  );
+  const tasks = JSON.parse(flow(repo, ["spec", "setup-tasks", "--json"]).out).data;
   assert.match(tasks.TASKS_TEMPLATE_CONTENT, /\S/);
 
   run(repo, "git", ["add", "-A"]);

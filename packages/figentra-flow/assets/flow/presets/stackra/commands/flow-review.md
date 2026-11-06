@@ -43,5 +43,5 @@ The pull request number. You **MUST** consider the user input before proceeding 
 
 - Reviewers and verifiers read; they never edit, commit or push.
 - Never drop a finding or change its `confirmed` to get a pass.
-- This review does not replace the independent `AI-REVIEW: PASS` verdict of the `stackra-reviewer` App (ADR 0230),
-  which `land` also requires.
+- This review does not replace an independent reviewer's verdict. The AI review is advisory (ADR 0523 decision
+  6): `land` warns without a PASS from a listed reviewer App, and the stackra-reviewer App is retired.

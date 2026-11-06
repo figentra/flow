@@ -37,7 +37,7 @@ Navigation (ADR 0126).
 1. Reuse first; tokens only; logical start/end styles; strings are i18n keys.
 2. Server data through the generated client; offline writes through the mutation queue with idempotency keys.
 3. Verify on a simulator or device when the change is visual (iOS and Android, light and dark, LTR and RTL).
-4. `pnpm --filter @figentra/mobile test typecheck`, then `pnpm verify`.
+4. `pnpm turbo run test typecheck --filter=@figentra/mobile`, then `pnpm verify`.
 
 ## Never
 

@@ -1,0 +1,29 @@
+{
+  "product": "pay",
+  "environment": "staging",
+  "sha": "4f1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c",
+  "dryRun": false,
+  "surfaces": {
+    "product": "pay",
+    "uploaded": ["pay/console/1.4.0/entry.js", "pay/console/1.4.0/entry.css"],
+    "written": [
+      "host:pay.staging.figentra.com",
+      "wellknown:pay.staging.figentra.com",
+      "release:pay/console"
+    ],
+    "releases": {
+      "console": {
+        "version": "1.4.0",
+        "url": "https://assets.example.com/pay/console/1.4.0/entry.js",
+        "base": "https://assets.example.com/pay/console/1.4.0/",
+        "targets": "console@3",
+        "modulepreload": [],
+        "css": ["https://assets.example.com/pay/console/1.4.0/entry.css"]
+      }
+    },
+    "canaries": {}
+  },
+  "seeds": {},
+  "submitted": {},
+  "planned": []
+}

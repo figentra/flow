@@ -11,19 +11,14 @@
  *   variable `<prefix>OIDC_IDENTITY_ID` the workflow passes (Infisical plan K7). The verdict, approve and merge jobs use it.
  * Runtime: node (GitHub Actions); Node built-ins only.
  * Governing contract: ADR 0523; the L2 design (Tokens and permissions); STA-1945.
- * Secrets: `<prefix>GATE_APP_ID` and `<prefix>GATE_PRIVATE_KEY` from Infisical (the pre-0.2.2 prefix's names when
- *   the new ones answer 404), the OIDC JWT, the Infisical access token, the App JWT and the installation token: each
- *   is masked (`::add-mask::`) as it arrives and lives only in this process's memory, never in the environment,
- *   `GITHUB_OUTPUT`, a file or a log. Errors name the step, the method, the path and the HTTP status, never a value.
+ * Secrets: `<prefix>GATE_APP_ID` and `<prefix>GATE_PRIVATE_KEY` from Infisical, the OIDC JWT, the Infisical access
+ *   token, the App JWT and the installation token: each is masked (`::add-mask::`) as it arrives and lives only in
+ *   this process's memory, never in the environment, `GITHUB_OUTPUT`, a file or a log. Errors name the step, the
+ *   method, the path and the HTTP status, never a value.
  */
 import { appJwt } from "./gate-post.mjs";
 import { netFetch } from "./net.mjs";
-import {
-  APPROVE_WORKFLOW,
-  ENV_PREFIX,
-  LEGACY_ENV_PREFIX,
-  OIDC_IDENTITY_VARIABLE,
-} from "./product.mjs";
+import { APPROVE_WORKFLOW, ENV_PREFIX, OIDC_IDENTITY_VARIABLE } from "./product.mjs";
 
 const API = "https://api.github.com";
 
@@ -231,23 +226,9 @@ export async function mint(role, options = {}) {
     });
     return text(body?.secret?.secretValue, `infisical secret: ${key}`);
   };
-  // Infisical may still hold the names from before 0.2.2: a 404 on the new name tries the old one once, and when that
-  // fails too the new name's error is the one thrown.
-  const named = async (/** @type {string} */ name) => {
-    try {
-      return await secret(`${ENV_PREFIX}${name}`);
-    } catch (error) {
-      if (/** @type {{ status?: number }} */ (error).status !== 404) throw error;
-      try {
-        return await secret(`${LEGACY_ENV_PREFIX}${name}`);
-      } catch {
-        throw error;
-      }
-    }
-  };
-  const appId = await named("GATE_APP_ID");
+  const appId = await secret(`${ENV_PREFIX}GATE_APP_ID`);
   if (!/^\d+$/.test(appId)) throw fail(`infisical secret: ${ENV_PREFIX}GATE_APP_ID is not an id`);
-  const key = await named("GATE_PRIVATE_KEY");
+  const key = await secret(`${ENV_PREFIX}GATE_PRIVATE_KEY`);
 
   // 5. The App JWT.
   let appToken;

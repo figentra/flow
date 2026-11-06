@@ -10,7 +10,9 @@
  *   run is this repository's, of the gate workflow's path, for a `pull_request`, completed, from a head in this
  *   repository that an open PR still points at. GitHub REST only; reads with the job's token, writes one status with a
  *   `verdict` token from `app-token.mjs`. Never reads the run's artifacts or logs, never checks out or runs the PR's
- *   code. Exits 1 only on an infrastructure error (an API or mint failure).
+ *   code. Exits 1 only on an infrastructure error (an API or mint failure). With `secrets.oidc` this job is the only
+ *   writer of `fflow/gate` (STA-2134): `GITHUB_TOKEN` only reads, and off main's approval job (a box, a workstation,
+ *   a user's token) the mint refuses and nothing is posted.
  * Runtime: node (GitHub Actions)
  * Governing contract: ADR 0523; the L2 design (verdict, PR F; Threat model); STA-1945.
  * Secrets: `GITHUB_TOKEN` from the environment; the Flow App token is minted in process and revoked; neither is

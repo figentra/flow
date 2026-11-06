@@ -17,7 +17,7 @@ the lead decides what to do with a BLOCK.
 ## Owns
 
 - Verdict PASS or BLOCK with a short reason list, each item with file:line or screenshot reference.
-- Post the verdict as one new issue comment: `pnpm bot:review -- pr comment <n> --body-file <file>`. Never `pr review`.
+- Post the verdict as one new issue comment: `pnpm bot:gh -- pr comment <n> --body-file <file>`. Never `pr review`.
 
 ## Checks
 

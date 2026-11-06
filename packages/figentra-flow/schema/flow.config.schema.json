@@ -415,6 +415,16 @@
             "type": "string",
             "pattern": "^[\\w-]+$"
           }
+        },
+        "tolerate": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "not": {
+              "enum": ["Baseline", "fflow/gate"]
+            }
+          }
         }
       }
     },
@@ -545,6 +555,60 @@
         "facts": {
           "type": "string",
           "minLength": 1
+        },
+        "land": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pushAtEnd": {
+          "type": "boolean"
+        },
+        "contextCommands": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          }
+        }
+      }
+    },
+    "claudeCode": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabledPlugins": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        },
+        "extraKnownMarketplaces": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["source"],
+            "properties": {
+              "source": {
+                "type": "object",
+                "required": ["source"],
+                "properties": {
+                  "source": {
+                    "enum": ["github", "git", "url"]
+                  }
+                }
+              }
+            }
+          }
         }
       }
     }

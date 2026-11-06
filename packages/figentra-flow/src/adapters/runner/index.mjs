@@ -3,7 +3,7 @@
  * Purpose: the runner port (AC-038): where `gate run`'s job runs. `ssh`: the job folder is rsynced to `host` and the
  *   command runs there (`--box <host>` picks it for one run); `local`: the caller's machine; `command`: an argument
  *   list with `{label}`, `{dir}` and `{command}` placeholders, and `{flags}` for the arguments after `gate run --`
- *   (Figentra's is `stackra testbed run`); its `start` runs one gate shard alongside others and keeps its stdout (the
+ *   (Figentra's is `testbed run`); its `start` runs one gate shard alongside others and keeps its stdout (the
  *   testbed's JSON line under `--json`). `runnerFor(root, config)` builds it from `flow.config.json`'s
  *   `runner`. Without one, config file or not, it is refused, naming the key (AC-036, AC-045).
  *   `github-actions` follows the gate workflow's run on the PR and reads the verdict main's workflow posts

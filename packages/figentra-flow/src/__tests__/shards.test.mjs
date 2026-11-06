@@ -38,7 +38,7 @@ test("shard: sorted packages dealt round-robin into at most one group per box, n
   );
 });
 
-test("combine: green only when every shard exited 0; 73 or 75 is an infrastructure failure, never a test failure", () => {
+test("combine: green only when every shard exited 0; 73, 75 or 130 is an infrastructure failure, never a test failure", () => {
   const report = reportOf(`job noise\n${LINE}\n`);
   assert.equal(report?.box, "i-1");
   assert.equal(reportOf("not json"), undefined);
@@ -76,6 +76,12 @@ test("combine: green only when every shard exited 0; 73 or 75 is an infrastructu
   ]);
   assert.equal(red.code, 1, "a shard that truly failed is red, though another found no slot");
   assert.equal(red.infra, undefined);
+  const stopped = combine([
+    { packages: ["a"], code: 0 },
+    { packages: ["b"], code: 130 },
+  ]);
+  assert.equal(stopped.code, 130);
+  assert.match(stopped.infra ?? "", /exit 130 .*stopped by a signal.*nothing posted/);
 });
 
 test("workspacePackages: every `*` segment expands (`packages/*/*`); a glob it cannot read, a `packages` that is not a list or an unsafe folder is a problem, never skipped", (t) => {

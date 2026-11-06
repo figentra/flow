@@ -1,9 +1,9 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold `fflow hooks run` to its refusals and its order: a bad mode or stage, a folder outside git, and an
- *   invalid configuration or a broken `runner` block without the workspace install each exit 2; with the install the
- *   configuration is never read, so a broken `runner` block still lets the hooks run here, through the workspace's
- *   own lefthook and without `LEFTHOOK` or `LEFTHOOK_EXCLUDE`.
+ * Purpose: hold `fflow hooks run` to its refusals and its order: a bad mode (the engine's unknown command) or stage,
+ *   a folder outside git, and an invalid configuration or a broken `runner` block without the workspace install each
+ *   exit 2; with the install the configuration is never read, so a broken `runner` block still lets the hooks run
+ *   here, through the workspace's own lefthook and without `LEFTHOOK` or `LEFTHOOK_EXCLUDE`.
  * Boundary: the `fflow` binary in temporary repositories; lefthook faked in `node_modules/.bin`; no box, no network.
  * Runtime: node
  * Governing contract: STA-1945 (C13, PR 13).
@@ -32,18 +32,18 @@ const fflow = (
 /** A `runner` block the schema takes and the runner port refuses. */
 const BROKEN = { ...CONFIG, runner: { kind: "ssh", host: "not a host" } };
 
-test("hooks command: a bad mode or stage is the usage, exit 2", (t) => {
+test("hooks command: a bad mode is an unknown command and a bad stage the usage, each exit 2", (t) => {
   const r = repo();
   t.after(r.dispose);
-  for (const args of [
-    ["hooks"],
-    ["hooks", "start", "pre-commit"],
-    ["hooks", "run", "pre-rebase"],
-  ]) {
+  // Only `hooks run` is declared, so the engine refuses `hooks` and `hooks <other mode>` before Flow runs.
+  for (const args of [["hooks"], ["hooks", "start", "pre-commit"]]) {
     const out = fflow(r.root, args);
     assert.equal(out.status, 2, args.join(" "));
-    assert.match(out.stderr, /usage: fflow hooks run <pre-commit\|commit-msg\|pre-push>/);
+    assert.match(out.stdout + out.stderr, /The command "hooks" does not exist/, args.join(" "));
   }
+  const stage = fflow(r.root, ["hooks", "run", "pre-rebase"]);
+  assert.equal(stage.status, 2);
+  assert.match(stage.stderr, /usage: fflow hooks run <pre-commit\|commit-msg\|pre-push>/);
 });
 
 test("hooks command: outside a git repository, exit 2", (t) => {

@@ -1,6 +1,6 @@
 ---
 name: test-infra
-description: Run heavy work on the shared testbed instead of the Mac - stackra testbed run, status and unlock, what "every box busy" and each refusal mean, the fallback for a pushed ref, and what an agent must never do to a box. Use whenever a task needs an install, build, gen, typecheck, test, e2e or integration run, or a box looks stuck, full or unhealthy.
+description: Run heavy work on the shared testbed instead of the Mac - testbed run, status and unlock, what "every box busy" and each refusal mean, the fallback for a pushed ref, and what an agent must never do to a box. Use whenever a task needs an install, build, gen, typecheck, test, e2e or integration run, or a box looks stuck, full or unhealthy.
 ---
 
 # The testbed
@@ -13,8 +13,10 @@ runs, `ci-box` is a shim with the same verbs.
 
 ## Run a job
 
+The CLI is `testbed`, from `@figentra/testbed` (ADR 0522).
+
 ```bash
-stackra testbed run "<session> <what>" <project-dir> "<command>"
+testbed run "<session> <what>" <project-dir> "<command>"
 ```
 
 - Name the session and what runs (`"commerce-frontend typecheck"`). `status` shows that string as the holder.
@@ -27,7 +29,7 @@ stackra testbed run "<session> <what>" <project-dir> "<command>"
   so you never pick a region or a box. `--regions a,b` or `STACKRA_TESTBED_REGIONS` overrides the list only for a
   deliberate test of one region.
 - A tool that runs jobs (`fflow gate`) adds `--json`. The job's output then goes to stderr, and stdout gets one line:
-  `{"region","box","slot","waitSeconds","runSeconds","exitCode"}`. `stackra testbed status --json` gives each region's
+  `{"region","box","slot","waitSeconds","runSeconds","exitCode"}`. `testbed status --json` gives each region's
   free and startable slots.
 
 ## Exit codes and messages
@@ -45,8 +47,8 @@ stackra testbed run "<session> <what>" <project-dir> "<command>"
 ## Look and unstick
 
 ```bash
-stackra testbed status
-stackra testbed unlock --box N --slot heavy
+testbed status
+testbed unlock --box N --slot heavy
 ```
 
 Only unlock a job you own, or one that `status` shows has held its slot for hours with no output. Unlocking stops its
@@ -57,7 +59,7 @@ container and the containers it started.
 If no box is healthy and your work is on a pushed ref:
 
 ```bash
-stackra testbed run --preset verify --ref <ref>
+testbed run --preset verify --ref <ref>
 ```
 
 The presets are `verify`, `e2e` and `integration`. They run on a GitHub-hosted runner. Arbitrary commands and
@@ -71,4 +73,4 @@ unpushed worktrees have no fallback, and nothing ever falls back to the Mac.
 - Never copy a token to a box, and never use `put-env`: it is retired. Jobs get tokens from Infisical. A missing token
   is the owner's to add.
 - Never `pulumi up`, mark a box unhealthy, start an instance refresh or change a group's size beyond
-  `stackra testbed scale`: those need the owner.
+  `testbed scale`: those need the owner.

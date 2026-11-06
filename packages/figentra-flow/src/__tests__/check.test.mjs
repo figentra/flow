@@ -232,6 +232,26 @@ test("check: a hand tick and a task whose documents changed since its start fail
   assert.match(problems(root), /sta-7\.json: .*is required/);
 });
 
+// @covers sta-1945:FR-25 sta-1945:AC-27 sta-1945:P-030
+test("check: a Done spec with an optional task still [ ] passes", (t) => {
+  const root = governed(t);
+  sync(root, { ...quiet, direct: true });
+  const dir = join(root, ".agents/specs/sta-9-x");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "spec.md"), "# x\n\n**Status**: Done\n");
+  writeFileSync(
+    join(dir, "tasks.md"),
+    "# Tasks\n\n- [x] T001 One in `a.mjs`\n- [ ] T002* Polish in `README.md`\n",
+  );
+  const at = "2026-11-04T09:00:00.000Z";
+  const head = "a".repeat(40);
+  updateRecord(root, "sta-9", (r) => ({
+    ...r,
+    tasks: { T001: [{ command: "true", exit: 0, head, clean: true, digest: "sha256:0", at }] },
+  }));
+  assert.equal(problems(root), "");
+});
+
 // @covers sta-1945:FR-30 sta-1945:AC-34 sta-1945:P-034
 test("check: an approval binds its documents; an edit fails naming the stage, a status move does not", (t) => {
   const root = governed(t);

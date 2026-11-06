@@ -4,14 +4,15 @@
  *   a scratch repository that knows only the public registry scopes (`@figentra-oss` and `@stackra` on the
  *   Figentra registry, the rest on npm's default), and run the installed `fflow`: `--version`, `init` on the
  *   `neutral` preset, `sync`, `check`, `doctor --offline --json` and `mcp` (`initialize` and `tools/list` over
- *   stdio), asserting exit codes and key outputs. No workspace links: every dependency resolves from a registry.
+ *   stdio), asserting exit codes and key outputs; then a hand edit to a rendered file, which `check` catches and
+ *   names. No workspace links: every dependency resolves from a registry.
  * Boundary: temporary folders; needs the network (the registries), so it is not in `node --test`'s `*.test.mjs`
  *   glob: CI's `e2e` job runs it (`pnpm --filter @figentra-oss/flow test:e2e`). The npm and pnpm settings of the
  *   workspace and the machine are kept out of the install (a userconfig of its own, no `npm_config_*`).
  * Runtime: node
  * Governing contract: ADR 0510; STA-1945 (T121; FR-11, P-016).
  */
-// @covers sta-1945:FR-11 sta-1945:P-016
+// @covers sta-1945:FR-11 sta-1945:AC-1 sta-1945:P-016
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -56,7 +57,7 @@ const run = (cwd, cmd, args, { env = OUTSIDE, input } = {}) => {
 };
 
 test(
-  "e2e: the packed tarball installs from the public registries and fflow runs init, sync, check, doctor and mcp",
+  "e2e: the packed tarball installs from the public registries and fflow runs init, sync, check, doctor and mcp; check catches a hand edit",
   {
     timeout: 900_000,
   },
@@ -128,6 +129,18 @@ test(
     const check = flow(["check"]);
     assert.equal(check.status, 0, `${check.out}${check.err}`);
 
+    const context = flow(["context", "--query", "outsider", "--json"]);
+    assert.equal(context.status, 0, `${context.out}${context.err}`);
+    const navigation = JSON.parse(context.out).data;
+    assert.equal(navigation.repositories.length, 1);
+    assert.equal(navigation.repositories[0].matches[0].name, "outsider");
+    assert.ok(navigation.repositories[0].instructions.includes("AGENTS.md"));
+    assert.ok(navigation.repositories[0].revision);
+    assert.ok(
+      existsSync(join(repo, ".agents/skills/flow-plan/SKILL.md")),
+      "plain sync supplies native Codex skills",
+    );
+
     const doctor = flow(["doctor", "--offline", "--json"]);
     assert.equal(doctor.status, 0, `${doctor.out}${doctor.err}`);
     const report = /** @type {{ ok: boolean, data: { id: string, status: string }[] }} */ (
@@ -151,6 +164,15 @@ test(
       },
       { jsonrpc: "2.0", method: "notifications/initialized" },
       { jsonrpc: "2.0", id: 2, method: "tools/list" },
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: {
+          name: "fflow_context",
+          arguments: { repo, query: "outsider" },
+        },
+      },
     ];
     // Closing stdin after the messages ends the server once it has answered them.
     const mcp = flow(["mcp"], messages.map((m) => `${JSON.stringify(m)}\n`).join(""));
@@ -162,13 +184,29 @@ test(
         .map((line) => JSON.parse(line))
         .map((reply) => [reply.id, reply]),
     );
-    assert.equal(replies.size, 2, "only the two requests are answered");
+    assert.equal(replies.size, 3, "only the three requests are answered");
     assert.equal(replies.get(1).result.serverInfo.name, "fflow");
     assert.equal(replies.get(1).result.serverInfo.version, VERSION);
     const tools = replies
       .get(2)
       .result.tools.map((/** @type {{ name: string }} */ tool) => tool.name);
-    assert.equal(tools.length, 8);
+    assert.equal(tools.length, 9);
     assert.ok(tools.includes("fflow_status") && tools.includes("fflow_clarification_record"));
+    assert.ok(tools.includes("fflow_context"));
+    assert.equal(
+      JSON.parse(replies.get(3).result.content[0].text).repositories[0].matches[0].name,
+      "outsider",
+    );
+
+    // A hand edit to a rendered file is caught: `check` exits non-zero and names the file. Plain `sync` renders
+    // the neutral `.agents/skills/` (asserted above) and locks it; init's `.claude/skills/` is gone by now.
+    const skill = join(repo, ".agents/skills/flow-plan/SKILL.md");
+    writeFileSync(skill, `${readFileSync(skill, "utf8")}\nedited by hand\n`);
+    const caught = flow(["check"]);
+    assert.notEqual(caught.status, 0, "check fails on a hand edit");
+    assert.match(
+      `${caught.out}${caught.err}`,
+      /\.agents\/skills\/flow-plan\/SKILL\.md differs from what `fflow sync` rendered/,
+    );
   },
 );

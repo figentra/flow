@@ -125,5 +125,5 @@ Postgres schema per module inside it. No service reads another service's tables;
 
 ## Check
 
-`pnpm --filter <member> test` (with the `.int` tier against Testcontainers), `stackra gen --check` once gen ships, then
+`pnpm turbo run test --filter=<member>` (with the `.int` tier against Testcontainers), `stackra gen --check` once gen ships, then
 `pnpm verify`. Review: `security-tenancy-reviewer` for any tenant-owned table, RLS policy or personal-data field.

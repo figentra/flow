@@ -92,6 +92,7 @@ detectable hand edits, reviewed overrides and policies no repository can switch 
   `plans/flow-e2e/PLAN.md` sections 3, 9 and 10, `plans/day1-2026-11-04/PLAN.md` (owner defaults O4 and O9),
   `handover/gap-scan-2026-11-04.md` section 3 and `plans/infisical-2026-11-04/PLAN.md` (K7); Flow PRs #100, #104,
   #116, #117, #121 to #127 and the open #128; issues STA-2097 and STA-2098.
+- A-8 (2026-11-06): notes ledger #81 (the leader's decision under the owner's autonomy rule) and STA-2131.
 - Per requirement: FR-1 to FR-12 rest on the census, the audit and the external review; FR-13 to FR-22 on A-1's
   source; FR-23 to FR-25 on A-2's (Vellum, tag `legacy-2026-10-30`); FR-26 to FR-30 on A-3's; FR-31 on plan PR 9
   and the after-freeze backlog; FR-32 to FR-36 on ADR 0523 and the L2 design; FR-37 to FR-40 on PLAN section 9 and
@@ -505,6 +506,23 @@ stands until the owner decides otherwise.
 
 AC-61 and AC-62, listed under `## Acceptance criteria`.
 
+## Amendment A-8 (2026-11-06): the guard runs with no install
+
+**Source:** the leader's decision of 2026-11-06 under the owner's autonomy rule (notes ledger #81), taken while
+re-locking Stackra core on Flow 0.4.0 (STA-2131) was held. Flow 0.4.0 rendered the guard's hooks as
+`node node_modules/@figentra-oss/flow/bin/fflow-guard.mjs <event>`. On a checkout with no `node_modules` (every Mac
+worktree, by the owner's rule) that file is missing, Claude Code treats a hook that cannot start as non-blocking, and
+no guard runs at all.
+
+### Requirements changed by A-8
+
+NFR-2's `node_modules` path is struck. The new rule: the guard runs on each tool call as
+`node .agents/hooks/fflow-guard.mjs <event>`. `fflow sync` writes that file into the repository: one self-contained
+module carrying the guard engine and the preset's guard tables, importing only `node:` modules, and recorded in
+`.flow/lock.json` with its digest, so `fflow check` names a hand edit. The rendered Claude Code hooks and the OpenCode
+guard plugin run it; `fflow guard` keeps running the installed engine. NFR-2's intent stands: never through
+`pnpm exec`, so pnpm's start-up stays off every call. Reason: a guard that silently does not start is worse than none.
+
 ## Acceptance criteria
 
 AC-1 to AC-12 restate FR-1 to FR-12 as checkable criteria; AC-13 to AC-34 are the amendments' (A-1 to A-3,
@@ -691,8 +709,9 @@ The exit criteria of `path-to-100.md`, measurable:
   `@stackra/validation`, pinned exactly through Flow's strict catalog and served by the public Figentra registry
   (ADR 0506 decision 8, which replaces "no runtime dependency"; the CLI layer imports them, the governance core and
   `fflow guard` never do), and `undici`, which `src/lib/net.mjs` loads for its connect timeout.
-- **NFR-2**: THE guard SHALL run on each tool call as `node node_modules/@figentra-oss/flow/bin/fflow-guard.mjs
-<event>`, never through `pnpm exec`, so pnpm's start-up stays off every call.
+- **NFR-2**: THE guard SHALL run on each tool call ~~as `node node_modules/@figentra-oss/flow/bin/fflow-guard.mjs
+<event>`~~ (struck by A-8) as `node .agents/hooks/fflow-guard.mjs <event>`, a self-contained file `fflow sync`
+  writes into the repository, never through `pnpm exec`, so pnpm's start-up stays off every call.
 - **NFR-3**: THE preset and overrides digests SHALL be identical on every machine for the same content (paths sorted,
   line endings normalised before hashing).
 - **NFR-4**: THE test suite SHALL run with no network, on fixture repositories in temporary folders.
@@ -790,3 +809,5 @@ test-level baseline inventory (STA-1942 v2); from PLAN section 9, P5 (a proof on
   whether the owner may merge the version PR, and the Release workflow publishes on that merge. tasks.md ticks T015,
   T024, T047, T048, T116, T135, T140 and T148, and T120 to T122 name the per-command tests, `packed.e2e.mjs` and
   `origin/main`
+- 2026-11-06: A-8 (NFR-2 amended: the guard runs from `.agents/hooks/fflow-guard.mjs`, written by `sync`, with no
+  install), the leader's decision under the owner's autonomy rule (notes ledger #81), STA-2131; no stage change

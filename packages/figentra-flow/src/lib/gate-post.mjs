@@ -7,12 +7,12 @@
  * Boundary: posts only while the branch tip is still the checked commit; never posts `success` unless the check
  *   exited 0; posts nothing when it cannot mint a token; runs only when `gate run` started it (`<prefix>GATE_RUN=1`;
  *   the hook guard refuses a direct call, the owner's option C1). Exit 0 posted green, 1 posted red, 3 not started by
- *   `gate run`, 4 could not post, 5 stale.
+ *   `gate run`, 4 could not post, 5 stale. Legacy only (STA-2134): with `secrets.oidc` `gate run` never copies it, and
+ *   only main's `fflow-approve.yml` `verdict` job posts the gate; it retires with T137. It never falls back to a
+ *   user's token (`GITHUB_TOKEN`, `GH_TOKEN`, a `gh` login): without the App's id and key it makes no call at all.
  * Runtime: node (on the testbed box or a `--box` host)
  * Governing contract: Stackra ADR 0503 (decision 4); STA-1729 phase 2 (the leader's plan stop of 2026-10-31).
- * Secrets: `<prefix>GATE_APP_ID` and `<prefix>GATE_PRIVATE_KEY` from the environment only (`infisical run`); while
- *   Infisical may still hold the names from before 0.2.2, the job's `legacyEnvPrefix` names are read when the new
- *   ones are unset. The key,
+ * Secrets: `<prefix>GATE_APP_ID` and `<prefix>GATE_PRIVATE_KEY` from the environment only (`infisical run`). The key,
  *   the JWT and the installation token are never printed, logged, written or put in a comment; the log tail is
  *   redacted of every secret-looking environment value before it is posted.
  */
@@ -62,7 +62,7 @@ export function appJwt(appId, privateKey, now) {
 
 /**
  * @typedef {{ sha: string, branch: string, repository: string, startedAt?: string, context: string, marker: string,
- *             envPrefix: string, legacyEnvPrefix?: string }} Job
+ *             envPrefix: string }} Job
  * @typedef {{ ok: boolean, status: number, json: () => Promise<any> }} Res
  * @typedef {(url: string, init?: { method?: string, headers?: Record<string, string>, body?: string }) => Promise<Res>} Fetch
  */
@@ -74,11 +74,9 @@ export function appJwt(appId, privateKey, now) {
  */
 export async function post({ job, exit, log = "", env, fetch, now = Date.now() }) {
   const lines = [];
-  const { context, marker, envPrefix, legacyEnvPrefix } = job;
-  const read = (/** @type {string} */ name) =>
-    env[`${envPrefix}${name}`] || (legacyEnvPrefix ? env[`${legacyEnvPrefix}${name}`] : undefined);
-  const appId = read("GATE_APP_ID");
-  const key = read("GATE_PRIVATE_KEY");
+  const { context, marker, envPrefix } = job;
+  const appId = env[`${envPrefix}GATE_APP_ID`];
+  const key = env[`${envPrefix}GATE_PRIVATE_KEY`];
   if (!appId || !key)
     return {
       code: 4,

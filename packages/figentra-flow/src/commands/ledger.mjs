@@ -3,7 +3,7 @@
  * Purpose: `fflow ledger [--since <YYYY-MM-DD>] [--repo <path>] [--json]` (FR-21, AC-42, P-026): what landed, released
  *   and shipped across the workspace (or the repository named, or the current one), by day and track: each record's
  *   history entries that finished `land`, `release` or `ship` (on or after `--since`, a UTC day), under the track its
- *   sessions' titles name (ADR 0001). Exit 0, 1 when a record could not be read (listed as a problem), 2 usage. The
+ *   sessions' titles name (ADR 0001); a Runway ship shows its environment and outcome (STA-2137). Exit 0, 1 when a record could not be read (listed as a problem), 2 usage. The
  *   options are declared in src/lib/console.mjs; `refusal` names a `--since` that is not a day, and `handle` runs them.
  * Boundary: read-only; reads Flow's records only (`allRecords`), no network.
  * Runtime: node
@@ -36,14 +36,22 @@ export function ledger(records, since) {
         .filter(
           (h) => h.state === "done" && DONE[h.stage] && (!since || h.at.slice(0, 10) >= since),
         )
-        .map((h) => ({
-          day: h.at.slice(0, 10),
-          track,
-          what: DONE[h.stage],
-          repo,
-          key,
-          prs: record.prs,
-        }));
+        .map((h) => {
+          // STA-2137: a Runway ship's own outcome: the newest ship dispatched before this row was dated
+          const ship =
+            h.stage === "ship"
+              ? (record.ships ?? []).filter((s) => s.at <= h.at).at(-1)
+              : undefined;
+          return {
+            day: h.at.slice(0, 10),
+            track,
+            what: DONE[h.stage],
+            repo,
+            key,
+            prs: record.prs,
+            ...(ship ? { ship } : {}),
+          };
+        });
     })
     .sort((a, b) => `${a.day} ${a.track} ${a.key}`.localeCompare(`${b.day} ${b.track} ${b.key}`));
   return { rows, problems: records.filter((r) => r.problem) };
@@ -65,7 +73,8 @@ export function render({ rows, problems }) {
     }
     if (r.track !== track) out.push(`  ${(track = r.track)}`);
     const prs = r.prs.length ? ` (#${r.prs.join(", #")})` : "";
-    out.push(`    ${r.what} ${r.key.toUpperCase()}${prs} ${r.repo}`);
+    const ship = "ship" in r && r.ship ? ` (${r.ship.env} ${r.ship.outcome})` : "";
+    out.push(`    ${r.what} ${r.key.toUpperCase()}${prs} ${r.repo}${ship}`);
   }
   for (const p of problems)
     out.push(`problem: ${[p.repo, p.from].filter(Boolean).join(" ")}: ${p.problem}`);

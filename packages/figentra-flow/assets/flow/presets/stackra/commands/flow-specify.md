@@ -55,7 +55,9 @@ Given that feature description, do this:
 
    **Create the directory and spec file**:
    - `mkdir -p FEATURE_DIR`
-   - Print the active spec template with `fflow spec template spec-template` (the repository's
+   - If `FEATURE_DIR/spec.md` exists (`fflow start` created it from the template and committed it), edit it in
+     place: never overwrite it
+   - Otherwise print the active spec template with `fflow spec template spec-template` (the repository's
      `.flow/overrides/` first, then the preset) and write it to `FEATURE_DIR/spec.md` as the starting point
    - Set `SPEC_FILE` to `FEATURE_DIR/spec.md`
 

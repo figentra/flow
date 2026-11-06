@@ -6,7 +6,10 @@
  * neutral preset's rules follow, so this table keeps every one of them (FR-5).
  * Governing contract: ADR 0293; ADR 0173; ADR 0257; ADR 0362; STA-1945.
  */
+import { spawnSync } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
+import { resolve, sep } from "node:path";
 
 import { collectStrings } from "@figentra-oss/flow/guard";
 import { PATH_RULES as NEUTRAL } from "@figentra-oss/flow/guard/neutral";
@@ -137,6 +140,38 @@ export const PLAN_GATED =
 /** agents-sync's generated rules block markers in the root AGENTS.md. */
 const AGENTS_MD_BLOCK = /<!--\s*(BEGIN|END) generated from \.agents\/rules/;
 
+/**
+ * True when the OpenCode guard plugin runs the guard (`STACKRA_EXECUTOR=1` on its call, STA-2136): an unattended
+ * executor, held to core's executor layer (`executor.mjs`, the `executor` bash rules, `executor-worktree`). Only the
+ * plugin sets it; set anywhere else it only adds denies.
+ */
+export const isExecutor = () => process.env.STACKRA_EXECUTOR === "1";
+
+/** `git rev-parse` in `cwd`, or undefined outside git. */
+const revParse = (/** @type {string} */ cwd, /** @type {string[]} */ args) => {
+  const r = spawnSync("git", ["rev-parse", ...args], { cwd, encoding: "utf8" });
+  return r.status === 0 ? r.stdout.trim().split("\n") : undefined;
+};
+
+/**
+ * Why an executor may not edit `path` (core's `decideEdit`, STA-2136): outside the session's worktree root (an
+ * absolute path into the main checkout included), or anywhere in the main checkout (git-dir equals git-common-dir)
+ * unless `STACKRA_ALLOW_MAIN=1`; false when it may.
+ * @param {string} path
+ * @param {string} cwd the session's folder
+ */
+export function executorEdit(path, cwd) {
+  const root = realpathSync(revParse(cwd, ["--show-toplevel"])?.[0] ?? cwd);
+  if (!resolve(root, path).startsWith(root + sep))
+    return `${path} is outside this session's worktree (${root}). Edit only files inside it.`;
+  const dirs = revParse(cwd, ["--git-dir", "--git-common-dir"])?.map((p) =>
+    realpathSync(resolve(cwd, p)),
+  );
+  return dirs && dirs[0] === dirs[1] && process.env.STACKRA_ALLOW_MAIN !== "1"
+    ? "Edits are refused in the main checkout. Work in a git worktree (`pnpm delegate` makes one), or set STACKRA_ALLOW_MAIN=1 for a deliberate exception."
+    : false;
+}
+
 /** The engine's reading of the rules above: a hit's reason, else false. */
 const denied = (/** @type {{ decision: string, reason: string }} */ d) =>
   d.decision === "deny" && d.reason;
@@ -163,6 +198,12 @@ export const PATH_RULES = [
     writes: true,
     match: (path, _cwd, { input }) =>
       /(^|\/)AGENTS\.md$/i.test(path) && AGENTS_MD_BLOCK.test(collectStrings(input).join("\n")),
+  },
+  {
+    id: "executor-worktree",
+    reason: "An OpenCode executor edits only inside its own worktree.",
+    writes: true,
+    match: (path, cwd) => isExecutor() && executorEdit(path, cwd),
   },
   ...NEUTRAL,
 ];

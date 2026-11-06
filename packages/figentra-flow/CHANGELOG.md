@@ -1,5 +1,168 @@
 # @figentra-oss/flow
 
+## 0.6.3
+
+### Patch Changes
+
+- aee4206: The stackra preset's test-infra skill and flow-gate command now name the `testbed` CLI from `@figentra/testbed`
+  (ADR 0522) for run, status, unlock and scale, in place of `stackra testbed`.
+
+## 0.6.2
+
+### Patch Changes
+
+- b95f7b6: The stackra preset's ci-steward and flow-gate name `testbed run` (the `testbed` CLI from `@figentra/testbed`, ADR
+  0522), as `@stackra/flow-preset` does; the README's runner example says the same. A gate shard stopped by Ctrl-C or
+  SIGTERM (exit 130) is an infrastructure failure like 73 and 75: it decided nothing about the code, so nothing is posted
+  and the gate is run again.
+
+## 0.6.1
+
+### Patch Changes
+
+- 19b653d: The `Stop` hook (`session-save`) is now rendered only when `session.pushAtEnd` is `true`, like the `SessionEnd`
+  hook. Alone it wrote `.flow/record/<key>.json` every turn with nothing to commit it, so every task worktree was left
+  dirty and `git worktree remove` refused it.
+
+## 0.6.0
+
+### Minor Changes
+
+- 63cc648: Close the gaps a repository could not close through its own configuration (STA-2131). `claudeCode` in
+  `flow.config.json` carries Claude Code `enabledPlugins` and `extraKnownMarketplaces` into `.claude/settings.json`,
+  and nothing else: the hooks, permissions and environment stay Flow's. A marketplace must be a remote source (`github`,
+  `git` or `url`), because an enabled plugin brings its own hooks. `session.contextCommands` appends the output of
+  the repository's own commands to the SessionStart context (no shell, 4 seconds each, capped, failures silent).
+  `agentsMd.land` replaces the landing line of AGENTS.md's "How work flows". The Stop and SessionEnd hooks exit 0
+  silently on a checkout with no install. The stackra preset's OpenCode guard plugin fails closed: a missing bundle, a
+  timeout, a kill, a non-zero exit or no answer denies, naming why, and the guard bundle answers an unattended caller
+  (`FFLOW_GUARD_UNATTENDED=1`) with an explicit allow. A grep or glob from OpenCode now carries its searched folder and a
+  grep its `include` filter, so the secret-path rules apply to it as on Claude Code.
+- 17677be: `fflow ship` records what a Runway deploy did (STA-2137). In a repository with a `runway.yaml` it dispatches with
+  `return_run_details`, so GitHub answers with the run it started, and writes that run id into the record's new `ships`
+  list at once. When GitHub names no run, it notes the deploy workflow's runs before it dispatches and finds a new run
+  created after the dispatch whose deploy job names the environment (a running run with no jobs yet is taken only
+  provisionally; a completed run naming another environment or none never is), so a ship never adopts another ship's or
+  the owner's promote run. It follows the run for up to `--wait` minutes (default 10), downloads its
+  `runway-outcome-<env>` artifact through the configured GitHub credentials and reads it in memory:
+  `runway-outcome.json` (`runway.outcome/v1`) decides the outcome (`deployed` for the environment and the run's own
+  revision is a success; `failed`, `cancelled` or a mismatch is a failure, with the reason), and `deploy-<env>.json` adds
+  the KV rows and uploads written, held apps and any smoke or rollback field. The `ship` stage is done only on success,
+  active while the run is pending (exit 4) and failed otherwise; a run whose artifact list has no outcome artifact is
+  `no outcome artifact`, while a GitHub error listing or downloading it keeps the ship pending. `fflow ship <env>
+  --resolve` dispatches nothing: it re-reads the task record's pending ship and writes its outcome back, committed and
+  pushed. `fflow status` shows each record's newest ship in its Ships table, re-read but not written (Runway repositories
+  only; `status --json` of other repositories is unchanged). `fflow ledger` shows each ship row's own outcome.
+  Repositories without `runway.yaml` ship as before.
+
+## 0.5.0
+
+### Minor Changes
+
+- 909d907: The guard runs with no install. `fflow sync` writes `.agents/hooks/fflow-guard.mjs`: one self-contained file with the
+  guard engine and the preset's guard tables inside, importing only `node:` modules, locked in `.flow/lock.json` so
+  `fflow check` names a hand edit. The rendered Claude Code hooks and the OpenCode guard plugin run it instead of
+  `node_modules/@figentra-oss/flow/bin/fflow-guard.mjs`, which a checkout with no `node_modules` lacks, so no guard ran
+  there. The file is laid out as oxfmt prints it and is oxlint-clean, so a repository's `oxfmt --check .` and
+  `oxlint` pass on it; the preset's lefthook still skips it, as its bytes are locked. The plan gate imports
+  `lib/spec-check.mjs` instead of the whole `gate` command, which keeps the file small. STA-1945 NFR-2 is amended by
+  A-8.
+- 86de1a8: The SessionEnd hook that commits the session's work as WIP and pushes it (`fflow session stop`, hook id
+  `session-stop`) is no longer rendered by default. A repository opts in with `"session": { "pushAtEnd": true }` in
+  `flow.config.json`; without it no rendered hook commits or pushes, and the Stop hook (`--save-only`) still writes the
+  session's record locally. Run `fflow sync` after upgrading; add the key first to keep the push at session end.
+
+### Patch Changes
+
+- de6e90c: `fflow check` tolerates two things a consumer carries today (STA-2131). A skill the preset's `third-party.yml` lists
+  may be committed at `.agents/skills/<id>` when its licence lets a repository carry it: an allowed licence, the
+  owner's `ownerEntry`, or the owner's own skills. HeroUI Pro's and Remotion's are still problems, as is a listed skill
+  elsewhere or a folder whose front-matter `name` is another skill. The rules block stackra/core's `agents-sync`
+  appends to the end of `AGENTS.md` is read away when it is the file's one trailing block; any other `AGENTS.md`
+  change, text between two blocks among them, is still drift. The stackra preset's `third-party.yml` header says so.
+- d6094db: With `secrets.oidc`, `fflow gate run` no longer posts `fflow/gate` or the gate comment from a box or a workstation:
+  it runs the check, records the verdict and says the status comes only from `fflow-approve.yml`'s `verdict` job.
+  It refuses (exit 2, nothing recorded) when that job is not rendered for the configuration (a runner other than
+  `github-actions`) or with `--box`. Repositories without `secrets.oidc` keep the box poster. A test pins that no path
+  writes the gate with a user's token.
+- 8081ef6: The stackra preset's guard is level with core's again (core 2ea3f21e). The runway deploy rule also reads
+  `runway.ts` / `runway.js` run by `node` or `tsx`, the runway secrets sync and a script that calls `runRunway`;
+  `stackra promote` is a deploy like `stackra deploy`; and a new `gate-change` rule denies, for every role, approving
+  a waiting deployment (REST `pending_deployments`, GraphQL `approveDeployments`, a protection rule's callback) and
+  writing an environment, ruleset or branch protection through `gh api`. Reading them stays allowed. The guard bundle
+  `fflow sync` writes picks the change up.
+  
+  The OpenCode guard plugin now runs the guard as an unattended executor (`STACKRA_EXECUTOR=1`), as core's OpenCode
+  guard does: the stackra tables apply the `executor` rules (`npx`, `pnpm dlx`, `eas`, `wrangler secret|--remote`,
+  `encore env set|create`, `secrets:import --confirm`) and core's executor layer (`curl`, `wget`, `gh`, network git,
+  `git branch -D`, `git worktree remove|prune`, `docker compose down -v`, `encore deploy|env|secret`, every `pnpm bot:*`
+  and `pnpm linear` but the exact `pnpm bot:git -- fetch origin` and `pnpm bot:git -- push [--force-with-lease] origin
+  HEAD`, and `figentra bot|pr merge|linear|secrets`), and refuse an edit outside the session's worktree or in the main
+  checkout (unless `STACKRA_ALLOW_MAIN=1`). Claude Code's hook is unchanged.
+
+## 0.4.0
+
+### Minor Changes
+
+- b23d580: The approval check can judge a red main against its recorded baseline (STA-1945 FR-22), and it fails safe: it excuses
+  nothing unless the config's new `approve.tolerate` lists the check. That list is empty by default. A required check
+  that fails on the PR's head is a pre-existing failure, not a new one, only when all of these hold: the list names its
+  context; from its trusted source, it concluded `failure` on the commit that left main's nearest baseline too; and the
+  ruleset requires the `Baseline` check and it is green on the head (it compares each task, a newly reached failure
+  excepted). An unlisted check, or one that passed, never ran, or was only cancelled or timed out on the baseline, still
+  refuses. With no baseline or an empty list every required check must be green, as before. Every other refusal is
+  unchanged. The approval names the baseline's SHA and the checks it tolerated.
+  
+  The tolerance is per check, so list only checks that run no more than `baseline.tasks`. `Baseline` and `fflow/gate`
+  (which runs the whole check command) are never tolerated: the schema refuses a list naming either, `sync` refuses to
+  render it, and the check refuses it. `sync` renders the list into `fflow-approve.yml` as `TOLERATE`, beside
+  `OWNER_ONLY_EXTRA`, in the dispatched job and in the event lane's jobs alike, so a `fflow:land` request is judged
+  the same way. A `TOLERATE` that is not a JSON list of names refuses the approval, and an unset one is the empty
+  list. Run `fflow sync` after upgrading.
+- 9821447: Add offline, bounded task context discovery through `fflow context` and the read-only `fflow_context` MCP tool,
+  using checkout paths and the existing workspace registry. Include revisions, dirty state, scoped instructions,
+  package metadata and explicit discovery gaps. Clarify native Codex skill support and project concise documentation
+  boundary guidance through both built-in presets.
+- 30212bb: Port `spec`, `linear`, `clean`, `ship`, `release` and `app create` from passthrough to declared commands on
+  `@stackra/console`, so each `--help` lists its arguments and options. Every flag is still accepted and handed to the
+  same `run`. **Breaking** for scripts parsing `spec … --json` and `release [--preflight] --json`: they now write the
+  engine's one `{ "ok", "data" }` document, and the command's old document is under `.data` (`data.FEATURE_DIR`,
+  `data.IMPL_PLAN`, …), as `doctor --json` and `status --json` already do. `spec template <name> --json` writes the
+  template's text as `data`, one string. The shipped `flow-*` commands read the fields under `data`.
+
+### Patch Changes
+
+- a6f3e96: `fflow gate check` on a Draft spec now runs the spec checks its approval will run and prints their findings as
+  `at approval:` warnings (the exit stays 0), so an author sees them before approval. `gate run --help` is pinned to
+  print the help and dispatch nothing.
+- a2e6b8a: Port `gate`, `parse`, `guard` and `hooks run` from passthrough to declared commands, so their `--help` lists their
+  arguments and options. Each still runs the same command with the same flags.
+- 25b7d53: `readme`, `team check`, `land` and the `train` steps (`open`, `add`, `close`, `build`, `eject`, `depart`, `status`)
+  are declared commands on the console engine instead of passthrough (STA-1945 SC-2), so their `--help` lists every
+  option and positional. Each still runs its own `run`, with the same flags: `readme --check`; `team check --tracker`;
+  `land [<pr>] --stack --dry-run --manual-ok --wait <minutes> --no-wait`; `train open [<version>]`, `train add <pr>`,
+  `train eject <pr>` and `--dry-run` on every step. `readme` and `team check` still refuse outside a git repository.
+  The engine now refuses an unknown flag or a surplus argument (exit 2) where the old parsers ignored it, and bare
+  `fflow train` or `fflow team` is an unknown command (exit 2) (bare `train` printed its usage and exited 0).
+- 6ed589a: `init`, `sync`, `migrate`, `trace`, `adr`, `start` and `mcp` are ported from passthrough to the console engine
+  (STA-1945 SC-2): each declares its arguments and options, so `fflow <command> --help` lists them, and hands them to
+  the command's own `run` as before. Two differences: a flag a command does not declare is now refused (exit 2) instead
+  of ignored, and `fflow trace trace <dir> --json` writes the engine's `{ "ok", "data" }` document with the matrix as
+  `data`. `trace` also takes `--base <ref>` besides `--base=<ref>`, and `start` and `init` take `--opt=value`.
+- b4a4e5b: The stackra preset's reviewer agents post an advisory `Review (advisory): PASS|FAIL <sha>` comment through
+  `pnpm bot:gh` instead of `pnpm bot:review`, since the stackra-reviewer App is retired (ADR 0523 decision 6);
+  nothing counts the comment. `flow-review` and `docs-spec-flow` say the same. Flow's own config drops `apps.review`.
+- 84f046b: The stackra preset's agents, skills and task-vocabulary rule now run one member's tests with
+  `pnpm turbo run test --filter=<name>` (and `typecheck`/`build` the same way), since turbo runs `stackra gen` first and
+  a bare `pnpm --filter <name> test` skips it, leaving vitest without `.stackra/vitest.config`. The rule also says a pull
+  request's `Needs testing:` line names that command. The OpenCode surface allows `pnpm turbo run *`, which its
+  `pnpm *` deny otherwise blocked. Run `fflow sync` after upgrading.
+- 61bf06c: `fflow start` creates the key's spec folder in the new worktree when `origin/<default>` has none for it: `spec.md`
+  from the preset's spec template with the issue key and feature branch filled in, committed with the start record so
+  the worktree stays clean, and `fflow spec paths` finds it. A bug-lane key (a folder under the bugs dir) and
+  `--no-spec` (trivial work) get none. `--dry-run` names it. `/flow-specify` edits a `spec.md` start wrote rather than
+  overwriting it.
+
 ## 0.3.0
 
 ### Minor Changes

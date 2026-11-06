@@ -14,10 +14,11 @@ import { credentialsPort } from "../adapters/credentials.mjs";
 import { ConfigError, loadConfig, need } from "./config.mjs";
 
 /**
- * @typedef {{ ok: boolean, json: any, err: string }} ApiResult
- * @typedef {(method: string, path: string, body?: unknown) => ApiResult} Api
- * @typedef {(command: string, args: string[], options: { cwd: string, encoding: "utf8", input?: string }) =>
- *   { status: number | null, stdout?: string, stderr?: string, error?: Error }} Spawn
+ * @typedef {{ ok: boolean, json: any, err: string, bytes?: Buffer }} ApiResult `bytes`: the body of a `raw` call
+ * @typedef {(method: string, path: string, body?: unknown, options?: { raw?: boolean }) => ApiResult} Api
+ * @typedef {(command: string, args: string[], options: { cwd: string, encoding: "utf8" | "buffer",
+ *   input?: string, maxBuffer?: number }) => { status: number | null, stdout?: string | Buffer,
+ *   stderr?: string | Buffer, error?: Error }} Spawn
  */
 
 /** The JSON body in `gh api`'s output, skipping any lines a wrapper printed before it. */
@@ -58,7 +59,8 @@ export function github(
   { spawn = /** @type {Spawn} */ (/** @type {unknown} */ (spawnSync)), env, warn } = {},
 ) {
   const [command, ...prefix] = ghCommand(root, { env, warn });
-  return (method, path, body) => {
+  // `raw` keeps the body as bytes (an artifact's zip), which a utf8 decode would corrupt.
+  return (method, path, body, { raw = false } = {}) => {
     const args = [
       ...prefix,
       "api",
@@ -71,16 +73,19 @@ export function github(
     ];
     const r = spawn(command, args, {
       cwd: root,
-      encoding: "utf8",
+      encoding: raw ? "buffer" : "utf8",
+      maxBuffer: 64 << 20, // an artifact's zip outgrows the 1 MiB default
       input: body === undefined ? undefined : JSON.stringify(body),
     });
     const err =
-      (r.stderr ?? "")
+      String(r.stderr ?? "")
         .split("\n")
         .filter((l) => /^gh: |HTTP \d{3}/.test(l))
         .join(" ")
         .trim() ||
       (r.error?.message ?? "");
-    return { ok: r.status === 0, json: bodyOf(r.stdout ?? ""), err };
+    if (raw)
+      return { ok: r.status === 0, json: undefined, err, bytes: /** @type {Buffer} */ (r.stdout) };
+    return { ok: r.status === 0, json: bodyOf(String(r.stdout ?? "")), err };
   };
 }

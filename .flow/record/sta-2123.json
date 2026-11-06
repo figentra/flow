@@ -1,0 +1,21 @@
+{
+  "recordVersion": 1,
+  "key": "sta-2123",
+  "stage": "start",
+  "state": "done",
+  "approvals": [],
+  "sessions": [],
+  "commits": [],
+  "prs": [],
+  "gate": [],
+  "review": [],
+  "asks": [],
+  "tasks": {},
+  "history": [
+    {
+      "stage": "start",
+      "state": "done",
+      "at": "2026-11-05T18:23:20.716Z"
+    }
+  ]
+}

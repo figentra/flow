@@ -2,8 +2,8 @@
  * Figentra Flow file contract:
  * Purpose: `fflow mcp`, an MCP server over stdio (AC-033): JSON-RPC 2.0, one message per line, written by hand so
  *   the package keeps no dependency (the leader's plan stop of 2026-10-31, decision 2). It answers `initialize`,
- *   `ping`, `tools/list` and `tools/call` for exactly eight tools, each returning one text content item holding JSON:
- *   seven read tools (status, spec, trace, worktrees, metrics, and the questions ones of STA-2098 H4: a spec's open
+ *   `ping`, `tools/list` and `tools/call` for nine tools, each returning one text content item holding JSON:
+ *   eight read tools (context, status, spec, trace, worktrees, metrics, and the questions ones of STA-2098 H4: a spec's open
  *   questions and a docs lookup) and one writer, `clarification_record`, which records one answer in the spec (the
  *   spec is the record). Without an answer in its arguments it asks the user through MCP elicitation
  *   (`elicitation/create`), and only when the client declared `elicitation` in `initialize`.
@@ -24,6 +24,7 @@ import { approvedAt, SPECS_DIR, STAGES, testsText } from "./gate.mjs";
 import { reposFor } from "./status.mjs";
 import { trace, traceProblems } from "./trace.mjs";
 import { github } from "../lib/github.mjs";
+import { CONTEXT_LIMIT, discoverContext } from "../lib/context.mjs";
 import { metrics } from "../lib/metrics.mjs";
 import { NAME, VERSION } from "../lib/product.mjs";
 import {
@@ -57,7 +58,7 @@ const object = (
 const READS = { readOnlyHint: true };
 const RECORDS = { readOnlyHint: false, destructiveHint: false, idempotentHint: true };
 
-/** The seven read tools and the one writer, `clarification_record`; nothing else is offered (AC-033, STA-2098). */
+/** The eight read tools and the one writer, `clarification_record` (AC-033, STA-2098). */
 export const TOOLS = [
   {
     name: `${PREFIX}_status`,
@@ -110,6 +111,21 @@ export const TOOLS = [
       "repo",
       "query",
     ]),
+    annotations: READS,
+  },
+  {
+    name: `${PREFIX}_context`,
+    description:
+      "Offline repository navigation: paths to instructions, packages, skills and guidance with each checkout's " +
+      "revision and dirty state. Defaults to the current repository; all reads the workspace registry. " +
+      "query searches paths/package metadata; path narrows scope and returns ancestor instructions. No document bodies or scripts run.",
+    inputSchema: object({
+      repo: str,
+      all: { type: "boolean" },
+      query: str,
+      path: str,
+      limit: { type: "integer", minimum: 1, maximum: CONTEXT_LIMIT },
+    }),
     annotations: READS,
   },
   {
@@ -202,6 +218,7 @@ const refuse = (problem) => {
 export function defaultReaders({ today = () => new Date().toISOString().slice(0, 10) } = {}) {
   const repos = (/** @type {string | undefined} */ repo) => reposFor(repo, process.cwd());
   return {
+    context: (args) => discoverContext(process.cwd(), args),
     status: ({ repo, offline = false }) =>
       snapshot({
         repos: repos(repo),

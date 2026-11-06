@@ -1,13 +1,17 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `fflow start <key> [--slug s] [--role id] [--session name] [--install] [--dry-run]` — the only way a
- *   worktree is made: fetch, then
+ * Purpose: `fflow start <key> [--slug s] [--role id] [--session name] [--install] [--no-spec] [--dry-run]` — the
+ *   only way a worktree is made: fetch, then
  *   branch `<branchPrefix>/<key>-<slug>` from `origin/<default>` into `<repo>/.claude/worktrees/<key>-<slug>`, and
  *   move the issue to In Progress through the tracker port, naming the branch. With a roster (AC-049), the role is
  *   `--role` or the spec's `**Role**` on the default branch; the issue gets its `role:<id>` label and the agent app as
  *   delegate, and a comment records the builder's role and session (`--session`, else the spec's `**Session**`).
  *   The stage ends with Flow's record (STA-1945 FR-14): `start` done (`worktree` when the spec there is Tasked or
- *   later, so `next` names the build), committed on the new branch and pushed.
+ *   later, so `next` names the build), committed on the new branch and pushed. When the key has no folder on
+ *   `origin/<default>`, under the specs dir or the bug lane's, the new worktree gets `<specs dir>/<key>-<slug>/spec.md`
+ *   from the preset's spec template, its issue key line and `**Feature Branch**` filled in, committed with the record
+ *   so the worktree is clean (STA-2126). `--no-spec` writes none: trivial work has no spec (ADR 0502); a PR that
+ *   turns out trivial deletes the spec start wrote.
  * Boundary: writes one branch and one worktree, or nothing: an existing folder or branch (local or remote) is refused.
  *   The record's commit and push only warn when they fail.
  *   Works from the main checkout or from inside any of its worktrees. Runs `pnpm install` only with `--install` (the
@@ -17,11 +21,12 @@
  * Secrets: the Linear token only from the environment the calling wrapper sets; never read or printed.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { trackerFor } from "../adapters/tracker/index.mjs";
 import { SPECS_DIR } from "./gate.mjs";
+import { resolveTemplate, specsDirs } from "../lib/flow-dir.mjs";
 import { defaultBranch, fetch, git, mainCheckout } from "../lib/git.mjs";
 import { NAME } from "../lib/product.mjs";
 import { endStage } from "../lib/record.mjs";
@@ -61,7 +66,7 @@ export function slugOf(title) {
 /**
  * Starts work on `key`.
  * @param {{ cwd: string, key: string, slug?: string, role?: string, session?: string, install?: boolean, dry?: boolean,
- *           issues?: Issues,
+ *           spec?: boolean, issues?: Issues,
  *           log?: (s: string) => void, warn?: (s: string) => void, fetchRemote?: boolean }} options
  * @returns {Promise<{ ok: boolean, path?: string, branch?: string, problem?: string }>}
  */
@@ -115,8 +120,21 @@ export async function start(options) {
   for (const ref of [`refs/heads/${branch}`, `refs/remotes/origin/${branch}`])
     if (git(root, ["show-ref", "--verify", "--quiet", ref]).ok)
       return { ok: false, problem: `branch ${branch} already exists (${ref})` };
+  // The spec folder to create (STA-2126): none with --no-spec, or when origin/<default> has a folder for the key,
+  // under the specs dir or the bug lane's (a bug has no spec), which is what the new worktree checks out.
+  const { dir: specs, bugsDir } = specsDirs(root);
+  const has = (/** @type {string} */ dir) => {
+    const listed = git(root, ["ls-tree", "--name-only", `origin/${base}:${dir}`]);
+    return listed.ok && listed.out.split("\n").some((f) => scheme.folderKey(f) === key);
+  };
+  const newSpec =
+    options.spec !== false && scheme.folderKey(name) === key && !has(specs) && !has(bugsDir)
+      ? `${specs}/${name}`
+      : undefined;
   if (dry) {
-    log(`${NAME} start: would create ${branch} from origin/${base} at ${path}`);
+    log(
+      `${NAME} start: would create ${branch} from origin/${base} at ${path}${newSpec ? ` and ${newSpec}/spec.md` : ""}`,
+    );
     return { ok: true, path, branch };
   }
   const added = git(root, ["worktree", "add", "-q", "-b", branch, path, `origin/${base}`]);
@@ -125,7 +143,18 @@ export async function start(options) {
   const specFile = join(path, SPECS_DIR, name, "spec.md");
   const tasked =
     existsSync(specFile) && atLeast(statusOf(readFileSync(specFile, "utf8")), "tasked");
-  const unrecorded = endStage(path, key, tasked ? "worktree" : "start");
+  const template = newSpec ? resolveTemplate(path, "spec-template") : undefined;
+  if (template) {
+    mkdirSync(join(path, newSpec ?? ""), { recursive: true });
+    const text = readFileSync(template, "utf8")
+      .replace(/^(\*\*(?:Linear|Issue)\*\*:[ \t]*)\S+/m, `$1${shown}`)
+      .replace(/^(\*\*Feature Branch\*\*:[ \t]*)\S+/m, `$1\`${branch}\``);
+    writeFileSync(join(path, `${newSpec}/spec.md`), text);
+    log(`${NAME} start: ${newSpec}/spec.md from the spec template`);
+  } else if (newSpec) warn(`${NAME} start: warning: no spec-template, so no ${newSpec}/spec.md`);
+  const unrecorded = endStage(path, key, tasked ? "worktree" : "start", {
+    files: template ? [`${newSpec}/spec.md`] : [],
+  });
   if (unrecorded) warn(`${NAME} start: warning: the record was not saved (${unrecorded})`);
   try {
     if (!issues) throw new Error(problem);
@@ -138,7 +167,8 @@ export async function start(options) {
   }
   if (team) {
     const spec = join(path, SPECS_DIR, name, "spec.md");
-    const text = existsSync(spec) ? readFileSync(spec, "utf8") : "";
+    // The template start just wrote holds a placeholder role, not the spec's.
+    const text = !template && existsSync(spec) ? readFileSync(spec, "utf8") : "";
     const role = options.role ?? roleOf(text);
     const session =
       options.session ?? (text.match(/^\*\*Session\*\*:[ \t]*(.+)$/m)?.[1]?.trim() || undefined);
@@ -184,7 +214,7 @@ export async function start(options) {
   return { ok: true, path, branch };
 }
 
-/** `fflow start <issue-key> [--slug s] [--install] [--dry-run]`. */
+/** `fflow start <issue-key> [--slug s] [--install] [--no-spec] [--dry-run]`. */
 export async function run(args) {
   const valued = ["--slug", "--role", "--session"];
   const key = args.find((a, i) => !a.startsWith("--") && !valued.includes(args[i - 1]));
@@ -193,7 +223,7 @@ export async function run(args) {
     args.includes(name) ? args[args.indexOf(name) + 1] : undefined;
   if (!key) {
     console.error(
-      `usage: ${NAME} start <issue-key> [--slug <kebab-slug>] [--role <id>] [--session <name>] [--install] [--dry-run]`,
+      `usage: ${NAME} start <issue-key> [--slug <kebab-slug>] [--role <id>] [--session <name>] [--install] [--no-spec] [--dry-run]`,
     );
     return 2;
   }
@@ -204,6 +234,7 @@ export async function run(args) {
     role: opt("--role"),
     session: opt("--session"),
     install: args.includes("--install"),
+    spec: !args.includes("--no-spec"),
     dry: args.includes("--dry-run"),
   });
   if (!result.ok) {

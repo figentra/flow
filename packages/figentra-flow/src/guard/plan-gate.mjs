@@ -84,7 +84,7 @@ export async function decidePlanGate(path, gated, { cwd, root, branch } = {}) {
   // Documentation is never blocked, even inside a source folder (packages/*/README.md, services/*/docs/*.md).
   if (/\.mdx?$/i.test(posix) || !gated.test(posix)) return ok;
   const [{ checkSpec, specDir, RULES, presetId, presetOf }, { schemeFor }] = await Promise.all([
-    import("../commands/gate.mjs"),
+    import("../lib/spec-check.mjs"),
     import("../adapters/tracker/index.mjs"),
   ]);
   const specs = specsDirs(root).dir;

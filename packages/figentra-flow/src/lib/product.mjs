@@ -89,6 +89,12 @@ export const BASELINE_WORKFLOW = `${NAME}-baseline.yml`;
 export const BASELINE_CHECK = "Baseline";
 
 /**
+ * The checks a red main never excuses, whatever `approve.tolerate` lists (STA-1945 FR-22): Baseline is the comparison
+ * itself, and the gate runs the whole check command, more than Baseline's tasks.
+ */
+export const NEVER_TOLERATED = [BASELINE_CHECK, STATUS_CONTEXT];
+
+/**
  * The organisation's Actions variable that freezes automation (ADR 0523; the owner, 2026-11-04): `on`, `merge-only`
  * or `frozen`. Missing or unreadable is frozen; the approval workflow's event jobs run only on `AUTOMATION_RUNS`.
  */

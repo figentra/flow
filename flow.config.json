@@ -14,7 +14,7 @@
   },
   "runner": {
     "kind": "command",
-    "run": ["stackra", "testbed", "run", "{label}", "{dir}", "{command}", "{flags}"]
+    "run": ["testbed", "run", "{label}", "{dir}", "{command}", "{flags}"]
   },
   "secrets": {
     "kind": "infisical",
@@ -32,9 +32,6 @@
     "gate": {
       "slug": "figentra-flow",
       "login": "figentra-flow[bot]"
-    },
-    "review": {
-      "slug": "stackra-reviewer"
     },
     "owner": "figentra-usr"
   },
