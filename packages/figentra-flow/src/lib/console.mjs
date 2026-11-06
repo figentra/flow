@@ -891,7 +891,11 @@ class ShipCommand extends Command({
   description: "Ship the default branch to dev or staging through the deploy workflow",
   group: GROUPS.land,
   docs: DOCS,
-  examples: [`${NAME} ship staging --dry-run`, `${NAME} ship dev --workflow deploy.yml`],
+  examples: [
+    `${NAME} ship staging --dry-run`,
+    `${NAME} ship dev --workflow deploy.yml`,
+    `${NAME} ship staging --resolve`,
+  ],
 }) {
   /** @type {string | undefined} */
   environment = undefined;
@@ -899,6 +903,7 @@ class ShipCommand extends Command({
   workflow = undefined;
   /** @type {string | undefined} */
   wait = undefined;
+  resolve = false;
   dryRun = false;
 
   async handle() {
@@ -908,6 +913,7 @@ class ShipCommand extends Command({
       ...(this.environment === undefined ? [] : [this.environment]),
       ...(this.workflow === undefined ? [] : ["--workflow", this.workflow]),
       ...(this.wait === undefined ? [] : ["--wait", this.wait]),
+      ...(this.resolve ? ["--resolve"] : []),
       ...(this.dryRun ? ["--dry-run"] : []),
     ];
     return refusing(() => run(args));
@@ -926,6 +932,10 @@ Option({
   description: "Minutes to follow a Runway product's deploy run for its outcome (default 10)",
 })(ShipCommand.prototype, "wait");
 Str()(ShipCommand.prototype, "wait");
+Option({
+  description:
+    "Dispatch nothing: read the task record's pending ship to the environment and record its outcome",
+})(ShipCommand.prototype, "resolve");
 Option({ description: "Name the dispatch; make none" })(ShipCommand.prototype, "dryRun");
 
 class ReleaseCommand extends Command({

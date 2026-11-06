@@ -1,13 +1,14 @@
 /**
  * Figentra Flow file contract:
- * Purpose: what a ship did (STA-2137): `followRun` finds the deploy run a `fflow ship` dispatch started (a run of the
- *   workflow on the branch that was not listed before the dispatch, created after it, whose deploy job names the
- *   environment), waits for it, and `readOutcome` reads its `runway-outcome-<env>` artifact into one `ships` entry of
- *   Flow's record. The artifact's `runway-outcome.json` (`runway.outcome/v1`) decides: `deployed` for the environment
- *   and the dispatched revision is a success, anything else a failure; its `deploy-<env>.json` (Runway's
- *   `ProductDeploy`) adds the KV rows and uploads written, the held apps and any smoke or rollback field. A run without
- *   the artifact is `no outcome artifact`, never a success. `shipsOf` lists each record's newest ship for
- *   `fflow status`, re-reading (or first finding) a pending one's run.
+ * Purpose: what a ship did (STA-2137): `followRun` follows the deploy run a `fflow ship` dispatch started (by the id
+ *   GitHub's dispatch answered with, else found: a run of the workflow on the branch that was not listed before the
+ *   dispatch, created after it, whose deploy job names the environment), waits for it, and `readOutcome` reads its
+ *   `runway-outcome-<env>` artifact into one `ships` entry of Flow's record. The artifact's `runway-outcome.json`
+ *   (`runway.outcome/v1`) decides: `deployed` for the environment and the run's revision is a success, anything else a
+ *   failure; its `deploy-<env>.json` (Runway's `ProductDeploy`) adds the KV rows and uploads written, the held apps and
+ *   any smoke or rollback field. A run whose artifacts list has no such artifact is `no outcome artifact`, never a
+ *   success; a GitHub error reading them leaves the ship pending. `resolveShip` re-reads (or first finds) a pending
+ *   ship's run, for `fflow status` (`shipsOf`, each record's newest ship) and `fflow ship --resolve`.
  * Boundary: GitHub REST reads only, through the caller's `Api` (the credentials port); the artifact's zip is read in
  *   memory (`unzipFile`, stored or deflated entries, no zip64). Writes nothing.
  * Runtime: node
@@ -70,16 +71,21 @@ export function unzipFile(zip, wanted) {
   return undefined;
 }
 
-/** @returns {any[]} the workflow's dispatched runs on `branch`, newest first (GitHub's order) */
+/** @returns {any[]} the workflow's dispatched runs on `branch` (created at `since` or later, when given), newest first */
 const listRuns = (
   /** @type {import("./github.mjs").Api} */ api,
   /** @type {string} */ repo,
   /** @type {string} */ workflow,
   /** @type {string} */ branch,
+  /** @type {number} */ since = NaN,
 ) =>
   api(
     "GET",
-    `/repos/${repo}/actions/workflows/${workflow}/runs?event=workflow_dispatch&branch=${encodeURIComponent(branch)}&per_page=20`,
+    `/repos/${repo}/actions/workflows/${workflow}/runs?event=workflow_dispatch&branch=${encodeURIComponent(branch)}${
+      Number.isNaN(since)
+        ? "&per_page=20"
+        : `&created=${encodeURIComponent(`>=${new Date(since).toISOString()}`)}&per_page=100`
+    }`,
   ).json?.workflow_runs ?? [];
 
 /**
@@ -94,65 +100,70 @@ export const runIds = (api, repo, workflow, branch) =>
   listRuns(api, repo, workflow, branch).map((/** @type {any} */ r) => r.id);
 
 /**
- * The ship environment a run's jobs name (Runway's `Deploy (<env>)`), undefined before its deploy job exists.
- * @param {import("./github.mjs").Api} api
- * @param {string} repo
- * @param {number} id
- * @returns {string | undefined}
- */
-function envOf(api, repo, id) {
-  const jobs = api("GET", `/repos/${repo}/actions/runs/${id}/jobs?per_page=100`).json?.jobs ?? [];
-  // Only the environments a ship deploys: a run's skipped `Promote (production)` names no ship.
-  return jobs
-    .map((/** @type {any} */ j) => /\((dev|staging)\)$/.exec(j.name ?? "")?.[1])
-    .find(Boolean);
-}
-
-/**
  * The run of `workflow` a dispatch to `env` started: the earliest run on `branch` that is not in `before`, was created
- * at `since` or later, and whose deploy job names `env` (or, completed, names none); undefined until GitHub lists it.
- * A run another ship started, to another environment or before this dispatch, is never taken.
+ * at `since` or later, and whose deploy job names `env` (Runway's `Deploy (<env>)`); undefined until GitHub lists it.
+ * A running run that has no jobs yet may be it: it is returned `provisional`, to be found again until its jobs name an
+ * environment. A run another ship started, to another environment or before this dispatch, or a completed run whose
+ * jobs name no ship environment, is never taken.
  * @param {import("./github.mjs").Api} api
  * @param {string} repo
  * @param {{ workflow: string, branch: string, since: number, before?: number[], env: string }} at
  * @returns {any}
  */
 export function findRun(api, repo, { workflow, branch, since, before = [], env }) {
-  const fresh = listRuns(api, repo, workflow, branch)
+  const fresh = listRuns(api, repo, workflow, branch, since)
     .filter((/** @type {any} */ r) => !before.includes(r.id) && Date.parse(r.created_at) >= since)
     .sort((/** @type {any} */ a, /** @type {any} */ b) => a.id - b.id);
-  return fresh.find((/** @type {any} */ r) => {
-    const named = envOf(api, repo, r.id);
-    return named ? named === env : r.status === "completed";
-  });
+  for (const r of fresh) {
+    const jobs = api("GET", `/repos/${repo}/actions/runs/${r.id}/jobs?per_page=100`).json?.jobs;
+    // Only the environments a ship deploys: a run's skipped `Promote (production)` names no ship.
+    const named = (jobs ?? [])
+      .map((/** @type {any} */ j) => /\((dev|staging)\)$/.exec(j.name ?? "")?.[1])
+      .find(Boolean);
+    if (named === env) return r;
+    if (Array.isArray(jobs) && !jobs.length && r.status !== "completed")
+      return { ...r, provisional: true };
+  }
+  return undefined;
 }
 
 /**
  * The ship entry of `run` (a GitHub workflow run) to `env`: `pending` until it completes, then its outcome file's
- * revision and status (`success` only for `deployed` to `env` at `sha`, when given) and its manifest's writes.
+ * revision and status (`success` only for `deployed` to `env` at the run's revision) and its manifest's writes. A
+ * GitHub error listing or downloading the artifact leaves it `pending`, to be read again.
  * @param {import("./github.mjs").Api} api
  * @param {string} repo
  * @param {any} run
  * @param {string} env
- * @param {string} [sha] the revision the dispatch shipped
+ * @param {string} [sha] the revision the dispatch shipped, for a run that names none
  * @returns {Omit<Ship, "at">}
  */
 export function readOutcome(api, repo, run, env, sha) {
+  const expected = run.head_sha || sha;
   const base = {
     env,
     run: run.id,
     url: run.html_url,
     ...(run.conclusion ? { conclusion: run.conclusion } : {}),
+    ...(expected ? { sha: expected } : {}),
   };
   if (run.status !== "completed") return { ...base, outcome: "pending" };
   const name = outcomeArtifact(env);
-  const artifact = (
-    api("GET", `/repos/${repo}/actions/runs/${run.id}/artifacts?name=${name}`).json?.artifacts ?? []
-  ).find((/** @type {any} */ a) => a.name === name && !a.expired);
-  const zip = artifact
+  const listed = api("GET", `/repos/${repo}/actions/runs/${run.id}/artifacts?name=${name}`);
+  const unread = (/** @type {string} */ err) => ({
+    ...base,
+    outcome: "pending",
+    problem: `the artifact could not be read yet: ${err || "no answer"}`,
+  });
+  if (!listed.ok || !Array.isArray(listed.json?.artifacts)) return unread(listed.err);
+  const artifact = listed.json.artifacts.find(
+    (/** @type {any} */ a) => a.name === name && !a.expired,
+  );
+  const got = artifact
     ? api("GET", `/repos/${repo}/actions/artifacts/${artifact.id}/zip`, undefined, { raw: true })
-        .bytes
     : undefined;
+  if (got && (!got.ok || !got.bytes)) return unread(got.err);
+  const zip = got?.bytes;
   /** @returns {any} the JSON of the zip's file `file`; a corrupt zip or file reads as none */
   const read = (/** @type {string} */ file) => {
     try {
@@ -172,8 +183,8 @@ export function readOutcome(api, repo, run, env, sha) {
   const problem =
     o.environment !== env
       ? `the outcome is of ${o.environment}, not ${env}`
-      : sha && deployed !== sha
-        ? `it deployed ${deployed?.slice(0, 12) ?? "no revision"}, not ${sha.slice(0, 12)}`
+      : expected && deployed !== expected
+        ? `it deployed ${deployed?.slice(0, 12) ?? "no revision"}, not ${expected.slice(0, 12)}`
         : o.status !== "deployed"
           ? `runway ${text(o.status) ?? "gave no status"}`
           : m?.dryRun === true
@@ -196,11 +207,13 @@ export function readOutcome(api, repo, run, env, sha) {
 
 /**
  * Waits up to `polls` polls for the dispatched run to complete and returns its ship entry; `pending` when it is still
- * running (or not yet listed) at the last poll.
+ * running (or not yet listed) at the last poll. With `run` (the id GitHub's dispatch answered with) that run is read;
+ * without it, it is found (`findRun`).
  * @param {import("./github.mjs").Api} api
  * @param {string} repo
  * @param {{ workflow: string, branch: string, sha: string, since: number, before?: number[], env: string,
- *           polls: number, pollMs?: number, sleep?: (ms: number) => Promise<void>, log?: (s: string) => void }} options
+ *           run?: number, polls: number, pollMs?: number, sleep?: (ms: number) => Promise<void>,
+ *           log?: (s: string) => void }} options
  * @returns {Promise<Omit<Ship, "at">>}
  */
 export async function followRun(api, repo, options) {
@@ -216,13 +229,17 @@ export async function followRun(api, repo, options) {
   for (let i = 1; ; i++) {
     await sleep(pollMs);
     const was = run;
-    run = was
-      ? (api("GET", `/repos/${repo}/actions/runs/${was.id}`).json ?? was)
+    const id = was && !was.provisional ? was.id : options.run;
+    run = id
+      ? (api("GET", `/repos/${repo}/actions/runs/${id}`).json ?? was)
       : findRun(api, repo, options);
-    if (run && !was) log(`  run: ${run.html_url}`);
-    if (run?.status === "completed" || i >= polls) break;
+    if (run && !run.provisional && (!was || was.provisional)) log(`  run: ${run.html_url}`);
+    if ((run?.status === "completed" && !run.provisional) || i >= polls) break;
   }
-  return run ? readOutcome(api, repo, run, env, options.sha) : { env, outcome: "pending" };
+  // A provisional run is not known to be this ship's: its id is not recorded.
+  return run?.id && !run.provisional
+    ? readOutcome(api, repo, run, env, options.sha)
+    : { env, ...(options.run ? { run: options.run } : {}), outcome: "pending" };
 }
 
 /** The record state a ship ends in: done only on success, active while pending, else failed. */
@@ -230,8 +247,32 @@ export const shipState = (/** @type {string} */ outcome) =>
   outcome === "success" ? "done" : outcome === "pending" ? "active" : "failed";
 
 /**
- * Each record's newest ship in the repository at `root`, a pending one re-read from its run when `api` is given: by
- * its id, or found as `followRun` would when the ship ended before GitHub listed it.
+ * `ship` with its run re-read when it is pending: by its id, or found as `followRun` would when the ship ended before
+ * GitHub listed it; unchanged while the run cannot be read or found.
+ * @param {import("./github.mjs").Api} api
+ * @param {string} repo the GitHub slug
+ * @param {Ship} ship
+ * @returns {Ship}
+ */
+export function resolveShip(api, repo, ship) {
+  if (ship.outcome !== "pending") return ship;
+  const { workflow, branch, before, env } = ship;
+  const run = ship.run
+    ? api("GET", `/repos/${repo}/actions/runs/${ship.run}`).json
+    : workflow && branch
+      ? findRun(api, repo, { workflow, branch, before, env, since: Date.parse(ship.at) - SKEW_MS })
+      : undefined;
+  if (!run?.id || run.provisional) return ship;
+  const read = readOutcome(api, repo, run, env, ship.sha);
+  /** @type {Ship} */
+  const next = { ...ship, ...read };
+  // An earlier read's reason does not outlive the read that found none.
+  if (!read.problem) delete next.problem;
+  return next;
+}
+
+/**
+ * Each record's newest ship in the repository at `root`, a pending one re-read (`resolveShip`) when `api` is given.
  * @param {string} root
  * @param {string | undefined} repo the GitHub slug
  * @param {import("./github.mjs").Api} [api]
@@ -241,19 +282,6 @@ export function shipsOf(root, repo, api) {
   return allRecords([root]).flatMap(({ key, record }) => {
     const ship = record?.ships?.at(-1);
     if (!ship) return [];
-    if (ship.outcome !== "pending" || !repo || !api) return [{ key, ...ship }];
-    const { workflow, branch, before, env } = ship;
-    const run = ship.run
-      ? api("GET", `/repos/${repo}/actions/runs/${ship.run}`).json
-      : workflow && branch
-        ? findRun(api, repo, {
-            workflow,
-            branch,
-            before,
-            env,
-            since: Date.parse(ship.at) - SKEW_MS,
-          })
-        : undefined;
-    return [{ key, ...ship, ...(run?.id ? readOutcome(api, repo, run, env, ship.sha) : {}) }];
+    return [{ key, ...(repo && api ? resolveShip(api, repo, ship) : ship) }];
   });
 }

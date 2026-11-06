@@ -259,7 +259,7 @@ test("help: readme, team check, land, train, spec, linear, clean, ship, release 
       ["<file>", "--dry-run"],
     ],
     [["clean"], ["--dry-run", "--adopt", "--fix-ignore", "--budget", "--all"]],
-    [["ship"], ["<environment>", "--workflow", "--wait", "--dry-run"]],
+    [["ship"], ["<environment>", "--workflow", "--wait", "--resolve", "--dry-run"]],
     [["release"], ["--offline", "--preflight"]],
     [
       ["app", "create"],

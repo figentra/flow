@@ -1,12 +1,14 @@
 /**
  * Figentra Flow file contract:
- * Purpose: hold a ship's outcome to STA-2137: the dispatched run is the earliest new run (not listed before the
- *   dispatch, created after it) whose deploy job names the environment, so a ship never adopts another ship's run; a
- *   completed run's `runway-outcome-<env>` artifact (`runway-outcome.json`, `runway.outcome/v1` as products'
- *   deploy.yml writes it, and the deploy manifest, copied from `ProductDeploy`'s shape) gives the status, revision,
- *   KV rows and uploads; a run without the artifact is `no outcome artifact` and never done; a run still going at the
- *   last poll is pending, and `fflow status` finds a pending ship's run later; the record takes the entry; the ledger
- *   shows each ship row's own outcome.
+ * Purpose: hold a ship's outcome to STA-2137: the run id the dispatch answered with is followed as it is; without
+ *   one the dispatched run is the earliest new run (not listed before the dispatch, created after it, listed by
+ *   `created>=`) whose deploy job names the environment, so a ship never adopts another ship's or the owner's promote
+ *   run (a running run with no jobs yet only provisionally); a completed run's `runway-outcome-<env>` artifact
+ *   (`runway-outcome.json`, `runway.outcome/v1` as products' deploy.yml writes it, and the deploy manifest, copied from
+ *   `ProductDeploy`'s shape) gives the status, revision (checked against the run's own) KV rows and uploads; a run
+ *   whose artifact list has none is `no outcome artifact` and never done, while a GitHub error reading it stays
+ *   pending; a run still going at the last poll is pending, and `resolveShip` finds a pending ship's run later; the
+ *   record takes the entry; the ledger shows each ship row's own outcome.
  * Boundary: the GitHub API is an in-memory stub and the zip is built here; no network. The `shipsOf` test makes a
  *   temporary git repository (`__fixtures__/repo.mjs`).
  * Runtime: node
@@ -27,6 +29,7 @@ import {
   NO_OUTCOME,
   outcomeArtifact,
   readOutcome,
+  resolveShip,
   runIds,
   shipsOf,
   shipState,
@@ -88,21 +91,26 @@ const outcomeZip = (/** @type {Record<string, unknown>} */ change = {}) =>
   ]);
 
 /**
- * A stub API: the runs listed, each run by id, each run's jobs (`envs`: the environment its deploy job names), the
- * artifacts of run 7 (`artifacts`) and artifact 9's zip.
- * @param {{ runs?: any[], envs?: Record<number, string>, artifacts?: any[], zip?: Buffer }} state
+ * A stub API: the runs listed, each run by id, each run's jobs (`envs`: the environment its deploy job names;
+ * `jobless`: runs with no jobs yet), the artifacts of run 7 (`artifacts`) and artifact 9's zip; a path `fail` matches
+ * answers a GitHub error. Each path asked is pushed to `seen`.
+ * @param {{ runs?: any[], envs?: Record<number, string>, jobless?: number[], artifacts?: any[], zip?: Buffer,
+ *           fail?: RegExp, seen?: string[] }} state
  * @returns {import("../lib/github.mjs").Api}
  */
 const stubApi =
-  ({ runs = [], envs = {}, artifacts = [], zip }) =>
+  ({ runs = [], envs = {}, jobless = [], artifacts = [], zip, fail, seen = [] }) =>
   (method, path, _body, options) => {
     assert.equal(method, "GET");
+    seen.push(path);
+    if (fail?.test(path)) return { ok: false, json: undefined, err: "gh: Bad gateway (HTTP 502)" };
     if (path.includes("/actions/workflows/deploy.yml/runs?"))
       return { ok: true, json: { workflow_runs: runs }, err: "" };
     const id = path.match(/\/actions\/runs\/(\d+)$/)?.[1];
     if (id) return { ok: true, json: runs.find((r) => String(r.id) === id), err: "" };
     const jobs = path.match(/\/actions\/runs\/(\d+)\/jobs\?/)?.[1];
     if (jobs) {
+      if (jobless.includes(Number(jobs))) return { ok: true, json: { jobs: [] }, err: "" };
       const env = envs[Number(jobs)];
       const names = ["Registry probe", ...(env ? [`Deploy (${env})`] : []), "Promote (production)"];
       return { ok: true, json: { jobs: names.map((name) => ({ name })) }, err: "" };
@@ -171,7 +179,11 @@ test("ship outcome: the dispatched run is the earliest new run after the dispatc
     { ...done, id: 5, created_at: "2026-11-06T09:00:00Z" },
   ];
   const envs = { 5: "staging", 7: "staging", 8: "staging" };
-  assert.equal(findRun(stubApi({ runs, envs }), "figentra/pay", at)?.id, 7);
+  /** @type {string[]} */
+  const seen = [];
+  assert.equal(findRun(stubApi({ runs, envs, seen }), "figentra/pay", at)?.id, 7);
+  // Only the runs created since the dispatch are listed, so a busy workflow cannot push this one off the page.
+  assert.match(seen[0] ?? "", /&created=%3E%3D2026-11-06T10%3A00%3A00\.000Z&per_page=100$/);
   // A run listed before the dispatch is never this ship's, whatever its environment.
   assert.equal(findRun(stubApi({ runs, envs }), "figentra/pay", { ...at, before: [7] })?.id, 8);
   assert.deepEqual(runIds(stubApi({ runs }), "figentra/pay", "deploy.yml", "main"), [8, 7, 5]);
@@ -197,8 +209,23 @@ test("ship outcome: two sessions shipping at once never take each other's run", 
   const api = stubApi({ runs: [ours, theirs], envs: { 7: "dev", 8: "staging" } });
   assert.equal(findRun(api, "figentra/pay", at)?.id, 8);
   assert.equal(findRun(api, "figentra/pay", { ...at, env: "dev" })?.id, 7);
-  // A completed run whose deploy job never ran (no environment named) can still be read: it has no outcome.
-  assert.equal(findRun(stubApi({ runs: [{ ...done, id: 9 }] }), "figentra/pay", at)?.id, 9);
+});
+
+test("ship outcome: a run whose jobs name no ship environment is never adopted; a jobless running one provisionally", () => {
+  // The owner's promote run: completed, its jobs name production only.
+  assert.equal(findRun(stubApi({ runs: [{ ...done, id: 9 }] }), "figentra/pay", at), undefined);
+  // Completed with no jobs at all: not adopted either.
+  assert.equal(findRun(stubApi({ runs: [done], jobless: [7] }), "figentra/pay", at), undefined);
+  // Running with no jobs yet: maybe this ship's, taken provisionally (followRun finds it again).
+  const queued = { ...done, status: "queued", conclusion: null };
+  const found = findRun(stubApi({ runs: [queued], jobless: [7] }), "figentra/pay", at);
+  assert.equal(found?.id, 7);
+  assert.equal(found?.provisional, true);
+  // Once its jobs name another environment it is passed over.
+  assert.equal(
+    findRun(stubApi({ runs: [queued], envs: { 7: "dev" } }), "figentra/pay", at),
+    undefined,
+  );
 });
 
 test("ship outcome: a deployed outcome at the dispatched revision is a success, with the manifest's writes", () => {
@@ -217,6 +244,20 @@ test("ship outcome: a deployed outcome at the dispatched revision is a success, 
   assert.equal(shipState(ship.outcome), "done");
   // The artifact of another environment is not read: no outcome.
   assert.equal(readOutcome(api, "figentra/pay", done, "dev", SHA).outcome, NO_OUTCOME);
+});
+
+test("ship outcome: the deployed revision is held to the run's own revision, not the tip read before the dispatch", () => {
+  const api = stubApi({ runs: [done], artifacts: artifact, zip: outcomeZip() });
+  const before = "1".repeat(40);
+  // main moved between the tip read and the dispatch: the run's head_sha is what it deploys.
+  assert.equal(readOutcome(api, "figentra/pay", done, "staging", before).outcome, "success");
+  const other = { ...done, head_sha: "2".repeat(40) };
+  const moved = readOutcome(api, "figentra/pay", other, "staging", SHA);
+  assert.equal(moved.outcome, "failure");
+  assert.match(String(moved.problem), /deployed 4f1c2d3e4f5a, not 222222222222/);
+  // A run that names no revision falls back to the dispatch's.
+  const bare = { ...done, head_sha: undefined };
+  assert.equal(readOutcome(api, "figentra/pay", bare, "staging", before).outcome, "failure");
 });
 
 test("ship outcome: a failed or cancelled outcome, or one of another revision or environment, is a failure", () => {
@@ -264,6 +305,19 @@ test("ship outcome: a run without the artifact is `no outcome artifact`, never a
   assert.equal(readOutcome(bare, "figentra/pay", done, "staging", SHA).outcome, NO_OUTCOME);
 });
 
+test("ship outcome: a GitHub error listing or downloading the artifact keeps the ship pending", () => {
+  for (const fail of [/\/artifacts\?name=/, /\/zip$/]) {
+    const api = stubApi({ runs: [done], artifacts: artifact, zip: outcomeZip(), fail });
+    const ship = readOutcome(api, "figentra/pay", done, "staging", SHA);
+    assert.equal(ship.outcome, "pending", String(fail));
+    assert.match(String(ship.problem), /could not be read yet: .*HTTP 502/);
+    assert.equal(shipState(ship.outcome), "active");
+  }
+  // Listed but its zip came back empty: read again later too.
+  const empty = stubApi({ runs: [done], artifacts: artifact });
+  assert.equal(readOutcome(empty, "figentra/pay", done, "staging", SHA).outcome, "pending");
+});
+
 test("ship outcome: followRun waits for the run, and a run still going at the last poll is pending", async () => {
   /** @type {any[]} */
   const runs = [];
@@ -283,8 +337,84 @@ test("ship outcome: followRun waits for the run, and a run still going at the la
   polls = 0;
   runs.length = 0;
   const early = await followRun(api, "figentra/pay", { ...options, polls: 2 });
-  assert.deepEqual(early, { env: "staging", run: 7, url: done.html_url, outcome: "pending" });
+  assert.deepEqual(early, {
+    env: "staging",
+    run: 7,
+    url: done.html_url,
+    sha: SHA,
+    outcome: "pending",
+  });
   assert.equal(shipState(early.outcome), "active");
+});
+
+test("ship outcome: followRun reads the run the dispatch named, without searching for it", async () => {
+  /** @type {string[]} */
+  const seen = [];
+  // Listed before the dispatch, so a search would never take it: only the dispatch's answer names it.
+  const api = stubApi({ runs: [done], artifacts: artifact, zip: outcomeZip(), seen });
+  const options = { ...at, sha: SHA, before: [7], sleep: async () => {}, run: 7, polls: 3 };
+  assert.equal((await followRun(api, "figentra/pay", options)).outcome, "success");
+  assert.equal(seen.filter((p) => p.includes("/workflows/deploy.yml/runs?")).length, 0);
+  // Not readable yet: still pending, with the run id kept for a later read.
+  const none = stubApi({ runs: [] });
+  assert.deepEqual(await followRun(none, "figentra/pay", options), {
+    env: "staging",
+    run: 7,
+    outcome: "pending",
+  });
+});
+
+test("ship outcome: a provisional run is followed only once its jobs name the environment", async () => {
+  const queued = { ...done, status: "queued", conclusion: null };
+  const runs = [queued];
+  /** @type {number[]} */
+  const jobless = [7];
+  let polls = 0;
+  const sleep = async () => {
+    polls++;
+    // Its deploy job appears at the second poll and the run completes at the third.
+    if (polls === 2) jobless.length = 0;
+    if (polls === 3) runs[0] = done;
+  };
+  const api = stubApi({
+    runs,
+    jobless,
+    envs: { 7: "staging" },
+    artifacts: artifact,
+    zip: outcomeZip(),
+  });
+  const options = { ...at, sha: SHA, sleep };
+  // Never confirmed before the last poll: pending with no run id, so it is found again later.
+  assert.deepEqual(await followRun(api, "figentra/pay", { ...options, polls: 1 }), {
+    env: "staging",
+    outcome: "pending",
+  });
+  polls = 0;
+  jobless.push(7);
+  runs[0] = queued;
+  assert.equal((await followRun(api, "figentra/pay", { ...options, polls: 5 })).outcome, "success");
+  assert.equal(polls, 3);
+});
+
+test("ship outcome: resolveShip reads a pending ship by its run id and drops an earlier read's reason", () => {
+  const api = stubApi({ runs: [done], artifacts: artifact, zip: outcomeZip() });
+  /** @type {import("../lib/ship-outcome.mjs").Ship} */
+  const pending = {
+    env: "staging",
+    at: "2026-11-06T10:00:30Z",
+    outcome: "pending",
+    run: 7,
+    sha: SHA,
+    problem: "the artifact could not be read yet: gh: Bad gateway (HTTP 502)",
+  };
+  const ship = resolveShip(api, "figentra/pay", pending);
+  assert.equal(ship.outcome, "success");
+  assert.equal(ship.problem, undefined);
+  assert.equal(ship.at, pending.at);
+  // A finished ship is left as it is; an unreadable run leaves it pending.
+  assert.equal(resolveShip(api, "figentra/pay", ship), ship);
+  const down = stubApi({ runs: [done], fail: /./ });
+  assert.equal(resolveShip(down, "figentra/pay", pending), pending);
 });
 
 test("ship outcome: status finds a pending ship's run that was not listed while the ship waited", (t) => {
