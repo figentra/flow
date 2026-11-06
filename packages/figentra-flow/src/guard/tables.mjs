@@ -2,9 +2,10 @@
  * Figentra Flow file contract:
  * Purpose: the guard engine's tables: the repository's preset's `guard/` modules (`bash-rules.mjs` → `BASH_RULES`,
  *   `path-rules.mjs` → `PATH_RULES` and `PLAN_GATED`, the source paths of the plan gate, `hints.mjs` → `PROMPT`
- *   and `SESSION`), each falling back to the neutral preset's module when the preset has none, read from disk or, in
- *   the guard bundle (`render-guard.mjs`), from the modules it carries. The engine's own rules (the side doors, the
- *   neutral path rules) are not table data: `decideBash` and `decidePaths` add them to any table.
+ *   and `SESSION`), each falling back to the neutral preset's module when the preset has none, read from disk or,
+ *   in the guard bundle (`render-guard.mjs`), from the modules it carries; and the configuration's
+ *   `session.contextCommands` (STA-2131). The engine's own rules (the side doors, the neutral path rules) are not
+ *   table data: `decideBash` and `decidePaths` add them to any table.
  * Boundary: reads the configuration and imports preset modules; throws when the configuration did not load, when a
  *   module fails to load or when a rule table is not a list, so the engine denies (closed on the mandatory policies).
  * Runtime: node
@@ -20,7 +21,8 @@ import { FLOW_ASSETS, presetDir } from "../lib/flow-dir.mjs";
 
 /**
  * @typedef {{ bash: import("./bash.mjs").BashRule[], paths: import("./paths.mjs").PathRule[], planGated?: RegExp,
- *   prompt?: import("./prompt-hints.mjs").PromptTable, session?: import("./session-context.mjs").SessionTable }} GuardTables
+ *   prompt?: import("./prompt-hints.mjs").PromptTable, session?: import("./session-context.mjs").SessionTable,
+ *   contextCommands?: string[][] }} GuardTables
  */
 
 const NEUTRAL = join(FLOW_ASSETS, "presets", "neutral", "guard");
@@ -79,5 +81,9 @@ export async function loadTables(root, modules) {
     planGated: await table("path-rules.mjs", "PLAN_GATED"),
     prompt: await table("hints.mjs", "PROMPT"),
     session: await table("hints.mjs", "SESSION"),
+    // The repository's own SessionStart lines (STA-2131), from its configuration rather than the preset.
+    contextCommands: Array.isArray(config.session?.contextCommands)
+      ? config.session.contextCommands
+      : undefined,
   };
 }

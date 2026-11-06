@@ -110,10 +110,10 @@ digest identifies it). Change the preset or `.flow/overrides/` and sync; `check`
 | `.agents/skills/<name>/` (`.claude/skills/` with `--direct`) | `skills/` (as the profile selects)                                         |
 | `.agents/reference/`, `.agents/routing.yaml`, `.agents/models.yaml` | `reference/`, `routing.yaml`, `models.yaml`                         |
 | `.agents/hooks/fflow-guard.mjs`                              | the guard engine and the preset's `guard/` tables, in one file (below)     |
-| `.claude/settings.json`                                      | `surfaces/settings.json` plus Flow's hooks, below                          |
+| `.claude/settings.json`                                      | `surfaces/settings.json` plus Flow's hooks, below, and `claudeCode`        |
 | `opencode.jsonc`, `.opencode/plugins/fflow-guard.mjs`        | `surfaces/opencode.jsonc` and `surfaces/opencode/`                         |
 | `.mcp.yaml`                                                  | `surfaces/mcp.yaml` plus the config's `mcp` servers (secrets by `$NAME`)   |
-| `AGENTS.md`, `CLAUDE.md`                                     | `surfaces/agents-md/agents.md`, `.flow/readme.yml` and `agentsMd.facts`    |
+| `AGENTS.md`, `CLAUDE.md`                                     | `surfaces/agents-md/agents.md`, `.flow/readme.yml` and `agentsMd`          |
 | `lefthook.yml`                                               | `surfaces/lefthook.yml` plus the config's `lefthook` jobs                  |
 | `README.md`                                                  | `.flow/readme.yml` (see The README)                                        |
 | `.github/workflows/fflow-approve.yml`, `.github/CODEOWNERS`, `.github/workflows/fflow-baseline.yml` | `apps.owner`, `baseline` (see Landing and The gate) |
@@ -125,8 +125,13 @@ imports only `node:` modules, so the guard runs on a checkout with no install (`
 it), `post-write` (`PostToolUse`), `prompt-hints` (`UserPromptSubmit`), `session-context` (`SessionStart`),
 `session-save` (`Stop`: `fflow session stop --save-only` writes the session's record) and `session-stop`
 (`SessionEnd`: `fflow session stop` commits the work as WIP and pushes it; rendered only when the config's
-`session.pushAtEnd` is `true`, see Configuration). The OpenCode guard plugin puts every
-shell, edit, read, glob and grep call to the same file, an ask counting as a deny. With `lefthook.yml`
+`session.pushAtEnd` is `true`, see Configuration). The two session hooks run the installed package's CLI, so on a
+checkout with no install they exit 0 and do nothing. `session-context` also prints the output of the config's
+`session.contextCommands`. The OpenCode guard plugin puts every shell, edit, read, glob and grep call to the same
+file, an ask counting as a deny; a grep or glob carries its searched folder (and a grep its `include` filter), so the
+secret-path rules apply to it. OpenCode runs unattended, so the plugin fails closed: it denies, naming why, when the
+bundle is missing (`sync` writes it beside the plugin and it needs no install, so a missing one is a broken checkout),
+times out, is killed, exits non-zero, prints nothing or prints something that is not an answer. With `lefthook.yml`
 rendered, `sync` also pins `mise.toml`'s `npm:oxfmt` and `npm:oxlint` at the versions `pnpm-workspace.yaml`'s catalog
 pins.
 
@@ -320,6 +325,21 @@ setting you have not made refuses and names it.
 - `session.pushAtEnd` (default `false`): `true` renders the `session-stop` hook, which commits the session's tracked
   work as WIP and pushes it when the session ends. Off, no rendered hook commits or pushes; the `Stop` hook still
   writes the session's record locally. The profile must select `session-stop` too.
+
+- `session.contextCommands` (default none): commands, each an argv list run with no shell in the repository, whose
+  output the `SessionStart` context appends after the preset's invariants, for example
+  `[["node", "tools/scripts/ai-spend.mjs"], ["node", "tools/scripts/linear.mjs", "digest"]]`. Each gets 4 seconds
+  (8 for all of them) and adds at most 20 lines and 2000 characters; one that fails, times out or prints nothing adds
+  nothing. The output is the repository's to keep free of secrets.
+
+- `claudeCode` carries the repository's Claude Code plugins into `.claude/settings.json`: `enabledPlugins`
+  (`{ "<plugin>@<marketplace>": true }`) and `extraKnownMarketplaces` (`{ "<name>": { "source": { … } } }`), merged
+  over the preset's. Only these two keys are accepted: the hooks, permissions and environment stay the preset's and
+  Flow's (`guard.wiring`).
+
+- `agentsMd.facts` is the repository's own Markdown under "This repository" in `AGENTS.md`; `agentsMd.land`
+  replaces the landing line of "How work flows" (by default, land with `fflow land <pr>`), for a repository whose
+  owner lands another way.
 
 - `specs` sets where specs live: `dir` (default `.agents/specs`) and `bugsDir` (default `.agents/specs/bugs`).
 

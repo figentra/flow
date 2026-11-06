@@ -5,7 +5,9 @@
  *   hooks run through `node`, never `pnpm exec` (NFR-2): the guard (`PreToolUse`), its post-write checks, prompt
  *   hints and session context run the repository's own `.agents/hooks/fflow-guard.mjs` (`render-guard.mjs`), so they
  *   run with no install (A-8); the session's record (`Stop`, `--save-only`) and, only when the config's
- *   `session.pushAtEnd` is true, its WIP commit and push (`SessionEnd`; STA-2131) run the installed package's CLI.
+ *   `session.pushAtEnd` is true, its WIP commit and push (`SessionEnd`; STA-2131) run the installed package's CLI,
+ *   each a silent no-op (exit 0) on a checkout with no install. The config's `claudeCode` adds the repository's
+ *   `enabledPlugins` and `extraKnownMarketplaces` (STA-2131), and nothing else.
  *   The profile's `hooks` selects them by id; the guard is mandatory (FR-5), so every profile gets it. Strict JSON
  *   carries no provenance header; the lock's digest identifies the file.
  * Boundary: reads the preset's file; returns text, writes nothing (`sync` writes).
@@ -24,9 +26,14 @@ import { GUARD_FILE } from "./render-guard.mjs";
 /** The rendered file. */
 export const SETTINGS_FILE = ".claude/settings.json";
 
-/** A command running one of the installed package's entries. */
-const bin = (/** @type {string} */ entry, /** @type {string} */ args) =>
-  `node "$CLAUDE_PROJECT_DIR/node_modules/${PACKAGE}/bin/${entry}.mjs" ${args}`;
+/**
+ * A command running one of the installed package's entries, or exiting 0 silently on a checkout with no install
+ * (A-8): the session record is Flow's own bookkeeping, so its absence never fails a turn.
+ */
+const bin = (/** @type {string} */ entry, /** @type {string} */ args) => {
+  const file = `"$CLAUDE_PROJECT_DIR/node_modules/${PACKAGE}/bin/${entry}.mjs"`;
+  return `[ ! -f ${file} ] || node ${file} ${args}`;
+};
 /** A command running the repository's guard bundle for one event: it needs no install (A-8). */
 const guard = (/** @type {string} */ event) => `node "$CLAUDE_PROJECT_DIR/${GUARD_FILE}" ${event}`;
 
@@ -101,5 +108,12 @@ export function renderSettings(ctx) {
   const hooks = hookSettings(ctx.profile, ctx.config);
   for (const [event, entries] of Object.entries(preset.hooks ?? {}))
     hooks[event] = [...(hooks[event] ?? []), ...entries];
+  // Only these two keys are taken from the config, whatever else its block holds: hooks, permissions and env stay
+  // the preset's and Flow's (guard.wiring).
+  const own = /** @type {NonNullable<import("./config.mjs").Config["claudeCode"]>} */ (
+    ctx.config.claudeCode ?? {}
+  );
+  for (const key of /** @type {const} */ (["enabledPlugins", "extraKnownMarketplaces"]))
+    if (own[key]) preset[key] = { ...preset[key], ...own[key] };
   return new Map([[SETTINGS_FILE, `${JSON.stringify({ ...preset, hooks }, null, 2)}\n`]]);
 }

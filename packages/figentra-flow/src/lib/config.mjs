@@ -199,13 +199,39 @@ export const SCHEMA = {
       type: "object",
       additionalProperties: { type: "array", items: { type: "object" } },
     },
-    agentsMd: { type: "object", additionalProperties: false, properties: { facts: str } },
+    // STA-2131: `land` replaces the landing line of AGENTS.md's "How work flows".
+    agentsMd: {
+      type: "object",
+      additionalProperties: false,
+      properties: { facts: str, land: str },
+    },
     // STA-2131: `pushAtEnd` renders the SessionEnd hook that commits the session's work as WIP and pushes it; off
-    // unless a repository opts in.
+    // unless a repository opts in. `contextCommands` are the repository's own commands (argv, no shell) whose
+    // output the SessionStart context appends.
     session: {
       type: "object",
       additionalProperties: false,
-      properties: { pushAtEnd: { type: "boolean" } },
+      properties: {
+        pushAtEnd: { type: "boolean" },
+        contextCommands: { type: "array", items: strs },
+      },
+    },
+    // STA-2131: the Claude Code plugins and marketplaces `.claude/settings.json` carries; only these two keys, so
+    // nothing here reaches its hooks, permissions or environment.
+    claudeCode: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        enabledPlugins: { type: "object", additionalProperties: { type: "boolean" } },
+        extraKnownMarketplaces: {
+          type: "object",
+          additionalProperties: {
+            type: "object",
+            required: ["source"],
+            properties: { source: { type: "object" } },
+          },
+        },
+      },
     },
   },
 };
@@ -285,7 +311,10 @@ export function validate(schema, value, path = "") {
  *             artifacts?: { paths?: string[], maxBytes?: number },
  *             train?: { cutoff?: number, eject?: "bisect" | "manual", after?: string[], label?: string },
  *             mcp?: Record<string, Record<string, any>>, lefthook?: Record<string, Record<string, any>[]>,
- *             agentsMd?: { facts?: string }, session?: { pushAtEnd?: boolean } }} Config
+ *             agentsMd?: { facts?: string, land?: string },
+ *             session?: { pushAtEnd?: boolean, contextCommands?: string[][] },
+ *             claudeCode?: { enabledPlugins?: Record<string, boolean>,
+ *                            extraKnownMarketplaces?: Record<string, { source: Record<string, unknown> }> } }} Config
  * @typedef {{ config: Config, source: string | undefined, warnings: string[], errors: string[] }} Loaded
  */
 
