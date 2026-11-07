@@ -36,7 +36,7 @@ The brief or spec task, the package's `README.md` and `AGENTS.md`, `apps/docs/sr
 7. Tests in `__tests__/` beside the subject with the tier infix (0022, 0182).
 8. Versions only from catalogs or `workspace:*`.
 
-Run `pnpm --filter <package> test typecheck build`, then `pnpm verify`.
+Run `pnpm turbo run test typecheck build --filter=<package>`, then `pnpm verify`.
 
 ## Never
 

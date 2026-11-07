@@ -96,5 +96,5 @@ export class ExplainInvoicePrompt extends Prompt({ template: "billing::ai/explai
 
 ## Check
 
-`pnpm --filter <member> test`, then `pnpm verify`. Review: `api-contract-reviewer`, and `security-tenancy-reviewer` for
+`pnpm turbo run test --filter=<member>`, then `pnpm verify`. Review: `api-contract-reviewer`, and `security-tenancy-reviewer` for
 any tool whose permission is L2 or above.

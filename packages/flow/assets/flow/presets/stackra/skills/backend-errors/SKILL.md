@@ -98,4 +98,4 @@ Assert category and code, never message text.
 
 ## Check
 
-`pnpm --filter <member> test`, then `pnpm verify`. Review: `api-contract-reviewer`.
+`pnpm turbo run test --filter=<member>`, then `pnpm verify`. Review: `api-contract-reviewer`.

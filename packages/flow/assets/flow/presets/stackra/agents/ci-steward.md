@@ -23,7 +23,7 @@ and ADRs 0119, 0166 and 0484.
 
 1. Read the run: `pnpm bot:gh -- run view <id> --log-failed`, or for the gate, its log. Name the first failing step
    and the first real error in it.
-2. Reproduce it on the testbed (`stackra testbed run`), never on the Mac. The Mac runs only oxfmt and oxlint.
+2. Reproduce it on the testbed (`testbed run`), never on the Mac. The Mac runs only oxfmt and oxlint.
 3. Find the root cause: a code bug, a stale lockfile, a version drift, a test that depends on timing or order, or a
    broken workflow step. Call something a flake only with proof: the same SHA giving different results.
 4. Fix it on a branch from `fflow start STA-n`, using the issue for the failure or a new one from

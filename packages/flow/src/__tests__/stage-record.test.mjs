@@ -3,7 +3,8 @@
  * Purpose: hold the stage commands to STA-1945 FR-14 (T015): a stage that ends writes Flow's record on the task's
  *   branch and commits and pushes it (`endStage`), so `fflow next` names the stage that follows: `start` (`worktree`
  *   for a Tasked spec), `spec setup-plan`, `gate run` (written, never committed, so the gated head stays the tip, and a
- *   tree dirty only with the record still gates), and `ship` (only in a landed task's checkout). Nothing is written on
+ *   tree dirty only with the record still gates), and `ship` (only in a landed task's checkout; a Runway ship's
+ *   pending entry written uncommitted, then replaced by its outcome, STA-2137). Nothing is written on
  *   the default branch, and a refused commit is the problem the caller warns with. `land`'s record is held in
  *   land.test.mjs.
  * Boundary: temporary repositories with a local bare origin; the tracker and the gate's runner injected; no network.
@@ -161,4 +162,20 @@ test("ship: recorded only in a landed task's checkout", (t) => {
     sh(b.origin, "rev-parse", `refs/heads/${b.branch}`),
     sh(b.root, "rev-parse", "HEAD"),
   );
+});
+
+test("ship: a Runway ship's pending entry is written at once, then replaced by its outcome", (t) => {
+  const b = onBranch(t, "sta-8");
+  updateRecord(b.root, "sta-8", (r) => ({ ...r, stage: "land", state: "done" }));
+  const head = sh(b.root, "rev-parse", "HEAD");
+  const pending = { env: "dev", at: "2026-11-06T10:00:00Z", outcome: "pending", run: 7 };
+  assert.equal(recordShip(b.root, pending, { commit: false }), undefined);
+  assert.equal(sh(b.root, "rev-parse", "HEAD"), head, "only written, not committed");
+  assert.deepEqual(readRecord(b.root, "sta-8")?.ships, [pending]);
+  assert.equal(readRecord(b.root, "sta-8")?.state, "active");
+  const done = { ...pending, outcome: "success", sha: "a".repeat(40) };
+  assert.equal(recordShip(b.root, done, { replace: true }), undefined);
+  assert.deepEqual(readRecord(b.root, "sta-8")?.ships, [done]);
+  assert.equal(readRecord(b.root, "sta-8")?.state, "done");
+  assert.deepEqual(changed(b.root), [".flow/record/sta-8.json"]);
 });

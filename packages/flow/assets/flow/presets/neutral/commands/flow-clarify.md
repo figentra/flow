@@ -26,10 +26,10 @@ Note: This clarification workflow is expected to run (and be completed) BEFORE i
 
 Execution steps:
 
-1. Run `fflow spec paths --json --paths-only` from repo root **once** (combined `--json --paths-only` mode / `-Json -PathsOnly`). Parse minimal JSON payload fields:
-   - `FEATURE_DIR`
-   - `FEATURE_SPEC`
-   - (Optionally capture `IMPL_PLAN`, `TASKS` for future chained flows.)
+1. Run `fflow spec paths --json --paths-only` from repo root **once** (combined `--json --paths-only` mode / `-Json -PathsOnly`). Parse minimal JSON payload fields, which are under `data`:
+   - `data.FEATURE_DIR`
+   - `data.FEATURE_SPEC`
+   - (Optionally capture `data.IMPL_PLAN`, `data.TASKS` for future chained flows.)
    - If JSON parsing fails, abort and instruct user to re-run `/flow-specify` or verify feature branch environment.
    - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 

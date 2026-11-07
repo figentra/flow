@@ -11,7 +11,15 @@
  *   - nothing between the merge base and that head is owner-only (paths, a rename's old path, root scripts, a
  *     dependency moved off its catalog);
  *   - every required check on that head is green from its trusted source, with one success (`TRUSTED` maps a context
- *     to a login or a list of logins; any other shape, or text that is not JSON, refuses);
+ *     to a login or a list of logins; any other shape, or text that is not JSON, refuses), or it adds no new failure
+ *     against the default branch's recorded baseline (STA-1945 FR-22): a required check that fails on the head is
+ *     excused only when the repository lists it in `approve.tolerate` (rendered as `TOLERATE`; empty by default, so
+ *     nothing is), it concluded `failure`, from its trusted source, on the baseline's commit too, and the `Baseline`
+ *     check, which the ruleset must then require, is green on the head (it compares each task with the baseline, a
+ *     newly reached failure excepted). The tolerance is per check, so the list names only checks that run no more
+ *     than Baseline's tasks; `Baseline` and `fflow/gate`, which runs the whole check command, are never excused, and
+ *     a list naming either, or a `TOLERATE` that is not a list of names, refuses. Without a baseline every required
+ *     check must be green, as before;
  *   - the base's ruleset requires the code owner's review and the base holds `.github/CODEOWNERS`, so GitHub itself
  *     asks the owner for owner-only paths.
  *   Everything is read at that SHA, so a later push cannot change what was checked. After approving it re-reads the
@@ -30,7 +38,7 @@
  *   posts nothing unless the automation variable is `on`, exits 0 on every refusal and 1 only on an infrastructure
  *   error.
  * Runtime: node (GitHub Actions)
- * Governing contract: STA-1856 FR-4 (the security review of 2026-11-01); ADR 0523; the L2 design (PR D); STA-1945.
+ * Governing contract: STA-1856 FR-4 (the security review of 2026-11-01); ADR 0523; the L2 design (PR D); STA-1945 FR-22.
  * Secrets: `GITHUB_TOKEN` and `APP_TOKEN` from the environment, or the minted token in memory; never printed.
  */
 import { appendFileSync } from "node:fs";
@@ -39,16 +47,20 @@ import { pathToFileURL } from "node:url";
 
 import { keyScheme } from "../adapters/tracker/index.mjs";
 import { mint } from "./app-token.mjs";
+import { findBaseline } from "./baseline.mjs";
 import { landRules, specAt } from "./land-rules.mjs";
 import { ownerOnlyPaths, packageFindings } from "./owner-only.mjs";
 import {
   AUTOMATION_VARIABLE,
+  BASELINE_CHECK,
   CONFIG_FILE,
   HOLD_LABEL,
   LAND_COMMAND,
   LAND_CONTEXT,
   LAND_LABEL,
   LAND_MARKER,
+  NAME,
+  NEVER_TOLERATED,
   STATUS_CONTEXT,
 } from "./product.mjs";
 import { requiredCheckState, requiredContexts } from "./required-checks.mjs";
@@ -94,8 +106,11 @@ const wellFormed = (/** @type {unknown} */ t) => {
  * (owner-only paths and findings, a listing at GitHub's limit); each is in `refuse` too. `paths` are the changed paths.
  * @param {{ api: Rest, repo: string, number: number, expectedHead: string, approver: string | string[],
  *           ref: string, environment: string, trusted?: Record<string, string | string[]>,
- *           extraOwnerOnly?: string[] }} input `approver`: the approving App's login, or each of its logins
- * @returns {Promise<{ refuse: string[], sha?: string, nodeId?: string, owner?: string[], paths?: string[] }>}
+ *           extraOwnerOnly?: string[], tolerate?: unknown }} input `approver`: the approving App's login, or each of its
+ *   logins; `tolerate`: the parsed `TOLERATE`, anything but a list of names refuses
+ * @returns {Promise<{ refuse: string[], sha?: string, nodeId?: string, owner?: string[], paths?: string[],
+ *                     baseline?: { sha: string, tolerated: string[] } }>} `baseline`: what the failures were compared
+ *   against, and the listed required checks failing there too
  */
 export async function decide({
   api,
@@ -107,6 +122,7 @@ export async function decide({
   environment,
   trusted = {},
   extraOwnerOnly = [],
+  tolerate = [],
 }) {
   // Fail closed: a trusted source nobody can read trusts no one.
   if (!wellFormed(trusted))
@@ -114,6 +130,20 @@ export async function decide({
   /** @type {string[]} */
   const refuse = [];
   if (!/^[0-9a-f]{40}$/.test(expectedHead)) refuse.push("`head` is not a 40-hex SHA");
+  // Fail closed: a malformed list excuses nothing, and naming a never-excused check is a broken config.
+  /** @type {string[]} */
+  const listed =
+    Array.isArray(tolerate) && tolerate.every((c) => typeof c === "string" && c !== "")
+      ? tolerate
+      : [];
+  if (listed !== tolerate)
+    refuse.push(
+      `\`TOLERATE\` is not a JSON list of check names (\`${NAME} sync\` renders it from \`approve.tolerate\`)`,
+    );
+  const never = listed.filter((c) => NEVER_TOLERATED.includes(c));
+  if (never.length)
+    refuse.push(`\`approve.tolerate\` lists ${never.join(", ")}, which a red main never excuses`);
+  const excusable = listed.filter((c) => !NEVER_TOLERATED.includes(c));
 
   // The App's key is safe only while its environment admits the default branch alone.
   const main = (await api("GET", `/repos/${repo}`)).json?.default_branch;
@@ -200,30 +230,55 @@ export async function decide({
   if ((await textAt(api, repo, ".github/CODEOWNERS", p.base.sha)) === undefined)
     refuse.push(`${p.base.ref} has no .github/CODEOWNERS (\`fflow sync\` writes it)`);
   const required = requiredContexts(ruleList);
+  /** @type {{ sha: string, tolerated: string[] } | undefined} */
+  let baseline;
   if (!required.length) refuse.push(`${p.base.ref} requires no status check`);
   else {
-    const state = requiredCheckState({
-      required,
-      statuses:
-        (await api("GET", `/repos/${repo}/commits/${sha}/statuses?per_page=100`)).json ?? [],
-      checkRuns:
-        (await api("GET", `/repos/${repo}/commits/${sha}/check-runs?per_page=100`)).json
-          ?.check_runs ?? [],
-      trusted,
-    });
+    const at = async (/** @type {string} */ commit, contexts = required) =>
+      requiredCheckState({
+        required: contexts,
+        statuses:
+          (await api("GET", `/repos/${repo}/commits/${commit}/statuses?per_page=100`)).json ?? [],
+        checkRuns:
+          (await api("GET", `/repos/${repo}/commits/${commit}/check-runs?per_page=100`)).json
+            ?.check_runs ?? [],
+        trusted,
+      });
+    const state = await at(sha);
+    let failed = state.failed;
+    // STA-1945 FR-22: on a red default branch, a listed check failing on its recorded baseline too is not a new failure.
+    if (failed.some((c) => excusable.includes(c))) {
+      const found = await findBaseline({ api, repo, base: p.base.sha });
+      const gate = required.filter((r) => r.context === BASELINE_CHECK);
+      if ("searched" in found)
+        refuse.push(
+          `no baseline at ${p.base.sha} or its ${found.searched.length - 1} nearest ancestors, so every required check must be green`,
+        );
+      // Only the per-task comparison shows the failures are the same ones; a skipped Baseline compared nothing.
+      else if (!gate.length || (await at(sha, gate)).succeeded !== 1)
+        refuse.push(
+          `a failure is tolerated only beside a green \`${BASELINE_CHECK}\` check, which ${p.base.ref}'s ruleset must require`,
+        );
+      else {
+        // Baseline itself is green here, so a red Baseline run on main never excuses one on the head. Only a run that
+        // concluded `failure` on main is a recorded failure: a cancelled or timed-out one shows nothing.
+        const before = (await at(found.sha)).outright;
+        const tolerated = failed.filter((c) => excusable.includes(c) && before.includes(c));
+        failed = failed.filter((c) => !tolerated.includes(c));
+        baseline = { sha: found.sha, tolerated };
+      }
+    }
     if (state.pending.length)
       refuse.push(`required checks still running: ${state.pending.join(", ")}`);
-    if (state.failed.length) refuse.push(`required checks failed: ${state.failed.join(", ")}`);
+    if (failed.length)
+      refuse.push(
+        `required checks failed${baseline ? ` that \`approve.tolerate\` does not list or that do not fail on the baseline at ${baseline.sha}` : ""}: ${failed.join(", ")}`,
+      );
     refuse.push(...state.untrusted);
-    if (
-      !state.pending.length &&
-      !state.failed.length &&
-      !state.untrusted.length &&
-      !state.succeeded
-    )
+    if (!state.pending.length && !failed.length && !state.untrusted.length && !state.succeeded)
       refuse.push("no required check succeeded (all were skipped)");
   }
-  return { refuse, sha, nodeId: p.node_id, owner, paths };
+  return { refuse, sha, nodeId: p.node_id, owner, paths, baseline };
 }
 
 /** Turns auto-merge off on the PR with node `id`. */
@@ -269,6 +324,38 @@ const parsed = (/** @type {string} */ text) => {
  *           body: string }} input
  * @returns {Promise<{ lines: string[], comment: boolean } | undefined>}
  */
+/**
+ * The parsed `TOLERATE`: text that is not JSON is `null`, not undefined (which would default to the empty list), so
+ * `decide` refuses it.
+ * @param {string | undefined} text
+ * @returns {unknown}
+ */
+function parsedTolerate(text) {
+  try {
+    return JSON.parse(text || "[]");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The approving review's body: every required check green, or (STA-1945 FR-22) no new failure against the baseline.
+ * @param {string} sha
+ * @param {string} run
+ * @param {{ sha: string, tolerated: string[] } | undefined} baseline
+ * @param {string} lead what else held, such as "no owner-only change"
+ */
+function approvedBody(sha, run, baseline, lead) {
+  if (!baseline)
+    return `Approved at ${sha}: ${lead}, every required check green from its source ([run](${run})).`;
+  const listed = baseline.tolerated.map((c) => `\`${c}\``).join(", ");
+  return (
+    `Approved at ${sha}: ${lead}, and no new failure against the default branch's baseline at ${baseline.sha}. ` +
+    `Tolerated, as \`approve.tolerate\` lists them and they fail there too: ${listed}. ` +
+    `\`${BASELINE_CHECK}\` compared each task; its summary lists the pre-existing and newly reached ones ([run](${run})).`
+  );
+}
+
 async function approveAt({ read, write, repo, number, sha, nodeId, run, body }) {
   const review = await write("POST", `/repos/${repo}/pulls/${number}/reviews`, {
     commit_id: sha,
@@ -335,7 +422,7 @@ export async function main(env, deps = {}) {
   const repo = String(env.REPO);
   const number = Number(env.PR);
   const run = String(env.RUN_URL ?? "");
-  const { refuse, sha, nodeId } = await decide({
+  const { refuse, sha, nodeId, baseline } = await decide({
     api: read,
     repo,
     number,
@@ -345,6 +432,7 @@ export async function main(env, deps = {}) {
     environment: String(env.ENVIRONMENT),
     trusted: parsed(env.TRUSTED || "{}"),
     extraOwnerOnly: JSON.parse(env.OWNER_ONLY_EXTRA || "[]"),
+    tolerate: parsedTolerate(env.TOLERATE),
   });
   if (refuse.length) {
     await write("POST", `/repos/${repo}/issues/${number}/comments`, {
@@ -361,7 +449,7 @@ export async function main(env, deps = {}) {
     sha: String(sha),
     nodeId,
     run,
-    body: `Approved at ${sha}: no owner-only change, every required check green from its source ([run](${run})).`,
+    body: approvedBody(String(sha), run, baseline, "no owner-only change"),
   });
   if (failed) {
     if (failed.comment)
@@ -620,6 +708,7 @@ async function event(env, deps) {
         environment: String(env.ENVIRONMENT),
         trusted,
         extraOwnerOnly: JSON.parse(env.OWNER_ONLY_EXTRA || "[]"),
+        tolerate: parsedTolerate(env.TOLERATE),
       });
       const statuses = await pages(read, `/repos/${repo}/commits/${sha}/statuses`);
       // Owner-only paths and findings are decide's (`d.owner`), so the land rules get no files.
@@ -652,7 +741,7 @@ async function event(env, deps) {
             sha,
             nodeId: d.nodeId,
             run,
-            body: `Approved at ${sha}: every land rule passed and every required check is green from its source ([run](${run})).`,
+            body: approvedBody(sha, run, d.baseline, "every land rule passed"),
           });
           if (failed) {
             reasons.push(...failed.lines);

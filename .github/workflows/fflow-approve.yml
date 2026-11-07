@@ -57,6 +57,7 @@ jobs:
           INTEGRITY: 'sha512-92p50IwVCWOndbkTLpYSw91WF5P3jptHGXzfjArzwrMqaoD1JxHPZpiXLRV6cvlU3O6bKkAwKmGSz+YL5QMcmQ=='
           TRUSTED: '{"fflow/gate":"figentra-flow[bot]"}'
           OWNER_ONLY_EXTRA: '[]'
+          TOLERATE: '[]'
         run: |
           cd "$RUNNER_TEMP"
           [ -n "$INTEGRITY" ] || { echo "::error::no pinned integrity for @figentra-oss/flow@0.2.3; run fflow sync where the lockfile resolves it"; exit 1; }

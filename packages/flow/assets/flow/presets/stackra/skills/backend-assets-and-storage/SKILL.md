@@ -82,4 +82,4 @@ await prefs.set("theme", "dark");
 
 ## Check
 
-`pnpm --filter <member> test typecheck build`, then `pnpm verify`. Uploads and stored secrets: `security-tenancy-reviewer`.
+`pnpm turbo run test typecheck build --filter=<member>`, then `pnpm verify`. Uploads and stored secrets: `security-tenancy-reviewer`.

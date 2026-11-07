@@ -538,6 +538,7 @@ const ALLOWED = [
   'node -e \'console.log(check("rm -rf a[b"), check("encore secret set X"))\'',
   "timeout 600 pnpm verify",
   "turbo run build --filter=@stackra/logger",
+  "pnpm turbo run test typecheck build --filter=@stackra/logger",
   "encore run",
   "encore test",
   "encore check",

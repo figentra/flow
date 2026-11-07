@@ -10,7 +10,7 @@
 // @covers sta-1729:FR-1 sta-1729:AC-001 sta-1729:AC-002 sta-1729:P-001
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { slugOf, start } from "../commands/start.mjs";
@@ -58,9 +58,18 @@ test("start: one branch and one worktree in .claude/worktrees, and the issue In 
     sh(path, "branch", "--show-current"),
     "figentra/sta-12-add-the-pay-connector-stripe",
   );
-  // STA-1945 FR-14: the branch starts from origin/main with one commit, the record, pushed.
+  // STA-1945 FR-14: the branch starts from origin/main with one commit, the record (and the new spec), pushed.
   assert.equal(sh(path, "rev-parse", "HEAD^"), sh(r.root, "rev-parse", "origin/main"));
-  assert.equal(sh(path, "show", "--name-only", "--format=", "HEAD"), ".flow/record/sta-12.json");
+  assert.equal(
+    sh(path, "show", "--name-only", "--format=", "HEAD"),
+    ".agents/specs/sta-12-add-the-pay-connector-stripe/spec.md\n.flow/record/sta-12.json",
+  );
+  // STA-2126: the neutral preset's template has its **Issue** line filled with the key.
+  const spec = readFileSync(
+    join(path, ".agents", "specs", "sta-12-add-the-pay-connector-stripe", "spec.md"),
+    "utf8",
+  );
+  assert.match(spec, /^\*\*Issue\*\*: STA-12 <!--/m);
   assert.deepEqual(moved, [["STA-12", "figentra/sta-12-add-the-pay-connector-stripe"]]);
 });
 
@@ -213,4 +222,121 @@ test("start with a roster: an unknown --role is refused first; no role only warn
     warnings.join(),
     /no role \(pass --role, or set the spec's \*\*Role\*\*\); the lead assigns one/,
   );
+});
+
+// @covers sta-2126:FR-1
+test("start: a key with no spec folder gets spec.md from the preset's template, key and branch filled in", async (t) => {
+  const r = repo({ [CONFIG_FILE]: JSON.stringify({ ...CONFIG, preset: "stackra" }) });
+  t.after(r.dispose);
+  /** @type {string[]} */
+  const logs = [];
+  const dry = await start({
+    cwd: r.root,
+    key: "STA-13",
+    slug: "specced",
+    issues: tracker().issues,
+    dry: true,
+    log: (s) => logs.push(s),
+    warn: () => {},
+  });
+  assert.equal(dry.ok, true);
+  assert.match(logs.join(), /and \.agents\/specs\/sta-13-specced\/spec\.md/);
+  const result = await start({
+    cwd: r.root,
+    key: "STA-13",
+    slug: "specced",
+    issues: tracker().issues,
+    ...quiet,
+  });
+  const text = readFileSync(
+    join(result.path ?? "", ".agents", "specs", "sta-13-specced", "spec.md"),
+    "utf8",
+  );
+  assert.match(text, /^\*\*Linear\*\*: STA-13 <!--/m);
+  assert.match(text, /^\*\*Feature Branch\*\*: `figentra\/sta-13-specced`$/m);
+  assert.match(text, /^\*\*Linear project\*\*: \[project name/m);
+  // The spec is committed with the record, so the worktree is clean for `fflow clean`.
+  assert.equal(
+    sh(result.path ?? "", "show", "--name-only", "--format=", "HEAD"),
+    ".agents/specs/sta-13-specced/spec.md\n.flow/record/sta-13.json",
+  );
+  assert.equal(sh(result.path ?? "", "status", "--porcelain"), "");
+});
+
+// @covers sta-2126:FR-1
+test("start: a bug-lane key and --no-spec get no spec; the worktree is clean", async (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  const bug = join(r.root, ".agents", "specs", "bugs", "sta-15-crash");
+  mkdirSync(bug, { recursive: true });
+  writeFileSync(join(bug, "README.md"), "# Crash\n");
+  sh(r.root, "add", "-A");
+  sh(r.root, "commit", "-q", "-m", "bug");
+  sh(r.root, "push", "-q", "origin", "main");
+  /** @type {string[]} */
+  const logs = [];
+  const log = (/** @type {string} */ s) => logs.push(s);
+  const issues = tracker().issues;
+  await start({ cwd: r.root, key: "STA-15", slug: "crash", issues, dry: true, log, warn: log });
+  const fixed = await start({ cwd: r.root, key: "STA-15", slug: "crash", issues, log, warn: log });
+  const trivial = await start({
+    cwd: r.root,
+    key: "STA-16",
+    slug: "typo",
+    issues,
+    spec: false,
+    log,
+    warn: log,
+  });
+  assert.doesNotMatch(logs.join(), /spec\.md|spec template/);
+  for (const [result, key, folder] of /** @type {const} */ ([
+    [fixed, "sta-15", "sta-15-crash"],
+    [trivial, "sta-16", "sta-16-typo"],
+  ])) {
+    const path = result.path ?? "";
+    assert.equal(existsSync(join(path, ".agents", "specs", folder)), false);
+    assert.equal(sh(path, "show", "--name-only", "--format=", "HEAD"), `.flow/record/${key}.json`);
+    assert.equal(sh(path, "status", "--porcelain"), "");
+  }
+});
+
+test("start: an existing spec folder for the key is left as it is", async (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  mkdirSync(join(r.root, ".agents", "specs", "sta-14-older"), { recursive: true });
+  writeFileSync(join(r.root, ".agents", "specs", "sta-14-older", "spec.md"), "# Mine\n");
+  sh(r.root, "add", "-A");
+  sh(r.root, "commit", "-q", "-m", "spec");
+  sh(r.root, "push", "-q", "origin", "main");
+  // The dry run reads origin/main, not the main checkout's working tree.
+  mkdirSync(join(r.root, ".agents", "specs", "sta-17-local"), { recursive: true });
+  /** @type {string[]} */
+  const logs = [];
+  const dry = (/** @type {string} */ key) =>
+    start({
+      cwd: r.root,
+      key,
+      slug: "newer",
+      issues: tracker().issues,
+      dry: true,
+      log: (s) => logs.push(s),
+      warn: () => {},
+    });
+  await dry("STA-14");
+  await dry("STA-17");
+  assert.doesNotMatch(logs[0], /spec\.md/);
+  assert.match(logs[1], /and \.agents\/specs\/sta-17-newer\/spec\.md/);
+  logs.length = 0;
+  const result = await start({
+    cwd: r.root,
+    key: "STA-14",
+    slug: "newer",
+    issues: tracker().issues,
+    log: (s) => logs.push(s),
+    warn: () => {},
+  });
+  const specs = join(result.path ?? "", ".agents", "specs");
+  assert.equal(readFileSync(join(specs, "sta-14-older", "spec.md"), "utf8"), "# Mine\n");
+  assert.equal(existsSync(join(specs, "sta-14-newer")), false);
+  assert.doesNotMatch(logs.join(), /spec template/);
 });

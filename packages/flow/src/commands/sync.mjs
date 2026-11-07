@@ -28,7 +28,7 @@ import { fileURLToPath } from "node:url";
 
 import { NAME } from "../lib/product.mjs";
 import { ConfigError } from "../lib/config.mjs";
-import { presetSource } from "../lib/flow-dir.mjs";
+import { BUNDLED, presetSource } from "../lib/flow-dir.mjs";
 import { LockError, NewerLockError, readLock } from "../lib/lock.mjs";
 import { incompatibility } from "../lib/preset-package.mjs";
 import { catalogPins, LEFTHOOK_FILE, pinTools } from "../lib/render-lefthook.mjs";
@@ -47,8 +47,8 @@ import { runIn } from "../lib/workspace-run.mjs";
 /** The package's assets folder. */
 export const ASSETS = fileURLToPath(new URL("../../assets", import.meta.url));
 
-/** The presets bundled with Flow. */
-export const BUNDLED = ["neutral", "stackra"];
+// Moved to lib/flow-dir.mjs so lib/spec-check.mjs reads it without this command (STA-2131).
+export { BUNDLED };
 
 /** Raised when `sync` would adopt a preset the lock does not record; `fflow update` adopts it. */
 export class SyncRefusal extends Error {}
@@ -143,7 +143,7 @@ export function project(root, direct, io) {
   if (direct) return 0;
   if (!hasProjector(root)) {
     io.log(
-      `${NAME} sync: no agents:sync script projects .agents/skills; run \`${NAME} sync --direct\` to render Claude Code and OpenCode files`,
+      `${NAME} sync: .agents/skills is ready for Codex; no agents:sync projector is configured. For other configured harnesses, run \`${NAME} sync --direct\` (defaults to Claude Code and OpenCode)`,
     );
     return 0;
   }

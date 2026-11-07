@@ -27,6 +27,9 @@ import { resolvePackagePreset } from "./preset-package.mjs";
 import { VERSION } from "./product.mjs";
 import { parseYaml, YamlError } from "./yaml.mjs";
 
+/** The presets bundled with Flow. */
+export const BUNDLED = ["neutral", "stackra"];
+
 /** The folder a repository owns. */
 export const FLOW_DIR = ".flow";
 /** The current-spec pointer (git-ignored). */

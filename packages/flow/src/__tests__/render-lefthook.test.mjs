@@ -121,7 +121,7 @@ test("oxlint runs mise, skips without it, and skips when its config extends @sta
   assert.deepEqual(
     parsed["pre-commit"].jobs.find((/** @type {{ name: string }} */ j) => j.name === "oxlint")
       .exclude,
-    [".agents/skills/**", ".agents/reference/**"],
+    [".agents/skills/**", ".agents/reference/**", ".agents/hooks/fflow-guard.mjs"],
   );
   assert.equal(runJob(run, root, withMise).stdout.trim(), "mise exec npm:oxlint -- oxlint a.mjs");
   assert.equal(

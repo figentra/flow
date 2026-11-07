@@ -53,7 +53,7 @@ pnpm linear start STA-<n>
 ## 4. Build and trace
 
 - Tests tag what they prove: `// @covers sta-<n>:FR-003`. Done requires every FR covered by a test.
-- `figentra-flow gate ci` and `figentra-flow trace ci` run inside `pnpm validate`.
+- `fflow gate ci` and `fflow trace ci` run inside `pnpm validate`.
 
 ## 5. Commit, PR, review, merge
 
@@ -62,8 +62,9 @@ pnpm linear start STA-<n>
 - Builders commit, push and open PRs as the bot: `pnpm bot:git -- commit …`, `pnpm bot:git -- push origin HEAD`,
   `pnpm bot:gh -- pr create …` (ADR 0230), never as the owner's account.
 - An **independent** reviewer (`code-reviewer`, never the session that wrote it) posts a new comment through
-  `pnpm bot:review` whose first line is `AI-REVIEW: PASS <full head sha> base=<base ref> patch=<patch id>`. A `design` or `risk:R3` PR
-  also needs the owner's APPROVED review ending in `owner-approval`; an agent never writes that token.
+  `pnpm bot:gh` whose first line is `Review (advisory): PASS <full head sha> base=<base ref>`; it is advice
+  (ADR 0523 decision 6). A `design` or `risk:R3` PR also needs the owner's APPROVED review ending in
+  `owner-approval`; an agent never writes that token.
 - The lead merges with `pnpm pr:merge <n>` only (it enqueues where a merge queue exists); never `--admin`, never a push to `main`. Then
   `pnpm linear done STA-n <link>`.
 

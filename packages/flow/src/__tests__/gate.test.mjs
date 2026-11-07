@@ -28,6 +28,7 @@ import {
   checkTraceTasks,
   DESIGN_SECTIONS,
   checkBranch,
+  isBotBranch,
   DOCUMENT_GATES_SINCE,
   checkBug,
   checkComponents,
@@ -125,6 +126,37 @@ test("a Draft spec passes with open questions; later stages need their rules and
   );
   assert.match(checkStage("sta-12-x", spec({ stage: "Planned" })).join(), /needs plan\.md/);
   assert.deepEqual(checkStage("sta-12-x", spec({ stage: "Abandoned", status: "pending" })), []);
+});
+
+test("a Draft spec gets the approval's spec checks as warnings, and `gate check` prints them and exits 0", () => {
+  const draft = spec({ status: "pending", linear: "STA-n", body: impact("[open]") });
+  /** @type {string[]} */
+  const warned = [];
+  assert.deepEqual(checkStage("sta-12-x", draft, { warn: (w) => warned.push(w) }), []);
+  assert.match(warned.join("\n"), /at approval: `\*\*Clarifications status\*\*` is not `complete`/);
+  assert.match(warned.join("\n"), /at approval: `\*\*Linear\*\*`.*has no issue key/);
+  // the same text at Clarified fails on what the Draft warned
+  const clarified = checkStage(
+    "sta-12-x",
+    draft.replace("**Status**: Draft", "**Status**: Clarified"),
+  );
+  assert.match(clarified.join(), /Clarifications status/);
+  const quiet = [];
+  checkStage("sta-12-x", spec(), { warn: (w) => quiet.push(w) });
+  assert.deepEqual(quiet, [], "a clean Draft warns nothing");
+  const dir = join(mkdtempSync(join(tmpdir(), "spec-gate-")), "sta-12-x");
+  try {
+    mkdirSync(dir);
+    writeFileSync(join(dir, "spec.md"), draft);
+    const r = spawnSync(process.execPath, [BIN, "gate", "check", dir], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(
+      r.stderr,
+      /spec-gate: warning: .*sta-12-x: at approval: `\*\*Clarifications status\*\*`/,
+    );
+  } finally {
+    rmSync(dirname(dir), { recursive: true });
+  }
 });
 
 test("the fixture passes at every stage from Clarified to Done", () => {
@@ -248,6 +280,14 @@ test("lane: feat commits need a spec through the branch or Refs keys", () => {
   );
   assert.deepEqual(checkLane({ commits: [feat], branch: "figentra/sta-163-x", specKeys }), []);
   assert.deepEqual(checkLane({ commits: ["feat: y\n\nRefs: STA-170"], taskKeys }), []);
+});
+
+test("bot branches: Renovate and the changesets version PR skip the branch shape and the tier floor (STA-2222)", () => {
+  assert.equal(isBotBranch("changeset-release/main"), true);
+  assert.equal(isBotBranch("renovate/node-24"), true);
+  assert.equal(isBotBranch("changeset-release/next"), false);
+  assert.equal(isBotBranch("figentra/sta-163-sdd-gates"), false);
+  assert.equal(isBotBranch(undefined), false);
 });
 
 test("branch: the tracker's shape or allow-listed", () => {
@@ -793,6 +833,20 @@ test("checkStage: Sources at Clarified, placeholders at the approval stop, vague
   assert.doesNotMatch(
     checkStage("sta-12-x", documented("feature", "Clarified", dated), over).join(),
     /placeholder/,
+  );
+  // A big Draft warns of the placeholder its Clarified approval would fail on, and still passes.
+  /** @type {string[]} */
+  const early = [];
+  assert.deepEqual(
+    checkStage("sta-12-x", documented("big", "Draft", dated), {
+      ...over,
+      warn: (w) => early.push(w),
+    }),
+    [],
+  );
+  assert.match(
+    early.join("\n"),
+    /at approval: spec\.md: the template placeholder `\[DATE\]` remains/,
   );
   // At Planned the feature spec is approved, and so is the plan: its placeholders, questions and components.
   const planned = { ...over, words: [], files: ["spec.md", "plan.md"] };

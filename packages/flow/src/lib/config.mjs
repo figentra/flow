@@ -8,17 +8,19 @@
  *   the phase A plan stop).
  * Runtime: node
  * Governing contract: STA-1729 phase A (the leader's plan stop of 2026-10-31); STA-2098 (`harnesses`); STA-1945
- *   (FR-7: `mcp`, `lefthook`, `agentsMd`).
+ *   (FR-7: `mcp`, `lefthook`, `agentsMd`); STA-2131 (`session`).
  * Secrets: none; the config names environment variables and secret paths, never values.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { HARNESS_IDS } from "../adapters/harness/index.mjs";
-import { CONFIG_FILE, LEGACY_CONFIG_FILE, NAME } from "./product.mjs";
+import { CONFIG_FILE, LEGACY_CONFIG_FILE, NAME, NEVER_TOLERATED } from "./product.mjs";
 
 const str = { type: "string", minLength: 1 };
 const strs = { type: "array", items: str, minItems: 1 };
+/** The marketplace sources `claudeCode.extraKnownMarketplaces` may name: remote ones only (STA-2131). */
+export const MARKETPLACE_SOURCES = ["github", "git", "url"];
 /** A port block chosen by `kind`: one variant per adapter. */
 const port = (
   /** @type {Record<string, Record<string, unknown>>} */ variants,
@@ -144,6 +146,8 @@ export const SCHEMA = {
         // The L2 design: the workflows whose success wakes main's land lane, and the App slugs that may ask for a land.
         workflows: { type: "array", items: { type: "string", pattern: "^[\\w .()-]+$" } },
         requesters: { type: "array", items: { type: "string", pattern: "^[\\w-]+$" } },
+        // The required checks a red main may excuse against its baseline (STA-1945 FR-22); none by default.
+        tolerate: { type: "array", items: { ...str, not: { enum: NEVER_TOLERATED } } },
       },
     },
     clean: {
@@ -197,7 +201,48 @@ export const SCHEMA = {
       type: "object",
       additionalProperties: { type: "array", items: { type: "object" } },
     },
-    agentsMd: { type: "object", additionalProperties: false, properties: { facts: str } },
+    // STA-2131: `land` replaces the landing line of AGENTS.md's "How work flows".
+    agentsMd: {
+      type: "object",
+      additionalProperties: false,
+      properties: { facts: str, land: str },
+    },
+    // STA-2131: `pushAtEnd` renders the SessionEnd hook that commits the session's work as WIP and pushes it; off
+    // unless a repository opts in. `contextCommands` are the repository's own commands (argv, no shell) whose
+    // output the SessionStart context appends.
+    session: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        pushAtEnd: { type: "boolean" },
+        contextCommands: { type: "array", items: strs },
+      },
+    },
+    // STA-2131: the Claude Code plugins and marketplaces `.claude/settings.json` carries; only these two keys, so
+    // nothing here reaches its hooks, permissions or environment.
+    claudeCode: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        enabledPlugins: { type: "object", additionalProperties: { type: "boolean" } },
+        extraKnownMarketplaces: {
+          type: "object",
+          additionalProperties: {
+            type: "object",
+            required: ["source"],
+            // A remote source only: a local `directory` or `file` marketplace could hand the session a plugin whose
+            // hooks run beside the guard's, from files any branch can change.
+            properties: {
+              source: {
+                type: "object",
+                required: ["source"],
+                properties: { source: { enum: MARKETPLACE_SOURCES } },
+              },
+            },
+          },
+        },
+      },
+    },
   },
 };
 
@@ -227,6 +272,8 @@ export function validate(schema, value, path = "") {
     return [`${at}: must be ${JSON.stringify(schema.const)}`];
   if (schema.enum && !schema.enum.includes(value))
     return [`${at}: must be one of ${schema.enum.join(", ")}`];
+  if (schema.not?.enum?.includes(value))
+    return [`${at}: must not be one of ${schema.not.enum.join(", ")}`];
   if (schema.type) {
     const t = typeOf(value);
     /** @type {string[]} */
@@ -268,13 +315,16 @@ export function validate(schema, value, path = "") {
  *             apps?: { gate?: { slug?: string, login: string, aliases?: string[] }, review?: { slug: string },
  *                      owner?: string },
  *             gate?: { check?: string, shard?: string }, approve?: { ownerOnly?: string[], checks?: Record<string, string>,
- *                      workflows?: string[], requesters?: string[] },
+ *                      workflows?: string[], requesters?: string[], tolerate?: string[] },
  *             clean?: { keep?: string[], budget?: number }, review?: { required?: string[] },
  *             baseline?: { tasks?: string[], mustPass?: string[], install?: string, setup?: Record<string, unknown>[], branch?: string },
  *             artifacts?: { paths?: string[], maxBytes?: number },
  *             train?: { cutoff?: number, eject?: "bisect" | "manual", after?: string[], label?: string },
  *             mcp?: Record<string, Record<string, any>>, lefthook?: Record<string, Record<string, any>[]>,
- *             agentsMd?: { facts?: string } }} Config
+ *             agentsMd?: { facts?: string, land?: string },
+ *             session?: { pushAtEnd?: boolean, contextCommands?: string[][] },
+ *             claudeCode?: { enabledPlugins?: Record<string, boolean>,
+ *                            extraKnownMarketplaces?: Record<string, { source: Record<string, unknown> }> } }} Config
  * @typedef {{ config: Config, source: string | undefined, warnings: string[], errors: string[] }} Loaded
  */
 
