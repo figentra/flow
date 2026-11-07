@@ -34,7 +34,7 @@ const FIGENTRA = {
   },
   credentials: { kind: "wrapper", gh: ["pnpm", "bot:gh", "--"], git: ["pnpm", "bot:git", "--"] },
   runner: { kind: "command", run: ["stackra", "testbed", "run", "{label}", "{dir}", "{command}"] },
-  secrets: { kind: "infisical", paths: { gate: "/ci/gate" } },
+  secrets: { kind: "env" },
   apps: {
     gate: { slug: "figentra-gate", login: "figentra-gate[bot]" },
     review: { slug: "figentra-review" },
@@ -147,40 +147,68 @@ test("config: a renamed gate App's aliases add logins; without them the login st
   assert.match(bad("b[bot]"), /^apps\.gate\.aliases: must be a array$/m);
 });
 
-test("schema: secrets.oidc names an audience and, optionally, the identity's uuid, nothing else", () => {
+test("schema: sops secrets.oidc names a decrypt action pinned to a commit and a scope, nothing else", () => {
+  const decrypt = `figentra/stackra/.github/actions/secrets-decrypt@${"c".repeat(40)}`;
   const oidc = (/** @type {unknown} */ value) =>
-    validate(SCHEMA, { ...FIGENTRA, secrets: { ...FIGENTRA.secrets, oidc: value } }).join("\n");
+    validate(SCHEMA, { ...FIGENTRA, secrets: { kind: "sops", oidc: value } }).join("\n");
+  assert.equal(oidc({ decrypt, scope: "ci/flow/gate" }), "");
   assert.equal(
-    oidc({ identityId: "0f4b2c1e-9a8d-4c3b-8e7f-6a5b4c3d2e1f", audience: "fflow-ci" }),
+    validate(SCHEMA, { ...FIGENTRA, secrets: { kind: "sops" } }).join("\n"),
     "",
+    "sops without oidc reads the environment, as env",
   );
-  // K7: the id may come from the Actions variable instead, so an audience alone is valid.
-  assert.equal(oidc({ audience: "fflow-ci" }), "");
+  assert.match(oidc({ decrypt }), /^secrets\.oidc\.scope: is required$/m);
+  assert.match(oidc({ scope: "ci/flow/gate" }), /^secrets\.oidc\.decrypt: is required$/m);
+  // A tag or branch can move; only a full commit is accepted.
+  for (const bad of [
+    "figentra/stackra/.github/actions/secrets-decrypt@main",
+    "figentra/stackra/.github/actions/secrets-decrypt@v1",
+    `./.github/actions/secrets-decrypt@${"c".repeat(40)}`,
+    `${decrypt} # main`,
+  ])
+    assert.match(
+      oidc({ decrypt: bad, scope: "ci/flow/gate" }),
+      /^secrets\.oidc\.decrypt: must match/m,
+    );
+  for (const bad of ["ci/flow/gate; rm", "/ci/flow", "ci//flow", "ci/flow/"])
+    assert.match(oidc({ decrypt, scope: bad }), /^secrets\.oidc\.scope: must match/m);
   assert.match(
-    oidc({ identityId: "0f4b2c1e-9a8d-4c3b-8e7f-6a5b4c3d2e1f" }),
-    /^secrets\.oidc\.audience: is required$/m,
+    oidc({ decrypt, scope: "ci/flow/gate", audience: "fflow-ci" }),
+    /^secrets\.oidc\.audience: is not a known key$/m,
   );
+  assert.match(oidc(["ci/flow/gate"]), /^secrets\.oidc: must be a object$/m);
+  for (const kind of ["env", "infisical"])
+    assert.match(
+      validate(SCHEMA, {
+        ...FIGENTRA,
+        secrets: { kind, oidc: { decrypt, scope: "ci/flow/gate" } },
+      }).join("\n"),
+      /^secrets\.oidc: is not a known key$/m,
+    );
+});
+
+test("config: the retired infisical secrets still load, with a warning; env and sops do not warn", (t) => {
+  const old = {
+    kind: "infisical",
+    auth: "universal-auth",
+    projectId: "86c297d4-ce42-4e94-b4b3-810a715812f2",
+    env: "prod",
+    domain: "https://eu.infisical.com",
+    paths: { gate: "/ci/gate" },
+    bin: "~/.local/bin/infisical",
+    envFile: "~/.ci-env",
+  };
+  const dirs = [old, { kind: "env" }, { kind: "sops" }].map((secrets) =>
+    folder({ [CONFIG_FILE]: JSON.stringify({ version: 1, secrets }) }),
+  );
+  t.after(() => dirs.forEach((d) => rmSync(d, { recursive: true })));
+  const [retired, env, sops] = dirs.map(loadConfig);
+  assert.deepEqual(retired.errors, []);
   assert.match(
-    oidc({ identityId: "not-a-uuid", audience: "fflow-ci" }),
-    /^secrets\.oidc\.identityId: must match/m,
+    retired.warnings.join("\n"),
+    /secrets\.kind "infisical" is retired and read as "env"/,
   );
-  assert.match(
-    oidc({ identityId: "0f4b2c1e-9a8d-4c3b-8e7f-6a5b4c3d2e1f", audience: "a b" }),
-    /^secrets\.oidc\.audience: must match/m,
-  );
-  assert.match(
-    oidc({
-      identityId: "0f4b2c1e-9a8d-4c3b-8e7f-6a5b4c3d2e1f",
-      audience: "fflow-ci",
-      subject: "x",
-    }),
-    /^secrets\.oidc\.subject: is not a known key$/m,
-  );
-  assert.match(oidc(["fflow-ci"]), /^secrets\.oidc: must be a object$/m);
-  assert.match(
-    validate(SCHEMA, { ...FIGENTRA, secrets: { kind: "env", oidc: {} } }).join("\n"),
-    /^secrets\.oidc: is not a known key$/m,
-  );
+  for (const loaded of [env, sops]) assert.deepEqual([loaded.errors, loaded.warnings], [[], []]);
 });
 
 test("config: a file is loaded and validated; a missing port is refused naming its key", (t) => {

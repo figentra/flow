@@ -14,7 +14,8 @@
  *     one token per PR, in PR order, with the key from the default branch's configuration;
  *   - every comment the lane writes starts with `LAND_MARKER`;
  *   - the rendered lane: its triggers, guards, permissions, environment, concurrency, pinned integrity, and no event
- *     text in a `run:` block; `sync` renders it only with `secrets.oidc`.
+ *     text in a `run:` block, and in the keyed jobs mise then the decrypt of the gate App's id and key before the
+ *     script; `sync` renders it only with a `sops` `secrets.oidc`.
  * Boundary: a fake GitHub (injected REST functions) and temporary folders; no network.
  * Runtime: node
  * Governing contract: ADR 0523; the L2 design (PR D; Tests); STA-1945.
@@ -35,6 +36,7 @@ import {
   APPROVE_ENVIRONMENT,
   APPROVE_WORKFLOW,
   AUTOMATION_VARIABLE,
+  ENV_PREFIX,
   HOLD_LABEL,
   LAND_COMMAND,
   LAND_CONTEXT,
@@ -52,14 +54,18 @@ const OLD = "d".repeat(40);
 const MERGED = "e".repeat(40);
 const FLOW = "figentra-flow[bot]";
 const OWNER = "figentra-usr";
-const OIDC = {
-  identityId: "0f4b2c1e-9a8d-4c3b-8e7f-6a5b4c3d2e1f",
-  audience: "fflow-ci",
-  domain: "https://eu.infisical.com",
-  projectId: "86c297d4-ce42-4e94-b4b3-810a715812f2",
-  env: "prod",
-  path: "/ci/gate",
+/** A `sops` secrets.oidc: the decrypt action pinned to a commit and the gate App's scope. */
+const DECRYPT = {
+  decrypt: `figentra/stackra/.github/actions/secrets-decrypt@${"c".repeat(40)}`,
+  scope: "ci/flow/gate",
 };
+/** The decrypt step every keyed job runs before its script. */
+const DECRYPT_STEP = `      - name: Gate App key
+        uses: ${DECRYPT.decrypt}
+        with:
+          scope: ${DECRYPT.scope}
+          names: ${ENV_PREFIX}GATE_APP_ID,${ENV_PREFIX}GATE_PRIVATE_KEY
+`;
 const ENV = Object.freeze({
   MODE: "event",
   AUTOMATION: "on",
@@ -73,7 +79,6 @@ const ENV = Object.freeze({
   REQUESTERS: '["stackra-bot"]',
   REVIEWERS: '["stackra-reviewer"]',
   OWNER,
-  OIDC: JSON.stringify(OIDC),
 });
 const GATE = { context: STATUS_CONTEXT, state: "success", creator: { login: FLOW } };
 const BOT_LABEL = {
@@ -640,7 +645,7 @@ const BASE_OPTIONS = {
 };
 const LANE = {
   defaultBranch: "main",
-  oidc: OIDC,
+  oidc: DECRYPT,
   owner: OWNER,
   workflows: ["Quality Gate"],
   requesters: ["stackra-bot"],
@@ -689,7 +694,11 @@ test("lane render: the triggers are exactly the listed set", () => {
   const both = approveWorkflow({
     ...BASE_OPTIONS,
     lane: LANE,
-    verdict: { gatePath: `.github/workflows/${NAME}-gate.yml`, defaultBranch: "main", oidc: OIDC },
+    verdict: {
+      gatePath: `.github/workflows/${NAME}-gate.yml`,
+      defaultBranch: "main",
+      oidc: DECRYPT,
+    },
   });
   assert.match(both, new RegExp(`workflows: \\["Quality Gate", "${STATUS_CONTEXT}"\\]`));
   assert.deepEqual(Object.keys(jobsOf(both)), [
@@ -745,7 +754,10 @@ test("lane render: permissions, environment, guards, concurrency and integrity",
   );
   assert.match(jobs.route, /any: \$\{\{ steps\.route\.outputs\.any \}\}/);
   for (const name of ["approve", "merge"]) {
-    assert.ok(jobs[name].includes(`OIDC: '${JSON.stringify(OIDC)}'`), name);
+    const mise = jobs[name].indexOf("jdx/mise-action@");
+    const decrypt = jobs[name].indexOf(DECRYPT_STEP);
+    assert.ok(mise > 0 && decrypt > mise && decrypt < jobs[name].indexOf("node flow/"), name);
+    assert.doesNotMatch(jobs[name], /OIDC:|OIDC_IDENTITY/, name);
     assert.ok(jobs[name].includes(`REQUESTERS: '["stackra-bot"]'`), name);
     assert.ok(jobs[name].includes(`OWNER: '${OWNER}'`), name);
     assert.match(jobs[name], /AUTOMATION: \$\{\{ vars\.FIGENTRA_AUTOMATION \}\}/, name);
@@ -757,7 +769,13 @@ test("lane render: permissions, environment, guards, concurrency and integrity",
   assert.ok(jobs.route.includes(`github.event.label.name == '${LAND_LABEL}'`));
   for (const [, uses] of yaml.matchAll(/uses: [\w/-]+@(\S+)/g))
     assert.match(uses, /^[0-9a-f]{40}$/);
-  assert.doesNotMatch(yaml, /actions\/checkout|download-artifact|upload-artifact|cache:/);
+  assert.doesNotMatch(
+    yaml,
+    /actions\/checkout|download-artifact|upload-artifact|cache:(?! false$)/m,
+  );
+  // Only the keyed jobs decrypt the key.
+  for (const name of ["approve-dispatch", "cancel", "route"])
+    assert.ok(!jobs[name].includes(DECRYPT.decrypt), name);
   assert.throws(() => approveWorkflow({ ...BASE_OPTIONS, integrity: "md5-x", lane: LANE }));
 });
 
@@ -786,22 +804,18 @@ test("lane render: inputs that are not plain names refuse", () => {
     { workflows: ["a'b"] },
     { requesters: ["a b"] },
     { reviewers: ["x}}"] },
+    { oidc: undefined },
+    { oidc: { ...DECRYPT, decrypt: "figentra/stackra/.github/actions/secrets-decrypt@v1" } },
+    { oidc: { ...DECRYPT, scope: "ci/flow/gate\n          names: X" } },
   ])
     assert.throws(() => approveWorkflow({ ...BASE_OPTIONS, lane: { ...LANE, ...bad } }), /lane:/);
 });
 
-test("sync renders the lane only with secrets.oidc, from approve.workflows and approve.requesters", (t) => {
-  const secrets = {
-    kind: "infisical",
-    projectId: OIDC.projectId,
-    env: "prod",
-    domain: OIDC.domain,
-    paths: { gate: "/ci/gate" },
-    oidc: { identityId: OIDC.identityId, audience: OIDC.audience },
-  };
+test("sync renders the lane only with a sops secrets.oidc, from approve.workflows and approve.requesters", (t) => {
   for (const [name, extra, rendered] of /** @type {[string, object, boolean][]} */ ([
-    ["oidc", { secrets }, true],
-    ["no oidc", { secrets: { ...secrets, oidc: undefined } }, false],
+    ["oidc", { secrets: { kind: "sops", oidc: DECRYPT } }, true],
+    ["no oidc", { secrets: { kind: "sops" } }, false],
+    ["retired infisical", { secrets: { kind: "infisical", paths: { gate: "/ci/gate" } } }, false],
   ])) {
     const root = mkdtempSync(join(tmpdir(), "flow-lane-sync-"));
     t.after(() => rmSync(root, { recursive: true }));

@@ -24,7 +24,7 @@ runway, topology, deployment), 0174 (supply chain), 0177 (npmjs for free, Keygen
 
 1. The Quality Gate is the only required check and is green on the head SHA (0119).
 2. Every consumer-visible package change carries a changeset; all `@stackra/*` move on one fixed version (0177).
-3. Workflows pin actions by SHA, use OIDC for cloud and Infisical access, and grant least permissions (0167, 0174).
+3. Workflows pin actions by SHA, use OIDC for cloud access and the sops decrypt (ADR 0525), and grant least permissions (0167, 0174).
 4. Release checks: full verify, `publint`, `attw`, a packed-tarball smoke test, provenance (0177).
 5. Mobile: builds only on a native fingerprint change, a `build:mobile` label or a release; OTA staged 10 → 100 % (0180).
 6. Desktop: unsigned until a deliverable is named; AppImage only; staged 20 → 100 % (0254).

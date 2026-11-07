@@ -6,7 +6,8 @@
  * Boundary: talks to Linear's GraphQL API through net.mjs; writes no repo file.
  * Runtime: node
  * Token: LINEAR_AGENT_TOKEN (re-minted from LINEAR_AGENT_CLIENT_ID and LINEAR_AGENT_CLIENT_SECRET), else
- *   LINEAR_API_KEY. They reach the process only through the caller's `infisical run` wrapper or CI secrets.
+ *   LINEAR_API_KEY. They reach the process only through the caller's environment: a
+ *   secrets runner (for Stackra, core's `secrets-exec.mjs --names …`) or a CI decrypt step.
  * Secrets: read from the environment only; never written, logged or echoed.
  */
 import { randomUUID } from "node:crypto";
@@ -95,7 +96,10 @@ export function client({ env = process.env, fetch = netFetch } = {}) {
     return { res, json: await res.json().catch(() => ({})) };
   };
   const gql = async (query, variables = {}) => {
-    if (!a) throw new Error("no Linear token (run under `infisical run --env=dev --path=/agents`)");
+    if (!a)
+      throw new Error(
+        "no Linear token: set LINEAR_AGENT_TOKEN or LINEAR_API_KEY in the environment (for Stackra, core's secrets-exec.mjs --names)",
+      );
     if (!state.header) await refresh();
     let { res, json } = await post(query, variables);
     if (isAuthError(res, json) && state.app && (state.mintable || env.LINEAR_API_KEY)) {

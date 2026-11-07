@@ -33,7 +33,7 @@
  *   `LAND_CONTEXT` status, each rewritten only when it changes; `classify` names the state (waiting, owner, refused,
  *   approved).
  * Boundary: GitHub REST only: reads with the job's token; the review, the comment and the status with the App's token
- *   (dispatched: `APP_TOKEN`; event mode: an `approve` token `app-token.mjs` mints over OIDC, only once there is
+ *   (dispatched: `APP_TOKEN`; event mode: an `approve` token `app-token.mjs` mints from the decrypted key, only once there is
  *   something to write, revoked at the end). It never checks out or runs the PR's code and never merges. Event mode
  *   posts nothing unless the automation variable is `on`, exits 0 on every refusal and 1 only on an infrastructure
  *   error.
@@ -687,11 +687,7 @@ async function event(env, deps) {
   const write = async () => {
     if (writer) return writer;
     if (deps.write) return (writer = deps.write);
-    minted = await (deps.mint ?? mint)("approve", {
-      oidc: JSON.parse(env.OIDC || "null"),
-      defaultBranch,
-      env,
-    });
+    minted = await (deps.mint ?? mint)("approve", { defaultBranch, env });
     return (writer = rest(minted.token, base));
   };
   try {

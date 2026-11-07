@@ -8,8 +8,9 @@
  *   - the approval workflow without `verdict` is today's file byte for byte; with it, it adds only the gate's
  *     `workflow_run`, every job's `if:` carries the default ref and the automation guard, `id-token: write` is only in
  *     the verdict job, which runs in the approval environment with a per-head concurrency group that never cancels,
- *     the pinned integrity, no checkout, artifact download or cache, and no event text in a `run:` block;
- *   - `sync` renders the verdict job only for a `github-actions` runner with `secrets.oidc`.
+ *     the pinned integrity, mise and then the decrypt of the gate App's id and key before the script, no checkout,
+ *     artifact download or cache, and no event text in a `run:` block;
+ *   - `sync` renders the verdict job only for a `github-actions` runner with a `sops` `secrets.oidc`.
  * Boundary: a fake GitHub (an injected REST function) and temporary folders; no network.
  * Runtime: node
  * Governing contract: ADR 0523; the L2 design (verdict, PR F; Tests); STA-1945.
@@ -26,6 +27,7 @@ import {
   APPROVE_ENVIRONMENT,
   APPROVE_WORKFLOW,
   AUTOMATION_VARIABLE,
+  ENV_PREFIX,
   NAME,
   STATUS_CONTEXT,
 } from "../lib/product.mjs";
@@ -34,14 +36,18 @@ import { decide, main } from "../lib/verdict.mjs";
 const SHA = "b".repeat(40);
 const REPO = "figentra/flow";
 const GATE_PATH = `.github/workflows/${NAME}-gate.yml`;
-const OIDC = {
-  identityId: "0f4b2c1e-9a8d-4c3b-8e7f-6a5b4c3d2e1f",
-  audience: "fflow-ci",
-  domain: "https://eu.infisical.com",
-  projectId: "86c297d4-ce42-4e94-b4b3-810a715812f2",
-  env: "prod",
-  path: "/ci/gate",
+/** A `sops` secrets.oidc: the decrypt action pinned to a commit and the gate App's scope. */
+const DECRYPT = {
+  decrypt: `figentra/stackra/.github/actions/secrets-decrypt@${"c".repeat(40)}`,
+  scope: "ci/flow/gate",
 };
+/** The decrypt step every keyed job runs before its script. */
+const DECRYPT_STEP = `      - name: Gate App key
+        uses: ${DECRYPT.decrypt}
+        with:
+          scope: ${DECRYPT.scope}
+          names: ${ENV_PREFIX}GATE_APP_ID,${ENV_PREFIX}GATE_PRIVATE_KEY
+`;
 const ENV = Object.freeze({
   AUTOMATION: "on",
   GITHUB_REPOSITORY: REPO,
@@ -50,7 +56,6 @@ const ENV = Object.freeze({
   GATE_PATH,
   OWNER: "figentra-usr",
   DEFAULT_BRANCH: "main",
-  OIDC: JSON.stringify(OIDC),
 });
 
 /**
@@ -110,7 +115,8 @@ function world(over = {}) {
     /** @type {(t: string) => Promise<unknown>} */ use,
   ) => {
     minted.push(role);
-    assert.deepEqual(options.oidc, OIDC);
+    // The key comes from the job's environment (the decrypt step), not from anything verdict.mjs passes.
+    assert.deepEqual(Object.keys(options).sort(), ["defaultBranch", "env"]);
     assert.equal(options.defaultBranch, "main");
     return use("ghs_verdict");
   };
@@ -311,7 +317,12 @@ const BASE = {
   trusted: { [STATUS_CONTEXT]: "figentra-gate[bot]" },
   ownerOnly: ["it's/**"],
 };
-const VERDICT = { gatePath: GATE_PATH, owner: "figentra-usr", defaultBranch: "main", oidc: OIDC };
+const VERDICT = {
+  gatePath: GATE_PATH,
+  owner: "figentra-usr",
+  defaultBranch: "main",
+  oidc: DECRYPT,
+};
 
 /** Each job's block, by name. */
 const jobsOf = (/** @type {string} */ yaml) =>
@@ -366,12 +377,17 @@ test("approval workflow: the verdict job's triggers, guards, permissions, enviro
   assert.match(jobs.approve, new RegExp(`group: ${NAME}-approve-\\$\\{\\{ inputs\\.pr \\}\\}`));
   assert.match(jobs.verdict, /node flow\/package\/src\/lib\/verdict\.mjs/);
   assert.match(jobs.verdict, /RUN_ID: \$\{\{ github\.event\.workflow_run\.id \}\}/);
-  assert.ok(jobs.verdict.includes(`OIDC: '${JSON.stringify(OIDC)}'`));
+  // mise (for the decrypt's sops), then the decrypt, then the script; the approve job decrypts nothing.
+  const mise = jobs.verdict.indexOf("jdx/mise-action@");
+  const decrypt = jobs.verdict.indexOf(DECRYPT_STEP);
+  assert.ok(mise > 0 && decrypt > mise && decrypt < jobs.verdict.indexOf("Post "));
+  assert.ok(!jobs.approve.includes(DECRYPT.decrypt));
+  assert.doesNotMatch(jobs.verdict, /OIDC:|OIDC_IDENTITY/);
   assert.ok(jobs.verdict.includes(`GATE_PATH: ${GATE_PATH}\n`));
   assert.doesNotMatch(jobs.verdict, /secrets\./, "the verdict job names no secret");
   assert.doesNotMatch(
     yaml,
-    /actions\/checkout|download-artifact|upload-artifact|cache:|pull_request_target|workflow_call|repository_dispatch|\bpush:/,
+    /actions\/checkout|download-artifact|upload-artifact|cache:(?! false$)|pull_request_target|workflow_call|repository_dispatch|\bpush:/m,
   );
   for (const [, ref] of yaml.matchAll(/uses: [\w/-]+@(\S+)/g)) assert.match(ref, /^[0-9a-f]{40}$/);
   // No event text inside a run block: it reaches node through env only.
@@ -395,26 +411,24 @@ test("approval workflow: verdict inputs that are not plain names refuse", () => 
     { gatePath: "x.yml" },
     { gatePath: ".github/workflows/a b.yml" },
     { owner: "o'wner" },
+    { oidc: undefined },
+    { oidc: { ...DECRYPT, decrypt: "figentra/stackra/.github/actions/secrets-decrypt@main" } },
+    { oidc: { ...DECRYPT, decrypt: `${DECRYPT.decrypt}\n      - run: id` } },
+    { oidc: { ...DECRYPT, scope: "ci/flow/gate\n          names: X" } },
   ])
     assert.throws(() => approveWorkflow({ ...BASE, verdict: { ...VERDICT, ...bad } }), /verdict:/);
 });
 
-test("sync renders the verdict job only for a github-actions runner with secrets.oidc", (t) => {
-  const secrets = {
-    kind: "infisical",
-    projectId: OIDC.projectId,
-    env: "prod",
-    domain: OIDC.domain,
-    paths: { gate: "/ci/gate" },
-    oidc: { identityId: OIDC.identityId, audience: OIDC.audience },
-  };
+test("sync renders the verdict job only for a github-actions runner with a sops secrets.oidc", (t) => {
+  const secrets = { kind: "sops", oidc: DECRYPT };
   /** @type {[string, object, boolean][]} */
   const cases = [
     ["github-actions with oidc", { runner: { kind: "github-actions" }, secrets }, true],
     ["command runner", { runner: { kind: "command", run: ["x", "{command}"] }, secrets }, false],
+    ["no oidc", { runner: { kind: "github-actions" }, secrets: { kind: "sops" } }, false],
     [
-      "no oidc",
-      { runner: { kind: "github-actions" }, secrets: { ...secrets, oidc: undefined } },
+      "retired infisical",
+      { runner: { kind: "github-actions" }, secrets: { kind: "infisical", paths: { gate: "/g" } } },
       false,
     ],
   ];
@@ -429,7 +443,7 @@ test("sync renders the verdict job only for a github-actions runner with secrets
     const text = readFileSync(join(root, ".github/workflows", APPROVE_WORKFLOW), "utf8");
     assert.equal(/^ {2}verdict:$/m.test(text), rendered, name);
     if (rendered) {
-      assert.ok(text.includes(`OIDC: '${JSON.stringify(OIDC)}'`), name);
+      assert.ok(text.includes(DECRYPT_STEP), name);
       assert.ok(text.includes(`GATE_PATH: ${GATE_PATH}\n`), name);
       assert.ok(text.includes("OWNER: 'figentra-usr'"), name);
     }

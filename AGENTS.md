@@ -17,7 +17,8 @@ One pnpm workspace, one package: `packages/flow` (`@figentra-oss/flow`, binaries
 - Tests are `node:test` files in `src/__tests__/`, next to their subjects; no network, no real Linear call.
 - `assets/flow/` is Flow's own: change a preset's template or command there; `fflow sync` renders it, and the `derived-from` line stays until a file is rewritten from scratch (ADR 0510).
 - Secrets: `fflow linear` reads `LINEAR_AGENT_TOKEN` or `LINEAR_API_KEY` from the environment, which the calling
-  repository's `infisical run` wrapper provides. Never read, print or commit a token.
+  caller provides (core's `secrets-exec.mjs --names …`, or a CI job's sops decrypt step). Never read, print or
+  commit a token.
 - Worktrees live only in `.claude/worktrees/` (Stackra ADR 0503): make one with `fflow start`, remove one with
   `fflow clean`. Worktree tests use the local repository fixture in `src/__tests__/__fixtures__/`.
 - Done = CI green after the merge, its `test` job included ("Tests run later" below). Conventional commits; a changeset for every package change.

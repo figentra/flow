@@ -20,7 +20,7 @@
  * Governing contract: STA-1945 (C13, PR 13); Stackra ADR 0484 (the testbed).
  * Secrets: none read. The box gets a repository holding one ref, the run's commit (the staged tree on HEAD) and its
  *   history, plus the commit message; no other branch or tag. A `local` or `command` runner's job also inherits the
- *   caller's environment, secrets an `infisical run` wrapper set included; the job unsets only the repository and
+ *   caller's environment, secrets a runner (e.g. `secrets-exec.mjs`) set included; the job unsets only the repository and
  *   lefthook variables.
  */
 import { spawnSync } from "node:child_process";

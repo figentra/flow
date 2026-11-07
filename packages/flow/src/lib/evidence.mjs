@@ -42,6 +42,7 @@ const SECRET = [
   /(?:^|[;&|(`])\s*(?:\S*\/)?(?:env(?:\s+-\S+)*|export|set)\s*(?:$|[;&|)<>`])/,
   /(?:^|[;&|(`])\s*(?:\S*\/)?printenv\b/,
   /\binfisical\s+(?:export|secrets)\b/,
+  /\bsops\s+(?:[^;&|]*\s)?(?:-d|--decrypt|decrypt|exec-env|exec-file)\b/,
   // a `.env` file (`.env.example` is fine)
   /(?:^|[\s<'"=/])\.env(?:\.(?!example\b)[\w.-]+)?(?=$|[\s;&|)'"])/,
   // printing a secret-named variable; shortcut: other names (`echo $X`) are not caught, the guard's secret rules are

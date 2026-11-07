@@ -31,7 +31,7 @@ codemod (STA-344) converts the members. Eight non-negotiables:
 6. **Required files:** `README.md`, `AGENTS.md` with a `## PII` table (even if "none"), `CHANGELOG.md` (no `LICENSE`: services are UNLICENSED, ADR 0195),
    `isolation.test.ts` once a scoped table exists.
 7. **Secrets:** declared by name only, as a `@Secret("STRIPE_SECRET_KEY")` field of the schema of a `Config({ schema, env })` class, and listed in the member's
-   `runway.yaml` `secrets` (ADR 0146 as amended, 0296). The production value comes from Infisical through runway (ADR 0173). The schema is never sent to a wire surface (ADR 0305 rule 34).
+   `runway.yaml` `secrets` (ADR 0146 as amended, 0296). The production value comes from the product's sops scope in `figentra/secrets` through runway (ADR 0173, ADR 0525). The schema is never sent to a wire surface (ADR 0305 rule 34).
    Tests need none.
 8. **Definition of done:** code, `pnpm verify` green, the service's own tests green, docs current, reviewer sign-off. `pnpm verify` never
    starts a service, so a typecheck is not proof it runs.

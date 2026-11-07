@@ -123,44 +123,37 @@ export async function mergeOne(c) {
     { reviewer: c.reviewers, owner },
   );
   const key = await keyAt(read, repo, pr.head.ref, c.defaultBranch);
-  return c.mintToken(
-    role,
-    { oidc: JSON.parse(c.env.OIDC || "null"), defaultBranch: c.defaultBranch, env: c.env },
-    async (token) => {
-      const w = c.write(token);
-      const sticky = (/** @type {"merged" | "waiting"} */ state, /** @type {string[]} */ why) =>
-        upsertSticky({
-          read,
-          write: async () => w,
-          repo,
-          number,
-          body: stickyBody(sha, state, why),
-          flow,
-        });
-      const merge = await w("PUT", `/repos/${repo}/pulls/${number}/merge`, {
-        merge_method: "squash",
-        sha,
-        commit_title: `${pr.title} (#${number})`,
-        commit_message: squashMessage(key, commits, { verdict: review.verdict, sha }),
+  return c.mintToken(role, { defaultBranch: c.defaultBranch, env: c.env }, async (token) => {
+    const w = c.write(token);
+    const sticky = (/** @type {"merged" | "waiting"} */ state, /** @type {string[]} */ why) =>
+      upsertSticky({
+        read,
+        write: async () => w,
+        repo,
+        number,
+        body: stickyBody(sha, state, why),
+        flow,
       });
-      if (merge.ok) {
-        const merged = String(merge.json?.sha ?? "");
-        await w(
-          "DELETE",
-          `/repos/${repo}/issues/${number}/labels/${encodeURIComponent(LAND_LABEL)}`,
-        );
-        await sticky("merged", [`merged as ${merged}`]);
-        return { merged };
-      }
-      if (merge.status !== 405 && merge.status !== 409)
-        throw new ApiError(`PUT /repos/${repo}/pulls/${number}/merge answered ${merge.status}`);
-      const now = await get(read, `/repos/${repo}/pulls/${number}`);
-      if (now.merged) return { merged: String(now.merge_commit_sha ?? "") };
-      const message = String(merge.json?.message ?? `HTTP ${merge.status}`);
-      await sticky("waiting", [`GitHub did not merge it: ${message}`]);
-      return { skip: message };
-    },
-  );
+    const merge = await w("PUT", `/repos/${repo}/pulls/${number}/merge`, {
+      merge_method: "squash",
+      sha,
+      commit_title: `${pr.title} (#${number})`,
+      commit_message: squashMessage(key, commits, { verdict: review.verdict, sha }),
+    });
+    if (merge.ok) {
+      const merged = String(merge.json?.sha ?? "");
+      await w("DELETE", `/repos/${repo}/issues/${number}/labels/${encodeURIComponent(LAND_LABEL)}`);
+      await sticky("merged", [`merged as ${merged}`]);
+      return { merged };
+    }
+    if (merge.status !== 405 && merge.status !== 409)
+      throw new ApiError(`PUT /repos/${repo}/pulls/${number}/merge answered ${merge.status}`);
+    const now = await get(read, `/repos/${repo}/pulls/${number}`);
+    if (now.merged) return { merged: String(now.merge_commit_sha ?? "") };
+    const message = String(merge.json?.message ?? `HTTP ${merge.status}`);
+    await sticky("waiting", [`GitHub did not merge it: ${message}`]);
+    return { skip: message };
+  });
 }
 
 /**

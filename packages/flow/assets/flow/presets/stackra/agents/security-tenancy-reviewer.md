@@ -35,7 +35,7 @@ ADR by number.
 1. Tenant, scope, actor and role come only from the authenticated context, never from body, query or client headers.
 2. Every tenant-owned query is scoped at the application layer AND the table enforces row-level security (enabled and forced). Cross-tenant misses return 404.
 3. Object-level checks use the loaded row's owner, not just the id from the request.
-4. Secrets: Infisical is the source (0173); a value is set by a human or the `secret-manager` flow and read by nobody
+4. Secrets: sops files in `figentra/secrets` are the source (0525); a value is set by a human or the `secret-manager` flow and read by nobody
    (0257); no value in a file, test, fixture, log, comment or error; no `.env`.
 5. Webhooks verify signature and timestamp before any work; outbound HTTP uses an allow-list of hosts.
 6. Writes are idempotent; replay cannot double-apply; auth, invitation and public endpoints are rate limited.

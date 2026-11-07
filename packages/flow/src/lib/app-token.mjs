@@ -1,24 +1,24 @@
 /**
  * Figentra Flow file contract:
  * Purpose: mint a narrowed Flow App installation token inside main's approval job, in one process (L2 design, ADR
- *   0523): the job's OIDC token logs in to Infisical, which hands back the App's id and key at the gate path; the App
- *   JWT then mints a token for this one repository with one role's permissions, which is checked and returned in memory.
- * Boundary: refuses before any network call unless the job is GitHub Actions on a GitHub-hosted runner, on the default
- *   branch, running the default branch's approval workflow, for one of the listed events (`checkRef`). Refuses
- *   unless the installation belongs to the repository's owner and is the App's own, and unless the grant is exactly
- *   the role's permissions (plus GitHub's `metadata: read`) on exactly this repository; a refused grant is revoked
- *   before the throw. Redirects are refused. The identity's id is `secrets.oidc.identityId`, else the Actions
- *   variable `<prefix>OIDC_IDENTITY_ID` the workflow passes (Infisical plan K7). The verdict, approve and merge jobs use it.
+ *   0523): the job's decrypt step (`secrets.oidc.decrypt`, signed in by the job's OIDC token; Stackra ADR 0525) put
+ *   the App's id and key in the job's environment; the App JWT then mints a token for this one repository with one
+ *   role's permissions, which is checked and returned in memory.
+ * Boundary: refuses before reading the key or any network call unless the job is GitHub Actions on a GitHub-hosted
+ *   runner, on the default branch, running the default branch's approval workflow, for one of the listed events
+ *   (`checkRef`). Refuses unless the installation belongs to the repository's owner and is the App's own, and unless
+ *   the grant is exactly the role's permissions (plus GitHub's `metadata: read`) on exactly this repository; a
+ *   refused grant is revoked before the throw. Redirects are refused. The verdict, approve and merge jobs use it.
  * Runtime: node (GitHub Actions); Node built-ins only.
- * Governing contract: ADR 0523; the L2 design (Tokens and permissions); STA-1945.
- * Secrets: `<prefix>GATE_APP_ID` and `<prefix>GATE_PRIVATE_KEY` from Infisical, the OIDC JWT, the Infisical access
- *   token, the App JWT and the installation token: each is masked (`::add-mask::`) as it arrives and lives only in
- *   this process's memory, never in the environment, `GITHUB_OUTPUT`, a file or a log. Errors name the step, the
- *   method, the path and the HTTP status, never a value.
+ * Governing contract: ADR 0523; the L2 design (Tokens and permissions); STA-1945; Stackra ADR 0525.
+ * Secrets: `<prefix>GATE_APP_ID` and `<prefix>GATE_PRIVATE_KEY` from the environment (the decrypt step masked them),
+ *   the App JWT and the installation token: each is masked (`::add-mask::`) again as it is read or arrives; the JWT
+ *   and the token live only in this process's memory, never in the environment, `GITHUB_OUTPUT`, a file or a log.
+ *   Errors name the step, the method, the path and the HTTP status, never a value.
  */
 import { appJwt } from "./gate-post.mjs";
 import { netFetch } from "./net.mjs";
-import { APPROVE_WORKFLOW, ENV_PREFIX, OIDC_IDENTITY_VARIABLE } from "./product.mjs";
+import { APPROVE_WORKFLOW, ENV_PREFIX } from "./product.mjs";
 
 const API = "https://api.github.com";
 
@@ -44,17 +44,12 @@ export const ROLES = Object.freeze({
   verdict: Object.freeze({ statuses: "write" }),
 });
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const SAFE = /^[\w.-]+$/;
 const REPO = /^[\w.-]+\/[\w.-]+$/;
 const BRANCH = /^(?!.*\.\.)[\w.-]+(?:\/[\w.-]+)*$/;
-const HTTPS = /^https:\/\/[\w.-]+(?::\d+)?(?:\/[\w./-]*)?$/;
-const SECRET_PATH = /^\/[\w./-]*$/;
 // Only a whole armour line; a key stored on one line, armour and body together, is masked.
 const ARMOUR = /^-----(?:BEGIN|END) [A-Z ]+-----$/;
 
 /**
- * @typedef {{ identityId?: string, audience: string, domain: string, projectId: string, env: string, path: string }} Oidc
  * @typedef {{ ok: boolean, status: number, json: () => Promise<any> }} Res
  * @typedef {(url: string, init?: { method?: string, headers?: Record<string, string>, body?: string,
  *             redirect?: "error" }) => Promise<Res>} Fetch
@@ -91,22 +86,6 @@ export function checkRef(env, defaultBranch) {
 }
 
 /**
- * The refusal when the Infisical coordinates are incomplete or malformed, or "".
- * @param {Partial<Oidc> | undefined} oidc
- */
-function checkOidc(oidc) {
-  if (!oidc) return "no secrets.oidc";
-  if (!UUID.test(oidc.identityId ?? ""))
-    return `secrets.oidc.identityId, or the Actions variable ${OIDC_IDENTITY_VARIABLE}, is not a uuid`;
-  if (!SAFE.test(oidc.audience ?? "")) return "secrets.oidc.audience is not a name";
-  if (!HTTPS.test(oidc.domain ?? "")) return "secrets.domain is not an https URL";
-  if (!SAFE.test(oidc.projectId ?? "")) return "secrets.projectId is not an id";
-  if (!SAFE.test(oidc.env ?? "")) return "secrets.env is not an id";
-  if (!SECRET_PATH.test(oidc.path ?? "")) return "secrets.paths.gate is not a path";
-  return "";
-}
-
-/**
  * In Actions, `::add-mask::` each line of a value (a PEM key's armour aside), so the runner hides it from every
  * later log line; outside Actions it writes nothing.
  * @param {Record<string, string | undefined>} env
@@ -123,23 +102,17 @@ export function masker(env, write = (text) => process.stdout.write(text)) {
 /**
  * Mints a token for `role` (one of `ROLES`) on this repository. Call `revoke()` in a `finally`, or use `withToken`.
  * @param {string} role
- * @param {{ oidc?: Oidc, defaultBranch?: string, env?: Record<string, string | undefined>, fetch?: Fetch,
+ * @param {{ defaultBranch?: string, env?: Record<string, string | undefined>, fetch?: Fetch,
  *           now?: () => number, mask?: (value: string) => void }} [options]
  * @returns {Promise<Minted>}
  */
 export async function mint(role, options = {}) {
-  const { oidc, defaultBranch, env = process.env, now = Date.now } = options;
+  const { defaultBranch, env = process.env, now = Date.now } = options;
   const fetch = options.fetch ?? /** @type {Fetch} */ (/** @type {unknown} */ (netFetch));
   const mask = options.mask ?? masker(env);
   if (!Object.hasOwn(ROLES, role)) throw fail(`unknown role ${JSON.stringify(role)}`);
-  // Infisical plan K7: without a config identityId, the id comes from the Actions variable the workflow passes.
-  const withId = oidc && {
-    ...oidc,
-    identityId: oidc.identityId || env[OIDC_IDENTITY_VARIABLE] || "",
-  };
-  const refused = checkRef(env, /** @type {string} */ (defaultBranch)) || checkOidc(withId);
+  const refused = checkRef(env, /** @type {string} */ (defaultBranch));
   if (refused) throw fail(`refused: ${refused}; nothing minted`);
-  const o = /** @type {Oidc} */ (withId);
   const repo = /** @type {string} */ (env.GITHUB_REPOSITORY);
   const [owner, name] = repo.split("/");
 
@@ -184,51 +157,19 @@ export async function mint(role, options = {}) {
     return v;
   };
 
-  // 2. The job's OIDC token, for the configured audience.
-  const requestUrl = env.ACTIONS_ID_TOKEN_REQUEST_URL;
-  const requestToken = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
-  if (!requestUrl?.startsWith("https://") || !requestToken)
-    throw fail("oidc: the job has no id-token: write permission; nothing minted");
-  const oidcUrl = new URL(requestUrl);
-  oidcUrl.searchParams.set("audience", o.audience);
-  const jwt = text(
-    (await call("oidc", oidcUrl.href, { token: requestToken }))?.value,
-    "oidc: the token",
-  );
-
-  // 3. Infisical login with the job's claims.
-  const domain = o.domain.replace(/\/+$/, "");
-  let access;
-  try {
-    access = await call("infisical login", `${domain}/api/v1/auth/oidc-auth/login`, {
-      method: "POST",
-      body: { identityId: o.identityId, jwt },
-    });
-  } catch (error) {
-    const status = /** @type {{ status?: number }} */ (error).status;
-    if (status === 401 || status === 403)
+  // 2-4. The App's id and key, which the job's decrypt step put in the environment.
+  const secret = (/** @type {string} */ name) => {
+    const value = env[name];
+    if (!value)
       throw fail(
-        `infisical login answered ${status}: Infisical refused this job's claims (only ${defaultBranch}'s ${APPROVE_WORKFLOW} may read ${o.path}); nothing minted`,
+        `${name} is not in the environment: the job's decrypt step (secrets.oidc) did not run or was refused; nothing minted`,
       );
-    throw error;
-  }
-  const accessToken = text(access?.accessToken, "infisical login: the access token");
-
-  // 4. The App's id and key at the gate path.
-  const secret = async (/** @type {string} */ key) => {
-    const query = new URLSearchParams({
-      workspaceId: o.projectId,
-      environment: o.env,
-      secretPath: o.path,
-    });
-    const body = await call("infisical secret", `${domain}/api/v3/secrets/raw/${key}?${query}`, {
-      token: accessToken,
-    });
-    return text(body?.secret?.secretValue, `infisical secret: ${key}`);
+    mask(value);
+    return value;
   };
-  const appId = await secret(`${ENV_PREFIX}GATE_APP_ID`);
-  if (!/^\d+$/.test(appId)) throw fail(`infisical secret: ${ENV_PREFIX}GATE_APP_ID is not an id`);
-  const key = await secret(`${ENV_PREFIX}GATE_PRIVATE_KEY`);
+  const appId = secret(`${ENV_PREFIX}GATE_APP_ID`);
+  if (!/^\d+$/.test(appId)) throw fail(`${ENV_PREFIX}GATE_APP_ID is not an id; nothing minted`);
+  const key = secret(`${ENV_PREFIX}GATE_PRIVATE_KEY`);
 
   // 5. The App JWT.
   let appToken;

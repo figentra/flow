@@ -81,7 +81,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-      # for a setup step's OIDC login (registry auth through Infisical), as the repository's own CI has
+      # for a setup step's OIDC sign-in (registry auth's sops decrypt), as the repository's own CI has
       id-token: write
     steps:
       - uses: ${CHECKOUT}

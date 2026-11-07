@@ -23,7 +23,8 @@ state.** Every agent, including subagents and OpenCode executors without the Lin
   `Refs: STA-n`. The PR title or branch names the key, or the PR is labelled `chore-lane`.
 - `pnpm delegate` needs `--issue STA-n`. Issues an agent creates get the `agent` label automatically.
 - Actions run as the "Stackra Agent" app, which is the issue's delegate. The human assignee is never changed.
-- Tokens come from Infisical only (`pnpm linear` wraps `infisical run --env=dev --path=/agents`). Never print one.
+- Tokens come from the sops `agents` scope only: `pnpm linear` runs `node tools/scripts/secrets-exec.mjs --names
+  LINEAR_… -- …`, which decrypts just those names into the command's environment (ADR 0525). Never print one.
 - A Linear failure never blocks a gate (ADR 0065 rule 7). The nightly `Linear sync` workflow repairs drift.
 
 ## Enforcement

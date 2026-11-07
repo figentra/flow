@@ -161,10 +161,9 @@ export async function main(env, deps = {}) {
       log(`::notice::no verdict: ${v.skip}`);
       return 0;
     }
-    const oidc = JSON.parse(env.OIDC || "null");
     await (deps.withToken ?? withToken)(
       "verdict",
-      { oidc, defaultBranch: env.DEFAULT_BRANCH, env },
+      { defaultBranch: env.DEFAULT_BRANCH, env },
       async (token) => {
         const r = await (deps.write ?? ((/** @type {string} */ t) => rest(t, base)))(token)(
           "POST",
