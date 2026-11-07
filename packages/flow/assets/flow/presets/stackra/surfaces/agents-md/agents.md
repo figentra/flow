@@ -49,11 +49,21 @@ Every change goes through Figentra Flow (`fflow`, the {{preset}} preset). Specs 
 - This file, `CLAUDE.md`, `lefthook.yml`, `.mcp.yaml` and the agent setup are rendered by `fflow sync`. Do not edit
   them: change `.flow/overrides/` or `flow.config.json`, run `fflow sync`, and `fflow check` shows any drift.
 
+{{#anyRules}}
+## Rules index
+
+Each rule is one file. Read the ones that fit the task before editing; not every client loads them on its own.
+
+{{/anyRules}}
+{{#rules}}
+- `{{path}}`: {{description}}{{#when}} ({{when}}){{/when}}
+{{/rules}}
+
 ## Find the task's context
 
 - Start with `fflow context --path <repository-relative-path> --json` (or repository search when Flow is unavailable).
-  Read README and applicable ancestor/member AGENTS instructions, including overrides, before editing. Explicitly read
-  relevant `.agents/rules/` files; do not assume every client automatically loads links or scoped rules.
+  Read README and applicable ancestor/member AGENTS instructions, including overrides, before editing. Read the
+  rules the index above names for the paths you touch.
 - Locate the owning package/service, its current contract and decisions, implementation, example and tests. Follow
   exports, callers, fixtures and generator sources for shared changes. An index is navigation, not verification.
 - For collection work use `fflow context --all --query <phrase>`; each checkout keeps its own revision and authority.

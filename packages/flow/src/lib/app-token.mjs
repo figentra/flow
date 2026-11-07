@@ -163,7 +163,7 @@ export async function mint(role, options = {}) {
     if (!value)
       throw fail(
         `${name} is not in the environment: gate posts run on the Testbed box or in CI, whose decrypt step fills it ` +
-          "from ci/flow/gate (secrets.oidc); a workstation never holds the gate key. Nothing minted",
+          "from ci/flow/gate (secrets.oidc); a workstation never holds the gate key; nothing minted",
       );
     mask(value);
     return value;
