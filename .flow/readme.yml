@@ -52,13 +52,13 @@ architecture: |
   dependencies are `undici` and the console engine (`@stackra/console`, `@stackra/validation`), which only the CLI layer
   loads.
 
-  | Path                                  | What                                                                         |
-  | ------------------------------------- | ---------------------------------------------------------------------------- |
-  | `packages/flow/bin`          | the `fflow` dispatcher                                               |
+  | Path                         | What                                                                         |
+  | ---------------------------- | ---------------------------------------------------------------------------- |
+  | `packages/flow/bin`          | the `fflow` dispatcher                                                       |
   | `packages/flow/src/commands` | one module per command (`init`, `sync`, `gate`, `land`, `train`, `release`…) |
   | `packages/flow/src/adapters` | the tracker and runner adapters                                              |
   | `packages/flow/assets/flow`  | the `neutral` and `stackra` presets and the base templates                   |
-  | `packages/flow/schema`       | the `flow.config.json` schema                                       |
+  | `packages/flow/schema`       | the `flow.config.json` schema                                                |
 
 development: |
   Nothing installs or tests on a workstation. CI runs `pnpm verify`; the tester lane can run it in the permitted
