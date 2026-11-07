@@ -275,18 +275,9 @@ function renderPreset(root, direct, overrides) {
   // No owner, no approval path: GitHub must be able to ask someone for the owner-only paths (CODEOWNERS).
   if (!apps?.owner) return out;
   const gate = gateLogins(apps);
-  // The L2 design: with `secrets.oidc`, main's copy mints Flow App tokens in process; events run it (PR D) and, for a
-  // github-actions runner, it posts the runner's verdict (PR F).
-  const oidc =
-    secrets?.kind === "infisical" && secrets.oidc && secrets.paths?.gate
-      ? {
-          ...secrets.oidc,
-          domain: secrets.domain,
-          projectId: secrets.projectId,
-          env: secrets.env,
-          path: secrets.paths.gate,
-        }
-      : undefined;
+  // The L2 design: with `secrets.oidc`, main's copy decrypts the gate App's key and mints Flow App tokens in process;
+  // events run it (PR D) and, for a github-actions runner, it posts the runner's verdict (PR F).
+  const oidc = secrets?.kind === "sops" && secrets.oidc ? secrets.oidc : undefined;
   out.set(
     `.github/workflows/${APPROVE_WORKFLOW}`,
     approveWorkflow({
@@ -328,17 +319,13 @@ function renderPreset(root, direct, overrides) {
 }
 
 /**
- * Whether `fflow-approve.yml` gets the `verdict` job that posts `fflow/gate` (PR F): an owner, an Infisical
- * `secrets.oidc` with `paths.gate`, and a `github-actions` runner. `gate run` refuses `secrets.oidc` without it.
+ * Whether `fflow-approve.yml` gets the `verdict` job that posts `fflow/gate` (PR F): an owner, a `sops`
+ * `secrets.oidc` (the decrypt and its scope), and a `github-actions` runner. `gate run` refuses `secrets.oidc` without it.
  * @param {any} config
  */
 export const rendersVerdict = ({ apps, runner, secrets } = {}) =>
   Boolean(
-    apps?.owner &&
-    secrets?.kind === "infisical" &&
-    secrets.oidc &&
-    secrets.paths?.gate &&
-    runner?.kind === "github-actions",
+    apps?.owner && secrets?.kind === "sops" && secrets.oidc && runner?.kind === "github-actions",
   );
 
 /**

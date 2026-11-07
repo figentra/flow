@@ -1,12 +1,13 @@
 /**
  * Figentra Flow file contract:
  * Purpose: hold the in-process Flow App token mint to the L2 design: `checkRef` refuses anything but main's approval
- *   workflow on a GitHub-hosted runner for a listed event, before any fetch; the chain sends exactly the role's
- *   permissions for this one repository; the grant check accepts only GitHub's extra `metadata: read` and revokes
- *   any other grant; the Infisical 401 and the GitHub 422 carry their named messages; a failed step mints nothing;
- *   `withToken` revokes on a return and a throw; and no key, JWT or token reaches a log, an error or the result's
- *   printable form.
- * Boundary: a fake GitHub and Infisical (an injected fetch) and a throwaway key generated here; no network.
+ *   workflow on a GitHub-hosted runner for a listed event, before reading the key or any fetch; the App's id and key
+ *   come from the environment the job's decrypt step filled (Stackra ADR 0525), and a missing or malformed one mints
+ *   nothing; the chain sends exactly the role's permissions for this one repository; the grant check accepts only
+ *   GitHub's extra `metadata: read` and revokes any other grant; the GitHub 422 carries its named message; a failed
+ *   step mints nothing; `withToken` revokes on a return and a throw; and no key, JWT or token reaches a log, an error
+ *   or the result's printable form.
+ * Boundary: a fake GitHub (an injected fetch) and a throwaway key generated here; no network.
  * Runtime: node
  * Governing contract: ADR 0523; the L2 design (Tokens and permissions, Tests); STA-1945.
  */
@@ -24,17 +25,14 @@ import {
   ROLES,
   withToken,
 } from "../lib/app-token.mjs";
-import { APPROVE_WORKFLOW, ENV_PREFIX, OIDC_IDENTITY_VARIABLE } from "../lib/product.mjs";
+import { APPROVE_WORKFLOW, ENV_PREFIX } from "../lib/product.mjs";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", {
   modulusLength: 2048,
   privateKeyEncoding: { type: "pkcs8", format: "pem" },
   publicKeyEncoding: { type: "spki", format: "pem" },
 });
-const OIDC_JWT = "eyJoidc.job.claims-value";
-const ACCESS = "infisical-access-token-value";
 const TOKEN = "ghs_installationtoken123456";
-const REQUEST_TOKEN = "actions-request-token-value";
 const ENV = Object.freeze({
   GITHUB_ACTIONS: "true",
   RUNNER_ENVIRONMENT: "github-hosted",
@@ -43,31 +41,17 @@ const ENV = Object.freeze({
   GITHUB_REF: "refs/heads/main",
   GITHUB_WORKFLOW_REF: `figentra/flow/.github/workflows/${APPROVE_WORKFLOW}@refs/heads/main`,
   GITHUB_EVENT_NAME: "pull_request_target",
-  ACTIONS_ID_TOKEN_REQUEST_URL: "https://pipelines.actions.test/idtoken/1?api-version=2.0",
-  ACTIONS_ID_TOKEN_REQUEST_TOKEN: REQUEST_TOKEN,
-});
-const OIDC = Object.freeze({
-  identityId: "0f4b2c1e-9a8d-4c3b-8e7f-6a5b4c3d2e1f",
-  audience: "fflow-ci",
-  domain: "https://eu.infisical.com",
-  projectId: "86c297d4-ce42-4e94-b4b3-810a715812f2",
-  env: "prod",
-  path: "/ci/gate",
+  // What the job's decrypt step puts in the environment.
+  [`${ENV_PREFIX}GATE_APP_ID`]: "4242",
+  [`${ENV_PREFIX}GATE_PRIVATE_KEY`]: privateKey,
 });
 const NOW = Date.parse("2026-11-04T10:00:00Z");
 /** Every value that must never be printed, thrown or shown. */
-const SECRETS = [
-  OIDC_JWT,
-  ACCESS,
-  TOKEN,
-  REQUEST_TOKEN,
-  ...privateKey.split("\n").filter((l) => l && !l.startsWith("-----")),
-];
+const SECRETS = [TOKEN, ...privateKey.split("\n").filter((l) => l && !l.startsWith("-----"))];
 
 /**
- * A GitHub and Infisical stand-in; every call is recorded, and `over` changes one answer.
- * @param {{ login?: number, secret?: number, installation?: object, token?: number, grant?: object,
- *           revoke?: number, appId?: string, reject?: boolean }} [over]
+ * A GitHub stand-in; every call is recorded, and `over` changes one answer.
+ * @param {{ installation?: object, token?: number, grant?: object, revoke?: number, reject?: boolean }} [over]
  */
 function world(over = {}) {
   /** @type {{ method: string, url: string, auth: string, redirect?: string, body?: any }[]} */
@@ -90,14 +74,6 @@ function world(over = {}) {
       json: async () => json,
     });
     const u = new URL(url);
-    if (u.host === "pipelines.actions.test") return answer(200, { value: OIDC_JWT });
-    if (u.pathname === "/api/v1/auth/oidc-auth/login")
-      return answer(over.login ?? 200, { accessToken: ACCESS, expiresIn: 300 });
-    if (u.pathname.startsWith("/api/v3/secrets/raw/")) {
-      const key = u.pathname.split("/").pop();
-      const value = key === `${ENV_PREFIX}GATE_APP_ID` ? (over.appId ?? "4242") : privateKey;
-      return answer(over.secret ?? 200, { secret: { secretKey: key, secretValue: value } });
-    }
     if (u.pathname === "/repos/figentra/flow/installation")
       return answer(200, {
         id: 9,
@@ -121,7 +97,6 @@ function world(over = {}) {
 }
 
 const options = (/** @type {object} */ extra = {}) => ({
-  oidc: OIDC,
   defaultBranch: "main",
   env: ENV,
   now: () => NOW,
@@ -169,30 +144,27 @@ test("checkRef: main's approval workflow for a listed event passes; each other r
   assert.match(checkRef({ ...ENV, GITHUB_REF: "refs/heads/x\n::add-mask::y" }, "main"), /x\\n::/);
 });
 
-test("mint: every refusal before the network makes no call and mints nothing", async () => {
+test("mint: every refusal before the network makes no call, reads no key and mints nothing", async () => {
   const refusals = [
     options({ env: { ...ENV, GITHUB_REF: "refs/pull/7/merge" } }),
     options({ env: { ...ENV, GITHUB_EVENT_NAME: "workflow_dispatch" } }),
     options({ env: { ...ENV, GITHUB_ACTIONS: "false" } }),
     options({ defaultBranch: undefined }),
-    options({ oidc: undefined }),
-    options({ oidc: { ...OIDC, identityId: "not-a-uuid" } }),
-    // K7: no config id and no (or a bad) Actions variable.
-    options({ oidc: { ...OIDC, identityId: undefined } }),
-    options({
-      oidc: { ...OIDC, identityId: undefined },
-      env: { ...ENV, [OIDC_IDENTITY_VARIABLE]: "x" },
-    }),
-    options({ oidc: { ...OIDC, domain: "http://eu.infisical.com" } }),
-    options({ oidc: { ...OIDC, projectId: undefined } }),
-    options({ oidc: { ...OIDC, path: "ci/gate" } }),
-    options({ env: { ...ENV, ACTIONS_ID_TOKEN_REQUEST_TOKEN: undefined } }),
-    options({ env: { ...ENV, ACTIONS_ID_TOKEN_REQUEST_URL: "http://pipelines.actions.test/x" } }),
+    // The decrypt step did not run, or was refused.
+    options({ env: { ...ENV, [`${ENV_PREFIX}GATE_APP_ID`]: undefined } }),
+    options({ env: { ...ENV, [`${ENV_PREFIX}GATE_PRIVATE_KEY`]: "" } }),
+    options({ env: { ...ENV, [`${ENV_PREFIX}GATE_APP_ID`]: "42; rm" } }),
   ];
   for (const o of refusals) {
     const { calls, fetch } = world();
-    await assert.rejects(mint("approve", { ...o, fetch }), /^Error: app-token: .*nothing minted/);
+    const masked = [];
+    await assert.rejects(
+      mint("approve", { ...o, fetch, mask: (/** @type {string} */ v) => masked.push(v) }),
+      /^Error: app-token: .*nothing minted/,
+    );
     assert.deepEqual(calls, []);
+    // A refused run never touches the key.
+    assert.ok(!masked.includes(privateKey));
   }
   for (const role of ["admin", "__proto__", "constructor", "toString"]) {
     const { calls, fetch } = world();
@@ -201,34 +173,14 @@ test("mint: every refusal before the network makes no call and mints nothing", a
   }
 });
 
-test("mint: OIDC, Infisical, the App JWT, the installation, then exactly the role's token", async () => {
+test("mint: the environment's App id and key, the App JWT, the installation, then exactly the role's token", async () => {
   for (const role of Object.keys(ROLES)) {
     const { calls, fetch } = world();
     const masked = [];
     const minted = await mint(role, options({ fetch, mask: (v) => masked.push(v) }));
     assert.equal(minted.token, TOKEN);
     assert.equal(minted.slug, "figentra-flow");
-    const [oidc, login, appId, key, installation, token] = calls;
-    assert.equal(new URL(oidc.url).searchParams.get("audience"), "fflow-ci");
-    assert.equal(new URL(oidc.url).searchParams.get("api-version"), "2.0");
-    assert.equal(oidc.auth, `Bearer ${REQUEST_TOKEN}`);
-    assert.equal(login.url, "https://eu.infisical.com/api/v1/auth/oidc-auth/login");
-    assert.deepEqual(login.body, { identityId: OIDC.identityId, jwt: OIDC_JWT });
-    /** @type {[typeof appId, string][]} */
-    const reads = [
-      [appId, "GATE_APP_ID"],
-      [key, "GATE_PRIVATE_KEY"],
-    ];
-    for (const [call, name] of reads) {
-      const u = new URL(call.url);
-      assert.equal(u.pathname, `/api/v3/secrets/raw/${ENV_PREFIX}${name}`);
-      assert.deepEqual(Object.fromEntries(u.searchParams), {
-        workspaceId: OIDC.projectId,
-        environment: "prod",
-        secretPath: "/ci/gate",
-      });
-      assert.equal(call.auth, `Bearer ${ACCESS}`);
-    }
+    const [installation, token] = calls;
     const jwt = installation.auth.replace("Bearer ", "");
     const [h, p, sig] = jwt.split(".");
     assert.ok(createVerify("RSA-SHA256").update(`${h}.${p}`).verify(publicKey, sig, "base64url"));
@@ -236,8 +188,8 @@ test("mint: OIDC, Infisical, the App JWT, the installation, then exactly the rol
     assert.equal(token.url, "https://api.github.com/app/installations/9/access_tokens");
     assert.deepEqual(token.body, { repositories: ["flow"], permissions: { ...ROLES[role] } });
     assert.ok(calls.every((c) => c.redirect === "error"));
-    assert.deepEqual(masked.sort(), [OIDC_JWT, ACCESS, "4242", privateKey, jwt, TOKEN].sort());
-    assert.equal(calls.length, 6);
+    assert.deepEqual(masked.sort(), ["4242", privateKey, jwt, TOKEN].sort());
+    assert.equal(calls.length, 2);
 
     await minted.revoke();
     await minted.revoke();
@@ -331,29 +283,18 @@ test("installation: another account's or another App's refuses before any token 
   }
 });
 
-test("Infisical and GitHub failures carry the named messages, mint nothing, and name no value", async () => {
+test("GitHub failures and a key that does not sign carry the named messages, mint nothing, and name no value", async () => {
   /** @type {[any, RegExp][]} */
   const cases = [
-    [
-      { login: 401 },
-      /Infisical refused this job's claims \(only main's fflow-approve\.yml may read \/ci\/gate\)/,
-    ],
-    [{ login: 403 }, /infisical login answered 403: Infisical refused/],
-    [
-      { login: 500 },
-      /^app-token: infisical login: POST \/api\/v1\/auth\/oidc-auth\/login answered 500$/,
-    ],
-    [
-      { secret: 404 },
-      /infisical secret: GET \/api\/v3\/secrets\/raw\/FFLOW_GATE_APP_ID answered 404/,
-    ],
-    [{ appId: "42; rm" }, /FFLOW_GATE_APP_ID is not an id/],
     [
       { token: 422 },
       /installation lacks pull_requests: write, statuses: write: the owner grants it/,
     ],
     [{ token: 403 }, /access token: POST \/app\/installations\/9\/access_tokens answered 403/],
-    [{ reject: true }, /^app-token: oidc: GET \/idtoken\/1 did not answer$/],
+    [
+      { reject: true },
+      /^app-token: installation: GET \/repos\/figentra\/flow\/installation did not answer$/,
+    ],
   ];
   for (const [over, message] of cases) {
     const { calls, fetch } = world(over);
@@ -364,57 +305,34 @@ test("Infisical and GitHub failures carry the named messages, mint nothing, and 
       noSecret(inspect(error));
       return true;
     });
-    // Nothing was minted, so nothing is revoked, and a failed Infisical step never reaches GitHub.
+    // Nothing was minted, so nothing is revoked.
     assert.ok(!calls.some((c) => c.method === "DELETE"));
-    if ("login" in over || "secret" in over || "appId" in over)
-      assert.ok(!calls.some((c) => c.url.startsWith("https://api.github.com")));
   }
-  const { fetch } = world();
+  const { calls, fetch } = world();
   await assert.rejects(
     mint(
       "approve",
-      options({
-        fetch: async (url, init) =>
-          url.includes("secrets/raw") && url.includes("KEY")
-            ? {
-                ok: true,
-                status: 200,
-                json: async () => ({ secret: { secretValue: "not a key" } }),
-              }
-            : fetch(url, init),
-      }),
+      options({ fetch, env: { ...ENV, [`${ENV_PREFIX}GATE_PRIVATE_KEY`]: "not a key" } }),
     ),
     /^Error: app-token: app jwt: FFLOW_GATE_PRIVATE_KEY does not sign$/,
   );
+  assert.deepEqual(calls, []);
 });
 
 test("a 2xx answer without its value, or with no JSON, fails at its step and mints nothing", async () => {
   const NO_JSON = Symbol("no JSON");
   /** @type {[string, unknown, RegExp][]} */
   const cases = [
-    [
-      "pipelines.actions.test",
-      {},
-      /^Error: app-token: oidc: the token is missing from the answer$/,
-    ],
-    [
-      "pipelines.actions.test",
-      NO_JSON,
-      /^Error: app-token: oidc: GET \/idtoken\/1 answered no JSON$/,
-    ],
-    ["oidc-auth/login", { accessToken: "" }, /infisical login: the access token is missing/],
-    ["oidc-auth/login", NO_JSON, /infisical login: POST .* answered no JSON/],
-    ["GATE_APP_ID", { secret: {} }, /infisical secret: FFLOW_GATE_APP_ID is missing/],
-    ["GATE_PRIVATE_KEY", { secret: { secretValue: "" } }, /FFLOW_GATE_PRIVATE_KEY is missing/],
     ["access_tokens", { permissions: {}, repositories: [] }, /access token: the token is missing/],
     ["access_tokens", NO_JSON, /access token: POST .* answered no JSON/],
+    ["installation", NO_JSON, /installation: GET .* answered no JSON/],
   ];
   for (const [match, json, message] of cases) {
     const { calls, fetch } = world();
     /** @type {import("../lib/app-token.mjs").Fetch} */
     const patched = async (url, init) => {
       const real = await fetch(url, init);
-      if (!url.includes(match)) return real;
+      if (!url.endsWith(match)) return real;
       return {
         ok: true,
         status: 200,
@@ -425,13 +343,9 @@ test("a 2xx answer without its value, or with no JSON, fails at its step and min
       };
     };
     await assert.rejects(mint("approve", options({ fetch: patched })), message);
-    // No token came back, so nothing is revoked; a failed Infisical step never reaches GitHub.
+    // No token came back, so nothing is revoked.
     assert.ok(!calls.some((c) => c.method === "DELETE"));
     if (match !== "access_tokens") assert.ok(!calls.some((c) => c.url.includes("access_tokens")));
-    if (!["access_tokens", "GATE_PRIVATE_KEY"].includes(match))
-      assert.ok(!calls.some((c) => c.url.includes("GATE_PRIVATE_KEY")));
-    if (match !== "access_tokens")
-      assert.ok(!calls.some((c) => c.url.startsWith("https://api.github.com")));
   }
 });
 
@@ -482,7 +396,6 @@ test("logs: only ::add-mask:: lines, and only in Actions; no console line, env w
   const processEnv = { ...process.env };
   const { fetch } = world();
   const minted = await mint("approve", {
-    oidc: OIDC,
     defaultBranch: "main",
     env,
     fetch,
@@ -492,7 +405,7 @@ test("logs: only ::add-mask:: lines, and only in Actions; no console line, env w
   await minted.revoke();
   const failing = world({ grant: { permissions: { contents: "write" } } });
   await assert.rejects(
-    mint("approve", { oidc: OIDC, defaultBranch: "main", env, fetch: failing.fetch, mask }),
+    mint("approve", { defaultBranch: "main", env, fetch: failing.fetch, mask }),
     (error) => {
       assert.ok(error instanceof Error);
       noSecret(String(error.stack));
@@ -505,7 +418,7 @@ test("logs: only ::add-mask:: lines, and only in Actions; no console line, env w
   assert.deepEqual({ ...process.env }, processEnv);
   const lines = out.join("").split("\n").filter(Boolean);
   assert.ok(lines.every((l) => l.startsWith("::add-mask::")));
-  for (const value of SECRETS.filter((v) => v !== REQUEST_TOKEN))
+  for (const value of SECRETS)
     assert.ok(lines.includes(`::add-mask::${value}`), "a value went unmasked");
   // The key is masked line by line; its PEM armour is not.
   assert.ok(!lines.some((l) => l.includes("-----")));
@@ -521,19 +434,4 @@ test("logs: only ::add-mask:: lines, and only in Actions; no console line, env w
   assert.deepEqual(oneLine, [
     "::add-mask::-----BEGIN PRIVATE KEY----- MIIEabc -----END PRIVATE KEY-----\n",
   ]);
-});
-
-test("mint: without a config identityId, the id comes from the Actions variable; a config id wins (K7)", async () => {
-  const fromVariable = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
-  for (const [oidc, expected] of /** @type {const} */ ([
-    [{ ...OIDC, identityId: undefined }, fromVariable],
-    [OIDC, OIDC.identityId],
-  ])) {
-    const { calls, fetch } = world();
-    await mint(
-      "verdict",
-      options({ oidc, fetch, env: { ...ENV, [OIDC_IDENTITY_VARIABLE]: fromVariable } }),
-    );
-    assert.equal(calls[1].body.identityId, expected);
-  }
 });

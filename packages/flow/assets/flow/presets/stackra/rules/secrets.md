@@ -6,11 +6,12 @@ description: Secret management and environment configuration
 
 # Secrets
 
-Stackra keeps production secret values in Infisical. Infisical is the source, and runway syncs them into the runtimes on deploy
-(ADR 0173, which supersedes ADR 0009). Secret names are in git; values never are.
+Stackra keeps every secret value as a SOPS file in the private repository `figentra/secrets`, encrypted with Google
+Cloud KMS (ADR 0525, which replaces Infisical; ADR 0173's runway sync stands). Runway syncs production values into the
+runtimes on deploy. Secret names are in git; values never are, except as ciphertext in `figentra/secrets`.
 
-**Invariant: nobody reads a value.** A value is set by a human, or by the secret-manager flow (section 3,
-ADR 0257), which writes it without anyone, the agent included, ever seeing it.
+**Invariant: nobody reads a value.** A value is set by a human, generated, or written by the secret-manager flow
+(section 3, ADR 0257), without anyone, the agent included, ever seeing it.
 
 ## 1. App Secrets (Encore, generated app)
 
@@ -23,51 +24,73 @@ import { secret } from "encore.dev/config";
 const stripeSecretKey = secret("STRIPE_SECRET_KEY");
 ```
 
-- Infisical is the source of production secrets. Runway syncs them into Encore, Cloudflare Workers and EAS on deploy (ADR 0173,
-  which supersedes ADR 0009)
-- A human sets each value per environment; an agent only names the secret (the secret-manager flow covers the
-  runtime store once a tool for it exists; ADR 0257)
-- Never in git
+- A product's runtime secrets live in its scope `products/<product>/<dev|staging|production>`. Runway syncs them into
+  Encore, Cloudflare Workers and EAS on deploy, from the CI job that decrypted the scope (ADR 0173, ADR 0525)
+- A human sets each value per environment, or `pnpm secrets:generate` makes a random one; an agent only names the
+  secret (ADR 0257)
+- Never in git as plain text
+- Every name is declared once in code (ADR 0173 amendment 2026-11-04): `Config({ schema, env })` or `@Secret`, never
+  a raw `process.env.X` (`stackra/no-raw-env`). `runway env check` fails on a name with no declaration or no home in
+  `figentra/secrets`; `runway env sync` pushes values to the runtimes; no command prints a value
 
-## 2. Dev/CI Secrets (Infisical)
+## 2. Dev/CI Secrets
 
-All other secrets through Infisical:
+### Layout (`figentra/secrets`, ADR 0525)
 
-### Vault Layout (ADR 0512: one project per reader)
+One file per secret, `<scope>/<NAME>.enc.yaml`; `catalog.yaml` lists every name with its owner, purpose, kind and
+rotation (`pnpm secrets:catalog`). Each scope has its own KMS key:
 
-- `agents` dev `/agents` - Developer and agent tokens (local dev, MCP servers); every repo's `.infisical.yaml`
-- `ci-build` prod `/ci`, `/ci/turbo`, `/ci/registry` - read-only build tokens (every CI job, PR checks, testbed)
-- `ci-deploy` prod `/ci`, `/ci/release`, `/ci/store`, `/ci/observability` - deploy and release credentials
-- `registry` prod `/ci`, `/ci/registry` and `flow` prod `/ci/gate` - one reader each
-- `<product>` `/runtime/<member>` - a product's runtime secrets, synced by runway; no shared token is copied there
+- `agents` - developer and agent tokens (the root scripts, MCP servers); only the owner's Google login decrypts it
+- `ci/build[/folder]` - read-only build tokens (every CI job, PR checks, testbed), e.g. `ci/build/registry`
+- `ci/deploy[/folder]` - deploy and release credentials for dev and staging
+- `ci/production[/folder]` - production credentials, granted only to a `production` environment job on main
+- `ci/flow[/folder]` - the Flow gate App (`ci/flow/gate`)
+- `products/<product>/<dev|staging|production>` - a product's runtime secrets, synced by runway
+
+Who may decrypt which scope is figentra/infra's `estate/secret-callers.mjs`, never a repository secret.
 
 ### How to Use
 
 **Local development:**
 
-A token reaches a process only through the pnpm script that needs it (`pnpm bot:gh`, `pnpm linear`, `pnpm bot:git`),
-which wraps `infisical run` itself. Raw `infisical run` hands every `/agents` value to the process it starts, so an
-agent's raw `infisical run` asks the owner (ADR 0293). A new flow that needs a token gets its own pnpm script.
+A token reaches a process only through the pnpm script that needs it (`pnpm bot:gh`, `pnpm linear`, `pnpm bot:git`).
+Each runs `node tools/scripts/secrets-exec.mjs --names A,B -- <command>` in core, which decrypts only the names it lists
+from a local clone of `figentra/secrets` (`~/.stackra/secrets`) in memory, puts them in the child's environment only
+and prints nothing. A tool in another repository reads its values from its own environment and leaves it to the caller
+to provide them. A new flow that needs a token gets its own pnpm script that names its secrets.
 
 **CI/CD:**
 
-A CI job logs in to Infisical by GitHub OIDC for one step and reads `/ci` only (ADR 0009 D2); no token is a repository
-secret. Workers deploy from CI with a Cloudflare token read from Infisical `/ci` over GitHub OIDC (ADR 0284, ADR 0289). A workstation `encore deploy` stays denied (`guard-bash` and settings): Encore deploys run from a CI workflow, staging on a merge to main and production behind the owner's Environment approval, once a repository ships an Encore app (ADR 0468 decision 6).
+A job decrypts one scope with core's action, after its Toolchain (mise) step, and needs `permissions: id-token: write`:
+
+```yaml
+- name: Registry token (sops)
+  uses: figentra/stackra/.github/actions/secrets-decrypt@<sha> # @stackra/runway@<version>
+  with:
+    scope: ci/build/registry
+    names: STACKRA_REGISTRY_TOKEN
+```
+
+It signs in to Google Cloud as the job itself (Workload Identity, no stored key) and puts the named values, masked,
+into the job's environment. Workers deploy from CI with `CLOUDFLARE_API_TOKEN` from `ci/deploy` (or `ci/production`)
+(ADR 0284, ADR 0289). A workstation `encore deploy` stays denied (`guard-bash` and settings): Encore deploys run from a
+CI workflow, staging on a merge to main and production behind the owner's Environment approval, once a repository ships
+an Encore app (ADR 0468 decision 6).
 
 **MCP servers:**
-Token-based MCP servers launch through the `tools/scripts/mcp.sh` vault wrapper (reads from `/agents`). This is a
-convention; no hook enforces it.
+Token-based MCP servers launch through `tools/scripts/mcp.sh`, which runs `secrets-exec.mjs` with only the names the
+server needs. This is a convention; no hook enforces it.
 
 ### Required Secrets
 
-In Infisical `/agents` (local):
+In `agents` (local):
 
 - `GITHUB_PERSONAL_ACCESS_TOKEN` - GitHub MCP
 - `STRIPE_SECRET_KEY` - Stripe MCP (optional)
 - `CONTEXT7_API_KEY` - Context7 MCP
 - `RESEND_API_KEY` - Resend MCP (optional)
 
-In Infisical `/ci` (CI/CD):
+In `ci/build`, `ci/deploy` and `ci/production` (CI/CD):
 
 - `TURBO_TOKEN` - Turborepo remote cache
 - `UNIWIND_AUTH_TOKEN` - Uniwind Pro CI/CD licence for the Quality Gate install (ADR 0310)
@@ -75,39 +98,47 @@ In Infisical `/ci` (CI/CD):
 - `ENCORE_API_KEY` - Encore deployment from CI, once a repository ships an Encore app (ADR 0468)
 - `SENTRY_AUTH_TOKEN` - Sentry releases (optional)
 
-## 3. The secrets inbox (secret-manager flow, ADR 0257)
+## 3. Writing a value (secret-manager flow, ADR 0257)
 
-The owner drops one file per secret into `~/Secrets-inbox/` (outside every repo, never synced). The file name is
-the secret name (`SCREAMING_SNAKE`, one extension stripped: `STACKRA_REVIEWER_PRIVATE_KEY.pem`); an optional
-`<NAME>.target.yaml` sets `project`, `env` (default `dev`) and `path` (default `/agents`, in `agents`); a `/ci`
-path must name its project (ADR 0512). A non-file value (an App ID) is a
-file holding just that value; there is no `--value` flag.
+Every write goes through core's scripts, never by hand: each opens a pull request in `figentra/secrets` that merges
+itself, hands the value to sops on stdin and appends a names-only line to `~/.stackra/secrets-audit.log`.
 
-- `pnpm secrets:import --list | --dry-run | <import>` is the only way in. It never prints, logs or passes a value
-  on argv, verifies by SHA-256 read-back in-process, deletes the inbox file on success and appends a names-only
-  line to `~/.stackra/secrets-audit.log`.
-- Production (`--env prod`): the dry run prints a one-time `--confirm <token>` (30 min). That token is a process rule,
-  not an enforced yes (the same caller sees it): ask the owner, wait for yes, only then use it. The enforced yes is
-  the local request page (STA-187), where the owner's own submit is the yes.
-- Any agent may run the script: hooks cannot tell agents apart, and the script never outputs a value. The
-  `secret-manager` agent is the one that is told to.
+- `pnpm secrets:put NAME --scope <scope>` - one human value (an API key, a store key), from
+  `~/Secrets-inbox/<NAME>[.ext]` or the owner's hidden prompt.
+- `pnpm secrets:import --scope <scope> [FILE…] | --tree | --list` (each with `--dry-run`) - several inbox files.
+- `pnpm secrets:generate NAME --scope <scope>` and `pnpm secrets:rotate NAME --scope <scope>` - a random machine
+  secret, made in memory; `--missing` fills every generated catalog name that has no file.
+
+The owner drops one file per secret into `~/Secrets-inbox/` (outside every repo, never synced). The file name is the
+secret name (`SCREAMING_SNAKE`, one extension stripped: `STACKRA_REVIEWER_PRIVATE_KEY.pem`), or files go in
+scope-shaped folders (`agents/`, `ci/deploy/`, `products/<product>/<env>/`). A non-file value (an App ID) is a file
+holding just that value; there is no `--value` flag.
+
+- An agent never writes `ci/flow`, `ci/infra` or any `registry` folder; the scripts refuse, and the owner runs those.
+- A production scope is written only after the owner's yes in the conversation.
+- Any agent may run the scripts: hooks cannot tell agents apart, and the scripts never output a value. The
+  `secret-manager` and `vault-keeper` agents are the ones that are told to.
 - No agent reads, lists, copies or moves anything in `~/Secrets-inbox/`. The hooks below catch the obvious attempts;
   they are an accident guard, not a security boundary.
 
 ## Forbidden Patterns
 
-1. **No `.env` files** - Use Infisical injection
+1. **No `.env` files** - Use the pnpm script that runs `secrets-exec.mjs`, or the CI decrypt step
 2. **No hardcoded secrets** - Not in code, not in git
 3. **No secret values in configs** - Only secret references
+4. **No decrypting by hand** - An agent never runs `sops -d`, `sops decrypt`, `sops exec-env` or `sops exec-file`, and
+   never runs `secrets-exec.mjs` itself or for names its task did not give it: either hands a value to a command the
+   agent chose
 
 ### Blocked by Hooks
 
 - `guard-bash.mjs` (rules in `.agents/hooks/_rules.mjs`, shared with the OpenCode guard, ADR 0293): blocks
-  `infisical export`, `infisical secrets get` in every form (`--silent` still prints the value), `infisical secrets set`,
-  a bare `infisical secrets` (lists values), `infisical run -- env|printenv`, `env`/`printenv`, process-environment
-  listings (`ps -E`, `ps eww`, `launchctl procinfo`) and running `bot-token.mjs` or `figentra bot token`, also behind
-  `pnpm exec`, `npx` and `mise exec --`. Raw `infisical run`, `infisical secrets delete` and `secrets:import … --confirm`
-  (or `figentra secrets import … --confirm`) ask the owner.
+  `env`/`printenv`, process-environment listings (`ps -E`, `ps eww`, `launchctl procinfo`) and running `bot-token.mjs`
+  or `figentra bot token`, also behind `pnpm exec`, `npx` and `mise exec --`; it still carries the Infisical rules
+  (`infisical export`, `infisical secrets …`, raw `infisical run`) until no workflow uses the CLI.
+  `secrets:import … --confirm` (or `figentra secrets import … --confirm`) asks the owner.
+- Not yet (the owner's hook change, STA-2146): a deny of `sops -d`, `sops decrypt`, `sops exec-env`, `sops exec-file`
+  and of a direct `secrets-exec.mjs`, also behind `pnpm exec`, `npx` and `mise exec --`. Rule 4 above holds until then.
 - `guard-bash.mjs` (matcher `.agents/hooks/_inbox.mjs`, shared with the OpenCode guard): blocks any command in which
   a word, after unquoting, names `Secrets-inbox` (any case) or the import confirm key. Two kinds of word are exempt: a
   grep/rg/ag pattern, and a `--title`/`--body`/`--message`/`-m` value with no `$(` or backtick. Program text
@@ -126,23 +157,26 @@ file holding just that value; there is no `--value` flag.
 
 Each article below is bound to a check:
 
-1. **Secrets never in git** → `gitleaks` pre-commit + CI scan
+1. **Secrets never in git** → `gitleaks` pre-commit + CI scan; `figentra/secrets` holds ciphertext only
 2. **No .env files** → `guard-paths` hook
-3. **CI secrets from OIDC** → GitHub Actions OIDC (Phase 2)
-4. **Production values reach runtimes by Infisical sync** (ADR 0173, decision 1), and only the `secret-manager` agent writes values through `pnpm secrets:import` (ADR 0173, decision 7; ADR 0257). Review checks the sync, not a manual copy.
-5. **Nobody reads a value; the inbox flow writes blind** → `figentra secrets import` (`@figentra/cli`, + its test, which
-   asserts no canary value reaches output, audit log or argv), `guard-bash` / `guard-paths` inbox rules
+3. **CI secrets from OIDC** → the `secrets-decrypt` action (Workload Identity), grants in `estate/secret-callers.mjs`
+4. **Production values reach runtimes by runway sync** (ADR 0173, decision 1) from the decrypted scope, and values are
+   written only through `pnpm secrets:put`, `secrets:import`, `secrets:generate` and `secrets:rotate` (ADR 0257,
+   ADR 0525). Review checks the sync, not a manual copy.
+5. **Nobody reads a value; writes are blind** → the scripts' tests, which assert no canary value reaches output, audit
+   log or argv; `guard-bash` / `guard-paths` inbox rules
 
 ## Setup
 
-1. Install the Infisical CLI: `mise install` (pinned in `mise.toml`, ADR 0027; Homebrew is not supported)
-2. Create workspace: `infisical init`
-3. `.infisical.yaml` is tracked (workspace id and domain, no secret)
-4. Add secrets to `/agents` folder
-5. Run the pnpm script that wraps the command (`pnpm bot:gh`, `pnpm linear`); the owner runs raw `infisical run`
+1. Install sops: `mise install` (pinned in `mise.toml`, ADR 0027)
+2. Sign in once as the owner's Google account: `gcloud auth application-default login`
+3. Clone `figentra/secrets` to `~/.stackra/secrets`; it holds only encrypted files
+4. Add a token with `pnpm secrets:put NAME --scope agents`, never by hand
+5. Run the pnpm script that names it (`pnpm bot:gh`, `pnpm linear`); `pnpm doctor` checks steps 1 to 3
 
 ## See Also
 
 - Constitution: secrets (laws)
-- ADR-0173: Infisical is the source of production secrets (supersedes ADR-0009)
-- Runbook: secrets (vault layout, rotation)
+- ADR-0525: SOPS files keyed by Cloud KMS replace Infisical
+- ADR-0173: runway syncs production secrets into the runtimes (supersedes ADR-0009)
+- Runbook: secrets (scopes, rotation)

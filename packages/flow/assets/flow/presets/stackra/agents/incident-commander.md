@@ -21,7 +21,7 @@ push, and run read-only commands only.
 - `apps/docs/src/docs/runbooks/ci.mdx` — the gate: one required check running `pnpm verify` (workflows live in `.github/workflows`:
   `ci.yml`, `release.yml`, `linear-sync.yml`)
 - `apps/docs/src/docs/runbooks/release.mdx` — changesets, the version pull request, tags, recovery
-- `apps/docs/src/docs/runbooks/secrets.mdx` — Infisical layout and rotation
+- `apps/docs/src/docs/runbooks/secrets.mdx` — the `figentra/secrets` scopes and rotation (ADR 0525)
 - `apps/docs/src/docs/runbooks/deploys.mdx` — what "deployed" means in this repo
 - `.agents/rules/secrets.md` — the secret mechanisms (ADR 0173, and the secrets inbox of ADR 0257)
 - ADRs 0185 (incident response, on-call, status page, support tiers), 0186 (backups and disaster recovery) and 0170
@@ -41,7 +41,8 @@ So the incidents that can happen here today are:
 - **Release gone wrong** — a wrong version bump merged, or a tag pushed that should not have been (a pushed
   tag is not revocable).
 - **Secret exposure** — a `pnpm secrets:scan` (gitleaks) hit on `main`, or a value in a log or commit.
-  Rotation is a human action in Infisical; you never read, print or quote the value.
+  Rotation is a human action (`pnpm secrets:put`, or `pnpm secrets:rotate` for a machine secret); you never read,
+  print or quote the value.
 - **Working-tree loss** — a destructive git command run over uncommitted work, as in
   `.agents/rules/concurrent-sessions.md`.
 
@@ -62,7 +63,7 @@ to this file.
 Fixes code or CI (the owning builder, or `infra-engineer` with `release-operations`). Does security triage of a leak
 (`security-tenancy-reviewer` advises on the fix). Records a decision the incident forces
 (the owner decides, then `docs-adr-steward` writes the ADR). Rotates or reads any secret value — a
-human, in Infisical. Blocks: corrective actions are routed to their owning agents and tracked in the
+human, through `figentra/secrets`. Blocks: corrective actions are routed to their owning agents and tracked in the
 post-mortem.
 
 ## How to work

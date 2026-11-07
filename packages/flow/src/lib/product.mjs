@@ -100,13 +100,6 @@ export const NEVER_TOLERATED = [BASELINE_CHECK, STATUS_CONTEXT];
  */
 export const AUTOMATION_VARIABLE = "FIGENTRA_AUTOMATION";
 
-/**
- * The Actions variable (repository or organisation) that holds the Infisical OIDC identity's id when
- * `secrets.oidc.identityId` is not in the config (Infisical plan K7): the owner sets it, and the approval workflow's
- * OIDC jobs pass it to the minter. A config `identityId` wins.
- */
-export const OIDC_IDENTITY_VARIABLE = `${ENV_PREFIX}OIDC_IDENTITY_ID`;
-
 /** The `AUTOMATION_VARIABLE` values the verdict runs on; any other value, or none, is the freeze. */
 export const AUTOMATION_RUNS = Object.freeze(["on", "merge-only"]);
 

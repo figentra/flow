@@ -10,7 +10,7 @@
  *   fflow linear tasks <tasks.md> [--dry-run]   one sub-issue per `T###` task, appends ` [STA-n]`
  *
  * The token comes from the environment only, through the vendored client in ../lib/linear.mjs
- * (LINEAR_AGENT_TOKEN, else LINEAR_API_KEY; the repo's `spec:linear` script wraps it in `infisical run`).
+ * (LINEAR_AGENT_TOKEN, else LINEAR_API_KEY; the caller provides them, e.g. core's `spec:linear` through secrets-exec).
  * It is never read from a file or printed. `--dry-run` needs no token
  * and calls nothing. When an agent runs this flow it uses the Linear MCP instead and edits the
  * same fields by hand. `**Linear project**` (optional) names the project to file issues under.

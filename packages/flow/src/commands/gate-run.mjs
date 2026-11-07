@@ -27,9 +27,10 @@
  *   folder when the run ends.
  * Runtime: node
  * Governing contract: Stackra ADR 0503 (decision 4), ADR 0484 (the testbed); STA-1729 phase 2; STA-1945 (FR-14).
- * Secrets: the gate App's key is read through the secrets port's `gate` scope (`infisical run`, `/ci/gate`) by the
- *   poster process only: on the box for `ssh` and `local`, on this side for a `command` runner. It never reaches a
- *   testbed box, and this process never reads it.
+ * Secrets: the gate App's key is read from the poster process's own environment only (the secrets port leaves the
+ *   command unchanged; the caller injects `<prefix>GATE_APP_ID` and `<prefix>GATE_PRIVATE_KEY`): on the box for
+ *   `ssh` and `local`, on this side for a `command` runner. It never reaches a testbed box, and this process never
+ *   reads it.
  */
 import { spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -184,7 +185,7 @@ export async function gateRun(options) {
       problem: `secrets.oidc: ${STATUS_CONTEXT} comes only from ${APPROVE_WORKFLOW}'s verdict job, which ${
         box
           ? "never judges a --box run; drop --box"
-          : "is not rendered for this configuration; set runner.kind to github-actions and complete secrets.oidc (secrets.kind infisical, secrets.paths.gate) and apps.owner"
+          : "is not rendered for this configuration; set runner.kind to github-actions and complete secrets.oidc (secrets.kind sops, secrets.oidc.decrypt and scope) and apps.owner"
       }, or remove secrets.oidc`,
     };
   const branch = options.ref ?? git(root, ["branch", "--show-current"]).out;

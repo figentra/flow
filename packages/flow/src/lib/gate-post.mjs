@@ -12,7 +12,7 @@
  *   user's token (`GITHUB_TOKEN`, `GH_TOKEN`, a `gh` login): without the App's id and key it makes no call at all.
  * Runtime: node (on the testbed box or a `--box` host)
  * Governing contract: Stackra ADR 0503 (decision 4); STA-1729 phase 2 (the leader's plan stop of 2026-10-31).
- * Secrets: `<prefix>GATE_APP_ID` and `<prefix>GATE_PRIVATE_KEY` from the environment only (`infisical run`). The key,
+ * Secrets: `<prefix>GATE_APP_ID` and `<prefix>GATE_PRIVATE_KEY` from the environment only (the caller injects them). The key,
  *   the JWT and the installation token are never printed, logged, written or put in a comment; the log tail is
  *   redacted of every secret-looking environment value before it is posted.
  */

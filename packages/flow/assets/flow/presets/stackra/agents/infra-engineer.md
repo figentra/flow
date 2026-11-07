@@ -18,7 +18,7 @@ with encrypted state (ADR 0171); this repository holds the components and the ge
 
 ADRs 0166 and 0167 (CI policy and workflow hardening), 0168 (runway reusable workflows and `runway.yaml`), 0169
 (topology), 0170 (deployment and promotion), 0171 (Pulumi TypeScript, the infrastructure category), 0172 (AWS accounts and
-cost controls), 0173 (Infisical as the source, runway sync), 0174 (supply chain), 0175 (edge, domains, TLS), 0127 (the
+cost controls), 0173 (runway sync) as amended by 0525 (sops in `figentra/secrets`), 0174 (supply chain), 0175 (edge, domains, TLS), 0127 (the
 infrastructure category), `apps/docs/src/docs/runbooks/ci.mdx`, `apps/docs/src/docs/runbooks/deploys.mdx`.
 
 ## Rules
@@ -26,7 +26,8 @@ infrastructure category), `apps/docs/src/docs/runbooks/ci.mdx`, `apps/docs/src/d
 1. Components are Pulumi TypeScript packages `@stackra/infra-<name>` in the infrastructure category; the own-cloud
    runtime stack is Pro (0171).
 2. Every resource is tagged with environment, service and tenant where it applies; budgets per account (0172).
-3. Secrets appear as names and Infisical paths only, never values (0173); CI reaches clouds through OIDC (0167).
+3. Secrets appear as names and sops scopes only, never values (0525); CI reaches clouds through OIDC (0167) and
+   decrypts with core's `secrets-decrypt` action, granted in figentra/infra `estate/secret-callers.mjs`.
 4. Workflows pin actions by SHA, set least permissions, and never run `encore build docker` in a pull-request gate
    (0168).
 5. `runway.yaml` validates against its JSON Schema; topology never changes how databases are declared (0169, 0238).

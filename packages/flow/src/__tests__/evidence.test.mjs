@@ -97,6 +97,9 @@ test("secretLooking refuses literal secrets and secret-printing commands", () =>
     "pnpm test && printenv HOME",
     "/usr/bin/printenv",
     "infisical export --env=dev",
+    "sops -d agents/LINEAR_API_KEY.enc.yaml",
+    "sops --input-type yaml decrypt x.enc.yaml",
+    "sops exec-env agents/X.enc.yaml 'pnpm test'",
     `node run.mjs ${"aB3".repeat(12)}`,
   ])
     assert.equal(secretLooking(command), true, command);
@@ -111,6 +114,7 @@ test("secretLooking refuses literal secrets and secret-printing commands", () =>
     "export CI=1 && pnpm test",
     "cp .env.example x && pnpm test",
     "node -e process.env.HOME",
+    "sops updatekeys --yes x.enc.yaml",
     "echo ok && pnpm test --token $TOKEN",
     // shortcut: a reference whose name says nothing secret is out of scope (the guard's own rules cover it)
     "echo $HOME",

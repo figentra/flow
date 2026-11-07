@@ -17,8 +17,8 @@ reviewed like code.
 2. **Privacy answers travel with the feature.** The App Store privacy label and the Play Data safety form are kept as
    docs pages; a pull request that adds data collection (a field, an SDK such as Sentry or PostHog, a permission)
    updates them in the same change. Field classification (ADR 0134) is the source for what is personal.
-3. **Demo accounts** for review are synthetic (the golden tenant, ADR 0190). Their credentials live in Infisical by name
-   only; a human types them into the store consoles. Never in the repository, a ticket or chat.
+3. **Demo accounts** for review are synthetic (the golden tenant, ADR 0190). Their credentials live in `figentra/secrets`
+   (sops) and are referenced by name only; a human types them into the store consoles. Never in the repository, a ticket or chat.
 4. **Screenshots** come from a Maestro flow on a dedicated simulator, in a Release build, for every shipped locale
    including Arabic (RTL), at the sizes the vendored `eas-app-stores` references list.
 5. **Account deletion** is available in the app before any submission that has accounts (App Store guideline 5.1.1(v)).

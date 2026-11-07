@@ -24,6 +24,6 @@
     ".claude/rules/worktrees.md": "f99bce80073cc1790be0c322652ac9782292ae7074563e4cc730460be7d4b918",
     "README.md": "c9cb6c212e2e03d6ca32902eef622417784b5afd254da37754bae467830cbe6e",
     ".github/workflows/fflow-approve.yml": "e66c61f11f06421284c8ecf29717041410da0a1c3ff68128f0598257aeef35c7",
-    ".github/CODEOWNERS": "a0add321ee02a73c07057baf93f0a0005c44480b050203c8b1bc23b5a4ef0453"
+    ".github/CODEOWNERS": "14e69021072136c5224f37ffdb5e193c7632c7f217304666d53f759d7e05e2e4"
   }
 }

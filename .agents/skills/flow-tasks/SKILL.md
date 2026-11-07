@@ -171,4 +171,5 @@ never calls a GitHub issue tool.
 5. Report the `T### -> STA-m` lines it printed. If Linear fails, report the error and stop; a Linear failure never
    blocks a gate (ADR 0065 rule 7), and the task lines can be linked on a later run.
 
-The token comes from Infisical through `pnpm spec:linear` only. Never print it.
+The token reaches it only through `pnpm spec:linear`, which decrypts it from the sops `agents` scope into its own
+environment. Never print it.

@@ -21,6 +21,11 @@ import { CONFIG_FILE, ENV_PREFIX, GATE_MARKER, STATUS_CONTEXT } from "../lib/pro
 import { commit, repo, sh } from "./__fixtures__/repo.mjs";
 
 const GITHUB = "git@github.com:figentra/flow.git";
+/** A `sops` secrets.oidc: the decrypt action pinned to a commit and the gate App's scope. */
+const DECRYPT = {
+  decrypt: `figentra/stackra/.github/actions/secrets-decrypt@${"c".repeat(40)}`,
+  scope: "ci/flow/gate",
+};
 
 /** A repository whose origin names GitHub while pushes go to the local bare origin. */
 function ghRepo(/** @type {Record<string, string>} */ files = {}) {
@@ -237,7 +242,7 @@ test("gate run with a caller-posting runner (C1): the box gets only the check; t
 });
 
 test("gate run with secrets.oidc and no rendered verdict job, or with --box: refused before any box, nothing recorded (STA-2134)", async (t) => {
-  const oidc = { kind: "infisical", paths: { gate: "/ci/gate" }, oidc: { audience: "fflow-ci" } };
+  const oidc = { kind: "sops", oidc: DECRYPT };
   for (const { config, box, cause } of [
     {
       config: {
@@ -278,7 +283,7 @@ test("gate run with secrets.oidc and a rendered verdict job: the check runs, not
       version: 1,
       runner: { kind: "github-actions" },
       apps: { owner: "o" },
-      secrets: { kind: "infisical", paths: { gate: "/ci/gate" }, oidc: { audience: "fflow-ci" } },
+      secrets: { kind: "sops", oidc: DECRYPT },
     }),
   });
   t.after(r.dispose);
@@ -299,19 +304,22 @@ test("gate run with secrets.oidc and a rendered verdict job: the check runs, not
   assert.equal(posted, 0, "only fflow-approve.yml's verdict job posts the gate");
   assert.equal(boxes.length, 1);
   assert.deepEqual(boxes[0], { command: boxes[0].command, poster: false, job: false });
-  assert.doesNotMatch(boxes[0].command, /post\.mjs|GATE_RUN|infisical/);
+  assert.doesNotMatch(boxes[0].command, /post\.mjs|GATE_RUN|sops|secrets-decrypt/);
 });
 
-test("box command: the check's log and exit are kept for the poster; the secrets port wraps the poster", () => {
-  assert.equal(
-    boxCommand("pnpm verify"),
-    "{ pnpm verify; echo $? > .fflow-gate/exit; } 2>&1 | tee .fflow-gate/log.txt; FFLOW_GATE_RUN=1 node .fflow-gate/post.mjs",
-  );
+test("box command: the check's log and exit are kept for the poster; a wrap applies to the poster alone", () => {
+  const plain =
+    "{ pnpm verify; echo $? > .fflow-gate/exit; } 2>&1 | tee .fflow-gate/log.txt; FFLOW_GATE_RUN=1 node .fflow-gate/post.mjs";
+  assert.equal(boxCommand("pnpm verify"), plain);
+  // The secrets port wraps nothing: the poster reads the key from the environment its caller filled.
+  for (const kind of ["env", "sops", "infisical"])
+    assert.equal(
+      boxCommand("pnpm verify", { wrap: (c) => secretsPort({ kind }).wrap(c, "gate") }),
+      plain,
+    );
   assert.match(
-    boxCommand("x", {
-      wrap: (c) => secretsPort({ kind: "infisical", paths: { gate: "/ci/gate" } }).wrap(c, "gate"),
-    }),
-    /; infisical run --silent --path=\/ci\/gate -- FFLOW_GATE_RUN=1 node \.fflow-gate\/post\.mjs$/,
+    boxCommand("x", { wrap: (c) => `runner -- ${c}` }),
+    /; runner -- FFLOW_GATE_RUN=1 node \.fflow-gate\/post\.mjs$/,
   );
 });
 

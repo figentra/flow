@@ -87,34 +87,35 @@ export const SCHEMA = {
       },
       { ssh: ["host"], command: ["run"] },
     ),
-    secrets: port(
-      {
-        env: {},
-        infisical: {
-          paths: { type: "object", additionalProperties: str },
-          projectId: str,
-          env: str,
-          domain: str,
-          auth: { enum: ["universal-auth"] },
-          bin: str,
-          envFile: str,
-          // The L2 design: main's approval job logs in with its OIDC token as this identity (lib/app-token.mjs).
-          oidc: {
-            type: "object",
-            additionalProperties: false,
-            required: ["audience"],
-            properties: {
-              identityId: {
-                type: "string",
-                pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-              },
-              audience: { type: "string", pattern: "^[\\w.-]+$" },
+    secrets: port({
+      env: {},
+      sops: {
+        // The L2 design: main's approval jobs run `decrypt` (an action pinned to a commit, given `scope` and `names`),
+        // which signs in with the job's OIDC token and puts the gate App's id and key in the job's environment.
+        oidc: {
+          type: "object",
+          additionalProperties: false,
+          required: ["decrypt", "scope"],
+          properties: {
+            decrypt: {
+              type: "string",
+              pattern: "^(?!.*\\.\\.)[\\w-]+/[\\w.-]+(?:/[\\w.-]+)*@[0-9a-f]{40}$",
             },
+            scope: { type: "string", pattern: "^[\\w-]+(?:/[\\w-]+)*$" },
           },
         },
       },
-      { infisical: ["paths"] },
-    ),
+      // Retired (Stackra ADR 0525): still read so existing files load, as `env`, with a warning.
+      infisical: {
+        paths: { type: "object", additionalProperties: str },
+        projectId: str,
+        env: str,
+        domain: str,
+        auth: { enum: ["universal-auth"] },
+        bin: str,
+        envFile: str,
+      },
+    }),
     apps: {
       type: "object",
       additionalProperties: false,
@@ -363,6 +364,10 @@ export function loadConfig(root) {
         errors: [`${CONFIG_FILE}: not valid JSON (${/** @type {Error} */ (error).message})`],
       };
     }
+    if (parsed?.secrets?.kind === "infisical")
+      warnings.push(
+        `${CONFIG_FILE}: secrets.kind "infisical" is retired and read as "env" (the caller's environment holds the values); set "env", or "sops" with secrets.oidc for the approval workflow`,
+      );
     return {
       config: parsed,
       source: file,

@@ -137,6 +137,7 @@ its input and validates and records its output; never write tasks.md by hand.
 6. **Linear**: preview `pnpm spec:linear tasks <folder>/tasks.md --dry-run`, show the user the list, then run it
    without `--dry-run`. Each `T###` line without a key becomes a sub-issue of the spec's issue, labelled `agent`; the
    script appends ` [STA-m]`, and a re-run skips linked lines. A Linear failure never blocks a gate (ADR 0065 rule 7).
-   The token comes from Infisical through `pnpm spec:linear` only. Never print it.
+   The token reaches it only through `pnpm spec:linear`, which decrypts it from the sops `agents` scope into its own
+   environment. Never print it.
 
 The next step is `fflow start STA-n` (the worktree), then `/flow-implement`.

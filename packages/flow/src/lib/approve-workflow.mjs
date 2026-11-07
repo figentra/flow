@@ -6,35 +6,38 @@
  *   holds every rule, and its tests live here. The workflow runs in `APPROVE_ENVIRONMENT`, which must allow the
  *   default branch only; the check refuses when it does not. With `verdict` (a `github-actions` runner and
  *   `secrets.oidc`, the L2 design's PR F) it also runs on the gate workflow's `workflow_run`: a `verdict` job, with
- *   `id-token: write` and no App secret, runs `verdict.mjs` from the same pinned tarball, which mints a `verdict`
- *   token over OIDC and posts the gate's status. Then every job runs only on the default branch and while the
+ *   `id-token: write` and no App secret, decrypts the gate App's id and key (`secrets.oidc.decrypt` and `scope`,
+ *   after mise, which the decrypt needs) and runs `verdict.mjs` from the same pinned tarball, which mints a `verdict`
+ *   token and posts the gate's status. Then every job runs only on the default branch and while the
  *   automation variable allows it (missing is frozen). With `lane` (`secrets.oidc`, the L2 design's PR D) events run
  *   it: a `cancel` job removes `LAND_LABEL` on a push (with the job's token, so it starts nothing, and even while frozen,
  *   since it only withdraws), a keyless `route` job wakes on the label, a `/fflow land` comment, the gate's success
  *   status, a listed workflow's success, ready-for-review or the schedule and says whether any PR asks to land, then
  *   `approve` (`approve-check.mjs` with `MODE=event`, automation `on`) and `merge` (`merge.mjs`, `on` or `merge-only`)
- *   mint their own tokens over OIDC, one at a time per repository; the dispatched job stays as `approve-dispatch`, the
+ *   mint their own tokens from the same decrypt, one at a time per repository; the dispatched job stays as `approve-dispatch`, the
  *   one-release fallback. Without `verdict` and `lane` the file is today's, byte for byte.
  * Boundary: returns text; writes nothing. The workflow never checks out or runs the PR's code, never downloads an
  *   artifact and never puts event text in a `run:` block (it reaches a step through `env` only). It has no `push`,
  *   `pull_request`, `workflow_call` or `repository_dispatch` trigger. Dispatched, it never merges (auto merge does,
  *   after every required check); with `lane`, only `merge.mjs` merges, at the approved head.
  * Runtime: node
- * Governing contract: STA-1856 FR-4 (the security review of 2026-11-01); the L2 design (PR D, PR F); STA-1945.
+ * Governing contract: STA-1856 FR-4 (the security review of 2026-11-01); the L2 design (PR D, PR F); STA-1945;
+ *   Stackra ADR 0525 (sops).
  * Secrets: names the approving App's id and key secrets, which are distinct from any bot that pushes; holds no value.
- *   The `verdict`, `approve` and `merge` event jobs name none: their tokens come from Infisical over the job's OIDC
- *   token, in process.
+ *   The `verdict`, `approve` and `merge` event jobs name no repository secret: their decrypt step puts
+ *   `<prefix>GATE_APP_ID` and `<prefix>GATE_PRIVATE_KEY` in the job's environment, masked, and the token is minted
+ *   in process.
  */
 import { SETUP_NODE } from "./gate-workflow.mjs";
 import {
   APPROVE_ENVIRONMENT,
   AUTOMATION_RUNS,
   AUTOMATION_VARIABLE,
+  ENV_PREFIX,
   LAND_COMMAND,
   LAND_LABEL,
   NAME,
   NEVER_TOLERATED,
-  OIDC_IDENTITY_VARIABLE,
   PACKAGE,
   REGISTRY,
   STATUS_CONTEXT,
@@ -42,16 +45,49 @@ import {
 
 const APP_TOKEN =
   "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0";
+// The decrypt installs sops with mise, so mise goes on PATH first; it installs nothing itself and caches nothing.
+const MISE = "jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0";
 
 /**
- * The `verdict` job's inputs: the gate workflow's path, the owner, the default branch and the Infisical coordinates.
- * @typedef {{ gatePath: string, owner?: string, defaultBranch: string,
- *             oidc: import("./app-token.mjs").Oidc }} Verdict
- * The event lane's inputs: the default branch, the Infisical coordinates, the owner, the workflows whose success wakes
+ * Where the event jobs' gate App key comes from (`secrets.oidc`, kind `sops`): the decrypt action, pinned to a commit,
+ * and the scope it decrypts the App's id and key from.
+ * @typedef {{ decrypt: string, scope: string }} Decrypt
+ * The `verdict` job's inputs: the gate workflow's path, the owner, the default branch and the decrypt.
+ * @typedef {{ gatePath: string, owner?: string, defaultBranch: string, oidc: Decrypt }} Verdict
+ * The event lane's inputs: the default branch, the decrypt, the owner, the workflows whose success wakes
  * it (`approve.workflows`), the App slugs that may ask for a land (`approve.requesters`) and the AI review's App slugs.
- * @typedef {{ defaultBranch: string, oidc: import("./app-token.mjs").Oidc, owner?: string, workflows?: string[],
+ * @typedef {{ defaultBranch: string, oidc: Decrypt, owner?: string, workflows?: string[],
  *             requesters?: string[], reviewers?: string[] }} Lane
  */
+
+/**
+ * The steps before a keyed job's script: mise for the decrypt, then the decrypt of the gate App's id and key.
+ * @param {Decrypt} d
+ */
+const decryptSteps = (d) => `      - uses: ${MISE}
+        with:
+          install: false
+          cache: false
+      - name: Gate App key
+        uses: ${d.decrypt}
+        with:
+          scope: ${d.scope}
+          names: ${ENV_PREFIX}GATE_APP_ID,${ENV_PREFIX}GATE_PRIVATE_KEY
+`;
+
+/**
+ * Refuses a decrypt that is not an action pinned to a commit with a plain scope, since both are rendered into YAML.
+ * @param {string} what
+ * @param {Decrypt | undefined} d
+ */
+function checkDecrypt(what, d) {
+  if (!/^(?!.*\.\.)[\w-]+\/[\w.-]+(?:\/[\w.-]+)*@[0-9a-f]{40}$/.test(d?.decrypt ?? ""))
+    throw new Error(
+      `${what}: secrets.oidc.decrypt is not an action pinned to a commit: ${JSON.stringify(d?.decrypt)}`,
+    );
+  if (!/^[\w-]+(?:\/[\w-]+)*$/.test(d?.scope ?? ""))
+    throw new Error(`${what}: secrets.oidc.scope is not a scope: ${JSON.stringify(d?.scope)}`);
+}
 
 /**
  * The workflow's YAML.
@@ -216,7 +252,7 @@ ${packageRun("approve-check.mjs")}${
           tolerate,
         })
       : ""
-  }${verdict ? verdictJob(verdict, guard, packageRun, yamlJson, integrity) : ""}`;
+  }${verdict ? verdictJob(verdict, guard, packageRun, integrity) : ""}`;
 }
 
 const BRANCH = /^(?!.*\.\.)[\w.-]+(?:\/[\w.-]+)*$/;
@@ -236,6 +272,7 @@ function checkVerdict(v) {
     );
   if (v.owner !== undefined && !/^[\w-]+$/.test(v.owner))
     throw new Error(`verdict: the owner is not a login: ${JSON.stringify(v.owner)}`);
+  checkDecrypt("verdict", v.oidc);
 }
 
 const SLUG = /^[\w-]+$/;
@@ -258,6 +295,7 @@ function checkLane(l) {
       );
   for (const s of [...(l.requesters ?? []), ...(l.reviewers ?? [])])
     if (!SLUG.test(s)) throw new Error(`lane: ${JSON.stringify(s)} is not an App slug`);
+  checkDecrypt("lane", l.oidc);
 }
 
 /**
@@ -307,7 +345,7 @@ ${ifs}
       - uses: ${SETUP_NODE}
         with:
           node-version: 24
-      - name: ${step}
+${decryptSteps(lane.oidc)}      - name: ${step}
         env:
           GITHUB_TOKEN: \${{ github.token }}
 ${extra}          REPO: \${{ github.repository }}
@@ -318,8 +356,6 @@ ${extra}          REPO: \${{ github.repository }}
           OWNER: '${lane.owner ?? ""}'
           REQUESTERS: ${yamlJson(lane.requesters ?? [])}
           REVIEWERS: ${yamlJson(lane.reviewers ?? [])}
-          OIDC: ${yamlJson(lane.oidc)}
-          ${OIDC_IDENTITY_VARIABLE}: \${{ vars.${OIDC_IDENTITY_VARIABLE} }}
           INTEGRITY: '${integrity}'
           TRUSTED: ${yamlJson(trusted)}
           OWNER_ONLY_EXTRA: ${yamlJson(ownerOnly)}
@@ -394,13 +430,13 @@ ${packageRun("land-route.mjs")}${keyed(
  * @param {Verdict} v
  * @param {string} guard the default-branch and automation condition
  * @param {(script: string) => string} packageRun
- * @param {(v: unknown) => string} yamlJson
  * @param {string} integrity
  */
-function verdictJob(v, guard, packageRun, yamlJson, integrity) {
+function verdictJob(v, guard, packageRun, integrity) {
   return `
   verdict:
-    # No App secret here: verdict.mjs mints a statuses-only Flow App token over this job's OIDC token, in process.
+    # No App secret here: the decrypt step signs in with this job's OIDC token; verdict.mjs mints a statuses-only
+    # Flow App token in process.
     if: github.event_name == 'workflow_run' && ${guard}
     environment: ${APPROVE_ENVIRONMENT}
     runs-on: ubuntu-latest
@@ -418,7 +454,7 @@ function verdictJob(v, guard, packageRun, yamlJson, integrity) {
       - uses: ${SETUP_NODE}
         with:
           node-version: 24
-      - name: Post ${STATUS_CONTEXT}
+${decryptSteps(v.oidc)}      - name: Post ${STATUS_CONTEXT}
         env:
           GITHUB_TOKEN: \${{ github.token }}
           RUN_ID: \${{ github.event.workflow_run.id }}
@@ -426,8 +462,6 @@ function verdictJob(v, guard, packageRun, yamlJson, integrity) {
           GATE_PATH: ${v.gatePath}
           OWNER: '${v.owner ?? ""}'
           DEFAULT_BRANCH: ${v.defaultBranch}
-          OIDC: ${yamlJson(v.oidc)}
-          ${OIDC_IDENTITY_VARIABLE}: \${{ vars.${OIDC_IDENTITY_VARIABLE} }}
           INTEGRITY: '${integrity}'
 ${packageRun("verdict.mjs")}`;
 }

@@ -45,7 +45,6 @@ export const OWNER_ONLY = [
   // A preset's third-party skills: its `ownerEntry` admits a licence outside the allowed ones (STA-1945 FR-8).
   "**/third-party.yml",
   // Secrets and the guards that keep them.
-  "**/.infisical.*",
   ".gitleaks.toml",
   "**/.env*",
   "**/.dev.vars",

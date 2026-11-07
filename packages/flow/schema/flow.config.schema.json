@@ -272,7 +272,32 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "paths"],
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "sops"
+            },
+            "oidc": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["decrypt", "scope"],
+              "properties": {
+                "decrypt": {
+                  "type": "string",
+                  "pattern": "^(?!.*\\.\\.)[\\w-]+/[\\w.-]+(?:/[\\w.-]+)*@[0-9a-f]{40}$"
+                },
+                "scope": {
+                  "type": "string",
+                  "pattern": "^[\\w-]+(?:/[\\w-]+)*$"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
           "properties": {
             "kind": {
               "const": "infisical"
@@ -306,21 +331,6 @@
             "envFile": {
               "type": "string",
               "minLength": 1
-            },
-            "oidc": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["audience"],
-              "properties": {
-                "identityId": {
-                  "type": "string",
-                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-                },
-                "audience": {
-                  "type": "string",
-                  "pattern": "^[\\w.-]+$"
-                }
-              }
             }
           }
         }

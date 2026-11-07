@@ -93,7 +93,8 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow readme [--check]`                                              | renders `README.md` from `.flow/readme.yml` through the preset's `readme-template`; `--check` exits 1 when it differs                                                                          |
 
 A repository keeps one-line aliases: `"spec:gate": "fflow gate"`, `"spec:trace": "fflow trace"`,
-`"spec:sync": "fflow sync"`, and `"spec:linear": "infisical run --env=dev --path=/agents --silent -- fflow linear"`.
+`"spec:sync": "fflow sync"`, and a `"spec:linear"` that runs `fflow linear` under the repository's own secrets runner
+(Stackra core: `node tools/scripts/secrets-exec.mjs --names LINEAR_AGENT_TOKEN,LINEAR_API_KEY -- fflow linear`).
 `fflow linear` reads its token from the environment only (`LINEAR_AGENT_TOKEN`, else `LINEAR_API_KEY`) and never
 prints it.
 
@@ -203,18 +204,18 @@ setting you have not made refuses and names it.
 
   There is never a fallback to a personal login. A local origin (a path) needs no credentials.
 
-- `secrets` says how secrets reach the gate's poster on a box: `env` (the box's environment), or `infisical` with
-  `paths` per scope, e.g. `"gate": "/ci/gate"`. On a box with no login, `"auth": "universal-auth"` logs in
-  from the box's `INFISICAL_UNIVERSAL_AUTH_CLIENT_ID` and `INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET` inside the wrapped
-  command, and `projectId`, `env` and `domain` name the project, environment and instance. The token goes only into the run
-  process's environment, never onto a command line. When the box's ssh shell lacks the CLI or the identity, `bin` names the CLI
-  (`"~/.local/bin/infisical"`) and `envFile` a file holding the two `INFISICAL_UNIVERSAL_AUTH_CLIENT_*` lines, read
-  in a subshell for that one command and seen only by the login. There is no default for either. On a box, Figentra Flow wraps the command and never reads a
-  value.
-  `oidc` (`identityId`, the uuid of an Infisical OIDC machine identity, and `audience`, e.g. `"fflow-ci"`) names the
-  identity main's approval job logs in as with its own OIDC token, to mint a narrowed Figentra Flow App token in
-  process (`src/lib/app-token.mjs`); that path reads the App's key, in memory only. The `github-actions` runner's
-  verdict uses it (see "The github-actions runner's verdict").
+- `secrets` says where secrets come from. Figentra Flow fetches no value: every command that needs one (the gate's
+  poster, `fflow linear`) reads it from its own environment, which the caller fills: on a workstation or a box, the
+  repository's secrets runner (Stackra core: `node tools/scripts/secrets-exec.mjs --names A,B -- <command>`, which
+  decrypts only the named sops values in memory); in CI, a decrypt step before Figentra Flow runs. `env` says just
+  that. `sops` says the same and, with `oidc`, lets the approval workflow decrypt the gate App's key itself:
+  `oidc.decrypt` is the decrypt action, pinned to a full commit (Stackra:
+  `figentra/stackra/.github/actions/secrets-decrypt@<sha>`), and `oidc.scope` the scope that holds
+  `FFLOW_GATE_APP_ID` and `FFLOW_GATE_PRIVATE_KEY` (Stackra: `ci/flow/gate`). The action signs in with the job's
+  own OIDC token and puts the two values, masked, in the job's environment; `src/lib/app-token.mjs` then mints a
+  narrowed Figentra Flow App token in process. The `github-actions` runner's verdict and the land lane use it (see
+  "The github-actions runner's verdict"). `infisical` is retired (Stackra ADR 0525): a file that still names it
+  loads, with a warning, and is read as `env`.
 - `gate.check` is the check command (default `pnpm verify`). `gate.shard` is the check one shard of
   `gate run --shards <n>` runs, with `{filters}` for its packages as `--filter=./<folder>` flags, e.g.
   `pnpm format:check && pnpm turbo run lint typecheck test build {filters}`.
@@ -249,9 +250,9 @@ setting you have not made refuses and names it.
   GitHub's App-manifest flow, for a human at a terminal only (an agent or CI session is refused). It opens a local
   page that sends the manifest to GitHub (no webhook; the gate gets `contents: read`, `statuses` and
   `pull_requests: write`, the review App `contents: read`, `pull_requests` and `issues: write`), then hands the private
-  key and the App id to the secrets port: with `infisical`, `infisical secrets set NAME=@<file>` under the role's path,
-  so the key is on no command line; with `env`, a new 0600 file at `--key-file`. It prints the slug and login to set
-  under `apps`.
+  key to a new 0600 file at `--key-file` (refused inside a git work tree unless git ignores it). Put it in your secret
+  store yourself (Stackra: `pnpm secrets:put` in core) and delete the file. It prints the App id, slug and login to
+  set under `apps`.
 
 - `train` holds the release train's settings, each a default you can change: `label` (default `train:`), `eject`
   (`bisect`, the default, or `manual`), `after` (the `owner/name` repositories whose train must be published before
@@ -542,19 +543,19 @@ a temporary folder with a small poster beside it and runs `pnpm install --frozen
 configured runner, or on `--box <ssh host>`. `<check>` is the configuration's
 `gate.check`, else `pnpm verify`, then `fflow gate ci` where Figentra Flow is installed. On the box, the
 poster posts the `fflow/gate` commit status and one PR comment as the gate App the configuration names. Its key reaches only
-the box, through the secrets port (for us, a dedicated Infisical project only the box identity reads). The poster posts only while that commit is still the branch tip, and never `success` unless the
+the box, through the poster's environment, which the caller fills. The poster posts only while that commit is still the branch tip, and never `success` unless the
 check exited 0. Nothing secret reaches the comment or the log. Exit codes: 0 green, 1 red, 2 refused, 4 not posted,
 5 stale, 73 every box busy, 75 no healthy box.
 
 With `secrets.oidc`, no box and no workstation posts the gate (STA-2134). `gate run` runs the check, records the
-verdict and says that `fflow/gate` comes only from the `verdict` job of main's `fflow-approve.yml`, which signs in over
-GitHub OIDC and mints the Figentra Flow App token in process. The box gets no poster and no key. The poster above is
+verdict and says that `fflow/gate` comes only from the `verdict` job of main's `fflow-approve.yml`, which decrypts
+the App's key (signed in by GitHub OIDC) and mints the Figentra Flow App token in process. The box gets no poster and no key. The poster above is
 for repositories without `secrets.oidc` and retires with T137. No path writes the gate's status or comment with a
 user's token (`GITHUB_TOKEN`, `GH_TOKEN` or a `gh` login): the poster needs the App's own key, and the verdict's mint
 refuses anywhere but main's approval job. That job judges only the gate workflow's run, so with `secrets.oidc`
 `gate run` refuses (exit 2, nothing recorded) unless the verdict job is rendered (below), and always with `--box`:
-switch the runner to `github-actions` and complete `secrets.oidc`, `paths.gate` and `apps.owner`, or remove
-`secrets.oidc`.
+switch the runner to `github-actions` and complete `secrets.oidc` (`decrypt` and `scope`) and `apps.owner`, or
+remove `secrets.oidc`.
 
 ### The github-actions runner's verdict
 
@@ -568,25 +569,24 @@ does the following:
 2. It reads the `check` job's conclusion from the API (never an artifact or a log). A missing job is a failure.
 3. If the PR changes `.github/workflows/**`, it posts `pending` ("the gate workflow changed: the owner reviews
    it") until `apps.owner` approves that head, because the PR controls its own copy of the gate workflow.
-4. It mints a `statuses: write` Figentra Flow App token over the job's OIDC token (`secrets.oidc`) and posts
-   `fflow/gate`.
+4. It mints a `statuses: write` Figentra Flow App token from the App id and key the job's decrypt step put in its
+   environment (`secrets.oidc`) and posts `fflow/gate`.
 
-The job has `id-token: write` and no App secret. It runs in the `fflow-approve` environment, one at a time for each
+The job has `id-token: write` and no repository secret: before the script it puts mise on PATH (the decrypt
+installs sops with it) and runs `secrets.oidc.decrypt` for `FFLOW_GATE_APP_ID` and `FFLOW_GATE_PRIVATE_KEY` from
+`secrets.oidc.scope`. It runs in the `fflow-approve` environment, one at a time for each
 head. Like every job in that file, it runs only on the default branch and only while the organisation variable
 `FIGENTRA_AUTOMATION` is `on` or `merge-only`. Unset or any other value is the freeze. The verdict job is rendered
-only when `apps.owner` is set, the runner is `github-actions`, and `secrets` is `infisical` with `oidc` and `paths.gate`. Otherwise
+only when `apps.owner` is set, the runner is `github-actions`, and `secrets` is `sops` with `oidc`. Otherwise
 the file is unchanged.
 
 The owner sets it up once:
 
 - Give the Figentra Flow App the `statuses: write` repository permission, and accept it on the installation.
-- Create an Infisical OIDC machine identity that can read only `paths.gate`. Set issuer
-  `https://token.actions.githubusercontent.com` and the audience in `secrets.oidc.audience`. Write the subject in
-  GitHub's id form, `repo:<owner>@<owner id>/<repo>@<repo id>:environment:fflow-approve`. Bind `job_workflow_ref`
-  to exactly `<owner>/<repo>/.github/workflows/fflow-approve.yml@refs/heads/<default branch>`, plus
-  `ref=refs/heads/<default branch>`. Never bind `fflow-gate.yml`: it runs pull request code and needs no secret.
-  Put the identity's id in the Actions variable `FFLOW_OIDC_IDENTITY_ID` (repository or organisation), or in
-  `secrets.oidc.identityId`, which wins when both are set.
+- Grant the decrypt of `secrets.oidc.scope` to exactly this repository's `fflow-approve` environment and
+  `.github/workflows/fflow-approve.yml` on the default branch, and to nothing else (Stackra: figentra/infra
+  `estate/secret-callers.mjs`, scope `ci/flow/gate`). Never grant `fflow-gate.yml`: it runs pull request code and
+  needs no secret.
 - Keep the `fflow-approve` environment's deployment branches at the default branch only.
 - Set `FIGENTRA_AUTOMATION` to `on`, then run `fflow sync` and land the re-rendered `fflow-approve.yml`. The
   repository secrets `FFLOW_GATE_APP_ID` and `FFLOW_GATE_PRIVATE_KEY` are no longer used.
@@ -715,9 +715,10 @@ With `secrets.oidc`, main's land lane approves and merges instead (next section)
 
 ### Main's land lane: approve and merge on events
 
-With `secrets.oidc` (and `paths.gate`), `sync` renders the approval workflow with an event lane, and main's copy
-approves and merges. Nothing in it uses a repository secret: each job that writes mints a narrowed Figentra Flow App
-token in process (`src/lib/app-token.mjs`) and revokes it when done.
+With a `sops` `secrets.oidc`, `sync` renders the approval workflow with an event lane, and main's copy
+approves and merges. Nothing in it uses a repository secret: each job that writes decrypts the App's key
+(`secrets.oidc`), mints a narrowed Figentra Flow App token in process (`src/lib/app-token.mjs`) and revokes it when
+done.
 
 A land request is the `fflow:land` label on a PR into the default branch. It counts only when the label's newest
 adder is a User with write or admin, or an App whose slug `approve.requesters` lists. `github-actions` and the Flow
@@ -759,9 +760,8 @@ was approved but approves nothing new, and `frozen`, unset or any other value ru
 also runs only on the default branch.
 
 The owner sets it up once, as for the verdict (see "The github-actions runner's verdict"): the App's permissions
-(contents, pull requests, statuses and workflows write; issues, checks and actions read), the Infisical OIDC identity
-bound to `job_workflow_ref` `<owner>/<repo>/.github/workflows/fflow-approve.yml@refs/heads/<default branch>` and
-`ref=refs/heads/<default branch>`, `secrets.oidc`, `approve.requesters` and `approve.workflows`, then `fflow sync` and
+(contents, pull requests, statuses and workflows write; issues, checks and actions read), the decrypt grant for
+`fflow-approve.yml` in the `fflow-approve` environment on the default branch, `secrets.oidc`, `approve.requesters` and `approve.workflows`, then `fflow sync` and
 landing the re-rendered, owner-only workflow. The dispatched `approve-dispatch` job with `FFLOW_APPROVER_*` stays for
 one release as the fallback.
 
