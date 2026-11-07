@@ -1,0 +1,27 @@
+# flow
+
+> Figentra Flow (`fflow`, package `@figentra-oss/flow`): spec-driven development for agent teams, from spec and approval to gate, landing and release.
+
+## Docs
+
+- [STATE.md](STATE.md): what is proven, what is not, and the open risks (2026-11-07)
+- [README.md](README.md): overview and quick start (generated from .flow/readme.yml)
+- [AGENTS.md](AGENTS.md): rules for agents working in this repository
+- [Package reference](packages/flow/README.md): every command, the configuration, presets, gate, landing and releases
+- [ADR index](docs/adr/): Flow's own decisions (0001 session names)
+- [Context pilot evidence](docs/agent-context-pilot.md): STA-2123 record and the remaining acceptance gates
+- [CONTRIBUTING.md](CONTRIBUTING.md): how changes land
+
+## Entry points
+
+- [CLI dispatcher](packages/flow/bin/fflow.mjs): `fflow <command>` runs `src/commands/<command>.mjs`
+- [Commands](packages/flow/src/commands/): one module per command
+- [Library](packages/flow/src/lib/): parsers, Linear and GitHub clients, worktrees, approval logic
+- [Adapters](packages/flow/src/adapters/): tracker, runner, credentials, secrets, harness
+- [Presets](packages/flow/assets/flow/presets/): neutral and stackra, rendered by `fflow sync`
+- [Config schema](packages/flow/schema/): the flow.config.json schema
+- [This repo's config](flow.config.json)
+- [Current scope spec](.agents/specs/sta-1945-flow-owns-everything/spec.md)
+- [Quality Gate workflow](.github/workflows/ci.yml)
+- [Release workflow](.github/workflows/release.yml)
+- [Changelog](packages/flow/CHANGELOG.md)
