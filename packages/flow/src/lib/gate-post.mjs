@@ -81,7 +81,8 @@ export async function post({ job, exit, log = "", env, fetch, now = Date.now() }
     return {
       code: 4,
       lines: [
-        `gate: ${envPrefix}GATE_APP_ID or ${envPrefix}GATE_PRIVATE_KEY is not set; nothing posted`,
+        `gate: ${envPrefix}GATE_APP_ID or ${envPrefix}GATE_PRIVATE_KEY is not set; nothing posted. ` +
+          "Gate posts run on the Testbed box or in CI, which decrypt ci/flow/gate; a workstation never holds the gate key",
       ],
     };
   /**
