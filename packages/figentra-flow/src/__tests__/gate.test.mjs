@@ -28,6 +28,7 @@ import {
   checkTraceTasks,
   DESIGN_SECTIONS,
   checkBranch,
+  isBotBranch,
   DOCUMENT_GATES_SINCE,
   checkBug,
   checkComponents,
@@ -279,6 +280,14 @@ test("lane: feat commits need a spec through the branch or Refs keys", () => {
   );
   assert.deepEqual(checkLane({ commits: [feat], branch: "figentra/sta-163-x", specKeys }), []);
   assert.deepEqual(checkLane({ commits: ["feat: y\n\nRefs: STA-170"], taskKeys }), []);
+});
+
+test("bot branches: Renovate and the changesets version PR skip the branch shape and the tier floor (STA-2222)", () => {
+  assert.equal(isBotBranch("changeset-release/main"), true);
+  assert.equal(isBotBranch("renovate/node-24"), true);
+  assert.equal(isBotBranch("changeset-release/next"), false);
+  assert.equal(isBotBranch("figentra/sta-163-sdd-gates"), false);
+  assert.equal(isBotBranch(undefined), false);
 });
 
 test("branch: the tracker's shape or allow-listed", () => {
