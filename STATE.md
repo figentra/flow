@@ -28,7 +28,7 @@ approves releases by merging the Changesets version pull request.
   succeeded. `e2e` packs the package and installs the tarball into a scratch repository, then runs `fflow`.
 - **Release workflow green at head.** Release run 42336876705 on `29c1be5` succeeded (no new version: the version
   pull request #175 is open).
-- **Published releases.** GitHub releases and tags `@figentra-oss/flow@0.2.3` through `@figentra-oss/flow@0.6.5`
+- **Published releases.** 14 GitHub releases and tags, `@figentra-oss/flow@0.1.0` through `@figentra-oss/flow@0.6.5`
   (latest: 0.6.5, 2026-11-07T00:15Z, published by Release run 42317002558). The registry lists versions up to
   0.6.5 with dist-tag `latest` = 0.6.5 (`npm view @figentra-oss/flow` against the registry above).
 - **Registry answers.** `https://npm.stackra.figentra.com/@figentra-oss%2fflow` returns HTTP 200 without a token.
@@ -70,14 +70,16 @@ amendments), `CONTRIBUTING.md`. The root `README.md` is generated from `.flow/re
 ## 6. Open risks
 
 - **Main CI:** green at `29c1be5` (run 42336876433).
-- **Open pull requests:** 2. #175 (version packages, 0.6.6) and #141 (`refactor!: retire the approver fallback`,
-  open since 2026-11-04, breaking).
-- **Branches:** 62 besides `main`; 59 last committed before 2026-11-04 and 60 have no open pull request.
+- **Open pull requests:** 2 besides this one (#176): #175 (version packages, 0.6.6) and #141
+  (`refactor!: retire the approver fallback`, open since 2026-11-04, breaking).
+- **Branches:** 62 besides `main` and this PR's branch; 59 last committed before 2026-11-04 and 60 have no
+  open pull request.
 - **Infisical references:** `git grep -i -c infisical` totals 420 lines in 61 files. Most are the secrets adapter
   (`src/adapters/secrets.mjs`), the stackra preset's guard rules and their tests, and `flow.config.json`
   (`secrets.kind: infisical`). Any move off Infisical touches the adapter, preset and tests together.
 - **Stale facts in docs:** the root README says "0.3.0 is published" (0.6.5 is); `AGENTS.md` lists 17 commands while
   `src/commands` has 39 modules; `.github/CODEOWNERS` still names `/figentra-flow.config.json` (the file is
-  `flow.config.json`); `.agents/specs` cite `packages/figentra-flow/` 356 times (the folder is `packages/flow`).
+  `flow.config.json`); `.agents/specs` cite `packages/figentra-flow/` 616 times
+  on 355 lines (the folder is `packages/flow`).
 - **Old name in live identifiers:** the gate GitHub App is `figentra-flow[bot]` (`flow.config.json`,
   `fflow-approve.yml`) and the `figentra-flow` binary alias still ships.
