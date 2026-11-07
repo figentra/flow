@@ -1229,13 +1229,18 @@ class McpCommand extends Command({
   description: "A read-only MCP server over stdio",
   group: GROUPS.agents,
   docs: DOCS,
-  examples: [`${NAME} mcp`],
+  examples: [`${NAME} mcp`, `${NAME} mcp --studio`],
 }) {
+  studio = false;
+
   async handle() {
     const { run } = await import("../commands/mcp.mjs");
-    return refusing(() => run());
+    return refusing(() => run(this.studio ? ["--studio"] : []));
   }
 }
+Option({
+  description: "Add the Studio's tools: spec_create, run_start and run_status (fake build sandbox)",
+})(McpCommand.prototype, "studio");
 
 class GateCommand extends Command({
   name: "gate",

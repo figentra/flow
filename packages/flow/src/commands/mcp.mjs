@@ -6,7 +6,8 @@
  *   eight read tools (context, status, spec, trace, worktrees, metrics, and the questions ones of STA-2098 H4: a spec's open
  *   questions and a docs lookup) and one writer, `clarification_record`, which records one answer in the spec (the
  *   spec is the record). Without an answer in its arguments it asks the user through MCP elicitation
- *   (`elicitation/create`), and only when the client declared `elicitation` in `initialize`.
+ *   (`elicitation/create`), and only when the client declared `elicitation` in `initialize`. `--studio` adds the
+ *   Studio's three tools (`lib/studio.mjs`: `spec_create`, `run_start`, `run_status`) over the fake build sandbox.
  * Boundary: only `clarification_record` writes, and only `<repo>/.agents/specs/<key>-<slug>/spec.md` by its real path
  *   (`lib/questions.mjs`); no tool merges, lands, starts or cleans, and a test holds the tool list and its read and
  *   write split. An unknown method, an unknown tool or bad arguments is a JSON-RPC error, and one bad request never
@@ -37,6 +38,8 @@ import {
   writeAnswer,
 } from "../lib/questions.mjs";
 import { snapshot } from "../lib/snapshot.mjs";
+import { STUDIO_TOOLS, studioReaders } from "../lib/studio.mjs";
+import { fakeSandbox } from "../adapters/sandbox/fake.mjs";
 import { readSessionCap } from "../lib/workspace.mjs";
 
 /** The MCP protocol revisions this server speaks, newest first. */
@@ -340,8 +343,9 @@ export function connection(write) {
  * @param {any} message
  * @param {Record<string, Reader>} readers
  * @param {Session} [session] what `initialize` declared, for the tools that ask the client (`connection`)
+ * @param {typeof TOOLS} [tools] the tools served: `TOOLS`, plus the Studio's under `--studio`
  */
-export async function handle(message, readers = defaultReaders(), session = {}) {
+export async function handle(message, readers = defaultReaders(), session = {}, tools = TOOLS) {
   const id = message?.id;
   const notification = id === undefined || id === null;
   try {
@@ -360,7 +364,11 @@ export async function handle(message, readers = defaultReaders(), session = {}) 
           serverInfo: { name: NAME, version: VERSION },
           instructions:
             "Read-only views of the workspace's specs, worktrees, PRs, sessions and delivery metrics, a spec's " +
-            "open questions and a docs lookup; one writer, clarification_record, records an answer in the spec.",
+            "open questions and a docs lookup; one writer, clarification_record, records an answer in the spec." +
+            (tools === TOOLS
+              ? ""
+              : " The Studio's tools write a Draft spec (spec_create) and start and read build runs in the EU or US " +
+                "sandbox (run_start, run_status), each on behalf of the person named in onBehalfOf."),
         };
         break;
       }
@@ -368,10 +376,10 @@ export async function handle(message, readers = defaultReaders(), session = {}) 
         result = {};
         break;
       case "tools/list":
-        result = { tools: TOOLS };
+        result = { tools };
         break;
       case "tools/call": {
-        const tool = TOOLS.find((t) => t.name === message.params?.name);
+        const tool = tools.find((t) => t.name === message.params?.name);
         if (!tool) throw new RpcError(-32602, `unknown tool: ${message.params?.name}`);
         const args = message.params?.arguments ?? {};
         checkArgs(tool.inputSchema, args);
@@ -402,11 +410,19 @@ export async function handle(message, readers = defaultReaders(), session = {}) 
   }
 }
 
-/** `fflow mcp`: serves stdin to stdout until stdin closes. */
-export async function run() {
+/**
+ * `fflow mcp`: serves stdin to stdout until stdin closes.
+ * @param {string[]} [args] `--studio` adds the Studio's tools
+ */
+export async function run(args = []) {
   const write = (/** @type {unknown} */ m) => process.stdout.write(`${JSON.stringify(m)}\n`);
   const session = connection(write);
-  const readers = defaultReaders();
+  const studio = args.includes("--studio");
+  // shortcut: the Studio's runs go to the fake sandbox, kept for the process; bind a real driver when one exists.
+  const readers = studio
+    ? { ...defaultReaders(), ...studioReaders({ sandbox: fakeSandbox() }) }
+    : defaultReaders();
+  const tools = studio ? [...TOOLS, ...STUDIO_TOOLS] : TOOLS;
   /** @type {Set<Promise<void>>} */
   const running = new Set();
   const lines = createInterface({ input: process.stdin });
@@ -424,7 +440,7 @@ export async function run() {
     }
     if (session.reply(message)) continue;
     // Not awaited: a call waiting on the client (elicitation) must not hold back the reply it waits for.
-    const call = handle(message, readers, session).then((answer) => {
+    const call = handle(message, readers, session, tools).then((answer) => {
       if (answer) write(answer);
     });
     running.add(call);
