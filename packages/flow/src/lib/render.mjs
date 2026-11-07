@@ -81,7 +81,7 @@ import {
 } from "./product.mjs";
 import { withHeader } from "./provenance.mjs";
 import { renderReadme } from "./readme.mjs";
-import { renderAgentsMd } from "./render-agents-md.mjs";
+import { renderAgentsMd, ruleIndex } from "./render-agents-md.mjs";
 import { renderGuard } from "./render-guard.mjs";
 import { renderLefthook } from "./render-lefthook.mjs";
 import { renderMcp } from "./render-mcp.mjs";
@@ -94,10 +94,11 @@ import { parseYaml, YamlError } from "./yaml.mjs";
 
 /**
  * What a surface renderer (`render-*.mjs`) reads: the repository, its configuration, its preset's folder and the
- * profile (the hooks it selects; all without one). Each one returns its files, path to text, and nothing when the
- * preset has no such surface (STA-1945 C5).
+ * profile (the hooks it selects; all without one), and the index of the rules it renders. Each one returns its files,
+ * path to text, and nothing when the preset has no such surface (STA-1945 C5).
  * @typedef {{ root: string, config: Record<string, any>, presetDir: string,
- *   profile?: import("./profiles.mjs").Profile }} RenderContext
+ *   profile?: import("./profiles.mjs").Profile,
+ *   rules?: import("./render-agents-md.mjs").RuleLine[] }} RenderContext
  */
 
 /** The surface renderers `sync` runs, in the order their files are written (STA-1945 FR-7). */
@@ -245,8 +246,12 @@ function renderPreset(root, direct, overrides) {
     if (selects(profile, "agents", id))
       out.set(direct ? `.claude/agents/${id}.md` : `.agents/agents/${id}.md`, text);
   // STA-1871: the preset's agent rules (the worktree rule among them).
+  const rulesDir = direct ? ".claude/rules" : ".agents/rules";
+  /** @type {Map<string, string>} */
+  const rules = new Map();
   for (const [id, text] of presetDocs(root, "rules", source))
-    out.set(direct ? `.claude/rules/${id}.md` : `.agents/rules/${id}.md`, text);
+    rules.set(`${rulesDir}/${id}.md`, text);
+  for (const [path, text] of rules) out.set(path, text);
   // STA-1945 (D2): the preset's own skills ship in the package, file for file, each folder as the profile selects it.
   const skills = join(presetDir(root), "skills");
   for (const [path, text] of presetTree(skills, (path) =>
@@ -264,7 +269,16 @@ function renderPreset(root, direct, overrides) {
   for (const [path, text] of renderReference({ presetDir: presetDir(root), source }))
     out.set(path, text);
   // FR-7: each surface the preset has; a preset without `surfaces/` renders what it did before.
-  const ctx = { root, config, presetDir: presetDir(root), profile };
+  // AGENTS.md indexes the rules instead of carrying them.
+  // shortcut: the index reads each rule's preset front matter, before an override reshapes it; an override that changes
+  // a rule's description shows the preset's until the index reads the overridden text.
+  const ctx = {
+    root,
+    config,
+    presetDir: presetDir(root),
+    profile,
+    rules: ruleIndex(root, rulesDir, rules),
+  };
   for (const surface of SURFACES) for (const [path, text] of surface(ctx)) out.set(path, text);
   const readme = renderReadme(root);
   if (readme !== undefined) out.set("README.md", readme);
