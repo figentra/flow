@@ -931,10 +931,20 @@ export function checkForeignStatus({
   ];
 }
 
+/**
+ * A bot's branch (a Renovate update, the changesets version PR): it has no spec and no tracker key, so neither the
+ * branch shape nor the tier floor applies to it (STA-2222).
+ * @param {string | undefined} branch
+ * @returns {boolean}
+ */
+export function isBotBranch(branch) {
+  return /^(renovate\/|changeset-release\/main$)/.test(branch ?? "");
+}
+
 /** The branch has the tracker's shape (ADR 0065 decision 5) or is allow-listed. */
 export function checkBranch(branch, keys = repoScheme()) {
   if (!branch || branch === "HEAD" || branch === "main") return [];
-  if (/^(renovate\/|changeset-release\/main$)/.test(branch)) return [];
+  if (isBotBranch(branch)) return [];
   return keys.isBranch(branch)
     ? []
     : [`branch \`${branch}\` is not \`${keys.branchShape}\` (the tracker's branch name)`];
@@ -1115,6 +1125,8 @@ function roleGate(base) {
 function laneGate(base) {
   const branch = currentBranch();
   const lane = checkLane({ commits: prCommits(base), branch, ...specIndex() });
+  // A version PR only bumps versions and changelogs, so it has no spec to hold a tier (STA-2222).
+  if (isBotBranch(branch)) return lane;
   // ADR 0502: the diff's floor against the branch's own spec; none is trivial, a spec without a tier is exempt.
   const dir = join(ROOT, SPECS_DIR);
   const own = ownSpec(branch);
