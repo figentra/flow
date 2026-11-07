@@ -1,5 +1,13 @@
 # @figentra-oss/flow
 
+## 0.6.5
+
+### Patch Changes
+
+- 627a7a0: `fflow gate ci` no longer fails a changesets version PR (`changeset-release/main`) or a Renovate branch on the tier
+  floor: they bump versions and lockfiles and hold no spec. One `isBotBranch` check now serves the branch-shape rule and
+  the tier floor (STA-2222).
+
 ## 0.6.4
 
 ### Patch Changes
