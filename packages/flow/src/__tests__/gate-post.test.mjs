@@ -149,6 +149,8 @@ test("post: nothing is posted when the branch moved, or when no token can be min
 
   const unset = await post({ job: JOB, exit: 0, env: {}, fetch: denied.fetch, now: NOW });
   assert.equal(unset.code, 4);
+  // A workstation has no gate key: the message says where gate posts run instead.
+  assert.match(unset.lines.join("\n"), /run on the Testbed box or in CI/);
 });
 
 test("post: a branch with no open PR still gets its status", async () => {
