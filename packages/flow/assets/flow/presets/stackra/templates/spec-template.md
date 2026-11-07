@@ -51,7 +51,7 @@
      and not a wish. Each line names its source (SRC-###, listed under ### Sources). Worked example (a Flow spec):
      - **Current behaviour**: `fflow sync` renders the `flow-*` skills and writes `.flow/lock.json` as
        `{ version, preset, files }`; only `gate ci` catches a hand edit, through `installProblems` (SRC-001).
-     - **Topology**: one member, `packages/figentra-flow`: `bin/fflow.mjs` dispatches to `src/commands/<name>.mjs`;
+     - **Topology**: one member, `packages/flow`: `bin/fflow.mjs` dispatches to `src/commands/<name>.mjs`;
        shared code in `src/lib/`, tests in `src/__tests__/` (SRC-001).
      - **Dependencies**: Node 24; git and the GitHub CLI on PATH; no runtime package (SRC-002).
      - **Ownership**: Flow's maintainers own the package; the owner owns `.flow/overrides/` (SRC-003).
@@ -68,8 +68,8 @@
 <!-- Every file, ADR, command output or issue the lines above and the requirements below rest on, one per line, each
      with an id that requirements cite ("Sources: SRC-001"). Clarified needs Sources, and every requirement cites at
      least one. Worked example:
-     - **SRC-001**: `packages/figentra-flow/src/lib/render.mjs` on `origin/main` (64a0f4d): `writeRendered`, `installProblems`
-     - **SRC-002**: `packages/figentra-flow/package.json`: `dependencies` is empty
+     - **SRC-001**: `packages/flow/src/lib/render.mjs` on `origin/main` (64a0f4d): `writeRendered`, `installProblems`
+     - **SRC-002**: `packages/flow/package.json`: `dependencies` is empty
      - **SRC-003**: `.github/CODEOWNERS` and `src/lib/owner-only.mjs` (STA-1856)
      - **SRC-004**: ADR 0502 and ADR 0510 in `apps/docs/src/docs/adr/`
      - **SRC-005**: STA-1945, the owner's request of 2026-11-02 -->

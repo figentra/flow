@@ -1,5 +1,5 @@
 # Figentra Flow file contract:
-# Purpose: pnpm workspace membership (one package, packages/figentra-flow) and the version catalogs its package.json
+# Purpose: pnpm workspace membership (one package, packages/flow) and the version catalogs its package.json
 #          references resolve against. Versions match Stackra core's catalogs.
 # Owner: release-operations
 # Secrets: forbidden

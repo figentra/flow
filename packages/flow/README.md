@@ -394,7 +394,7 @@ and enforcement still need a clean-checkout smoke test on the installed Codex ve
 
 ```sh
 fflow context --json                                    # current checkout, no registry required
-fflow context --path packages/figentra-flow --limit 10   # scoped instructions and navigation
+fflow context --path packages/flow --limit 10   # scoped instructions and navigation
 fflow context --repo ../service --query payments --json # explicit standalone checkout
 fflow context --all --query payments --json             # existing fflow workspace registry
 ```
