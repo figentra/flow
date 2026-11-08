@@ -1240,7 +1240,7 @@ class McpCommand extends Command({
 }
 Option({
   description:
-    "Add the Studio's tools: spec_create and run_start, run_status, run_list, run_cancel (fake build sandbox)",
+    "Add the Studio's tools: spec_create, run_start, run_status, run_list, run_cancel and repo_create (fake drivers)",
 })(McpCommand.prototype, "studio");
 
 class GateCommand extends Command({

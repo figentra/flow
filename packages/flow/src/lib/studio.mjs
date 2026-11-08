@@ -3,7 +3,8 @@
  * Purpose: the Studio's write surface over MCP (master plan Phase 5: OS's Product Studio calls Flow's tools, Flow
  *   exposes them): `spec_create` writes a Draft spec from the template for an issue key, `run_start` hands a tasked,
  *   approved spec to the build sandbox, `run_status` reads a run back, `run_list` pages through a spec's runs and
- *   `run_cancel` stops one that has not finished. `fflow mcp --studio` adds them to the
+ *   `run_cancel` stops one that has not finished, and `repo_create` makes the product's private repository from a
+ *   template through the repository host (the Figentra GitHub App). `fflow mcp --studio` adds them to the
  *   server's tools; without the flag the server is what it was.
  * Boundary: `spec_create` writes one new `spec.md` and nothing else (no branch, no worktree, no tracker); `run_start`
  *   writes nothing in the repository and runs only in the sandbox's EU or US region. Every call names the person it
@@ -41,7 +42,13 @@ const onBehalfOf = {
 /** The most runs one page of `run_list` holds, and how many it holds when the caller names none. */
 export const RUN_PAGE = Object.freeze({ max: 100, default: 20 });
 
-/** The Studio's tools: three writers and two reads (master plan Phase 5). */
+/** A GitHub organisation or user name. */
+const OWNER = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
+
+/** A new repository's name: kebab-case, at most 100 characters. */
+const REPO_NAME = /^(?=.{1,100}$)[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/** The Studio's tools: four writers and two reads (master plan Phase 5). */
 export const STUDIO_TOOLS = [
   {
     name: `${PREFIX}_spec_create`,
@@ -106,6 +113,24 @@ export const STUDIO_TOOLS = [
     inputSchema: object({ runId: str, onBehalfOf }, ["runId", "onBehalfOf"]),
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
   },
+  {
+    name: `${PREFIX}_repo_create`,
+    description:
+      "Creates a new product's private repository `owner/name` from a template repository (`owner/repo`) through " +
+      "the Figentra GitHub App, on behalf of the person. Refused when the name is taken or the template is not one.",
+    inputSchema: object({ owner: str, name: str, template: str, description: str, onBehalfOf }, [
+      "owner",
+      "name",
+      "template",
+      "onBehalfOf",
+    ]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+  },
 ];
 
 /**
@@ -132,9 +157,14 @@ const oneLine = (/** @type {string} */ text) => text.replace(/\s+/g, " ").trim()
 
 /**
  * The Studio tools' handlers, keyed as the server looks them up (the tool name without the prefix).
- * @param {{ sandbox: import("../adapters/sandbox/index.mjs").BuildSandbox, today?: () => string }} deps
+ * @param {{ sandbox: import("../adapters/sandbox/index.mjs").BuildSandbox,
+ *   repos: import("../adapters/repo-host/index.mjs").RepoHost, today?: () => string }} deps
  */
-export function studioReaders({ sandbox, today = () => new Date().toISOString().slice(0, 10) }) {
+export function studioReaders({
+  sandbox,
+  repos,
+  today = () => new Date().toISOString().slice(0, 10),
+}) {
   const person = (/** @type {string} */ id) => {
     if (!ON_BEHALF_OF.test(id))
       throw new Error(
@@ -226,6 +256,27 @@ export function studioReaders({ sandbox, today = () => new Date().toISOString().
       const cancelled = await sandbox.cancel(runId, who);
       if (!cancelled) throw new Error(`no run ${runId}`);
       return cancelled;
+    },
+    /** @param {{ owner: string, name: string, template: string, description?: string, onBehalfOf: string }} args */
+    repo_create: async ({ owner, name, template, description = "", onBehalfOf: who }) => {
+      person(who);
+      if (!OWNER.test(owner)) throw new Error(`owner ${owner} is not a GitHub organisation name`);
+      if (!REPO_NAME.test(name))
+        throw new Error(`name ${name} is not kebab-case (at most 100 characters)`);
+      const [templateOwner, templateName, extra] = template.split("/");
+      if (extra !== undefined || !templateOwner || !templateName || !OWNER.test(templateOwner))
+        throw new Error(`template ${template} is not owner/repo`);
+      if (!(await repos.isTemplate(template)))
+        throw new Error(`${template} is not a template repository`);
+      const fullName = `${owner}/${name}`;
+      if (await repos.exists(fullName)) throw new Error(`${fullName} already exists`);
+      return repos.createFromTemplate({
+        owner,
+        name,
+        template,
+        description: oneLine(description),
+        onBehalfOf: who,
+      });
     },
   };
 }
