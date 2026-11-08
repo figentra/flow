@@ -1,5 +1,49 @@
 # @figentra-oss/flow
 
+## 0.7.0
+
+### Minor Changes
+
+- 9499a2a: `AGENTS.md` indexes the rules instead of carrying them: a "Rules index" lists each rendered rule file, and the
+  repository's own beside it, with its description and when it applies (always, or the globs it covers). Nothing reads a
+  rule's text into `AGENTS.md`, so the stackra preset renders under 20 KB. The missing gate key refusal ends "; nothing
+  minted" like every other app-token refusal.
+- 652862a: Secrets leave Infisical (Stackra ADR 0525). Figentra Flow fetches no secret: every command reads its values from
+  its own environment, which the caller fills (on a workstation, a secrets runner such as core's `secrets-exec.mjs`;
+  in CI, a decrypt step). `secrets.kind` takes `env` or `sops`; `infisical` still loads, with a warning, and is read
+  as `env`, so it no longer wraps a command in `infisical run`, and `app create` writes the key only to `--key-file`.
+  The approval workflow's land lane and verdict job now need `secrets: { "kind": "sops", "oidc": { "decrypt":
+  "<action>@<sha>", "scope": "<scope>" } }`: each keyed job puts mise on PATH and runs the decrypt for
+  `FFLOW_GATE_APP_ID` and `FFLOW_GATE_PRIVATE_KEY`, and the mint reads them from the job's environment. The old
+  Infisical `secrets.oidc` form and the `FFLOW_OIDC_IDENTITY_ID` variable are gone; run `fflow sync` to re-render
+  `fflow-approve.yml`. `**/.infisical.*` is no longer an owner-only path (CODEOWNERS). The stackra preset's agents,
+  rules and skills describe sops, the decrypt action and `secrets:put`/`generate`/`rotate`.
+- 2b7c922: `fflow mcp --studio` adds the Studio's write surface: `spec_create` writes a Draft spec from the template for an issue
+  key, naming the person it was created for; `run_start` hands a tasked, approved spec to the build sandbox in the EU or
+  US region; `run_status` reads a run back. Every call names the person it acts for (`onBehalfOf`, a user or principal
+  id, never a service), and Flow holds no service key. The build sandbox is a port with an in-memory fake driver for now.
+  Without `--studio` the server is unchanged.
+- 8f58566: `fflow mcp --studio` gains `repo_create`: a new product's private repository `owner/name` from a template repository,
+  through a repository-host port (the Figentra GitHub App) on behalf of a person, refused for a taken name, a
+  repository that is not a template and a malformed name or owner. The port's only driver is an in-memory fake until
+  the GitHub App and its keys exist.
+- 9eafcb8: `fflow mcp --studio` gains `repo_link`: it links a repository (`owner/name`) to its tracker project, on behalf of a
+  person, through a project-link port (the Linear project's links). Linking the same repository again answers the existing
+  link; an unknown project or repository, a malformed name and a service caller are refused. The port's only driver is
+  an in-memory fake until the Linear driver is wired with its credentials.
+- 02aa626: The Studio's MCP surface (`fflow mcp --studio`) gains `run_list`, a spec's build runs newest first with an optional
+  status and a cursor (at most 100 per page, 20 by default), and `run_cancel`, which stops a queued or running run and
+  records who cancelled it. Both act on behalf of a person (`onBehalfOf`), never a service; the build-sandbox port
+  gains `list` and `cancel`, and a run's states gain `cancelled`.
+
+### Patch Changes
+
+- 515fe73: The CLI engine moves to `@stackra/console` and `@stackra/validation` 0.21.0, the current core release, from 0.7.1.
+- 6a540e8: A missing gate key now says that gate posts run on the Testbed box or in CI, which decrypt `ci/flow/gate`, and that a
+  workstation never holds the gate key, instead of reporting a bare missing variable.
+- 29c1be5: The package's folder is `packages/flow`, not `packages/figentra-flow` (R4, STA-2106): `repository.directory` and the
+  docs links follow. The package name, the binaries and every command are unchanged.
+
 ## 0.6.5
 
 ### Patch Changes
