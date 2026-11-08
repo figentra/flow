@@ -3,6 +3,7 @@
  * Purpose: hold STA-1942 to its contract:
  *   - the turbo reader passes only a task that ran and exited 0, marks one that never ran `skip`, and drops
  *     `<NONEXISTENT>`;
+ *   - the baseline workflow pins mise on a mise-action setup step that names no version;
  *   - a PR passes when its failed set is a subset of main's; a new failure, a new task that fails, a task main ran
  *     but the PR dropped or skipped, a red must-pass task, or more failures than main has, blocks it; a fixed task
  *     is a gain;
@@ -44,7 +45,8 @@ import {
   summaryTable,
 } from "../lib/baseline.mjs";
 import { loadConfig } from "../lib/config.mjs";
-import { BASELINE_WORKFLOW } from "../lib/product.mjs";
+import { baselineWorkflow } from "../lib/baseline-workflow.mjs";
+import { BASELINE_WORKFLOW, MISE_VERSION } from "../lib/product.mjs";
 import { parseYaml } from "../lib/yaml.mjs";
 
 /** A turbo run summary: `exit` per task id, `undefined` for a task that never ran. */
@@ -470,6 +472,20 @@ test("sync renders the baseline workflow only with `baseline`, with the setup st
   assert.match(yml, /name: fflow-baseline-\$\{\{ github\.sha \}\}/);
   assert.match(yml, /gate baseline check --base "\$BASE_SHA"/);
   assert.doesNotMatch(yml, /pull_request_target|persist-credentials: true/);
+});
+
+test("the baseline pins mise on a mise-action setup step that names no version, and keeps one that does", () => {
+  const mise = {
+    name: "Toolchain (mise)",
+    uses: "jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7",
+  };
+  const stepsOf = (/** @type {Record<string, unknown>[]} */ setup) =>
+    parseYaml(baselineWorkflow({ setup })).jobs.baseline.steps;
+  assert.deepEqual(stepsOf([mise])[1], { ...mise, with: { version: MISE_VERSION } });
+  const own = { ...mise, with: { version: "2026.10.1", install_args: "node pnpm" } };
+  assert.deepEqual(stepsOf([own])[1], own);
+  const other = { name: "Registry auth", uses: "./.github/actions/registry-auth" };
+  assert.deepEqual(stepsOf([other])[1], other);
 });
 
 test("the fflow rename: sync renames the old config once, removes the old workflows, refuses both configs", (t) => {

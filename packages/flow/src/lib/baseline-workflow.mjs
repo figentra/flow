@@ -5,16 +5,29 @@
  *   save`; a push to the default branch uploads the results as that commit's baseline, a pull request checks against
  *   the nearest one.
  * Boundary: returns text; writes nothing. The setup steps come from the owner-only config, as block YAML with their
- *   values unchanged; every action Flow adds is pinned to a commit.
+ *   values unchanged, except that a `jdx/mise-action` step with no `version` gets `MISE_VERSION` (an unpinned
+ *   mise-action downloads the latest mise, which once returned 504 for hours); every action Flow adds is pinned to
+ *   a commit.
  * Runtime: node
  * Governing contract: STA-1942 FR-5 and FR-6.
  * Secrets: holds none; a repository's setup steps may name its own, as its CI does.
  */
 import { artifactName } from "./baseline.mjs";
-import { BASELINE_CHECK, GATE_DIR, NAME } from "./product.mjs";
+import { BASELINE_CHECK, GATE_DIR, MISE_VERSION, NAME } from "./product.mjs";
 
 const CHECKOUT = "actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0";
 const UPLOAD = "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2";
+
+/**
+ * `step` with the pinned mise version when it is a mise-action step that names none; a step's own `version` wins.
+ * @param {Record<string, unknown>} step
+ * @returns {Record<string, unknown>}
+ */
+function pinnedMise(step) {
+  if (typeof step.uses !== "string" || !step.uses.startsWith("jdx/mise-action@")) return step;
+  const options = /** @type {Record<string, unknown>} */ (step.with ?? {});
+  return "version" in options ? step : { ...step, with: { ...options, version: MISE_VERSION } };
+}
 
 /** What `baseline` defaults to. */
 export const BASELINE_DEFAULTS = {
@@ -56,7 +69,9 @@ function blockYaml(value, indent) {
 export function baselineWorkflow(baseline) {
   const { tasks, install, branch } = { ...BASELINE_DEFAULTS, ...baseline };
   // A step is written as block YAML (the YAML standard, STA-299, refuses flow mappings), its first key on the `- ` line.
-  const setup = (baseline.setup ?? []).map((s) => `      - ${blockYaml(s, 8).slice(8)}`).join("");
+  const setup = (baseline.setup ?? [])
+    .map((s) => `      - ${blockYaml(pinnedMise(s), 8).slice(8)}`)
+    .join("");
   return `# Written by \`${NAME} sync\` from the config's \`baseline\` (STA-1942); \`${NAME} gate ci\` fails on a hand edit.
 # One check, "${BASELINE_CHECK}": a pull request passes when it fails no task that passed on main.
 name: ${NAME} baseline
