@@ -890,6 +890,13 @@ publishes. One row per item, each failed one with its fix, and exit 1 when any f
 With `--offline` the rows that need GitHub or the registry are reported as skipped, not passed; skipped rows do not
 fail the run, but it says the answer is incomplete. `--json` prints `{ schema, ok, rows }`.
 
+**After the release, wait a day before bumping it elsewhere.** Repositories install with pnpm's minimum release age,
+a day by default. An exact-version `minimumReleaseAgeExclude` entry (`"@figentra-oss/flow@0.7.1"`) does not help a
+version a lockfile is resolving for the first time: pnpm still hides it and names the previous version as the latest
+(`ERR_PNPM_NO_MATCHING_VERSION`). The exact-version entry stays the rule, because it keeps the age check for every
+other version. So cut a release a day before repositories need it, or bump their catalogs the day after (found with
+0.7.1, 2026-11-08).
+
 ## Release trains
 
 `fflow train` runs a repository's release train, for repositories where GitHub's merge queue is not
