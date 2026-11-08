@@ -9,6 +9,22 @@ preset:
 queues:
   adr: "apps/docs/adr/numbers.yaml"
 
+# The fixed check every gate runs first, in order (owner, 2026-11-08: the gate becomes the required merge check). A
+# repository's `gate.check` runs after it and can add a step, never remove one. Each is a root script of the repository:
+# format, lint, typecheck, unit tests, int tests on Postgres, strict gen, validate, the secret scan and the dependency
+# scan. A repository missing one fails its gate, so add the script rather than drop the step.
+gate:
+  required:
+    - "pnpm format:check"
+    - "pnpm lint"
+    - "pnpm typecheck"
+    - "pnpm test"
+    - "pnpm test:int"
+    - "STACKRA_GEN_STRICT=1 pnpm gen:check"
+    - "pnpm validate"
+    - "pnpm secrets:scan"
+    - "pnpm deps:scan"
+
 # What each repository gets (STA-1945 FR-6, D3): the config's `profile` names one, else `default`; `"*"` selects
 # all, and a skill name covers the `flow-*` skills, the preset's own and its `third-party.yml` ones. The splits of core's content
 # (STA-1945 PR 6): `framework` (core, and stackra-pro while its needs match) gets everything. `platform` (os,

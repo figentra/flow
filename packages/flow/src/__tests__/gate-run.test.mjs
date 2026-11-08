@@ -12,12 +12,13 @@
 // @covers sta-1729:FR-5 sta-1729:FR-9 sta-1729:AC-008 sta-1729:AC-009 sta-1729:P-005 sta-1729:P-009
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { secretsPort } from "../adapters/secrets.mjs";
 import { boxCommand, checkCommand, gateRun, slugOf } from "../commands/gate-run.mjs";
 import { CONFIG_FILE, ENV_PREFIX, GATE_MARKER, STATUS_CONTEXT } from "../lib/product.mjs";
+import { parseYaml } from "../lib/yaml.mjs";
 import { commit, repo, sh } from "./__fixtures__/repo.mjs";
 
 const GITHUB = "git@github.com:figentra/flow.git";
@@ -185,6 +186,60 @@ test("check command: pnpm verify by default, the repository's own, and the spec 
     checkCommand(join(r.root, "nowhere")),
     "pnpm install --frozen-lockfile && pnpm verify",
   );
+});
+
+test("check command: the preset's required checks run first, the repository's own after, never instead", (t) => {
+  const required = ["pnpm format:check", "pnpm lint", "pnpm test:int"];
+  const presetYml = `preset:\n  id: "own"\ngate:\n  required:\n${required.map((step) => `    - "${step}"`).join("\n")}\n`;
+  const r = repo({
+    [CONFIG_FILE]: JSON.stringify({
+      version: 1,
+      preset: "./own-preset",
+      gate: { check: "pnpm lint" },
+    }),
+    "package.json": JSON.stringify({}),
+  });
+  t.after(r.dispose);
+  mkdirSync(join(r.root, "own-preset"));
+  writeFileSync(join(r.root, "own-preset/preset.yml"), presetYml);
+  // A repository whose own check is a subset still runs the whole list, then its own.
+  assert.equal(
+    checkCommand(r.root),
+    "pnpm install --frozen-lockfile && pnpm format:check && pnpm lint && pnpm test:int && pnpm lint",
+  );
+  // A shard after the first runs only its own command; the first shard carries the list.
+  assert.equal(
+    checkCommand(r.root, "pnpm test --filter a", false),
+    "pnpm install --frozen-lockfile && pnpm test --filter a",
+  );
+  assert.equal(
+    checkCommand(r.root, "pnpm test --filter b"),
+    "pnpm install --frozen-lockfile && pnpm format:check && pnpm lint && pnpm test:int && pnpm test --filter b",
+  );
+  // A list that is not commands is refused.
+  writeFileSync(
+    join(r.root, "own-preset/preset.yml"),
+    'preset:\n  id: "own"\ngate:\n  required: "pnpm lint"\n',
+  );
+  assert.throws(() => checkCommand(r.root), /gate.required must be a list of commands/);
+});
+
+test("the stackra preset requires the full gate: format, lint, typecheck, unit, int, strict gen, validate and both scans", () => {
+  const yml = readFileSync(
+    new URL("../../assets/flow/presets/stackra/preset.yml", import.meta.url),
+    "utf8",
+  );
+  assert.deepEqual(parseYaml(yml).gate.required, [
+    "pnpm format:check",
+    "pnpm lint",
+    "pnpm typecheck",
+    "pnpm test",
+    "pnpm test:int",
+    "STACKRA_GEN_STRICT=1 pnpm gen:check",
+    "pnpm validate",
+    "pnpm secrets:scan",
+    "pnpm deps:scan",
+  ]);
 });
 
 // @covers sta-1729:FR-5

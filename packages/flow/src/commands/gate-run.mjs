@@ -44,6 +44,7 @@ import { say } from "../lib/cli.mjs";
 import { loadConfig } from "../lib/config.mjs";
 import { schemeFor } from "../adapters/tracker/index.mjs";
 import { defaultBranch, git, remoteTip } from "../lib/git.mjs";
+import { requiredChecks } from "../lib/gate-required.mjs";
 import { endStage, RECORD_DIR } from "../lib/record.mjs";
 import { rendersVerdict } from "../lib/render.mjs";
 import {
@@ -71,17 +72,21 @@ import {
 const POSTER = new URL("../lib/gate-post.mjs", import.meta.url);
 
 /**
- * The repository's check command: `check` (a shard's), else the configuration's `gate.check`, else `pnpm verify`,
- * followed by the spec gate where this package is installed, unless `spec` is false (a shard after the first).
+ * The repository's check command: the preset's required checks (`gate.required`, on the first shard), then `check` (a
+ * shard's) or the configuration's `gate.check`, else `pnpm verify` when the preset requires nothing, followed by the
+ * spec gate where this package is installed, unless `spec` is false (a shard after the first). The required list
+ * comes first and a repository's own check can only add to it.
  * @param {string} dir
  * @param {string} [check]
  * @param {boolean} [spec]
  */
-export function checkCommand(
-  dir,
-  check = loadConfig(dir).config.gate?.check ?? "pnpm verify",
-  spec = true,
-) {
+export function checkCommand(dir, check, spec = true) {
+  const required = spec ? requiredChecks(dir) : [];
+  const own = check ?? loadConfig(dir).config.gate?.check;
+  const steps =
+    required.length > 0
+      ? [...required, ...(own === undefined ? [] : [own])]
+      : [own ?? "pnpm verify"];
   /** @type {any} */
   let pkg = {};
   try {
@@ -90,7 +95,7 @@ export function checkCommand(
     // no package.json: the default command, which will fail loudly on the box
   }
   const installed = spec && Boolean(pkg.devDependencies?.[PACKAGE] ?? pkg.dependencies?.[PACKAGE]);
-  return `pnpm install --frozen-lockfile && ${check}${installed ? ` && pnpm exec ${NAME} gate ci` : ""}`;
+  return `pnpm install --frozen-lockfile && ${steps.join(" && ")}${installed ? ` && pnpm exec ${NAME} gate ci` : ""}`;
 }
 
 /**
