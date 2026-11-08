@@ -31,6 +31,7 @@ jobs:
           fetch-depth: 0
       - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
         with:
+          version: 2026.11.4
           install_args: node pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
@@ -49,6 +50,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
         with:
+          version: 2026.11.4
           install_args: node pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @figentra-oss/flow test
@@ -64,6 +66,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
         with:
+          version: 2026.11.4
           install_args: node pnpm
       # No install: the test packs the package and installs the tarball from the registries itself.
       - run: pnpm --filter @figentra-oss/flow test:e2e

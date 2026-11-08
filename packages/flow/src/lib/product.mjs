@@ -37,6 +37,9 @@ export const DISPLAY_NAME = "Figentra Flow";
 /** The CLI's name, as users type it (the binary; the npm name is `PACKAGE`). Owner, 2026-11-02: `fflow`. */
 export const NAME = "fflow";
 
+/** The mise every rendered mise-action step installs; unpinned, the action takes the latest, which can be down. */
+export const MISE_VERSION = "2026.11.4";
+
 /** The name before 2026-11-02: a deprecated binary alias for one release, and the names `sync` migrates from. */
 export const LEGACY_NAME = "figentra-flow";
 

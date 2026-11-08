@@ -36,6 +36,7 @@ import {
   ENV_PREFIX,
   LAND_COMMAND,
   LAND_LABEL,
+  MISE_VERSION,
   NAME,
   NEVER_TOLERATED,
   PACKAGE,
@@ -66,6 +67,7 @@ const MISE = "jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0"
  */
 const decryptSteps = (d) => `      - uses: ${MISE}
         with:
+          version: ${MISE_VERSION}
           install: false
           cache: false
       - name: Gate App key
