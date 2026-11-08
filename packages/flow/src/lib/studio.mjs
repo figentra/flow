@@ -4,7 +4,8 @@
  *   exposes them): `spec_create` writes a Draft spec from the template for an issue key, `run_start` hands a tasked,
  *   approved spec to the build sandbox, `run_status` reads a run back, `run_list` pages through a spec's runs and
  *   `run_cancel` stops one that has not finished, and `repo_create` makes the product's private repository from a
- *   template through the repository host (the Figentra GitHub App). `fflow mcp --studio` adds them to the
+ *   template through the repository host (the Figentra GitHub App), and `repo_link` links that repository to its
+ *   tracker project. `fflow mcp --studio` adds them to the
  *   server's tools; without the flag the server is what it was.
  * Boundary: `spec_create` writes one new `spec.md` and nothing else (no branch, no worktree, no tracker); `run_start`
  *   writes nothing in the repository and runs only in the sandbox's EU or US region. Every call names the person it
@@ -48,7 +49,7 @@ const OWNER = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 /** A new repository's name: kebab-case, at most 100 characters. */
 const REPO_NAME = /^(?=.{1,100}$)[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-/** The Studio's tools: four writers and two reads (master plan Phase 5). */
+/** The Studio's tools: five writers and two reads (master plan Phase 5). */
 export const STUDIO_TOOLS = [
   {
     name: `${PREFIX}_spec_create`,
@@ -131,6 +132,19 @@ export const STUDIO_TOOLS = [
       openWorldHint: true,
     },
   },
+  {
+    name: `${PREFIX}_repo_link`,
+    description:
+      "Links a repository (`owner/name`) to its tracker project (the Linear project id), on behalf of the person. " +
+      "Linking the same repository again answers the existing link. Refused for an unknown project or repository.",
+    inputSchema: object({ repo: str, project: str, onBehalfOf }, ["repo", "project", "onBehalfOf"]),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+  },
 ];
 
 /**
@@ -158,11 +172,13 @@ const oneLine = (/** @type {string} */ text) => text.replace(/\s+/g, " ").trim()
 /**
  * The Studio tools' handlers, keyed as the server looks them up (the tool name without the prefix).
  * @param {{ sandbox: import("../adapters/sandbox/index.mjs").BuildSandbox,
- *   repos: import("../adapters/repo-host/index.mjs").RepoHost, today?: () => string }} deps
+ *   repos: import("../adapters/repo-host/index.mjs").RepoHost,
+ *   projects: import("../adapters/project-link/index.mjs").ProjectLinker, today?: () => string }} deps
  */
 export function studioReaders({
   sandbox,
   repos,
+  projects,
   today = () => new Date().toISOString().slice(0, 10),
 }) {
   const person = (/** @type {string} */ id) => {
@@ -277,6 +293,20 @@ export function studioReaders({
         description: oneLine(description),
         onBehalfOf: who,
       });
+    },
+    /** @param {{ repo: string, project: string, onBehalfOf: string }} args */
+    repo_link: async ({ repo, project, onBehalfOf: who }) => {
+      person(who);
+      const [owner, name, extra] = repo.split("/");
+      if (extra !== undefined || !owner || !name || !OWNER.test(owner) || !REPO_NAME.test(name))
+        throw new Error(`repo ${repo} is not owner/name`);
+      if (!(await repos.exists(repo))) throw new Error(`${repo} does not exist`);
+      const found = await projects.project(project);
+      if (!found) throw new Error(`no project ${project}`);
+      const url = `https://github.com/${repo}`;
+      const existing = (await projects.links(found.id)).find((link) => link.url === url);
+      if (existing) return existing;
+      return projects.link({ project: found.id, url, label: `GitHub: ${repo}`, onBehalfOf: who });
     },
   };
 }

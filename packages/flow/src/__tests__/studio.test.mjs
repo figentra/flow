@@ -17,6 +17,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { fakeProjectLinker } from "../adapters/project-link/fake.mjs";
 import { fakeRepoHost } from "../adapters/repo-host/fake.mjs";
 import { fakeSandbox } from "../adapters/sandbox/fake.mjs";
 import { handle, TOOLS } from "../commands/mcp.mjs";
@@ -48,7 +49,11 @@ const studioOf = () => {
     existing: ["figentra/velora"],
     now: () => "2026-11-08T10:00:00.000Z",
   });
-  return { sandbox, tools: studioReaders({ sandbox, repos, today: () => "2026-11-08" }) };
+  const projects = fakeProjectLinker({
+    projects: [{ id: "prj_academorix", name: "Academorix" }],
+    now: () => "2026-11-08T10:00:00.000Z",
+  });
+  return { sandbox, tools: studioReaders({ sandbox, repos, projects, today: () => "2026-11-08" }) };
 };
 
 /** A spec for STA-7 at `status`, of `tier`, with `approval` on its Status line. */
@@ -297,6 +302,38 @@ test("repo_create: a private repository from a template on behalf of a person; a
   );
   await assert.rejects(
     tools.repo_create({ ...args, name: "jute", onBehalfOf: "svc_01ABCDEFGHJKMNPQRSTVWXYZ0" }),
+    /not a person's public id/,
+  );
+});
+
+test("repo_link: links an existing repository to a known project once, on behalf of a person", async () => {
+  const { tools } = studioOf();
+  const args = { repo: "figentra/velora", project: "prj_academorix", onBehalfOf: PERSON };
+  const expected = {
+    project: "prj_academorix",
+    url: "https://github.com/figentra/velora",
+    label: "GitHub: figentra/velora",
+    linkedBy: PERSON,
+    linkedAt: "2026-11-08T10:00:00.000Z",
+  };
+
+  assert.deepEqual(await tools.repo_link(args), expected);
+  // Linking again answers the same link, with the first linker kept.
+  assert.deepEqual(
+    await tools.repo_link({ ...args, onBehalfOf: "usr_01ABCDEFGHJKMNPQRSTVWXYZ9" }),
+    expected,
+  );
+  await assert.rejects(tools.repo_link({ ...args, project: "prj_nope" }), /no project prj_nope/);
+  await assert.rejects(
+    tools.repo_link({ ...args, repo: "figentra/jute" }),
+    /figentra\/jute does not exist/,
+  );
+  await assert.rejects(
+    tools.repo_link({ ...args, repo: "velora" }),
+    /repo velora is not owner\/name/,
+  );
+  await assert.rejects(
+    tools.repo_link({ ...args, onBehalfOf: "svc_01ABCDEFGHJKMNPQRSTVWXYZ0" }),
     /not a person's public id/,
   );
 });
