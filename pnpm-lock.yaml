@@ -172,11 +172,11 @@ catalogs:
       version: 6.0.3
   default:
     '@stackra/console':
-      specifier: 0.7.1
-      version: 0.7.1
+      specifier: 0.21.0
+      version: 0.21.0
     '@stackra/validation':
-      specifier: 0.7.1
-      version: 0.7.1
+      specifier: 0.21.0
+      version: 0.21.0
     '@types/node':
       specifier: 26.6.4
       version: 26.6.4
@@ -234,10 +234,10 @@ importers:
     dependencies:
       '@stackra/console':
         specifier: 'catalog:'
-        version: 0.7.1(cac@7.1.0)
+        version: 0.21.0(cac@7.1.0)
       '@stackra/validation':
         specifier: 'catalog:'
-        version: 0.7.1(react@19.3.0)
+        version: 0.21.0(react@19.3.0)
       undici:
         specifier: 'catalog:'
         version: 8.12.2
@@ -607,13 +607,13 @@ packages:
     resolution: {integrity: sha512-pOr5+q1fLYKwFN3LAJuGZEnfXDcQ73zqgDHMtGy+K+uIoUqyY+6MeDCWFwfu+4EFuq76I5EPFofoNAI+Bmmq4A==}
     engines: {node: '>=22.13'}
 
-  '@stackra/console@0.7.1':
-    resolution: {integrity: sha512-OkaGBRhPuUTgq32o103q0Mr4I4KxYaQISR8o1EnWyF70reF6BBYRnUFoRHDpucFPd/JCOle+56nUhgVsSJHR+w==}
+  '@stackra/console@0.21.0':
+    resolution: {integrity: sha512-V72/W/dFtjhtu4n/k/zmZXiC9ZjPtWC7wVzMY4m7v1KpmvabP5YH3r+Nnzr581dvJLdPGQAbof2NYhxuuM5ohw==}
     engines: {node: '>=24.0.0'}
     hasBin: true
 
-  '@stackra/container@0.7.1':
-    resolution: {integrity: sha512-kjIc7kLcfX/FxUgtWt+rdPJzaBsmVccwl0fRQ5XYiN7Bi6b8Df51HPiFtgLPhAGbDELdRtB+FJn5k2wuslUvug==}
+  '@stackra/container@0.21.0':
+    resolution: {integrity: sha512-1cE91NqQsM+jxK333iXALsTxaQKNfRJikeHVWOUliiUTv9febLdJ1IFzgP2nWKMzP8MbrzXvkFnb4ENp8S//jw==}
     engines: {node: '>=24.0.0'}
     peerDependencies:
       react: 19.3.0
@@ -621,12 +621,12 @@ packages:
       react:
         optional: true
 
-  '@stackra/contracts@0.7.1':
-    resolution: {integrity: sha512-eSgubDPlZ0i+Ln2uOUfaI3XLMYRIO6YCkRsBsUyrEdHFabOzMVATjrhdUORgvzQYDTRkhoZBccs+UQ+TGf37fw==}
+  '@stackra/contracts@0.21.0':
+    resolution: {integrity: sha512-mgtEAZdvt6sG59KqUN6xVxibVHtV3j0JnryzTwYuzDDdEB5R79YrYuPZIYmNay/m6yPUWi960yMXIKDaRKRGJg==}
     engines: {node: '>=24.0.0'}
 
-  '@stackra/validation@0.7.1':
-    resolution: {integrity: sha512-vT2rxHQOegqnGE97DFN8RVKYNsn4TqCTRWIsGGueuKKk1xcwGgXerTmn6zpkr4GqIKjceYvGPAiccntBGUsiDA==}
+  '@stackra/validation@0.21.0':
+    resolution: {integrity: sha512-ZZTT7AUxwOE/IZzCB5MVRJpSY+rNiDcZTa+RR+2Dl+WVWtoKNJYy5DDGotEC4EACzaE3s1H1rP8rPwDP5otflg==}
     engines: {node: '>=24.0.0'}
 
   '@turbo/darwin-64@2.11.9':
@@ -1260,13 +1260,13 @@ snapshots:
 
   '@pnpm/deps.graph-sequencer@1100.0.1': {}
 
-  '@stackra/console@0.7.1(cac@7.1.0)':
+  '@stackra/console@0.21.0(cac@7.1.0)':
     dependencies:
       '@bomb.sh/tab': 0.0.22(cac@7.1.0)
       '@clack/prompts': 1.8.1
-      '@stackra/container': 0.7.1(react@19.3.0)
-      '@stackra/contracts': 0.7.1
-      '@stackra/validation': 0.7.1(react@19.3.0)
+      '@stackra/container': 0.21.0(react@19.3.0)
+      '@stackra/contracts': 0.21.0
+      '@stackra/validation': 0.21.0(react@19.3.0)
       ink: 8.0.0(react@19.3.0)
       react: 19.3.0
     transitivePeerDependencies:
@@ -1276,18 +1276,18 @@ snapshots:
       - commander
       - react-devtools-core
 
-  '@stackra/container@0.7.1(react@19.3.0)':
+  '@stackra/container@0.21.0(react@19.3.0)':
     dependencies:
-      '@stackra/contracts': 0.7.1
+      '@stackra/contracts': 0.21.0
     optionalDependencies:
       react: 19.3.0
 
-  '@stackra/contracts@0.7.1': {}
+  '@stackra/contracts@0.21.0': {}
 
-  '@stackra/validation@0.7.1(react@19.3.0)':
+  '@stackra/validation@0.21.0(react@19.3.0)':
     dependencies:
-      '@stackra/container': 0.7.1(react@19.3.0)
-      '@stackra/contracts': 0.7.1
+      '@stackra/container': 0.21.0(react@19.3.0)
+      '@stackra/contracts': 0.21.0
       zod: 4.6.7
     transitivePeerDependencies:
       - react
