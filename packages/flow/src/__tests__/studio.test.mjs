@@ -4,7 +4,8 @@
  *   spec from the template, naming the person, and refuses a key that has one, a bad slug and a service caller;
  *   `run_start` builds only a tasked, approved spec, only in the EU or US sandbox, on behalf of a person; `run_status`
  *   reads the run back; `run_list` pages a spec's runs newest first, by status; `run_cancel` stops a run that has not
- *   finished; every call refuses a service as its caller; and the server lists the Studio's tools only under
+ *   finished; `repo_create` makes a private repository from a template and refuses a taken name, a non-template and a
+ *   malformed name; every call refuses a service as its caller; and the server lists the Studio's tools only under
  *   `--studio`.
  * Boundary: temporary repositories, the fake sandbox and the handler driven by request objects; no process, no network.
  * Runtime: node
@@ -16,6 +17,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { fakeRepoHost } from "../adapters/repo-host/fake.mjs";
 import { fakeSandbox } from "../adapters/sandbox/fake.mjs";
 import { handle, TOOLS } from "../commands/mcp.mjs";
 import { STUDIO_TOOLS, studioReaders } from "../lib/studio.mjs";
@@ -41,7 +43,12 @@ const repoOf = (/** @type {{ after: (fn: () => void) => void }} */ t) => {
 const studioOf = () => {
   let n = 0;
   const sandbox = fakeSandbox({ now: () => "2026-11-08T10:00:00.000Z", id: () => `run_${++n}` });
-  return { sandbox, tools: studioReaders({ sandbox, today: () => "2026-11-08" }) };
+  const repos = fakeRepoHost({
+    templates: ["figentra/product-template"],
+    existing: ["figentra/velora"],
+    now: () => "2026-11-08T10:00:00.000Z",
+  });
+  return { sandbox, tools: studioReaders({ sandbox, repos, today: () => "2026-11-08" }) };
 };
 
 /** A spec for STA-7 at `status`, of `tier`, with `approval` on its Status line. */
@@ -251,6 +258,45 @@ test("run_cancel: stops a queued run on behalf of a person, never a finished one
   await assert.rejects(tools.run_cancel({ runId: "run_9", onBehalfOf: PERSON }), /no run run_9/);
   await assert.rejects(
     tools.run_cancel({ runId: "run_2", onBehalfOf: "svc_01ABCDEFGHJKMNPQRSTVWXYZ0" }),
+    /not a person's public id/,
+  );
+});
+
+test("repo_create: a private repository from a template on behalf of a person; a taken name or a non-template is refused", async () => {
+  const { tools } = studioOf();
+  const args = {
+    owner: "figentra",
+    name: "academorix",
+    template: "figentra/product-template",
+    description: "Academorix:\nclubs and academies",
+    onBehalfOf: PERSON,
+  };
+
+  assert.deepEqual(await tools.repo_create(args), {
+    fullName: "figentra/academorix",
+    url: "https://github.com/figentra/academorix",
+    defaultBranch: "main",
+    template: "figentra/product-template",
+    private: true,
+    createdBy: PERSON,
+    createdAt: "2026-11-08T10:00:00.000Z",
+  });
+  await assert.rejects(tools.repo_create(args), /figentra\/academorix already exists/);
+  await assert.rejects(
+    tools.repo_create({ ...args, name: "velora" }),
+    /figentra\/velora already exists/,
+  );
+  await assert.rejects(
+    tools.repo_create({ ...args, name: "jute", template: "figentra/velora" }),
+    /figentra\/velora is not a template repository/,
+  );
+  await assert.rejects(tools.repo_create({ ...args, name: "Not Kebab" }), /is not kebab-case/);
+  await assert.rejects(
+    tools.repo_create({ ...args, name: "jute", template: "product-template" }),
+    /is not owner\/repo/,
+  );
+  await assert.rejects(
+    tools.repo_create({ ...args, name: "jute", onBehalfOf: "svc_01ABCDEFGHJKMNPQRSTVWXYZ0" }),
     /not a person's public id/,
   );
 });

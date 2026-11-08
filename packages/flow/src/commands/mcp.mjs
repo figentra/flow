@@ -40,6 +40,7 @@ import {
 import { snapshot } from "../lib/snapshot.mjs";
 import { STUDIO_TOOLS, studioReaders } from "../lib/studio.mjs";
 import { fakeSandbox } from "../adapters/sandbox/fake.mjs";
+import { fakeRepoHost } from "../adapters/repo-host/fake.mjs";
 import { readSessionCap } from "../lib/workspace.mjs";
 
 /** The MCP protocol revisions this server speaks, newest first. */
@@ -368,7 +369,8 @@ export async function handle(message, readers = defaultReaders(), session = {}, 
             (tools === TOOLS
               ? ""
               : " The Studio's tools write a Draft spec (spec_create) and start and read build runs in the EU or US " +
-                "sandbox (run_start, run_status, run_list, run_cancel), each on behalf of the person named in onBehalfOf."),
+                "sandbox (run_start, run_status, run_list, run_cancel) and create a product's repository from a template " +
+                "(repo_create), each on behalf of the person named in onBehalfOf."),
         };
         break;
       }
@@ -418,9 +420,10 @@ export async function run(args = []) {
   const write = (/** @type {unknown} */ m) => process.stdout.write(`${JSON.stringify(m)}\n`);
   const session = connection(write);
   const studio = args.includes("--studio");
-  // shortcut: the Studio's runs go to the fake sandbox, kept for the process; bind a real driver when one exists.
+  // shortcut: the Studio's runs go to the fake sandbox and its repositories to the fake host, kept for the process;
+  // bind the real drivers (the build sandbox, the GitHub App) when they exist.
   const readers = studio
-    ? { ...defaultReaders(), ...studioReaders({ sandbox: fakeSandbox() }) }
+    ? { ...defaultReaders(), ...studioReaders({ sandbox: fakeSandbox(), repos: fakeRepoHost() }) }
     : defaultReaders();
   const tools = studio ? [...TOOLS, ...STUDIO_TOOLS] : TOOLS;
   /** @type {Set<Promise<void>>} */
