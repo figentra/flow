@@ -368,7 +368,7 @@ export async function handle(message, readers = defaultReaders(), session = {}, 
             (tools === TOOLS
               ? ""
               : " The Studio's tools write a Draft spec (spec_create) and start and read build runs in the EU or US " +
-                "sandbox (run_start, run_status), each on behalf of the person named in onBehalfOf."),
+                "sandbox (run_start, run_status, run_list, run_cancel), each on behalf of the person named in onBehalfOf."),
         };
         break;
       }

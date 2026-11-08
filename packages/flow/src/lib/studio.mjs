@@ -2,7 +2,8 @@
  * Figentra Flow file contract:
  * Purpose: the Studio's write surface over MCP (master plan Phase 5: OS's Product Studio calls Flow's tools, Flow
  *   exposes them): `spec_create` writes a Draft spec from the template for an issue key, `run_start` hands a tasked,
- *   approved spec to the build sandbox, and `run_status` reads a run back. `fflow mcp --studio` adds them to the
+ *   approved spec to the build sandbox, `run_status` reads a run back, `run_list` pages through a spec's runs and
+ *   `run_cancel` stops one that has not finished. `fflow mcp --studio` adds them to the
  *   server's tools; without the flag the server is what it was.
  * Boundary: `spec_create` writes one new `spec.md` and nothing else (no branch, no worktree, no tracker); `run_start`
  *   writes nothing in the repository and runs only in the sandbox's EU or US region. Every call names the person it
@@ -16,7 +17,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { SANDBOX_REGIONS } from "../adapters/sandbox/index.mjs";
+import { FINISHED, RUN_STATUSES, SANDBOX_REGIONS } from "../adapters/sandbox/index.mjs";
 import { schemeFor } from "../adapters/tracker/index.mjs";
 import { resolveTemplate, specsDirs } from "./flow-dir.mjs";
 import { CONFIG_FILE, NAME } from "./product.mjs";
@@ -37,7 +38,10 @@ const onBehalfOf = {
   description: "The person the call acts for: their user or principal public id (usr_…, prn_…).",
 };
 
-/** The Studio's three tools: two writers and one read (master plan Phase 5). */
+/** The most runs one page of `run_list` holds, and how many it holds when the caller names none. */
+export const RUN_PAGE = Object.freeze({ max: 100, default: 20 });
+
+/** The Studio's tools: three writers and two reads (master plan Phase 5). */
 export const STUDIO_TOOLS = [
   {
     name: `${PREFIX}_spec_create`,
@@ -73,9 +77,34 @@ export const STUDIO_TOOLS = [
   {
     name: `${PREFIX}_run_status`,
     description:
-      "One build run's state by its id: queued, running, passed or failed, with its spec and region.",
+      "One build run's state by its id: queued, running, passed, failed or cancelled, with its spec and region.",
     inputSchema: object({ runId: str }, ["runId"]),
     annotations: { readOnlyHint: true },
+  },
+  {
+    name: `${PREFIX}_run_list`,
+    description:
+      "A spec's build runs, newest first, on behalf of the person: optionally only one status, at most `limit` " +
+      `(default ${RUN_PAGE.default}, at most ${RUN_PAGE.max}) per page; pass the answer's nextCursor for the next page.`,
+    inputSchema: object(
+      {
+        repo: str,
+        key: str,
+        status: { type: "string", enum: [...RUN_STATUSES] },
+        limit: { type: "integer", minimum: 1, maximum: RUN_PAGE.max },
+        cursor: str,
+        onBehalfOf,
+      },
+      ["repo", "key", "onBehalfOf"],
+    ),
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: `${PREFIX}_run_cancel`,
+    description:
+      "Cancels a queued or running build run on behalf of the person; refused for a run that has finished.",
+    inputSchema: object({ runId: str, onBehalfOf }, ["runId", "onBehalfOf"]),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
   },
 ];
 
@@ -168,6 +197,35 @@ export function studioReaders({ sandbox, today = () => new Date().toISOString().
       const run = await sandbox.status(runId);
       if (!run) throw new Error(`no run ${runId}`);
       return run;
+    },
+    /** @param {{ repo: string, key: string, status?: string, limit?: number, cursor?: string, onBehalfOf: string }} args */
+    run_list: async ({ repo, key, status, limit = RUN_PAGE.default, cursor, onBehalfOf: who }) => {
+      person(who);
+      const { scheme, wanted } = specOf(repo, key);
+      if (status !== undefined && !RUN_STATUSES.includes(status))
+        throw new Error(`status ${status} is not one of ${RUN_STATUSES.join(", ")}`);
+      if (!Number.isInteger(limit) || limit < 1 || limit > RUN_PAGE.max)
+        throw new Error(`limit ${limit} is not a whole number from 1 to ${RUN_PAGE.max}`);
+      const page = await sandbox.list({
+        key: scheme.display(wanted),
+        ...(status === undefined
+          ? {}
+          : { status: /** @type {import("../adapters/sandbox/index.mjs").RunStatus} */ (status) }),
+        limit,
+        ...(cursor === undefined ? {} : { after: cursor }),
+      });
+      return { items: page.items, nextCursor: page.next };
+    },
+    /** @param {{ runId: string, onBehalfOf: string }} args */
+    run_cancel: async ({ runId, onBehalfOf: who }) => {
+      person(who);
+      const run = await sandbox.status(runId);
+      if (!run) throw new Error(`no run ${runId}`);
+      if (FINISHED.includes(run.status))
+        throw new Error(`${runId} is ${run.status}; only a queued or running run is cancelled`);
+      const cancelled = await sandbox.cancel(runId, who);
+      if (!cancelled) throw new Error(`no run ${runId}`);
+      return cancelled;
     },
   };
 }

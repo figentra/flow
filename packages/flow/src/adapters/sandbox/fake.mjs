@@ -1,7 +1,8 @@
 /**
  * Figentra Flow file contract:
- * Purpose: the fake build sandbox: records each run in memory, queued, and answers it by id; `settle` moves a run to
- *   its end for tests. Nothing builds, and every run says so in its `detail`.
+ * Purpose: the fake build sandbox: records each run in memory, queued, answers it by id, lists a spec's runs newest
+ *   first a page at a time (the cursor is the last run's id) and cancels one; `settle` moves a run to its end for
+ *   tests. Nothing builds, and every run says so in its `detail`.
  * Boundary: process memory only; no network, no repository write. The Studio's MCP surface binds it until a real
  *   sandbox driver exists.
  * Runtime: node
@@ -38,6 +39,32 @@ export function fakeSandbox({
     status: async (runId) => {
       const run = runs.get(runId);
       return run && { ...run };
+    },
+    cancel: async (runId, onBehalfOf) => {
+      const run = runs.get(runId);
+      if (!run) return undefined;
+      const cancelled = {
+        ...run,
+        status: /** @type {const} */ ("cancelled"),
+        finishedAt: now(),
+        cancelledBy: onBehalfOf,
+      };
+      runs.set(runId, cancelled);
+      return { ...cancelled };
+    },
+    list: async ({ key, status, limit, after }) => {
+      const matching = [...runs.values()]
+        .toReversed()
+        .filter((run) => run.key === key && (status === undefined || run.status === status));
+      const from = after === undefined ? 0 : matching.findIndex((run) => run.runId === after) + 1;
+      // An unknown cursor answers an empty last page.
+      if (after !== undefined && from === 0) return { items: [], next: null };
+      const items = matching.slice(from, from + limit);
+      const more = from + limit < matching.length;
+      return {
+        items: items.map((run) => ({ ...run })),
+        next: more ? (items.at(-1)?.runId ?? null) : null,
+      };
     },
     settle: (runId, status) => {
       const run = runs.get(runId);

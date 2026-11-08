@@ -3,7 +3,9 @@
  * Purpose: hold the Studio's MCP write surface (master plan Phase 5) to its contract: `spec_create` writes one Draft
  *   spec from the template, naming the person, and refuses a key that has one, a bad slug and a service caller;
  *   `run_start` builds only a tasked, approved spec, only in the EU or US sandbox, on behalf of a person; `run_status`
- *   reads the run back; and the server lists the Studio's tools only under `--studio`.
+ *   reads the run back; `run_list` pages a spec's runs newest first, by status; `run_cancel` stops a run that has not
+ *   finished; every call refuses a service as its caller; and the server lists the Studio's tools only under
+ *   `--studio`.
  * Boundary: temporary repositories, the fake sandbox and the handler driven by request objects; no process, no network.
  * Runtime: node
  * Governing contract: master plan 2026-11-07 Phase 5; Stackra ADR 0209 A8 (STA-2558).
@@ -181,4 +183,74 @@ test("mcp: the Studio's tools are listed and called only when the server is give
     await handle({ ...call, params }, readers, {}, [...TOOLS, ...STUDIO_TOOLS])
   );
   assert.equal(JSON.parse(created.result.content[0].text).folder, "sta-3-x");
+});
+
+test("run_list: a spec's runs newest first, a page at a time, by status, on behalf of a person", async (t) => {
+  const root = repoOf(t);
+  const { sandbox, tools } = studioOf();
+  writeSpec(root, "Tasked");
+  mkdirSync(join(root, ".agents/specs/sta-8-other"), { recursive: true });
+  writeFileSync(
+    join(root, ".agents/specs/sta-8-other/spec.md"),
+    "# Feature Specification: Other\n\n**Status**: Tasked\n\n**Tier**: small\n",
+  );
+  const start = (/** @type {string} */ key) =>
+    tools.run_start({ repo: root, key, region: "eu", onBehalfOf: PERSON });
+  await start("STA-7");
+  await start("STA-7");
+  await start("STA-8");
+  await start("STA-7");
+  const ids = (/** @type {{ items: { runId: string }[] }} */ page) =>
+    page.items.map((run) => run.runId);
+  const args = { repo: root, key: "STA-7", onBehalfOf: PERSON };
+
+  const first = await tools.run_list({ ...args, limit: 2 });
+  assert.deepEqual(ids(first), ["run_4", "run_2"]);
+  assert.equal(first.nextCursor, "run_2");
+  const second = await tools.run_list({ ...args, limit: 2, cursor: "run_2" });
+  assert.deepEqual(ids(second), ["run_1"]);
+  assert.equal(second.nextCursor, null);
+  assert.deepEqual(ids(await tools.run_list(args)), ["run_4", "run_2", "run_1"]);
+
+  sandbox.settle("run_1", "passed");
+  assert.deepEqual(ids(await tools.run_list({ ...args, status: "passed" })), ["run_1"]);
+  assert.deepEqual(await tools.run_list({ ...args, cursor: "run_9" }), {
+    items: [],
+    nextCursor: null,
+  });
+  await assert.rejects(
+    tools.run_list({ ...args, limit: 0 }),
+    /limit 0 is not a whole number from 1 to 100/,
+  );
+  await assert.rejects(tools.run_list({ ...args, status: "done" }), /status done is not one of/);
+  await assert.rejects(
+    tools.run_list({ ...args, onBehalfOf: "svc_01ABCDEFGHJKMNPQRSTVWXYZ0" }),
+    /not a person's public id/,
+  );
+});
+
+test("run_cancel: stops a queued run on behalf of a person, never a finished one", async (t) => {
+  const root = repoOf(t);
+  const { sandbox, tools } = studioOf();
+  writeSpec(root, "Tasked");
+  await tools.run_start({ repo: root, key: "STA-7", region: "us", onBehalfOf: PERSON });
+  await tools.run_start({ repo: root, key: "STA-7", region: "us", onBehalfOf: PERSON });
+
+  const cancelled = await tools.run_cancel({ runId: "run_1", onBehalfOf: PERSON });
+  assert.equal(cancelled.status, "cancelled");
+  assert.equal(cancelled.cancelledBy, PERSON);
+  assert.equal(cancelled.finishedAt, "2026-11-08T10:00:00.000Z");
+  assert.equal((await tools.run_status({ runId: "run_1" })).status, "cancelled");
+
+  await assert.rejects(
+    tools.run_cancel({ runId: "run_1", onBehalfOf: PERSON }),
+    /run_1 is cancelled; only a queued or running run is cancelled/,
+  );
+  sandbox.settle("run_2", "passed");
+  await assert.rejects(tools.run_cancel({ runId: "run_2", onBehalfOf: PERSON }), /run_2 is passed/);
+  await assert.rejects(tools.run_cancel({ runId: "run_9", onBehalfOf: PERSON }), /no run run_9/);
+  await assert.rejects(
+    tools.run_cancel({ runId: "run_2", onBehalfOf: "svc_01ABCDEFGHJKMNPQRSTVWXYZ0" }),
+    /not a person's public id/,
+  );
 });
