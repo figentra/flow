@@ -17,7 +17,7 @@ breaks. Bash is read-only: scans and git history reads, never stage, commit or p
 
 ## Must read
 
-`.agents/rules/tenancy.md`, `.agents/rules/secrets.md`, `apps/docs/src/docs/runbooks/secrets.mdx`, and the ADRs the change
+the `tenancy` rule, the `secrets` rule, [runbooks/secrets](https://docs.stackra.figentra.com/runbooks/secrets), and the ADRs the change
 touches: 0267 (Agent Vault deferred; supersedes 0106), 0107 (key homes), 0134 (field classification), 0173 and 0257 (secrets, the inbox flow), 0188
 (operator access, key hierarchy), 0167 (workflow hardening), 0207–0212 (authentication assurance, IAM model and
 enforcement, tenant tree, memberships, audit), 0224 (webhooks), 0239 (RLS equality on `tenant_id`). Cite a not-yet-merged

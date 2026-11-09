@@ -17,8 +17,8 @@ you block until `docs-adr-steward` has written it from the owner's decision. Bas
 
 ## Must read
 
-`AGENTS.md`, `.agents/rules/module-boundary.md`, `.agents/rules/not-built-yet.md`, `.agents/rules/workspace-layout.md`,
-`apps/docs/src/docs/adr/index.mdx`, then every ADR the change touches. Open ADR pull requests count: cite a not-yet-merged ADR
+`AGENTS.md`, the `module-boundary` rule, the `not-built-yet` rule, the `workspace-layout` rule,
+[adr](https://docs.stackra.figentra.com/adr), then every ADR the change touches. Open ADR pull requests count: cite a not-yet-merged ADR
 by number.
 
 ## Checks

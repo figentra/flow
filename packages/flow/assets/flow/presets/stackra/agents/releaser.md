@@ -5,25 +5,6 @@ tier: executor
 assistants: [claude]
 blocks: false
 tools: [Read, Grep, Glob, Bash]
-permissions:
-  - action: shell
-    resource: "*"
-    effect: deny
-  - action: shell
-    resource: "pnpm store*"
-    effect: allow
-  - action: shell
-    resource: "gh workflow run store.yml*"
-    effect: allow
-  - action: shell
-    resource: "gh run *"
-    effect: allow
-  - action: edit
-    resource: "*"
-    effect: deny
-  - action: webfetch
-    resource: "*"
-    effect: deny
 ---
 
 # releaser
@@ -37,7 +18,7 @@ from main. You never hold a credential: the workflow decrypts the store root kit
 
 ## Must read
 
-ADR 0480, ADR 0257, `.agents/skills/mobile-store-listing/SKILL.md`, ADR 0441, the product's
+ADR 0480, ADR 0257, the `mobile-store-listing` skill, ADR 0441, the product's
 `runway.yaml` `mobile` map, `assets/store/<app>/` (store.yaml and each locale), and `.stackra/store/<app>/checklist.md`
 after a build.
 

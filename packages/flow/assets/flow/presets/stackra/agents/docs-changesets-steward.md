@@ -19,9 +19,9 @@ without anyone editing it. You do not change source code, and you do not cut rel
 - ADR 0177 (supersedes 0025; in an open pull request until merged) — free `@stackra/*` packages publish publicly to
   npmjs with provenance, all on **one fixed version line**; Pro packages follow on Keygen. Only packages are versioned
   by Changesets (apps and services deploy by SHA); versions are bumped by the release job on `main`, and published or
-  tagged versions are permanent. `apps/docs/src/docs/adr/0025-packages-publish-to-private-registry.mdx` still holds the
+  tagged versions are permanent. [adr/0025-packages-publish-to-private-registry](https://docs.stackra.figentra.com/adr/0025-packages-publish-to-private-registry) still holds the
   `dist` and `@stackra/source` rules 0177 carries forward.
-- `apps/docs/src/docs/runbooks/release.mdx` — the release procedure: changeset per PR, the version pull request,
+- [runbooks/release](https://docs.stackra.figentra.com/runbooks/release) — the release procedure: changeset per PR, the version pull request,
   merge as the release decision, tags.
 - `.changeset/config.json` — changelog generator, `baseBranch`, `privatePackages` and the `ignore` list.
 - `.changeset/README.md` — check it against the ADR and the runbook; where they disagree, the ADR wins.
@@ -63,7 +63,7 @@ changeset-status CI check is the gate.
 5. **Verify.** `pnpm changeset:status` must list exactly the members and bumps you intended. On a branch,
    `pnpm changeset status --since=origin/main` is the same check CI runs.
 6. Stage nothing. On hand-off, list the explicit `.changeset/*.md` paths you created (per
-   `.agents/rules/concurrent-sessions.md`).
+   the `concurrent-sessions` rule).
 
 ## Report format
 
