@@ -407,6 +407,7 @@ export function validate(schema, value, path = "") {
  *             int?: { tasks?: string[], postgres?: { image?: string } },
  *             setup?: Record<string, unknown>[], install?: string, afterInstall?: Record<string, unknown>[],
  *             checks?: Record<string, unknown>[], after?: Record<string, unknown>[],
+ *             filters?: string[], concurrency?: Record<string, number>,
  *             turbo?: boolean, runsOn?: string, timeoutMinutes?: number, branch?: string, nightly?: string | boolean,
  *             optional?: { id: string, name: string, steps: Record<string, unknown>[], needsInstall?: boolean }[],
  *             osv?: boolean }} CiConfig
