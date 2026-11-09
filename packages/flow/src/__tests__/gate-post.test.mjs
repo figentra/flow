@@ -16,7 +16,7 @@ import { createVerify, generateKeyPairSync } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { appJwt, post, redact } from "../lib/gate-post.mjs";
+import { appJwt, post, redact, stepsOf } from "../lib/gate-post.mjs";
 import { ENV_PREFIX, GATE_MARKER as MARKER, STATUS_CONTEXT as CONTEXT } from "../lib/product.mjs";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", {
@@ -85,6 +85,29 @@ function assertNoSecret(/** @type {{ body?: any }[]} */ calls, /** @type {string
   for (const secret of [TOKEN, ENV.UNIWIND_AUTH_TOKEN, "BEGIN PRIVATE KEY"])
     assert.equal(sent.includes(secret), false, secret);
 }
+
+test("post: a red run names the step it stopped at, from the marks in its log", async () => {
+  const { calls, fetch } = github();
+  const log = [
+    "::gate-step::1762600000 pnpm install --frozen-lockfile",
+    "Done in 6s",
+    "::gate-step::1762600010 pnpm lint",
+    "Found 2 errors.",
+  ].join("\n");
+  await post({ job: JOB, exit: 1, log, env: ENV, fetch, now: NOW });
+  const status = calls.find((c) => c.url.endsWith(`/statuses/${SHA}`));
+  assert.equal(status?.body.description, "failed at pnpm lint (exit 1) in 3m07s");
+  assert.deepEqual(stepsOf(log), [
+    { at: 1762600000, step: "pnpm install --frozen-lockfile" },
+    { at: 1762600010, step: "pnpm lint" },
+  ]);
+  // Without marks, the description stays as before.
+  await post({ job: JOB, exit: 1, log: "boom", env: ENV, fetch, now: NOW });
+  assert.equal(
+    calls.filter((c) => c.url.endsWith(`/statuses/${SHA}`)).at(-1)?.body.description,
+    "checks failed (exit 1) in 3m07s",
+  );
+});
 
 test("post: exit 0 posts success on the checked sha and comments on the PR", async () => {
   const { calls, fetch } = github();

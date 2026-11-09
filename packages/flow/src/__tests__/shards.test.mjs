@@ -27,6 +27,10 @@ import { CONFIG, repo, sh } from "./__fixtures__/repo.mjs";
 const LINE =
   '{"region":"eu-west-1","box":"i-1","slot":"light","waitSeconds":1,"runSeconds":2,"exitCode":0}';
 
+/** A check command without its step marks, as the tests compare commands. */
+const withoutMarks = (/** @type {string} */ command) =>
+  command.replaceAll(/printf '%s%s %s\\n' '::gate-step::' "\$\(date \+%s\)" '[^']*' && /g, "");
+
 test("shard: sorted packages dealt round-robin into at most one group per box, none empty", () => {
   assert.deepEqual(shard(["c", "a", "b"], 2), [["a", "c"], ["b"]]);
   assert.deepEqual(shard(["a"], 5), [["a"]]);
@@ -202,7 +206,7 @@ test("gate run --shards: one --json call per shard with its filters, all at once
   const green = await gateRun({ cwd: w.root, tip: w.tip, runner: tb.runner, shards: 2, post });
   assert.deepEqual(green, { code: 0, sha });
   assert.deepEqual(
-    tb.calls.map((c) => [c.label, c.command, c.flags]),
+    tb.calls.map((c) => [c.label, withoutMarks(c.command), c.flags]),
     [
       [
         `fflow gate figentra/flow@${sha.slice(0, 12)} shard 1/2`,

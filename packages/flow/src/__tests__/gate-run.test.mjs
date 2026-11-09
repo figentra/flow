@@ -52,6 +52,10 @@ const tipOf =
     }
   };
 
+/** A check command without its step marks, as the tests compare commands. */
+const withoutMarks = (/** @type {string} */ command) =>
+  command.replaceAll(/printf '%s%s %s\\n' '::gate-step::' "\$\(date \+%s\)" '[^']*' && /g, "");
+
 test("gate run: the job is a clean clone at the head, with the poster and the job file, and the exit passes through", async (t) => {
   const r = ghRepo();
   t.after(r.dispose);
@@ -179,11 +183,11 @@ test("check command: pnpm verify by default, the repository's own, and the spec 
   });
   t.after(r.dispose);
   assert.equal(
-    checkCommand(r.root),
+    withoutMarks(checkCommand(r.root)),
     "pnpm install --frozen-lockfile && pnpm test && pnpm exec fflow gate ci",
   );
   assert.equal(
-    checkCommand(join(r.root, "nowhere")),
+    withoutMarks(checkCommand(join(r.root, "nowhere"))),
     "pnpm install --frozen-lockfile && pnpm verify",
   );
 });
@@ -204,16 +208,16 @@ test("check command: the preset's required checks run first, the repository's ow
   writeFileSync(join(r.root, "own-preset/preset.yml"), presetYml);
   // A repository whose own check is a subset still runs the whole list, then its own.
   assert.equal(
-    checkCommand(r.root),
+    withoutMarks(checkCommand(r.root)),
     "pnpm install --frozen-lockfile && pnpm format:check && pnpm lint && pnpm test:int && pnpm lint",
   );
   // A shard after the first runs only its own command; the first shard carries the list.
   assert.equal(
-    checkCommand(r.root, "pnpm test --filter a", false),
+    withoutMarks(checkCommand(r.root, "pnpm test --filter a", false)),
     "pnpm install --frozen-lockfile && pnpm test --filter a",
   );
   assert.equal(
-    checkCommand(r.root, "pnpm test --filter b"),
+    withoutMarks(checkCommand(r.root, "pnpm test --filter b")),
     "pnpm install --frozen-lockfile && pnpm format:check && pnpm lint && pnpm test:int && pnpm test --filter b",
   );
   // A list that is not commands is refused.
@@ -222,6 +226,21 @@ test("check command: the preset's required checks run first, the repository's ow
     'preset:\n  id: "own"\ngate:\n  required: "pnpm lint"\n',
   );
   assert.throws(() => checkCommand(r.root), /gate.required must be a list of commands/);
+});
+
+test("check command: each step prints its mark first, with the step quoted for the shell", (t) => {
+  const r = repo({
+    [CONFIG_FILE]: JSON.stringify({ version: 1, gate: { check: "pnpm lint 'src'" } }),
+    "package.json": JSON.stringify({}),
+  });
+  t.after(r.dispose);
+  const command = checkCommand(r.root);
+  assert.match(
+    command,
+    /^printf '%s%s %s\\n' '::gate-step::' "\$\(date \+%s\)" 'pnpm install --frozen-lockfile' && pnpm install /,
+  );
+  // A quote in the step is closed, escaped and reopened, so the mark prints the step as written.
+  assert.ok(command.includes(String.raw`'pnpm lint '\''src'\''' && pnpm lint 'src'`));
 });
 
 test("the stackra preset requires the full gate: format, lint, typecheck, unit, int, strict gen, validate and both scans", () => {
