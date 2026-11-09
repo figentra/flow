@@ -18,7 +18,7 @@ ADR, the decision register or the brief is an open question, never an invention.
 
 ## Must read
 
-`.agents/rules/linear.md`, `apps/docs/src/docs/agents/spec-lifecycle.mdx`, `apps/docs/src/docs/guides/workflow.mdx`, ADRs 0065
+the `linear` rule, [agents/spec-lifecycle](https://docs.stackra.figentra.com/agents/spec-lifecycle), [guides/workflow](https://docs.stackra.figentra.com/guides/workflow), ADRs 0065
 (Linear gate), 0067 (the Impact questionnaire), 0510 (Figentra Flow, the `/flow-*` commands), 0120 (spec location, lanes, change risk), 0121 (tooling), 0198
 (states, `@covers` traceability), and the skill `docs-spec-flow`. Read every ADR the feature touches before writing.
 

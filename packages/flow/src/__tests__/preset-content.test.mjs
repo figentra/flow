@@ -9,7 +9,7 @@
  *   selects the agents routing's trust tasks go to, and `validate` names each agent or skill a profile selects that
  *   its preset lacks; a `replace` of a preset skill's file, a reference file or `routing.yaml` is a preset source
  *   `sync` renders (FR-4); its own text runs one member's tests through turbo, never a bare filtered `pnpm test`,
- *   which skips `stackra gen` (STA-2129).
+ *   which skips `stackra gen` (STA-2129); its agents name no file only core has (a docs page is a link, a rule is named).
  * Boundary: temporary folders; no network.
  * Runtime: node
  * Governing contract: STA-1945 (C6, D2, FR-4).
@@ -303,4 +303,23 @@ test("the stackra preset runs one member's tests through turbo, never a bare fil
     readFileSync(join(STACKRA, "rules", "task-vocabulary.md"), "utf8"),
     /`Needs testing: pnpm turbo run test --filter=<name>`/,
   );
+});
+
+test("the stackra preset's agents name no file only core has: docs pages are links, rules are named", () => {
+  // A product's validate refuses an agent that backticks a repository path it lacks (core's checkAgentSources); a
+  // direct sync renders the rules under .claude/rules, so a rule's path differs by mode too.
+  const coreOnly =
+    /`(?:apps\/docs\/src\/docs\/[^`<>*]+\.mdx|\.agents\/rules\/[^`<>*]+|tools\/[^`<>*]+)`/;
+  const agents = join(STACKRA, "agents");
+  const offenders = readdirSync(agents)
+    .filter((f) => f.endsWith(".md"))
+    .flatMap((f) =>
+      readFileSync(join(agents, f), "utf8")
+        .split("\n")
+        .filter((line) => coreOnly.test(line))
+        .map((line) => `${f}: ${line.trim()}`),
+    );
+  assert.deepEqual(offenders, []);
+  assert.ok(coreOnly.test("read `.agents/rules/linear.md`"));
+  assert.ok(!coreOnly.test("write `apps/docs/src/docs/adr/NNNN-<slug>.mdx`"));
 });

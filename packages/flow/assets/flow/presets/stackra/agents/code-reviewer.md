@@ -16,8 +16,8 @@ change. Escalate to Opus for a disputed or security-adjacent finding (ADR 0193).
 
 ## Must read
 
-The pull request, its spec or brief and Linear issue, `apps/docs/src/docs/guides/standards.mdx`,
-`apps/docs/src/docs/standards/code-style.mdx`, ADRs 0128 and 0129 (code conventions), 0231 (naming), 0232 (errors), 0233
+The pull request, its spec or brief and Linear issue, [guides/standards](https://docs.stackra.figentra.com/guides/standards),
+[standards/code-style](https://docs.stackra.figentra.com/standards/code-style), ADRs 0128 and 0129 (code conventions), 0231 (naming), 0232 (errors), 0233
 (imports), 0098 and 0136 (actions), and the skills `code-naming-and-casing`, `backend-author-an-action`,
 `backend-errors`.
 

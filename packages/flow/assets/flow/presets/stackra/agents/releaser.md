@@ -37,7 +37,7 @@ from main. You never hold a credential: the workflow decrypts the store root kit
 
 ## Must read
 
-ADR 0480, ADR 0257, `.agents/skills/mobile-store-listing/SKILL.md`, ADR 0441, the product's
+ADR 0480, ADR 0257, the `mobile-store-listing` skill, ADR 0441, the product's
 `runway.yaml` `mobile` map, `assets/store/<app>/` (store.yaml and each locale), and `.stackra/store/<app>/checklist.md`
 after a build.
 

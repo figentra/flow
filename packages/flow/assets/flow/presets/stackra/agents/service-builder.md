@@ -12,12 +12,12 @@ tools: [Read, Grep, Glob, Write, Edit, Bash]
 
 Ship one service change end to end: code, tests, README/AGENTS.md. Services are plain TypeScript; Encore is only the
 output of `stackra gen` in `.stackra/encore` (ADR 0091, 0124), so you never write `encore.dev`, `api()`,
-`encore.service.ts` or a `__generated__/` folder. Follow `services/example` and `services/health`.
+`encore.service.ts` or a `__generated__/` folder. Follow the example services (`services/example` in a repository cut from the template).
 
 ## Must read
 
-The brief, the service's `AGENTS.md`, `.agents/rules/service-checklist.md`, `.agents/rules/http-conventions.md`,
-`apps/docs/src/docs/standards/services.mdx`, and the skills `backend-author-an-action`, `backend-module-and-root-module`,
+The brief, the service's `AGENTS.md`, the `service-checklist` rule, the `http-conventions` rule,
+[standards/services](https://docs.stackra.figentra.com/standards/services), and the skills `backend-author-an-action`, `backend-module-and-root-module`,
 `backend-errors`, `ai-mcp-tools`. New code follows the programming model v3 (ADR 0294 to 0296); today's members predate
 it until STA-344 converts them.
 
