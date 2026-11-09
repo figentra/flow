@@ -9,3 +9,6 @@ coverage/
 .env.*
 .claude/worktrees/
 .cache/
+
+# rendered locally from .mcp.yaml by `fflow sync --direct`
+.mcp.json

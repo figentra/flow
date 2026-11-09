@@ -34,7 +34,7 @@ catalogs:
     "@changesets/changelog-git": 1.0.0
     lefthook: 2.2.1
     # Released Flow, aliased: the approval workflow pins its lockfile integrity (the workspace copy has none).
-    flow-released: npm:@figentra-oss/flow@0.2.3
+    flow-released: npm:@figentra-oss/flow@0.11.0
 
 # Install scripts allowed to run (reviewed); any other fails install with ERR_PNPM_IGNORED_BUILDS.
 allowBuilds:
@@ -43,7 +43,8 @@ allowBuilds:
   # CI is set or in a tree without .git (the Testbed's copy).
   lefthook: false
 minimumReleaseAgeExclude:
-  - "@figentra-oss/flow@0.2.3"
+  # Figentra's own open packages install the day they publish (owner, 2026-11-09).
+  - "@figentra-oss/*"
   # Our own engine, published from core's CI (STA-1966); 0.21.0 since 2026-11-08.
   - "@stackra/console@0.21.0"
   - "@stackra/container@0.21.0"
