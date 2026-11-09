@@ -137,9 +137,13 @@ export function packageFindings(path, before, after) {
  */
 export function codeowners(owner, extra = []) {
   const handle = `@${owner.replace(/^@/, "")}`;
-  const lines = [...OWNER_ONLY, "package.json", ...extra].map(
-    (g) => `${g.startsWith("**/") ? g : `/${g}`} ${handle}`,
-  );
+  // The pre-0.2.2 config name stays owner-only for `land` and the approval check, but CODEOWNERS no longer names it:
+  // `sync` renames that file before it writes this one, so the line could only ever show a retired name (ADR 0529 d5).
+  const lines = [
+    ...OWNER_ONLY.filter((g) => g !== LEGACY_CONFIG_FILE),
+    "package.json",
+    ...extra,
+  ].map((g) => `${g.startsWith("**/") ? g : `/${g}`} ${handle}`);
   return [
     `# Written by \`${NAME} sync\` from the owner-only list (STA-1856); change that list, not this file.`,
     "# GitHub matches these case-sensitively; land and the approval check also catch other cases.",

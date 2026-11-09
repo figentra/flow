@@ -11,6 +11,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { codeowners, ownerOnlyPaths } from "../lib/owner-only.mjs";
+import { CONFIG_FILE, LEGACY_CONFIG_FILE } from "../lib/product.mjs";
 
 test("owner-only: every file under .flow/overrides/ is the owner's; the rest of .flow/ is not", () => {
   assert.deepEqual(
@@ -31,4 +32,14 @@ test("owner-only: every file under .flow/overrides/ is the owner's; the rest of 
 
 test("CODEOWNERS: asks the owner for .flow/overrides/", () => {
   assert.ok(codeowners("o").split("\n").includes("/.flow/overrides/** @o"));
+});
+
+test("CODEOWNERS: names flow.config.json, never the retired figentra-flow name; the old file stays owner-only", () => {
+  const lines = codeowners("o").split("\n");
+  assert.ok(lines.includes(`/${CONFIG_FILE} @o`));
+  assert.ok(
+    !lines.some((line) => /figentra-flow/i.test(line)),
+    "no retired figentra-flow name in CODEOWNERS",
+  );
+  assert.deepEqual(ownerOnlyPaths([LEGACY_CONFIG_FILE]), [LEGACY_CONFIG_FILE]);
 });
