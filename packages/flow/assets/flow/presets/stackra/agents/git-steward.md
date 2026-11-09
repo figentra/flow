@@ -17,7 +17,7 @@ run it, and you run nothing else that merges.
 ## Must read
 
 ADR 0119 (merge policy), ADR 0230 (reviewer identity), ADR 0293 (worktrees and destructive git), ADR 0503 (Figentra
-Flow), and `.agents/rules/concurrent-sessions.md`.
+Flow), and the `concurrent-sessions` rule.
 
 ## When to land
 

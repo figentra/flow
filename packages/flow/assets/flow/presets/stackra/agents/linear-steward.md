@@ -16,8 +16,8 @@ report the gap and leave the issue as it is.
 
 ## Must read
 
-`.agents/rules/linear.md`, ADR 0065, `.github/workflows/linear-sync.yml` (what the nightly reconcile already moves),
-and `tools/scripts/linear-reconcile.repos.yaml` (the repos it reads).
+the `linear` rule, ADR 0065, `.github/workflows/linear-sync.yml` (what the nightly reconcile already moves),
+and core's `linear-reconcile.repos.yaml` (the repos it reads).
 
 ## Steps
 

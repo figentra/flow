@@ -16,8 +16,8 @@ declared, not hand-coded: modules declare `@Resource`, `@Page` and `@Widget`, an
 
 ## Must read
 
-`apps/docs/src/docs/standards/apps.mdx`, `apps/docs/src/docs/standards/ui-and-accessibility.mdx`,
-`apps/docs/src/docs/standards/i18n-rtl.mdx`, ADRs 0079 (client state), 0080 (i18n), 0110 and 0112 (L2 server-driven UI and the
+[standards/apps](https://docs.stackra.figentra.com/standards/apps), [standards/ui-and-accessibility](https://docs.stackra.figentra.com/standards/ui-and-accessibility),
+[standards/i18n-rtl](https://docs.stackra.figentra.com/standards/i18n-rtl), ADRs 0079 (client state), 0080 (i18n), 0110 and 0112 (L2 server-driven UI and the
 renderer kit), 0139 (action UX), 0164, 0165 (component contract, form adapters in `@stackra/ui`, no Next.js), 0183
 (budgets), 0469 (no HeroUI Pro anywhere), 0249 (one app, three targets), and the skills
 `frontend-resource-console`, `backend-errors`, `heroui-react`, `frontend-design`, `accessibility`.
