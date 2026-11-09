@@ -5,7 +5,8 @@
  *   with `direct`, into each tool's own folder by the harness adapters `harnesses` names, their capability blocks
  *   filled per tool (without `harnesses`, Claude Code skills and OpenCode commands with today's text, STA-2098);
  *   the preset's agent definitions (`agents/`, as
- *   `.agents/agents/<id>.md` or, with `direct`, `.claude/agents/<id>.md`), the approval workflow (its secret names
+ *   `.agents/agents/<id>.md`, which `projectAssistants` turns into each assistant's own agents with `direct`), the
+ *   approval workflow (its secret names
  *   from `preset.yml`'s `approve`; with `secrets.oidc`, its event lane from `approve.workflows` and
  *   `approve.requesters`, the L2 design's PR D, and with a `github-actions` runner its `verdict` job, PR F) and, with `apps.owner`, a CODEOWNERS for the owner-only paths (STA-1856); the
  *   preset's own skills (`skills/<name>/**`, beside the `flow-*` ones) and, with `renderReference`, its agent
@@ -66,6 +67,7 @@ import {
 import { applyOverrides, loadOverrides, shapedBy } from "./overrides.mjs";
 import { codeowners } from "./owner-only.mjs";
 import { policyProblems } from "./policies.mjs";
+import { projectAssistants } from "./project-assistants.mjs";
 import { resolveProfile, selects } from "./profiles.mjs";
 import {
   APPROVE_WORKFLOW,
@@ -243,8 +245,7 @@ function renderPreset(root, direct, overrides) {
       out.set(path, text);
   }
   for (const [id, text] of presetDocs(root, "agents", source))
-    if (selects(profile, "agents", id))
-      out.set(direct ? `.claude/agents/${id}.md` : `.agents/agents/${id}.md`, text);
+    if (selects(profile, "agents", id)) out.set(`.agents/agents/${id}.md`, text);
   // STA-1871: the preset's agent rules (the worktree rule among them).
   const rulesDir = direct ? ".claude/rules" : ".agents/rules";
   /** @type {Map<string, string>} */
@@ -824,5 +825,11 @@ export function installProblems(root, version = VERSION) {
   // A v1 lock recorded neither digest; the next `sync` records both.
   if (lock.preset.digest && lock.overrides !== overridesDigest(root))
     problems.push(`${OVERRIDES}/ differs from what ${LOCK} records (run \`${NAME} sync\`)`);
+  // A direct sync also owns each assistant's projection of `.agents/` (STA-2098 H6).
+  if (syncedDirect(lock)) {
+    const projection = projectAssistants(root, { check: true });
+    for (const line of [...projection.drift, ...projection.conflict, ...projection.broken])
+      problems.push(`${line} (run \`${NAME} sync --direct\`)`);
+  }
   return problems;
 }
