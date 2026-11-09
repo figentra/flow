@@ -22,7 +22,7 @@ import { FLOW_ASSETS, presetDir } from "../lib/flow-dir.mjs";
 /**
  * @typedef {{ bash: import("./bash.mjs").BashRule[], paths: import("./paths.mjs").PathRule[], planGated?: RegExp,
  *   prompt?: import("./prompt-hints.mjs").PromptTable, session?: import("./session-context.mjs").SessionTable,
- *   contextCommands?: string[][] }} GuardTables
+ *   contextCommands?: string[][], cleanWhenMerged?: boolean }} GuardTables
  */
 
 const NEUTRAL = join(FLOW_ASSETS, "presets", "neutral", "guard");
@@ -85,5 +85,6 @@ export async function loadTables(root, modules) {
     contextCommands: Array.isArray(config.session?.contextCommands)
       ? config.session.contextCommands
       : undefined,
+    cleanWhenMerged: config.clean?.whenMerged === true,
   };
 }
