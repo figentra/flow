@@ -488,6 +488,25 @@ test("the baseline pins mise on a mise-action setup step that names no version, 
   assert.deepEqual(stepsOf([other])[1], other);
 });
 
+test("the baseline runs the after-install steps between the install and the tasks", () => {
+  const save = {
+    name: "Save the Uniwind cache",
+    if: "steps.filled.outputs.filled == 'true'",
+    uses: "actions/cache/save@0000000000000000000000000000000000000000",
+    with: { path: "~/.uniwind/cache/pro", key: "uniwind-pro-1-x" },
+  };
+  const steps = parseYaml(
+    baselineWorkflow({
+      install: "pnpm install --frozen-lockfile --child-concurrency=1",
+      afterInstall: [save],
+    }),
+  ).jobs.baseline.steps;
+  const at = steps.findIndex((/** @type {any} */ s) => s.name === "Install");
+  assert.equal(steps[at].run, "pnpm install --frozen-lockfile --child-concurrency=1");
+  assert.deepEqual(steps[at + 1], save);
+  assert.equal(steps[at + 2].name, "Tasks");
+});
+
 test("the fflow rename: sync renames the old config once, removes the old workflows, refuses both configs", (t) => {
   const root = mkdtempSync(join(tmpdir(), "flow-rename-"));
   t.after(() => rmSync(root, { recursive: true }));

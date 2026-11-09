@@ -173,6 +173,7 @@ export const SCHEMA = {
         mustPass: { type: "array", items: str },
         install: str,
         setup: { type: "array", items: { type: "object" } },
+        afterInstall: { type: "array", items: { type: "object" } },
         branch: str,
       },
     },

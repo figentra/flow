@@ -4,7 +4,7 @@
  *   the repository's own setup steps, its install, one `turbo run <tasks> --continue --summarize`, then `gate baseline
  *   save`; a push to the default branch uploads the results as that commit's baseline, a pull request checks against
  *   the nearest one.
- * Boundary: returns text; writes nothing. The setup steps come from the owner-only config, as block YAML with their
+ * Boundary: returns text; writes nothing. The setup and after-install steps come from the owner-only config, as block YAML with their
  *   values unchanged, except that a `jdx/mise-action` step with no `version` gets `MISE_VERSION` (an unpinned
  *   mise-action downloads the latest mise, which once returned 504 for hours); every action Flow adds is pinned to
  *   a commit.
@@ -64,14 +64,17 @@ function blockYaml(value, indent) {
 
 /**
  * The workflow's YAML.
- * @param {{ tasks?: string[], install?: string, setup?: Record<string, unknown>[], branch?: string }} baseline
+ * @param {{ tasks?: string[], install?: string, setup?: Record<string, unknown>[],
+ *   afterInstall?: Record<string, unknown>[], branch?: string }} baseline
  */
 export function baselineWorkflow(baseline) {
   const { tasks, install, branch } = { ...BASELINE_DEFAULTS, ...baseline };
   // A step is written as block YAML (the YAML standard, STA-299, refuses flow mappings), its first key on the `- ` line.
-  const setup = (baseline.setup ?? [])
-    .map((s) => `      - ${blockYaml(pinnedMise(s), 8).slice(8)}`)
-    .join("");
+  const steps = (/** @type {Record<string, unknown>[] | undefined} */ list) =>
+    (list ?? []).map((s) => `      - ${blockYaml(pinnedMise(s), 8).slice(8)}`).join("");
+  const setup = steps(baseline.setup);
+  // After the install, before the tasks: a cache save that should only run once the install filled it, say.
+  const afterInstall = steps(baseline.afterInstall);
   return `# Written by \`${NAME} sync\` from the config's \`baseline\` (STA-1942); \`${NAME} gate ci\` fails on a hand edit.
 # One check, "${BASELINE_CHECK}": a pull request passes when it fails no task that passed on main.
 name: ${NAME} baseline
@@ -104,7 +107,7 @@ jobs:
           persist-credentials: false
 ${setup}      - name: Install
         run: ${install}
-      # Failures are judged against main's baseline, so the run itself never fails the job.
+${afterInstall}      # Failures are judged against main's baseline, so the run itself never fails the job.
       - name: Tasks
         run: pnpm exec turbo run ${tasks.join(" ")} --continue --summarize || true
       - name: Results

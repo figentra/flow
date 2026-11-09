@@ -8,3 +8,6 @@ already run on Node 24.
 
 The approval workflow's app-token step passes `client-id:` instead of `app-id:` (the same value), as
 `create-github-app-token` now names it.
+
+The config's `baseline.afterInstall` steps run in the baseline workflow after the install and before the tasks, for
+example a cache save that should only run once the install filled the cache.
