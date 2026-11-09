@@ -1,0 +1,127 @@
+---
+title: Getting started
+description: Install Flow, configure a repository and take a first change from spec to pull request.
+---
+
+This guide sets Flow up in a GitHub repository with the `neutral` preset and GitHub Issues as the tracker. It takes a
+first change from spec to tasks. The gate and landing need a one-time GitHub App setup, covered at the end.
+
+## Before you start
+
+- Node.js 24 or later, and git.
+- A GitHub repository you can push to.
+- pnpm, npm or yarn. The examples use pnpm.
+- A coding tool Flow renders commands for: Claude Code, OpenCode, Codex, GitHub Copilot or Cursor.
+
+## 1. Install
+
+Flow is published to the Figentra registry, which anyone can read without a token. Map its two scopes in `.npmrc`:
+
+```ini
+@figentra-oss:registry=https://npm.stackra.figentra.com/
+@stackra:registry=https://npm.stackra.figentra.com/
+```
+
+Then add Flow as a dev dependency:
+
+```sh
+pnpm add -D @figentra-oss/flow
+```
+
+## 2. Initialise the repository
+
+```sh
+pnpm exec fflow init
+```
+
+`init` writes:
+
+- `.flow/`, with its README, a starter `constitution.md` and a `.gitignore`;
+- a starter `flow.config.json`, holding only the schema and the version, so every default applies;
+- the `flow-*` commands, rendered from the `neutral` preset.
+
+The constitution holds the rules your specs and plans are checked against. Replace the starter text with your team's
+own before the first spec.
+
+## 3. Configure
+
+`flow.config.json` names the adapters. Nothing defaults to an organisation's choice: a command that needs a setting you
+have not made refuses and names it. A starting point for a GitHub-hosted team:
+
+```json
+{
+  "$schema": "./node_modules/@figentra-oss/flow/schema/flow.config.schema.json",
+  "version": 1,
+  "preset": "neutral",
+  "harnesses": ["claude-code"],
+  "credentials": { "kind": "gh-user" },
+  "tracker": { "kind": "github-issues", "branchPrefix": "work" },
+  "gate": { "check": "pnpm test" }
+}
+```
+
+- `harnesses` lists the coding tools to render the commands for. Add `"opencode"`, `"codex"`, `"copilot"` or
+  `"cursor"` as you need them.
+- `credentials` says how Flow calls GitHub. `gh-user` uses your own `gh` login, on purpose. `env` reads `GH_TOKEN` from
+  the environment, and `wrapper` runs your own command that hands `gh` a bot's token.
+- `tracker` with `github-issues` makes issue `#12` the key `gh-12`. Linear (`team`, `branchPrefix`) and Jira (`site`,
+  `project`, `branchPrefix`) work the same way.
+- `gate.check` is the command the gate runs. The default is `pnpm verify`.
+
+Then render and check the setup:
+
+```sh
+pnpm exec fflow sync --direct   # render the commands, agents, rules, hooks and workflows
+pnpm exec fflow doctor          # Node, git, the configuration, the preset and the credentials, each with its fix
+```
+
+Commit everything `sync` wrote, `.flow/lock.json` included. Add `fflow check` to CI: it fails when a rendered file is
+edited by hand, when the preset changed without an `fflow update`, or when the configuration breaks its schema.
+
+## 4. Take a first change through
+
+Open an issue for the change, then start its worktree:
+
+```sh
+pnpm exec fflow start gh-12
+```
+
+`start` makes the branch `work/gh-12-<slug>` and the worktree `.claude/worktrees/gh-12-<slug>`, and adds
+`spec.md` from the spec template in `.agents/specs/gh-12-<slug>/`. In the worktree, ask your coding tool:
+
+1. `/flow-specify` writes the spec from your request: the requirements, the acceptance criteria and the **Tier**.
+2. `/flow-clarify` asks the open questions, in the tool's own question UI where it has one, and records each answer in
+   the spec.
+3. `/flow-plan` writes the plan and the tasks. A `feature` or `big` spec stops here for its approver first (see
+   [Approvals](/approvals)).
+4. `/flow-build` builds the tasks wave by wave, a wave's tasks in parallel, and stops at a failed wave. A task is
+   ticked only when `fflow task done` sees its check pass at a clean head.
+
+At any point, `fflow next` says the spec's stage and the command that moves it on. `fflow gate check <folder>` says
+what the next state still needs, with the line to fix.
+
+Trivial work needs no spec: `fflow start gh-13 --no-spec`.
+
+## 5. Gate and land
+
+Push the branch and open the pull request. Two more things need setting up once, by the repository's owner:
+
+- **A gate App.** `fflow/gate` is posted as a GitHub App you own, never with a personal token.
+  `fflow app create gate` creates one from a terminal and prints the `apps.gate.login` to set.
+- **A runner.** Where the checks run: `"runner": { "kind": "github-actions" }` runs them in the pull request's own
+  workflow (`fflow init --runner github-actions` writes it). `local`, `ssh` and `command` run them elsewhere.
+
+[Gates](/gates) covers the setup and what the gate checks. Once it's in place:
+
+```sh
+pnpm exec fflow gate run   # run the checks at the pushed head; fflow/gate goes on the commit
+pnpm exec fflow land       # merge once it is green, approved and free of owner-only changes
+```
+
+`land` sets the issue Done, removes the worktree and deletes the branch.
+
+## Next
+
+- [Presets](/presets): what `neutral` renders, and how to bring your own.
+- [Gates](/gates): the state gates, the trace and the gate on the pull request.
+- [Approvals](/approvals): tiers, approval stops and how landing decides.

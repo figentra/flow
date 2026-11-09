@@ -1,0 +1,98 @@
+---
+title: Approvals
+description: Spec tiers and approval stops, and how landing decides who may merge what.
+---
+
+Flow asks a person at two points: when a spec is big enough to need a decision before it's built, and when a pull
+request is ready to merge. Agents work between those points; they never record an approval nobody gave.
+
+## Tiers and approval stops
+
+Every spec declares its **Tier** and names its **Approver**:
+
+| Tier      | Spec                                     | Approval stops                                                     |
+| --------- | ---------------------------------------- | ------------------------------------------------------------------ |
+| `trivial` | none (`fflow start <key> --no-spec`)     | none                                                               |
+| `small`   | one file, with its design and tasks      | none                                                               |
+| `feature` | `spec.md`, then `plan.md` and `tasks.md` | one, after the spec and plan, before tasks                         |
+| `big`     | `spec.md`, then `plan.md` and `tasks.md` | two: after the spec, before planning; after the plan, before tasks |
+
+At a stop, `/flow-plan` asks the approver to **Approve**, **Revise with notes** or **Reject**:
+
+- **Approve** adds `— Approved by <who> <YYYY-MM-DD>` to the spec's Status line and its Status history.
+- **Revise** applies the notes and asks again.
+- **Reject** sets the spec to Abandoned.
+
+The gate reads the approval before tasks and code: a `feature` spec can't reach Tasked, and a `big` one can't reach
+Planned, without it. An approval holds only for the documents it approved. When `spec.md` or `plan.md` changes after
+it, `fflow check` names the stage to approve again, and `fflow next` sends the spec back to that stop.
+
+## Questions while unattended
+
+An agent running unattended can't wait in a chat for an answer, so it asks on the issue instead:
+
+```sh
+fflow spec ask <key> --async   # posts the spec's open questions on the issue as Q1, Q2, …
+fflow spec resume <key>        # records the answers given since, and lists what is still open
+```
+
+Someone answers on the issue, one line per question (`Q1: <answer>`). The spec stays the record: `resume` writes each
+answer into it, and the gate keeps refusing Clarified while a question is open.
+
+## Landing
+
+`fflow land` is the lander's checklist as code. It merges a pull request only when it is:
+
+- open, not a draft, not conflicting, and based on the default branch;
+- green on `fflow/gate` on its exact head, from the gate App;
+- titled with a conventional commit header;
+- approved as its spec's tier requires;
+- free of a blocking finding that Flow's own review confirmed on its newest reviewed head;
+- free of owner-only changes.
+
+**Owner-only changes** are the ones only the repository's owner lands:
+
+- workflows and actions;
+- what a deploy or release runs;
+- secrets and the secret guards;
+- the dependency catalog;
+- Flow's own configuration;
+- repository settings and branch protection;
+- billing and legal files.
+
+Add your own globs with `approve.ownerOnly`. With `apps.owner` set, `sync` also writes `.github/CODEOWNERS` for these
+paths, so GitHub asks the owner too.
+
+`land` lists every rule that fails, not only the first. It squash-merges with GitHub's head guard, so the merge fails if
+the head moved. After the merge it sets the issue Done, removes the worktree and deletes the branch.
+
+### The AI review is advisory
+
+A change in a tier listed in `review.required` gets an AI review. The verdict that counts is the review App's unedited
+`AI-REVIEW: PASS` comment on the exact head, never one from the change's own authors. When it is missing, stale or a
+FAIL, `land` warns and lands anyway. A blocking finding that Flow's own review confirmed is different: it stops `land`.
+
+### Main's land lane
+
+A repository can let its default branch approve and merge on events instead of from a person's terminal. A land
+request is the `fflow:land` label on a pull request, added by someone with write access or by an App the configuration
+lists. `fflow land` adds it and waits.
+
+The lane runs from the default branch's `fflow-approve.yml`. Each job that writes mints its own short-lived App token and
+revokes it when done; nothing uses a repository secret. It keeps one comment and one `fflow/land` status on the head:
+
+| State      | Meaning                                                                        |
+| ---------- | ------------------------------------------------------------------------------ |
+| `approved` | approved at this head; the lane merges it                                      |
+| `waiting`  | a required check or the gate is still running, or the pull request is a draft  |
+| `owner`    | an owner-only change: once the owner approves this head, comment `/fflow land` |
+| `refused`  | the comment lists each reason; fix them and push, then ask again               |
+
+A push removes the label, so every request is for one head. The organisation variable `FIGENTRA_AUTOMATION` is the
+freeze switch: `on` runs everything, `merge-only` merges what was approved but approves nothing new, and any other value
+runs nothing but the label's removal.
+
+## Credentials
+
+Every GitHub call uses only the credentials `flow.config.json` names. Flow never falls back to a personal login, and
+the gate's status and the land lane's approvals come only from Apps, never from a user's token.

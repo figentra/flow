@@ -1,0 +1,91 @@
+---
+title: Gates
+description: What each spec state requires, how requirements trace to tests, and the gate on a pull request.
+---
+
+Flow has two kinds of gate. The **state gates** check a spec against the state it claims, from Draft to Done. The
+**pull request gate** runs the repository's checks at the pushed head and posts `fflow/gate` on the commit. A gate
+refuses the work, never the person: each refusal names what is missing, the file and line, and the fix.
+
+## The state gates
+
+Every spec lives in its own folder, `.agents/specs/<key>-<slug>/`, named by its issue. The `flow-*` commands run the gate as
+they move a spec on, and `fflow gate check <folder>` runs it by hand.
+
+| State        | Requires                                                                                                                               |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Draft        | the folder `<key>-<slug>`, and an issue line, when set, naming the folder's key                                                        |
+| Clarified    | clarifications complete, a real issue key, no `[NEEDS CLARIFICATION` marker left, a Status history line                                |
+| Planned      | the design written (the spec's Design section for a `small` spec, `plan.md` for `feature` and `big`), and the approvals the tier needs |
+| Tasked       | `tasks.md` passes `fflow gate tasks`: task ids, the requirements each covers, acyclic dependencies, full coverage                      |
+| Implementing | at least one task ticked, and `fflow trace drift` finds no change outside the members the spec names                                   |
+| Done         | every live task ticked, and every requirement covered by a test tagged `@covers <key>:FR-001`                                          |
+
+A status may lag behind its work, never run ahead of it. The `stackra` preset adds rules: the Impact questionnaire at
+Clarified, the Constitution Check, deploy modes and correctness properties at Planned, and task routes at Tasked.
+
+Tasks are ticked by Flow, not by hand. `fflow task done <key> <T###>` ticks a task only when its check command exits 0
+at a clean head, and records it. `fflow check` fails on a task ticked without passing evidence, and on an approval whose
+documents changed since it was given.
+
+## Traceability
+
+Every requirement traces through the work:
+
+```text
+requirement (FR) → task (T###, covers: FR-…) → test (@covers <key>:FR-…) → commit (Refs: <key>) → pull request
+```
+
+- `fflow trace trace <folder>` prints the matrix.
+- `fflow trace drift` names a change outside what the spec says it touches.
+- `fflow trace ci` makes the Done rules a CI check.
+
+`fflow parse <file>` prints what Flow reads from a spec, plan or tasks file, as JSON, when a gate's reading surprises
+you.
+
+## The pull request gate
+
+`fflow gate run` checks the pushed head of the branch, never anything uncommitted. It refuses a dirty tree or a head
+that is not the remote branch tip. It runs `gate.check` from `flow.config.json` (default `pnpm verify`) through the
+configured runner:
+
+| Runner           | Where the checks run                                                                           |
+| ---------------- | ---------------------------------------------------------------------------------------------- |
+| `github-actions` | the pull request's own workflow, `fflow-gate.yml`, with a read-only token and no secret        |
+| `local`          | the caller's machine                                                                           |
+| `ssh`            | a box you name by host                                                                         |
+| `command`        | your own command, for example a test fleet's CLI; `--shards <n>` fans the check out by package |
+
+The result is one commit status, `fflow/gate`, on that exact head. It is posted as the gate App the configuration
+names under `apps.gate`, never with a personal token, and `success` only when the check exited 0. `land` trusts no
+other source.
+
+### The GitHub Actions verdict
+
+With the `github-actions` runner, the pull request's workflow can't post the status: it holds only a read-only token.
+When its run completes, the default branch's `fflow-approve.yml` judges it. The `verdict` job:
+
+1. refuses unless the run is this repository's gate workflow, for an open pull request from this repository;
+2. reads the `check` job's conclusion from GitHub's API, never from an artifact or a log;
+3. holds the status at `pending` until the owner approves when the pull request changes `.github/workflows/`, because
+   the pull request controls its own copy of the gate workflow;
+4. mints a short-lived gate App token and posts `fflow/gate`.
+
+The job decrypts the App's key itself, signed in by GitHub OIDC (`secrets.oidc` in the configuration), so the
+repository holds no secret for it. The owner sets this up once: the App's `statuses: write` permission, the decrypt
+grant for the `fflow-approve` environment on the default branch only, and the organisation variable
+`FIGENTRA_AUTOMATION` set to `on`.
+
+## When main is red: the baseline gate
+
+A repository whose main already fails some checks can require the `Baseline` check instead of the full gate, so routine
+pull requests can still land. Add `baseline` to the configuration and `sync` renders `fflow-baseline.yml`. On a pull
+request it compares each task with main's recorded results and blocks:
+
+- a task that passed on main, or a new task, failing;
+- a task main ran that the pull request dropped or skipped;
+- a task listed in `mustPass` (isolation, authorization, secrets and licence tests, for example) that is not green;
+- more failed tasks than main has.
+
+It fails closed when no baseline exists. Security checks stay required on their own. `Baseline` is a merge gate, not a
+release certificate: a release still needs a fully green run.

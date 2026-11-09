@@ -1,0 +1,52 @@
+---
+title: Figentra Flow
+description: The spec CLI for spec-driven development. Nothing ships off-spec.
+---
+
+Figentra Flow (`fflow`) is the spec CLI for spec-driven development, for teams that write specs before code and for
+the coding agents that work beside them. A change starts as a spec, stops for a person's approval, becomes a plan and
+tasks, passes a gate and lands as a reviewed pull request. Flow keeps the spec, the plan, the tasks and the tests in
+agreement as the work moves, and refuses a step that runs ahead of its work, with the reason and the fix.
+
+Flow checks agreement and gates what may land. It never claims the code is correct.
+
+## The path of a change
+
+| Step    | What happens                                                                              | Where                                 |
+| ------- | ----------------------------------------------------------------------------------------- | ------------------------------------- |
+| Spec    | The agent writes `spec.md` from the request and asks the open questions.                  | `/flow-specify`, `/flow-clarify`      |
+| Approve | A `feature` or `big` spec stops for its approver before planning or before tasks.         | [Approvals](/approvals)               |
+| Plan    | The plan and its PR-sized tasks, each covering named requirements.                        | `/flow-plan`, `fflow plan`            |
+| Build   | Each task is ticked only when its check passes at a clean head.                           | `fflow task start`, `fflow task done` |
+| Gate    | The repository's checks run at the pushed head, and `fflow/gate` is posted on the commit. | `fflow gate run`, [Gates](/gates)     |
+| Land    | The pull request merges only when it is green, approved and free of owner-only changes.   | `fflow land`                          |
+| Release | Changesets, the version pull request and, where needed, release trains.                   | `fflow release`, `fflow train`        |
+
+Each spec moves through six states, in order: **Draft → Clarified → Planned → Tasked → Implementing → Done**. A status
+may lag behind its work, never run ahead of it.
+
+## What Flow renders
+
+`fflow sync` renders a repository's agent setup from a [preset](/presets): the `flow-*` commands for each coding tool,
+the agents, rules and skills, the guard hook, the git hooks and the CI workflows. It records every file with its digest
+in `.flow/lock.json`, and `fflow check` fails CI when one drifts.
+
+The tools are adapters, chosen per repository in `flow.config.json`:
+
+- **Tracker:** Linear, GitHub Issues or Jira.
+- **Runner:** GitHub Actions, your own machine, a box over SSH, or your own command.
+- **Coding tools:** Claude Code, OpenCode, Codex, GitHub Copilot and Cursor.
+- **Credentials and secrets:** named by you. Flow never falls back to a personal login and never prints a secret.
+
+## Start here
+
+- [Getting started](/getting-started): install Flow, configure a repository and take a first change through.
+- [Presets](/presets): `neutral`, `stackra` and writing your own.
+- [Gates](/gates): what each state requires, and the gate on the pull request.
+- [Approvals](/approvals): who approves what, and how landing decides.
+
+The full command reference is the package README:
+[`packages/flow/README.md`](https://github.com/figentra/flow/blob/main/packages/flow/README.md).
+
+Flow is open source under the MIT licence, made by Figentra Technologies L.L.C. Its command texts and two templates
+derive from [GitHub spec-kit](https://github.com/github/spec-kit) (MIT).

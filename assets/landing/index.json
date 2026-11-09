@@ -1,0 +1,935 @@
+[
+  {
+    "id": "header",
+    "block": "experience.site_header",
+    "props": {
+      "links": [
+        {
+          "label": {
+            "en": "Docs",
+            "ar": "التوثيق"
+          },
+          "href": "https://github.com/figentra/flow/tree/main/docs/content",
+          "isExternal": true
+        },
+        {
+          "label": {
+            "en": "Getting started",
+            "ar": "البدء"
+          },
+          "href": "https://github.com/figentra/flow/tree/main/docs/content/getting-started.mdx",
+          "isExternal": true
+        },
+        {
+          "label": {
+            "en": "Presets",
+            "ar": "الإعدادات المسبقة"
+          },
+          "href": "https://github.com/figentra/flow/tree/main/docs/content/presets.mdx",
+          "isExternal": true
+        }
+      ],
+      "githubHref": "https://github.com/figentra/flow",
+      "navLabel": {
+        "en": "Site",
+        "ar": "الموقع"
+      }
+    }
+  },
+  {
+    "id": "hero",
+    "block": "experience.hero_machine",
+    "props": {
+      "title": {
+        "en": "Nothing ships off-spec.",
+        "ar": "لا شيء يُشحَن خارج المواصفة."
+      },
+      "lede": {
+        "en": "Figentra Flow, the spec CLI for spec-driven development, takes every change from spec to merged pull request, with a gate at each step. The spec, the plan, the tasks and the tests stay in agreement, for the people who write them and the coding agents that build them.",
+        "ar": "فيجنترا فلو، أداة سطر الأوامر للتطوير القائم على المواصفات، تأخذ كل تغيير من المواصفة إلى طلب دمج مدموج، مع بوابة عند كل خطوة. فتبقى المواصفة والخطة والمهام والاختبارات متّفقة، للناس الذين يكتبونها ولوكلاء البرمجة الذين يبنونها."
+      },
+      "primary": {
+        "label": {
+          "en": "Get started",
+          "ar": "ابدأ"
+        },
+        "href": "https://github.com/figentra/flow/tree/main/docs/content/getting-started.mdx",
+        "isExternal": true
+      },
+      "command": "pnpm add -D @figentra-oss/flow",
+      "art": {
+        "src": "/art/flow",
+        "width": 505,
+        "height": 588
+      },
+      "horizon": {
+        "pattern": "strata",
+        "poster": {
+          "light": "/posters/strata-light.png",
+          "dark": "/posters/strata-dark.png"
+        }
+      }
+    }
+  },
+  {
+    "id": "statement",
+    "block": "experience.statement",
+    "props": {
+      "text": {
+        "en": "A spec written once and left behind drifts from the code. Flow keeps it in the loop: every state has a *gate*, every requirement traces to a *task and a test*, and every refusal names *the line to fix*.",
+        "ar": "المواصفة التي تُكتب مرة ثم تُترك تبتعد عن الشيفرة. أما فلو فتُبقيها في قلب العمل: لكل حالة *بوابة*، ولكل متطلّب *مهمة واختبار* يصل إليهما، وكل رفض يسمّي *السطر الذي يُصلَح*."
+      }
+    }
+  },
+  {
+    "id": "path",
+    "block": "experience.chapter_title",
+    "props": {
+      "title": {
+        "en": "Follow one change.",
+        "ar": "تتبّع تغييرًا واحدًا."
+      },
+      "subtitle": {
+        "en": "One issue, gh-12, from the request to the merged pull request.",
+        "ar": "مهمة واحدة، gh-12، من الطلب إلى طلب الدمج المدموج."
+      }
+    }
+  },
+  {
+    "id": "specify",
+    "block": "experience.station",
+    "props": {
+      "id": "specify",
+      "title": {
+        "en": "Specify",
+        "ar": "حدِّد"
+      },
+      "body": {
+        "en": "Your coding agent turns the request into spec.md: the requirements, the acceptance criteria and the tier. Each open question is marked, never guessed.",
+        "ar": "يحوّل وكيل البرمجة الطلب إلى spec.md: المتطلّبات ومعايير القبول والفئة. وكل سؤال مفتوح يُعلَّم ولا يُخمَّن."
+      },
+      "status": {
+        "en": "wrote spec.md, 2 questions open",
+        "ar": "كُتب spec.md، وبقي سؤالان مفتوحان"
+      }
+    },
+    "children": [
+      {
+        "id": "specify-code",
+        "block": "experience.step_switcher",
+        "props": {
+          "label": {
+            "en": "The spec",
+            "ar": "المواصفة"
+          },
+          "steps": [
+            {
+              "id": "spec",
+              "label": {
+                "en": "Spec",
+                "ar": "المواصفة"
+              },
+              "title": {
+                "en": "The header the gate reads",
+                "ar": "الترويسة التي تقرؤها البوابة"
+              },
+              "body": {
+                "en": "The status, the tier and the approver come first. The status may lag behind the work, never run ahead of it.",
+                "ar": "تأتي الحالة والفئة والمعتمِد أولًا. وقد تتأخّر الحالة عن العمل، لكنها لا تسبقه أبدًا."
+              },
+              "code": {
+                "filename": "spec.md",
+                "language": "markdown",
+                "source": "# Feature Specification: Export invoices\n\n**Status**: Draft\n\n**Tier**: feature\n\n**Approver**: dana\n\n**Issue**: gh-12\n\n**Clarifications status**: pending\n"
+              }
+            },
+            {
+              "id": "requirement",
+              "label": {
+                "en": "Requirement",
+                "ar": "المتطلّب"
+              },
+              "title": {
+                "en": "A requirement with an open question",
+                "ar": "متطلّب فيه سؤال مفتوح"
+              },
+              "body": {
+                "en": "A marker holds the question in the spec until someone answers it.",
+                "ar": "تُبقي العلامة السؤالَ في المواصفة إلى أن يجيب عنه أحد."
+              },
+              "code": {
+                "filename": "spec.md",
+                "language": "markdown",
+                "source": "- **FR-001**: The system MUST export a month's invoices as one CSV file.\n- **FR-002**: The export MUST include [NEEDS CLARIFICATION: credit notes too?]\n"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "clarify",
+    "block": "experience.station",
+    "props": {
+      "id": "clarify",
+      "title": {
+        "en": "Clarify",
+        "ar": "وضِّح"
+      },
+      "body": {
+        "en": "The agent asks in your tool's own question UI, or on the issue when it runs unattended. Every answer is written into the spec, and the gate refuses Clarified while a question is open.",
+        "ar": "يسأل الوكيل بواجهة الأسئلة في أداتك، أو على المهمة حين يعمل دون حضور أحد. وتُكتب كل إجابة في المواصفة، وترفض البوابة حالة Clarified ما دام سؤال مفتوحًا."
+      },
+      "status": {
+        "en": "Clarified: every question answered",
+        "ar": "Clarified: أُجيب عن كل سؤال"
+      }
+    },
+    "children": [
+      {
+        "id": "clarify-code",
+        "block": "experience.step_switcher",
+        "props": {
+          "label": {
+            "en": "The answers",
+            "ar": "الإجابات"
+          },
+          "steps": [
+            {
+              "id": "record",
+              "label": {
+                "en": "Record",
+                "ar": "السجل"
+              },
+              "title": {
+                "en": "Answers live in the spec",
+                "ar": "الإجابات في المواصفة"
+              },
+              "body": {
+                "en": "Each answer replaces its marker and is listed under Clarifications, so the spec stays the record.",
+                "ar": "تحلّ كل إجابة محلّ علامتها وتُدرَج تحت Clarifications، فتبقى المواصفة هي السجل."
+              },
+              "code": {
+                "filename": "spec.md",
+                "language": "markdown",
+                "source": "## Clarifications\n\n### Session 2026-11-09\n\n- Q: Include credit notes in the export? → A: Yes, as negative lines.\n"
+              }
+            },
+            {
+              "id": "async",
+              "label": {
+                "en": "Unattended",
+                "ar": "دون حضور"
+              },
+              "title": {
+                "en": "Asked on the issue",
+                "ar": "السؤال على المهمة"
+              },
+              "body": {
+                "en": "An agent that runs unattended posts its questions on the issue and records the answers given there.",
+                "ar": "الوكيل الذي يعمل دون حضور أحد ينشر أسئلته على المهمة، ثم يسجّل الإجابات التي تُعطى هناك."
+              },
+              "code": {
+                "filename": "terminal",
+                "language": "sh",
+                "source": "fflow spec ask gh-12 --async\nfflow spec resume gh-12\n"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "approve",
+    "block": "experience.station",
+    "props": {
+      "id": "approve",
+      "title": {
+        "en": "Approve",
+        "ar": "اعتمِد"
+      },
+      "body": {
+        "en": "A feature stops once for its approver; a big change stops twice. Approve, revise or reject. An approval holds only for the documents it approved: change them, and it asks again.",
+        "ar": "تتوقّف الميزة مرة واحدة عند معتمِدها، ويتوقّف التغيير الكبير مرتين: اعتماد أو مراجعة أو رفض. والاعتماد صالح للمستندات التي اعتُمدت وحدها؛ فإن تغيّرت طُلب من جديد."
+      },
+      "status": {
+        "en": "Approved by dana",
+        "ar": "اعتمدها dana"
+      }
+    },
+    "children": [
+      {
+        "id": "approve-code",
+        "block": "experience.step_switcher",
+        "props": {
+          "label": {
+            "en": "The stop",
+            "ar": "التوقّف"
+          },
+          "steps": [
+            {
+              "id": "line",
+              "label": {
+                "en": "Approval",
+                "ar": "الاعتماد"
+              },
+              "title": {
+                "en": "Written on the status line",
+                "ar": "يُكتب على سطر الحالة"
+              },
+              "body": {
+                "en": "The gate reads the approval before tasks and code. An agent never records an approval nobody gave.",
+                "ar": "تقرأ البوابة الاعتماد قبل المهام والشيفرة. ولا يسجّل الوكيل اعتمادًا لم يعطه أحد."
+              },
+              "code": {
+                "filename": "spec.md",
+                "language": "markdown",
+                "source": "**Status**: Planned — Approved by dana 2026-11-09\n"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "plan",
+    "block": "experience.station",
+    "props": {
+      "id": "plan",
+      "title": {
+        "en": "Plan",
+        "ar": "خطِّط"
+      },
+      "body": {
+        "en": "The plan and its PR-sized tasks, each naming the requirements it covers. The tasks gate refuses a plan that leaves one uncovered.",
+        "ar": "الخطة ومهامها بحجم طلب دمج واحد لكل مهمة، وكل مهمة تسمّي المتطلّبات التي تغطّيها. وترفض بوابة المهام أي خطة تترك متطلّبًا دون تغطية."
+      },
+      "status": {
+        "en": "Tasked: every FR covered",
+        "ar": "Tasked: كل FR مغطّى"
+      }
+    },
+    "children": [
+      {
+        "id": "plan-code",
+        "block": "experience.step_switcher",
+        "props": {
+          "label": {
+            "en": "The tasks",
+            "ar": "المهام"
+          },
+          "steps": [
+            {
+              "id": "tasks",
+              "label": {
+                "en": "Tasks",
+                "ar": "المهام"
+              },
+              "title": {
+                "en": "Each task covers named requirements",
+                "ar": "كل مهمة تغطّي متطلّبات مسمّاة"
+              },
+              "body": {
+                "en": "Ids, coverage and dependencies are checked by fflow gate tasks.",
+                "ar": "يتحقّق الأمر fflow gate tasks من المعرّفات والتغطية والتبعيات."
+              },
+              "code": {
+                "filename": "tasks.md",
+                "language": "markdown",
+                "source": "- [ ] T001 The CSV writer in `src/export/csv.ts` — covers: FR-001\n- [ ] T002 [P] Credit notes as negative lines in `src/export/lines.ts` — covers: FR-002 — deps: T001\n"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "build",
+    "block": "experience.station",
+    "props": {
+      "id": "build",
+      "title": {
+        "en": "Build",
+        "ar": "ابنِ"
+      },
+      "body": {
+        "en": "Tasks run wave by wave. A task is ticked only when its check passes at a clean head, so a tick is evidence, not a claim.",
+        "ar": "تعمل المهام موجةً بعد موجة. ولا تُعلَّم المهمة منجزة إلا حين يجتاز فحصها على نسخة نظيفة، فالعلامة شاهد لا ادّعاء."
+      },
+      "status": {
+        "en": "T002 done: check passed",
+        "ar": "T002 منجزة: اجتاز الفحص"
+      }
+    },
+    "children": [
+      {
+        "id": "build-code",
+        "block": "experience.step_switcher",
+        "props": {
+          "label": {
+            "en": "The tick",
+            "ar": "العلامة"
+          },
+          "steps": [
+            {
+              "id": "done",
+              "label": {
+                "en": "Done",
+                "ar": "منجزة"
+              },
+              "title": {
+                "en": "Ticked by Flow, not by hand",
+                "ar": "تعلّمها فلو لا اليد"
+              },
+              "body": {
+                "en": "fflow task done runs the check and ticks the task only when it exits 0.",
+                "ar": "يشغّل fflow task done الفحص، ولا يعلّم المهمة إلا حين ينتهي بالرمز 0."
+              },
+              "code": {
+                "filename": "terminal",
+                "language": "sh",
+                "source": "fflow task start gh-12 T002\nfflow task done gh-12 T002 --command \"pnpm test\"\n"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "gate",
+    "block": "experience.station",
+    "props": {
+      "id": "gate",
+      "title": {
+        "en": "Gate",
+        "ar": "البوابة"
+      },
+      "body": {
+        "en": "Your checks run at the pushed head, on your runner. One fflow/gate status lands on that exact commit, posted by your gate App, never by a personal token.",
+        "ar": "تعمل فحوصك على آخر نسخة مدفوعة، وعلى مشغّلك. وتصل حالة fflow/gate واحدة إلى ذلك الالتزام بعينه، ينشرها تطبيق البوابة لديك، لا رمز شخصي أبدًا."
+      },
+      "status": {
+        "en": "fflow/gate: success",
+        "ar": "fflow/gate: نجاح"
+      }
+    },
+    "children": [
+      {
+        "id": "gate-code",
+        "block": "experience.step_switcher",
+        "props": {
+          "label": {
+            "en": "The gate",
+            "ar": "البوابة"
+          },
+          "steps": [
+            {
+              "id": "run",
+              "label": {
+                "en": "Run",
+                "ar": "التشغيل"
+              },
+              "title": {
+                "en": "The checks, at the pushed head",
+                "ar": "الفحوص على النسخة المدفوعة"
+              },
+              "body": {
+                "en": "gate run refuses a dirty tree or a head the remote doesn't have.",
+                "ar": "يرفض gate run أي نسخة فيها تغييرات غير محفوظة، أو نسخة ليست على المستودع البعيد."
+              },
+              "code": {
+                "filename": "terminal",
+                "language": "sh",
+                "source": "fflow gate run\n"
+              }
+            },
+            {
+              "id": "config",
+              "label": {
+                "en": "Config",
+                "ar": "الإعداد"
+              },
+              "title": {
+                "en": "Your runner, your check",
+                "ar": "مشغّلك وفحصك"
+              },
+              "body": {
+                "en": "The runner and the check command are adapters in flow.config.json.",
+                "ar": "المشغّل وأمر الفحص محوّلان في flow.config.json."
+              },
+              "code": {
+                "filename": "flow.config.json",
+                "language": "json",
+                "source": "{\n  \"version\": 1,\n  \"runner\": { \"kind\": \"github-actions\" },\n  \"gate\": { \"check\": \"pnpm test\" }\n}\n"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "land",
+    "block": "experience.station",
+    "props": {
+      "id": "land",
+      "title": {
+        "en": "Land",
+        "ar": "ادمج"
+      },
+      "body": {
+        "en": "The pull request merges only when it is green, approved and free of owner-only changes. Then the issue is closed, the worktree removed and the branch deleted.",
+        "ar": "لا يُدمج طلب الدمج إلا حين يكون ناجحًا ومعتمَدًا وخاليًا من التغييرات المقصورة على المالك. ثم تُغلَق المهمة وتُزال شجرة العمل ويُحذف الفرع."
+      },
+      "status": {
+        "en": "landed, issue closed",
+        "ar": "دُمج، وأُغلقت المهمة"
+      }
+    },
+    "children": [
+      {
+        "id": "land-code",
+        "block": "experience.step_switcher",
+        "props": {
+          "label": {
+            "en": "The landing",
+            "ar": "الدمج"
+          },
+          "steps": [
+            {
+              "id": "land",
+              "label": {
+                "en": "Land",
+                "ar": "الدمج"
+              },
+              "title": {
+                "en": "The lander's checklist, as code",
+                "ar": "قائمة الدمج، شيفرةً"
+              },
+              "body": {
+                "en": "land lists every rule that fails, not only the first.",
+                "ar": "يذكر land كل قاعدة لم تتحقّق، لا الأولى وحدها."
+              },
+              "code": {
+                "filename": "terminal",
+                "language": "sh",
+                "source": "fflow land\n"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "gives",
+    "block": "experience.chapter_title",
+    "props": {
+      "title": {
+        "en": "What Flow gives a team.",
+        "ar": "ما تقدّمه فلو للفريق."
+      }
+    }
+  },
+  {
+    "id": "features",
+    "block": "experience.bento_grid",
+    "props": {
+      "columns": 2
+    },
+    "children": [
+      {
+        "id": "f-gates",
+        "block": "experience.statement",
+        "props": {
+          "text": {
+            "en": "*Gates that name the fix.* Every state from Draft to Done has a gate. A refusal names what is missing, the file and line, and the command that fixes it.",
+            "ar": "*بوابات تسمّي الإصلاح.* لكل حالة من Draft إلى Done بوابة. والرفض يسمّي ما ينقص، والملف والسطر، والأمر الذي يُصلحه."
+          }
+        }
+      },
+      {
+        "id": "f-trace",
+        "block": "experience.statement",
+        "props": {
+          "text": {
+            "en": "*Requirements traced to tests.* Each requirement traces to a task, a test tagged @covers and a commit. fflow trace drift names a change outside what the spec says it touches.",
+            "ar": "*متطلّبات تصل إلى اختباراتها.* يصل كل متطلّب إلى مهمة واختبار موسوم بـ@covers والتزام. ويسمّي fflow trace drift كل تعديل خارج ما تذكره المواصفة."
+          }
+        }
+      },
+      {
+        "id": "f-preset",
+        "block": "experience.statement",
+        "props": {
+          "text": {
+            "en": "*One preset, every tool.* fflow sync renders the commands, agents, rules, hooks and workflows for Claude Code, OpenCode, Codex, GitHub Copilot and Cursor, and fflow check fails CI when one drifts.",
+            "ar": "*إعداد مسبق واحد لكل الأدوات.* يولّد fflow sync الأوامر والوكلاء والقواعد والخطافات ومسارات العمل لـClaude Code وOpenCode وCodex وGitHub Copilot وCursor، ويُفشل fflow check التكامل المستمر حين يحيد أيّ منها."
+          }
+        }
+      },
+      {
+        "id": "f-people",
+        "block": "experience.statement",
+        "props": {
+          "text": {
+            "en": "*People decide, agents build.* Approval stops sit where a decision belongs. Agents work between them and never record an approval nobody gave.",
+            "ar": "*الناس يقرّرون، والوكلاء يبنون.* توضع نقاط الاعتماد حيث يلزم القرار. ويعمل الوكلاء بينها، ولا يسجّلون اعتمادًا لم يعطه أحد."
+          }
+        }
+      },
+      {
+        "id": "f-owner",
+        "block": "experience.statement",
+        "props": {
+          "text": {
+            "en": "*Owner-only means owner-only.* Workflows, secrets, deploy configuration and the dependency catalog land only with the owner's approval.",
+            "ar": "*ما للمالك يبقى للمالك.* لا تُدمج مسارات العمل والأسرار وإعدادات الشحن وفهرس التبعيات إلا باعتماد المالك."
+          }
+        }
+      },
+      {
+        "id": "f-adapters",
+        "block": "experience.statement",
+        "props": {
+          "text": {
+            "en": "*Your tools, as adapters.* Linear, GitHub Issues or Jira. GitHub Actions, your own box or your own command. Flow never falls back to a personal login.",
+            "ar": "*أدواتك محوّلات.* Linear أو GitHub Issues أو Jira. وGitHub Actions أو جهازك أو أمرك الخاص. ولا تعود فلو أبدًا إلى تسجيل دخول شخصي."
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "presets-title",
+    "block": "experience.chapter_title",
+    "props": {
+      "title": {
+        "en": "Presets carry a team's conventions.",
+        "ar": "الإعداد المسبق يحمل أعراف الفريق."
+      },
+      "subtitle": {
+        "en": "Flow never needs Stackra. Stackra's preset is one example.",
+        "ar": "لا تحتاج فلو إلى ستاكرا. وإعداد ستاكرا مثال واحد."
+      }
+    }
+  },
+  {
+    "id": "presets",
+    "block": "experience.product_cards",
+    "props": {
+      "label": {
+        "en": "Presets",
+        "ar": "الإعدادات المسبقة"
+      },
+      "layout": "grid",
+      "products": [
+        {
+          "id": "neutral",
+          "brand": "flow",
+          "name": "neutral",
+          "descriptor": {
+            "en": "For any repository: only what the gates need. It names no brand.",
+            "ar": "لأي مستودع: ما تحتاجه البوابات وحده، دون أي علامة تجارية."
+          }
+        },
+        {
+          "id": "stackra",
+          "brand": "stackra",
+          "name": "stackra",
+          "descriptor": {
+            "en": "Stackra's own: the Impact questionnaire, the Constitution Check and task routes.",
+            "ar": "إعداد ستاكرا: استبيان الأثر وفحص الدستور ومسارات المهام."
+          }
+        },
+        {
+          "id": "own",
+          "brand": "flow",
+          "name": "@your-org/flow-preset",
+          "descriptor": {
+            "en": "Your own, as an npm package: your templates, rules and guard tables.",
+            "ar": "إعدادك أنت، حزمةَ npm: قوالبك وقواعدك وجداول الحماية لديك."
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "try-it-title",
+    "block": "experience.chapter_title",
+    "props": {
+      "title": {
+        "en": "Try it.",
+        "ar": "جرّبها."
+      },
+      "subtitle": {
+        "en": "This terminal plays a session recorded from the real CLI.",
+        "ar": "تعرض هذه الطرفية جلسة مسجّلة من سطر الأوامر الحقيقي."
+      }
+    }
+  },
+  {
+    "id": "try-it",
+    "block": "experience.terminal_stage",
+    "props": {
+      "command": "pnpm exec fflow init",
+      "lines": [],
+      "label": {
+        "en": "Try it",
+        "ar": "جرّبها"
+      },
+      "art": {
+        "pattern": "strata",
+        "poster": {
+          "light": "/posters/strata-light.png",
+          "dark": "/posters/strata-dark.png"
+        }
+      }
+    }
+  },
+  {
+    "id": "states",
+    "block": "experience.mono_display",
+    "props": {
+      "title": "DRAFT → DONE.",
+      "tagline": {
+        "en": "Nothing ships off-spec.",
+        "ar": "لا شيء يُشحَن خارج المواصفة."
+      },
+      "art": "floors"
+    }
+  },
+  {
+    "id": "closing",
+    "block": "experience.statement",
+    "props": {
+      "text": {
+        "en": "Write the spec first. The plan, the tasks, the tests and the merge *follow from it*, and *nothing ships off-spec*.",
+        "ar": "اكتب المواصفة أولًا. فالخطة والمهام والاختبارات والدمج *تتبعها*، و*لا شيء يُشحَن خارج المواصفة*."
+      },
+      "facts": [
+        {
+          "en": "Open source under the MIT licence.",
+          "ar": "مفتوحة المصدر بترخيص MIT."
+        },
+        {
+          "en": "Works with Claude Code, OpenCode, Codex, GitHub Copilot and Cursor.",
+          "ar": "تعمل مع Claude Code وOpenCode وCodex وGitHub Copilot وCursor."
+        },
+        {
+          "en": "Never claims the code is correct: it checks that the spec, plan, tasks and tests agree.",
+          "ar": "لا تدّعي أن الشيفرة صحيحة: إنما تتحقّق من أن المواصفة والخطة والمهام والاختبارات متّفقة."
+        }
+      ]
+    }
+  },
+  {
+    "id": "closing-cta",
+    "block": "experience.cta_row",
+    "props": {
+      "primary": {
+        "label": {
+          "en": "Get started",
+          "ar": "ابدأ"
+        },
+        "href": "https://github.com/figentra/flow/tree/main/docs/content/getting-started.mdx",
+        "isExternal": true
+      },
+      "command": "pnpm add -D @figentra-oss/flow"
+    }
+  },
+  {
+    "id": "footer",
+    "block": "experience.site_footer",
+    "props": {
+      "groups": [
+        {
+          "title": {
+            "en": "Flow",
+            "ar": "فلو"
+          },
+          "links": [
+            {
+              "label": {
+                "en": "Docs",
+                "ar": "التوثيق"
+              },
+              "href": "https://github.com/figentra/flow/tree/main/docs/content",
+              "isExternal": true
+            },
+            {
+              "label": {
+                "en": "Getting started",
+                "ar": "البدء"
+              },
+              "href": "https://github.com/figentra/flow/tree/main/docs/content/getting-started.mdx",
+              "isExternal": true
+            },
+            {
+              "label": {
+                "en": "Presets",
+                "ar": "الإعدادات المسبقة"
+              },
+              "href": "https://github.com/figentra/flow/tree/main/docs/content/presets.mdx",
+              "isExternal": true
+            },
+            {
+              "label": {
+                "en": "Gates",
+                "ar": "البوابات"
+              },
+              "href": "https://github.com/figentra/flow/tree/main/docs/content/gates.mdx",
+              "isExternal": true
+            },
+            {
+              "label": {
+                "en": "Approvals",
+                "ar": "الاعتماد"
+              },
+              "href": "https://github.com/figentra/flow/tree/main/docs/content/approvals.mdx",
+              "isExternal": true
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Open source",
+            "ar": "المصدر المفتوح"
+          },
+          "links": [
+            {
+              "label": {
+                "en": "Code",
+                "ar": "الشيفرة"
+              },
+              "href": "https://github.com/figentra/flow",
+              "isExternal": true
+            },
+            {
+              "label": {
+                "en": "Releases",
+                "ar": "الإصدارات"
+              },
+              "href": "https://github.com/figentra/flow/releases",
+              "isExternal": true
+            },
+            {
+              "label": {
+                "en": "Security policy",
+                "ar": "سياسة الأمان"
+              },
+              "href": "https://github.com/figentra/flow/security/policy",
+              "isExternal": true
+            },
+            {
+              "label": {
+                "en": "Licence",
+                "ar": "الترخيص"
+              },
+              "href": "https://github.com/figentra/flow/blob/main/LICENSE",
+              "isExternal": true
+            }
+          ]
+        }
+      ],
+      "legal": {
+        "en": "Figentra Flow is made by Figentra Technologies L.L.C",
+        "ar": "فيجنترا فلو من Figentra Technologies L.L.C"
+      }
+    }
+  },
+  {
+    "id": "dock",
+    "block": "experience.page_dock",
+    "props": {
+      "label": {
+        "en": "Stations",
+        "ar": "المحطات"
+      },
+      "items": [
+        {
+          "id": "specify",
+          "label": {
+            "en": "Specify",
+            "ar": "حدِّد"
+          },
+          "status": {
+            "en": "wrote spec.md, 2 questions open",
+            "ar": "كُتب spec.md، وبقي سؤالان مفتوحان"
+          }
+        },
+        {
+          "id": "clarify",
+          "label": {
+            "en": "Clarify",
+            "ar": "وضِّح"
+          },
+          "status": {
+            "en": "Clarified: every question answered",
+            "ar": "Clarified: أُجيب عن كل سؤال"
+          }
+        },
+        {
+          "id": "approve",
+          "label": {
+            "en": "Approve",
+            "ar": "اعتمِد"
+          },
+          "status": {
+            "en": "Approved by dana",
+            "ar": "اعتمدها dana"
+          }
+        },
+        {
+          "id": "plan",
+          "label": {
+            "en": "Plan",
+            "ar": "خطِّط"
+          },
+          "status": {
+            "en": "Tasked: every FR covered",
+            "ar": "Tasked: كل FR مغطّى"
+          }
+        },
+        {
+          "id": "build",
+          "label": {
+            "en": "Build",
+            "ar": "ابنِ"
+          },
+          "status": {
+            "en": "T002 done: check passed",
+            "ar": "T002 منجزة: اجتاز الفحص"
+          }
+        },
+        {
+          "id": "gate",
+          "label": {
+            "en": "Gate",
+            "ar": "البوابة"
+          },
+          "status": {
+            "en": "fflow/gate: success",
+            "ar": "fflow/gate: نجاح"
+          }
+        },
+        {
+          "id": "land",
+          "label": {
+            "en": "Land",
+            "ar": "ادمج"
+          },
+          "status": {
+            "en": "landed, issue closed",
+            "ar": "دُمج، وأُغلقت المهمة"
+          }
+        }
+      ]
+    }
+  }
+]
