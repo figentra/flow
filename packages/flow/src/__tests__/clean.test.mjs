@@ -275,3 +275,24 @@ test("clean --merged keeps a merged tree that is dirty or holds ignored files, w
   assert.match(reasons[proof] ?? "", /\.testbed/);
   assert.equal(reasons[open], undefined);
 });
+
+test("clean: keeps a merged tree the repository's git hooks run a program from", async (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  const path = tree(r.root, "sta-20-hooks");
+  const other = tree(r.root, "sta-21-free");
+  const hooks = sh(r.root, "rev-parse", "--path-format=absolute", "--git-path", "hooks");
+  mkdirSync(hooks, { recursive: true });
+  writeFileSync(
+    join(hooks, "pre-commit"),
+    `#!/bin/sh\n${path}/node_modules/.bin/lefthook run pre-commit\n`,
+  );
+  const head = (/** @type {string} */ p) => sh(p, "rev-parse", "HEAD");
+  const pulls = new Map([
+    ["figentra/sta-20-hooks", { number: 20, head: head(path) }],
+    ["figentra/sta-21-free", { number: 21, head: head(other) }],
+  ]);
+  const report = await clean({ cwd: r.root, issues: states(), pulls, merged: true });
+  assert.deepEqual(report.removed, [other]);
+  assert.match(report.kept.find((k) => k.path === path)?.reason ?? "", /git hooks/);
+});

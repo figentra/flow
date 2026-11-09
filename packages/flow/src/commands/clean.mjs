@@ -11,7 +11,9 @@
  *   - finished: its pull request merged with this head, or its branch's own commits already in the default branch
  *     (merged trees skip the next two rules); else its issue Done or Canceled when its name carries a key, else idle
  *     for 2 hours or more by its HEAD reflog (a detached HEAD or a builder sub-agent tree);
- *   - free of ignored files outside the usual caches (`.env`, `ios/`, `android/` keep it).
+ *   - free of ignored files outside the usual caches (`.env`, `ios/`, `android/` keep it);
+ *   - not where the repository's git hooks run from: a hook (lefthook's, say) naming a program inside it would break
+ *     every commit once it is gone, so the tree stays until the hooks are installed again elsewhere.
  *   `--merged` removes only the merged trees and reports only the merged ones it keeps; with `clean.whenMerged` the
  *   guard runs it in the background at a session's start (`../guard/clean-merged.mjs`).
  *   A stray tree is adopted only when it is not in use and idle for 2 hours. Every kept tree is reported with its reason, and the space freed is reported.
@@ -30,7 +32,14 @@
  *   through the configured credentials (`../lib/github.mjs`), which hold the token.
  */
 import { spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
 
@@ -143,6 +152,32 @@ function mergedWhy(root, tree, base, pulls) {
     : undefined;
 }
 
+/**
+ * The text of the repository's git hooks (the shared `hooks` folder, or `core.hooksPath`), samples left out.
+ * @param {string} root
+ * @returns {string[]}
+ */
+function hookTexts(root) {
+  const dir = git(root, ["rev-parse", "--path-format=absolute", "--git-path", "hooks"]).out;
+  if (!dir || !existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => !f.endsWith(".sample"))
+    .flatMap((f) => {
+      try {
+        return [readFileSync(join(dir, f), "utf8")];
+      } catch {
+        return []; // a folder or an unreadable file holds no path
+      }
+    });
+}
+
+/** Whether a hook in `hooks` names a path inside `tree`. */
+const hooksInside = (/** @type {string[]} */ hooks, /** @type {string} */ tree) =>
+  hooks.some((text) => text.includes(resolve(tree) + sep));
+
+/** What keeps a tree the hooks run from. */
+const HOOKS_INSIDE = `the repository's git hooks run a program inside it; install them again from the main checkout first`;
+
 /** The issue states that finish a keyed worktree. */
 const FINISHED = new Set(["Done", "Canceled", "Cancelled", "Duplicate"]);
 
@@ -237,6 +272,7 @@ export async function clean(options) {
   const only = options.only?.map((p) => resolve(p));
   // `land` has just merged the one it names; any other run asks GitHub once.
   const pulls = options.pulls ?? (only ? new Map() : mergedPulls(root));
+  const hooks = hookTexts(root);
   for (const tree of worktrees(root).filter((t) => !only || only.includes(resolve(t.path)))) {
     const name = basename(tree.path);
     const keep = (/** @type {string} */ reason) => report.kept.push({ path: tree.path, reason });
@@ -329,6 +365,10 @@ export async function clean(options) {
       );
       continue;
     }
+    if (hooksInside(hooks, tree.path)) {
+      keep(HOOKS_INSIDE);
+      continue;
+    }
     const kb = sizeKb(tree.path);
     if (!dry) {
       const removed = git(root, ["worktree", "remove", tree.path]);
@@ -371,6 +411,7 @@ export async function clean(options) {
 function budget(root, report, { apply, now, busy, keepNames, base, backupDir }) {
   const inside = join(resolve(root), ".claude", "worktrees") + sep;
   const left = worktrees(root).filter((t) => !report.removed.includes(t.path));
+  const hooks = hookTexts(root);
   /** @type {Budget} */
   const out = {
     limit: loadConfig(root).config.clean?.budget ?? BUDGET,
@@ -396,6 +437,10 @@ function budget(root, report, { apply, now, busy, keepNames, base, backupDir }) 
     const merged =
       Boolean(landed) && git(root, ["merge-base", "--is-ancestor", landed, `origin/${base}`]).ok;
     if (!merged && !isSaved(tree.path, base)) continue;
+    if (hooksInside(hooks, tree.path)) {
+      out.kept.push({ path: tree.path, reason: HOOKS_INSIDE });
+      continue;
+    }
     out.candidates.push(tree.path);
     if (!apply) continue;
     const kb = sizeKb(tree.path);
