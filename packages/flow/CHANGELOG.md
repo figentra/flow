@@ -1,5 +1,16 @@
 # @figentra-oss/flow
 
+## 0.12.1
+
+### Patch Changes
+
+- f45a086: `ci.checks` and `ci.after` add a repository's own required steps to the rendered Code job (a format check, a PR-key
+  check before the tasks; a validate after them), so they stay under Quality Gate. Every check, gen and task step in Code
+  now runs with `!cancelled()`, keeping its own condition, so a failing check no longer hides the steps after it; the job
+  still fails.
+- ef1c710: The README documents `ci.checks`, `ci.after`, the `!cancelled()` steps in `Code` and the per-PR concurrency of the
+  rendered CI.
+
 ## 0.12.0
 
 ### Minor Changes
