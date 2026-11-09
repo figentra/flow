@@ -1,5 +1,27 @@
 # @figentra-oss/flow
 
+## 0.10.0
+
+### Minor Changes
+
+- a2a9512: A non-direct sync projects `.agents/` into each assistant's folders when the config sets `projection: true`. That covers
+  the agents in each dialect, the linked skills, hooks and templates, the reviewer list and `.mcp.json`. `fflow check`
+  then owns the projection, as it does after a direct sync. A repository keeps its rendered rules and skills under
+  `.agents/` and still drops its own projector script (core keeps ADR 0016's layout while retiring `agents-sync`).
+
+### Patch Changes
+
+- 54dae4c: The OpenCode files, `opencode.jsonc` and `.opencode/**` with the guard plugin, are opt-in like `.claude/settings.json`,
+  under the config's new `surfaces.opencode`. `opencode.jsonc` allows broadly and then denies, so a product that does not
+  use OpenCode should not get it unasked. Unset, a repository keeps them only where its lock already records
+  `opencode.jsonc`, so core and the template keep theirs.
+  
+  A first sync now refuses to replace any rendered file the repository wrote itself, not only AGENTS.md and README.md.
+  That covers `.mcp.yaml` and `.github/CODEOWNERS`; opting in to a surface is the repository's answer for that file, and sync logs what it drops. The refusal names what the render would drop
+  (an `.mcp.yaml`'s servers, a file's lines) and where it belongs instead: `mcp` in the config, or an extend override for
+  CODEOWNERS. When an owned file was edited since the last sync, sync still renders it as before, and now says which
+  lines go and where they belong.
+
 ## 0.9.2
 
 ### Patch Changes
