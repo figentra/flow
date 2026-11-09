@@ -95,12 +95,18 @@ test("ci: --affected only on a pull request; push, nightly and manual runs take 
   assert.deepEqual(
     affected.map((/** @type {any} */ s) => [s.if, s.run]),
     [
-      ["github.event_name == 'pull_request'", "pnpm exec turbo run gen --affected"],
-      ["github.event_name == 'pull_request'", "pnpm exec turbo run typecheck lint test --affected"],
+      [
+        "${{ !cancelled() && github.event_name == 'pull_request' }}",
+        "pnpm exec turbo run gen --affected",
+      ],
+      [
+        "${{ !cancelled() && github.event_name == 'pull_request' }}",
+        "pnpm exec turbo run typecheck lint test --affected",
+      ],
     ],
   );
   const full = steps.filter(
-    (/** @type {any} */ s) => s.if === "github.event_name != 'pull_request'",
+    (/** @type {any} */ s) => s.if === "${{ !cancelled() && github.event_name != 'pull_request' }}",
   );
   assert.deepEqual(
     full.map((/** @type {any} */ s) => s.run),
@@ -121,7 +127,7 @@ test("ci: --affected only on a pull request; push, nightly and manual runs take 
 test("ci: the PR title reaches commitlint through the environment; no run: line holds ${{", () => {
   const wf = parseYaml(ciWorkflow({ int: {}, turbo: true, optional: [opt] }));
   const lint = wf.jobs.code.steps.find((/** @type {any} */ s) => /commitlint/.test(s.run ?? ""));
-  assert.equal(lint.if, "github.event_name == 'pull_request'");
+  assert.equal(lint.if, "${{ !cancelled() && github.event_name == 'pull_request' }}");
   assert.equal(lint.env.PR_TITLE, "${{ github.event.pull_request.title }}");
   assert.equal(lint.run, `printf '%s\\n' "$PR_TITLE" | pnpm exec commitlint`);
   for (const s of allSteps(wf)) assert.ok(!/\$\{\{/.test(s.run ?? ""), `${s.id}: ${s.name}`);
@@ -319,4 +325,28 @@ test("ci: checks run inside Code after gen and before the tasks, after once they
   assert.equal(names.at(-1), "Validate");
   assert.deepEqual(wf.jobs.gate.needs, ["code"]);
   assert.equal(wf.jobs.code["continue-on-error"], undefined);
+});
+
+test("ci: a failing check hides nothing after it; every check and task in Code runs unless the run is cancelled", () => {
+  const wf = parseYaml(
+    ciWorkflow({
+      checks: [
+        { name: "Linear key check", if: "github.event_name == 'pull_request'", run: "node x.mjs" },
+        { name: "Format check", run: "pnpm format:check" },
+      ],
+      after: [{ name: "Boundaries", if: "${{ always() }}", run: "pnpm boundaries" }],
+    }),
+  );
+  const byName = Object.fromEntries(
+    wf.jobs.code.steps.map((/** @type {any} */ s) => [s.name, s.if]),
+  );
+  assert.equal(
+    byName["Linear key check"],
+    "${{ !cancelled() && (github.event_name == 'pull_request') }}",
+  );
+  assert.equal(byName["Format check"], "${{ !cancelled() }}");
+  assert.equal(byName.Boundaries, "${{ !cancelled() && (always()) }}");
+  for (const name of ["Gen (affected)", "Gen", "Tasks (affected)", "Tasks"])
+    assert.match(byName[name], /^\$\{\{ !cancelled\(\) && /);
+  assert.equal(byName.Install, undefined);
 });

@@ -52,6 +52,9 @@ const JOBS = ["gate", "code", "int", "dependency-scan"];
 /** The pull request condition, and its negation for the full runs (push, nightly, manual). */
 const ON_PR = "github.event_name == 'pull_request'";
 const OFF_PR = "github.event_name != 'pull_request'";
+/** The same, for a step that runs after an earlier one in its job failed (`keepGoing`). */
+const GOING_ON_PR = `\${{ !cancelled() && ${ON_PR} }}`;
+const GOING_OFF_PR = `\${{ !cancelled() && ${OFF_PR} }}`;
 
 /**
  * Steps as block YAML under a job's `steps:`, each with its first key on the `- ` line.
@@ -65,6 +68,18 @@ const stepsYaml = (list) =>
  * @param {Record<string, unknown>} step
  */
 const stepYaml = (step) => stepsYaml([step]);
+
+/**
+ * `step` that still runs after an earlier step in its job failed (but not once the run is cancelled), its own `if`
+ * kept: a failing check must not hide the checks and tasks after it, and the job still fails at the end.
+ * @param {Record<string, unknown>} step
+ * @returns {Record<string, unknown>}
+ */
+function keepGoing(step) {
+  const own =
+    typeof step.if === "string" ? step.if.replace(/^\s*\$\{\{\s*|\s*\}\}\s*$/g, "") : undefined;
+  return { ...step, if: `\${{ !cancelled()${own ? ` && (${own})` : ""} }}` };
+}
 
 /**
  * The task list, or a refusal: the names reach a `run:` line unquoted.
@@ -86,17 +101,18 @@ function taskWords(tasks, key) {
  * @param {string} tasks
  * @param {string} full
  * @param {Record<string, string>} [env] each step's environment besides the base
+ * @param {boolean} [going] run even after an earlier step of the job failed (`keepGoing`)
  */
-function affectedPair(name, tasks, full, env = {}) {
+function affectedPair(name, tasks, full, env = {}, going = false) {
   const extra = Object.keys(env).length ? blockYaml(env, 10) : "";
   return `      - name: ${name} (affected)
-        if: ${ON_PR}
+        if: ${going ? GOING_ON_PR : ON_PR}
         env:
           # A pull request checks out its merge into the base branch, so HEAD~1 is the base and the diff is the PR's own.
           TURBO_SCM_BASE: HEAD~1
 ${extra}        run: pnpm exec turbo run ${tasks} --affected
       - name: ${name}
-        if: ${OFF_PR}
+        if: ${going ? GOING_OFF_PR : OFF_PR}
 ${extra ? `        env:\n${extra}` : ""}        run: pnpm exec turbo run ${full}
 `;
 }
@@ -119,8 +135,8 @@ export function ciWorkflow(ci, baseline) {
   const afterInstall = stepsYaml(ci.afterInstall ?? baseline?.afterInstall);
   // The repository's own required checks, inside Code so Quality Gate holds them: `checks` after gen and before the
   // tasks (a format check, a PR-key check), `after` once the tasks ran (a validate that reads the build).
-  const checks = stepsYaml(ci.checks);
-  const after = stepsYaml(ci.after);
+  const checks = stepsYaml(ci.checks?.map(keepGoing));
+  const after = stepsYaml(ci.after?.map(keepGoing));
   const nightly = c.nightly === true ? CI_DEFAULTS.nightly : c.nightly;
   const optional = ci.optional ?? [];
   const ids = optional.map((o) => o.id);
@@ -168,7 +184,7 @@ ${stepYaml({ name: "Install", run: install })}${afterInstall}`;
   // The title, not the commits: a squash merge lands the title. It arrives through the environment, never the script.
   const commitlint = c.commitlint
     ? `      - name: Pull request title (commitlint)
-        if: ${ON_PR}
+        if: ${GOING_ON_PR}
         env:
           PR_TITLE: \${{ github.event.pull_request.title }}
         run: printf '%s\\n' "$PR_TITLE" | pnpm exec commitlint
@@ -178,11 +194,11 @@ ${stepYaml({ name: "Install", run: install })}${afterInstall}`;
     c.gen === false
       ? ""
       : typeof c.gen === "string"
-        ? stepYaml({ name: "Gen", run: c.gen })
-        : affectedPair("Gen", "gen", "gen");
+        ? stepYaml(keepGoing({ name: "Gen", run: c.gen }))
+        : affectedPair("Gen", "gen", "gen", {}, true);
 
   const code = `${head("code", "Code")}${permissions}    steps:
-${prepare(true)}${commitlint}${turbo}${gen}${checks}${affectedPair("Tasks", pr, main)}${after}`;
+${prepare(true)}${commitlint}${turbo}${gen}${checks}${affectedPair("Tasks", pr, main, {}, true)}${after}`;
 
   let int = "";
   if (ci.int) {
