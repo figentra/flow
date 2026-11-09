@@ -67,7 +67,7 @@ export function readLock(root) {
  * whether its lock already records `file`, so a repository that had the file keeps it and a new one gets none.
  * @param {string} root
  * @param {{ surfaces?: Record<string, boolean | undefined> }} config
- * @param {"settings" | "lefthook"} key
+ * @param {"settings" | "lefthook" | "opencode"} key
  * @param {string} file
  */
 export function takesSurface(root, config, key, file) {

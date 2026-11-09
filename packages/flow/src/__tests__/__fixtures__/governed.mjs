@@ -43,7 +43,7 @@ export function governed(t, { own = false, config = {}, at } = {}) {
     JSON.stringify({
       version: 1,
       preset: own ? OWN_PRESET : "neutral",
-      surfaces: { settings: true, lefthook: true },
+      surfaces: { settings: true, lefthook: true, opencode: true },
       ...config,
     }),
   );
