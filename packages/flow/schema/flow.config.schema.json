@@ -581,6 +581,18 @@
             "type": "object"
           }
         },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "after": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
         "turbo": {
           "type": "boolean"
         },

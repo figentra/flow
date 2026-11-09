@@ -208,6 +208,8 @@ export const SCHEMA = {
         setup: { type: "array", items: { type: "object" } },
         install: str,
         afterInstall: { type: "array", items: { type: "object" } },
+        checks: { type: "array", items: { type: "object" } },
+        after: { type: "array", items: { type: "object" } },
         turbo: { type: "boolean" },
         runsOn: str,
         timeoutMinutes: { type: "integer", minimum: 1 },
@@ -395,6 +397,7 @@ export function validate(schema, value, path = "") {
  * @typedef {{ pr?: string[], main?: string[], gen?: string | boolean, commitlint?: boolean,
  *             int?: { tasks?: string[], postgres?: { image?: string } },
  *             setup?: Record<string, unknown>[], install?: string, afterInstall?: Record<string, unknown>[],
+ *             checks?: Record<string, unknown>[], after?: Record<string, unknown>[],
  *             turbo?: boolean, runsOn?: string, timeoutMinutes?: number, branch?: string, nightly?: string | boolean,
  *             optional?: { id: string, name: string, steps: Record<string, unknown>[], needsInstall?: boolean }[],
  *             osv?: boolean }} CiConfig
