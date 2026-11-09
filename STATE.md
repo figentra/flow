@@ -19,7 +19,7 @@ approves releases by merging the Changesets version pull request.
 | Default branch     | `main` at `29c1be5f59be9a95b687a1f2aa9ea09ad5c7fea2` (2026-11-07, STA-2106 folder move)                             |
 | Toolchain          | Node 24.22.0, pnpm 12.16.1, oxfmt 0.71.0, oxlint 1.86.0 (`mise.toml`)                                               |
 | Catalog highlights | turbo 2.11.9, TypeScript 6.0.3, `@stackra/console` and `@stackra/validation` 0.7.1, undici 8.12.2, Changesets 3.0.3 |
-| Released Flow pin  | `flow-released` = `@figentra-oss/flow@0.2.3`, used only by the approval workflow                                    |
+| Released Flow pin  | `flow-released` = `@figentra-oss/flow@0.9.2`, used only by the approval workflow                                    |
 | Registry           | `https://npm.stackra.figentra.com/` (public read for `@figentra-oss`)                                               |
 
 ## 3. Proven by a real run
