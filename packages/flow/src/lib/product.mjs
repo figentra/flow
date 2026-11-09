@@ -91,6 +91,12 @@ export const BASELINE_WORKFLOW = `${NAME}-baseline.yml`;
 /** The baseline workflow's job name, and so the check a red-main repository requires instead of its full gate. */
 export const BASELINE_CHECK = "Baseline";
 
+/** The standard CI workflow `sync` renders when the config has `ci`; its `Quality Gate` job is the required check. */
+export const CI_WORKFLOW = `${NAME}-ci.yml`;
+
+/** The CI workflow's aggregate job name, and so the one check a repository's ruleset requires. */
+export const CI_CHECK = "Quality Gate";
+
 /**
  * The checks a red main never excuses, whatever `approve.tolerate` lists (STA-1945 FR-22): Baseline is the comparison
  * itself, and the gate runs the whole check command, more than Baseline's tasks.

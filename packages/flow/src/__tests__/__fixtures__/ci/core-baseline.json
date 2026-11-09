@@ -1,0 +1,20 @@
+{
+  "tasks": ["lint", "typecheck", "build"],
+  "mustPass": [
+    "@stackra/tenancy#typecheck",
+    "@stackra/identity#typecheck",
+    "@stackra/infra-identity#typecheck",
+    "@stackra/licensing#typecheck",
+    "@stackra/access-log#typecheck"
+  ],
+  "setup": [
+    {
+      "name": "Toolchain (mise)",
+      "uses": "jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7",
+      "with": {
+        "install_args": "node pnpm gitleaks shfmt aqua:rhysd/actionlint aqua:zizmorcore/zizmor aqua:google/osv-scanner"
+      }
+    }
+  ],
+  "install": "pnpm install --frozen-lockfile --filter='!@figentra/mobile' --filter='!@figentra/playground'"
+}

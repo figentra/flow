@@ -117,7 +117,7 @@ digest identifies it). Change the preset or `.flow/overrides/` and sync; `check`
 | `AGENTS.md`, `CLAUDE.md`                                     | `surfaces/agents-md/agents.md`, `.flow/readme.yml` and `agentsMd`          |
 | `lefthook.yml`                                               | `surfaces/lefthook.yml` plus the config's `lefthook` jobs                  |
 | `README.md`                                                  | `.flow/readme.yml` (see The README)                                        |
-| `.github/workflows/fflow-approve.yml`, `.github/CODEOWNERS`, `.github/workflows/fflow-baseline.yml` | `apps.owner`, `baseline` (see Landing and The gate) |
+| `.github/workflows/fflow-approve.yml`, `.github/CODEOWNERS`, `.github/workflows/fflow-baseline.yml`, `.github/workflows/fflow-ci.yml` | `apps.owner`, `baseline`, `ci` (see Landing and The gate) |
 
 Flow's hooks in `.claude/settings.json` run through `node`, never `pnpm exec`; the guard's four run
 `.agents/hooks/fflow-guard.mjs`, which `sync` writes with the guard engine and the preset's tables inside and which
@@ -804,6 +804,19 @@ Only an artifact from a push run on the default branch, at exactly that commit, 
 gate's requirement, and only while main is red.
 
 `Baseline` is a merge gate, not a release certificate: a release still needs a fully green product matrix.
+
+### The standard CI
+
+Add `ci` to the config and `sync` renders `.github/workflows/fflow-ci.yml`. Its one required check is `Quality Gate`,
+which passes when every job it needs passed or was skipped. `Code` runs gen and `turbo run <ci.pr>` (default
+`typecheck lint test`) with `--affected` on a pull request, and `turbo run <ci.main>` (default adds `build`) on a push
+to `ci.branch`, the nightly run (`ci.nightly`, a cron line or `false`) and a manual run; on a pull request it also runs
+commitlint on the title (`ci.commitlint`, default on). `ci.int` adds `Integration`, `turbo run test:int` beside a
+Postgres service, to the gate's needs. Each job checks out without credentials, runs `ci.setup` (else
+`baseline.setup`), caches the pnpm store and runs `ci.install` and `ci.afterInstall` (else `baseline`'s). `ci.turbo`
+decrypts the turbo remote cache's names from the sops scope `ci/build/turbo`; `ci.optional` jobs run with
+`continue-on-error` outside the gate, and `ci.osv` (default on) scans the lockfile with OSV-Scanner in its own job.
+Task names must be plain words (`^[\w:@./-]+$`); every other value is written as a quoted YAML scalar.
 
 GitHub calls use only the credentials the configuration names in `credentials`. `wrapper` runs your own command
 that gives `gh` a bot's token, and `gh-user` uses your own `gh` login, only because you said so. With neither, `land` refuses: Figentra Flow never falls back to a personal login.

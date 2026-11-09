@@ -514,6 +514,125 @@
         }
       }
     },
+    "ci": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pr": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[\\w:@./-]+$"
+          },
+          "minItems": 1
+        },
+        "main": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[\\w:@./-]+$"
+          },
+          "minItems": 1
+        },
+        "gen": {
+          "type": ["string", "boolean"],
+          "minLength": 1
+        },
+        "commitlint": {
+          "type": "boolean"
+        },
+        "int": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tasks": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[\\w:@./-]+$"
+              },
+              "minItems": 1
+            },
+            "postgres": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "image": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        "setup": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "install": {
+          "type": "string",
+          "minLength": 1
+        },
+        "afterInstall": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "turbo": {
+          "type": "boolean"
+        },
+        "runsOn": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timeoutMinutes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nightly": {
+          "type": ["string", "boolean"],
+          "minLength": 1
+        },
+        "optional": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "steps"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][\\w-]*$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "steps": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "minItems": 1
+              },
+              "needsInstall": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "osv": {
+          "type": "boolean"
+        }
+      }
+    },
     "review": {
       "type": "object",
       "additionalProperties": false,
