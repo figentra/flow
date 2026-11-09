@@ -818,6 +818,13 @@ decrypts the turbo remote cache's names from the sops scope `ci/build/turbo`; `c
 `continue-on-error` outside the gate, and `ci.osv` (default on) scans the lockfile with OSV-Scanner in its own job.
 Task names must be plain words (`^[\w:@./-]+$`); every other value is written as a quoted YAML scalar.
 
+A repository's own required checks go inside `Code`, so `Quality Gate` holds them: `ci.checks` run after gen and
+before the tasks (a format check, a pull-request key check), `ci.after` once the tasks ran (a validate that reads the
+build). Every check, gen and task step in `Code` runs unless the run was cancelled (`!cancelled()`, with the step's
+own `if` kept), so a failing check never hides the steps after it and the job still fails. A pull request's runs share
+one concurrency group, so a newer push cancels the older run; pushes to the default branch and the nightly run never
+cancel each other.
+
 GitHub calls use only the credentials the configuration names in `credentials`. `wrapper` runs your own command
 that gives `gh` a bot's token, and `gh-user` uses your own `gh` login, only because you said so. With neither, `land` refuses: Figentra Flow never falls back to a personal login.
 
