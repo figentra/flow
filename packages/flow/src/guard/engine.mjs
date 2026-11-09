@@ -17,6 +17,7 @@
 import { git } from "../lib/git.mjs";
 import { ENV_PREFIX } from "../lib/product.mjs";
 import { ALLOW, decideBash } from "./bash.mjs";
+import { cleanMerged } from "./clean-merged.mjs";
 import { answer, readStdin } from "./io.mjs";
 import { decidePaths, PATH_TOOLS, WRITE_TOOLS } from "./paths.mjs";
 import { decidePlanGate } from "./plan-gate.mjs";
@@ -79,6 +80,12 @@ export async function decide(event, tables) {
     case "UserPromptSubmit":
       return say(promptHints(event.prompt ?? "", tables.prompt));
     case "SessionStart":
+      if (tables.cleanWhenMerged)
+        try {
+          cleanMerged(event.root);
+        } catch {
+          // A cleanup that cannot start never costs the session its context.
+        }
       return say(sessionContext(event.root, event.source, tables.session, tables.contextCommands));
     default:
       return ALLOW;

@@ -167,6 +167,8 @@ export const SCHEMA = {
       properties: {
         keep: { type: "array", items: str },
         budget: { type: "integer", minimum: 1 },
+        // Remove merged worktrees in the background at each session's start (`fflow clean --merged`).
+        whenMerged: { type: "boolean" },
       },
     },
     baseline: {
@@ -331,7 +333,7 @@ export function validate(schema, value, path = "") {
  *                      workflows?: string[], requesters?: string[], tolerate?: string[] },
  *             surfaces?: { settings?: boolean, lefthook?: boolean, opencode?: boolean },
  *             projection?: boolean,
- *             clean?: { keep?: string[], budget?: number }, review?: { required?: string[] },
+ *             clean?: { keep?: string[], budget?: number, whenMerged?: boolean }, review?: { required?: string[] },
  *             baseline?: { tasks?: string[], mustPass?: string[], install?: string, setup?: Record<string, unknown>[], branch?: string },
  *             artifacts?: { paths?: string[], maxBytes?: number },
  *             train?: { cutoff?: number, eject?: "bisect" | "manual", after?: string[], label?: string },

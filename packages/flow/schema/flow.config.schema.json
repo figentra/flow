@@ -467,6 +467,9 @@
         "budget": {
           "type": "integer",
           "minimum": 1
+        },
+        "whenMerged": {
+          "type": "boolean"
         }
       }
     },
