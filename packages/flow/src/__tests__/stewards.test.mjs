@@ -122,7 +122,8 @@ test("owner-only: the root scripts and a dependency moved off its catalog are fi
 test("CODEOWNERS: every owner-only glob to the owner, anchored at the root unless it matches at any depth; no catch-all", () => {
   const text = codeowners("figentra-usr", ["deploy/**"]);
   const lines = text.split("\n").filter((l) => l && !l.startsWith("#"));
-  assert.equal(lines.length, OWNER_ONLY.length + 2);
+  // Every owner-only glob but the retired config name, then package.json and the extra glob.
+  assert.equal(lines.length, OWNER_ONLY.length - 1 + 2);
   assert.ok(
     lines.includes("/package.json @figentra-usr"),
     "GitHub cannot see which fields changed",
