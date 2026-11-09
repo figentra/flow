@@ -32,7 +32,7 @@ function synced(/** @type {{ after: (fn: () => void) => void }} */ t) {
   mkdirSync(dirname(off), { recursive: true });
   writeFileSync(
     off,
-    "kind: disable\ntarget: .claude/agents/ci-steward.md\nreason: r\nowner: o\nreview: 2027-01-31\n",
+    "kind: disable\ntarget: .agents/agents/ci-steward.md\nreason: r\nowner: o\nreview: 2027-01-31\n",
   );
   sync(root, { ...quiet, direct: true });
   return root;

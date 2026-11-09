@@ -110,17 +110,17 @@ profiles:
   );
   sync(root, { direct: true, ...quiet, adopt: true });
   assert.ok(existsSync(join(root, "lefthook.yml")));
-  assert.ok(existsSync(join(root, ".claude/agents/ci-steward.md")));
-  const edited = join(root, ".claude/agents/tracker-steward.md");
+  assert.ok(existsSync(join(root, ".agents/agents/ci-steward.md")));
+  const edited = join(root, ".agents/agents/tracker-steward.md");
   writeFileSync(edited, `${readFileSync(edited, "utf8")}\nOurs.\n`);
   rmSync(join(root, OWN_PRESET, "surfaces/lefthook.yml"));
   configure(root, { preset: OWN_PRESET, profile: "lean", session: { pushAtEnd: true } });
   const { removed } = sync(root, { direct: true, ...quiet, adopt: true });
-  assert.deepEqual(removed.toSorted(), [".claude/agents/ci-steward.md", "lefthook.yml"]);
+  assert.deepEqual(removed.toSorted(), [".agents/agents/ci-steward.md", "lefthook.yml"]);
   assert.ok(existsSync(edited), "an edited owned file is never deleted");
   const settings = JSON.parse(readFileSync(join(root, ".claude/settings.json"), "utf8"));
   assert.deepEqual(Object.keys(settings.hooks), ["PreToolUse", "SessionEnd"]);
-  assert.match(check(root).problems.join("\n"), /\.claude\/agents\/tracker-steward\.md differs/);
+  assert.match(check(root).problems.join("\n"), /\.agents\/agents\/tracker-steward\.md differs/);
 });
 
 test("sync: with lefthook.yml rendered, mise.toml pins oxfmt and oxlint at the catalog's versions", (t) => {

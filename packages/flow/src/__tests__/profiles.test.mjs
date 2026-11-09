@@ -134,8 +134,8 @@ test("sync: renders only the named profile's skills, agents and hooks, and the l
   writeFileSync(join(root, OWN_PRESET, "preset.yml"), LEAN);
   const { files } = sync(root, { direct: true, log: () => {} });
   assert.deepEqual(files.toSorted(), [
+    ".agents/agents/git-steward.md",
     ".agents/hooks/fflow-guard.mjs",
-    ".claude/agents/git-steward.md",
     ".claude/rules/worktrees.md",
     ".claude/settings.json",
     ".claude/skills/flow-plan/SKILL.md",
@@ -220,10 +220,10 @@ test("sync: the overrides apply to what the profile selects; validate refuses on
   override(
     root,
     "agents/git.yml",
-    "kind: extend\ntarget: .claude/agents/git-steward.md\ntext: Ours.\n",
+    "kind: extend\ntarget: .agents/agents/git-steward.md\ntext: Ours.\n",
   );
   sync(root, { direct: true, log: () => {} });
-  assert.match(readFileSync(join(root, ".claude/agents/git-steward.md"), "utf8"), /Ours\.\n$/);
+  assert.match(readFileSync(join(root, ".agents/agents/git-steward.md"), "utf8"), /Ours\.\n$/);
   const lock = readLock(root);
   assert.equal(lock?.profile, "lean");
   assert.notEqual(lock?.overrides, "");
@@ -231,10 +231,10 @@ test("sync: the overrides apply to what the profile selects; validate refuses on
   override(
     root,
     "agents/ci.yml",
-    "kind: extend\ntarget: .claude/agents/ci-steward.md\ntext: Ours.\n",
+    "kind: extend\ntarget: .agents/agents/ci-steward.md\ntext: Ours.\n",
   );
   assert.deepEqual(validateRepo(root).problems, [
-    ".flow/overrides/agents/ci.yml: extend .claude/agents/ci-steward.md: fflow renders no such output (`fflow diff` lists them)",
+    ".flow/overrides/agents/ci.yml: extend .agents/agents/ci-steward.md: fflow renders no such output (`fflow diff` lists them)",
   ]);
   // A replaced source the profile drops would change nothing, so it is refused too.
   writeFileSync(join(root, ".flow/overrides/agents/ci.md"), "Ours.\n");

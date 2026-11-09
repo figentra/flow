@@ -197,17 +197,17 @@ test("sync renders each preset's stewards, the workflow with the approver's name
       JSON.stringify({ version: 1, preset, ...(owner ? { apps: { owner } } : {}) }),
     );
     const { files } = sync(root, { direct: true, log: () => {} });
-    const agents = files.filter((f) => f.startsWith(".claude/agents/"));
+    const agents = files.filter((f) => f.startsWith(".agents/agents/"));
     // The stackra preset also carries core's role agents (STA-1945, preset-content.test.mjs); neutral only its stewards.
     if (preset === "neutral")
       assert.deepEqual(
         agents,
-        ids.map((id) => `.claude/agents/${id}.md`),
+        ids.map((id) => `.agents/agents/${id}.md`),
       );
-    for (const id of ids) assert.ok(agents.includes(`.claude/agents/${id}.md`), id);
+    for (const id of ids) assert.ok(agents.includes(`.agents/agents/${id}.md`), id);
     for (const id of ids)
       assert.match(
-        readFileSync(join(root, `.claude/agents/${id}.md`), "utf8"),
+        readFileSync(join(root, `.agents/agents/${id}.md`), "utf8"),
         new RegExp(`^name: ${id}$`, "m"),
       );
     assert.equal(approveSecrets(root).appId, "FFLOW_APPROVER_APP_ID");

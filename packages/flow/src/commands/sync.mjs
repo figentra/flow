@@ -27,6 +27,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { NAME } from "../lib/product.mjs";
+import { projectAssistants } from "../lib/project-assistants.mjs";
 import { ConfigError } from "../lib/config.mjs";
 import { BUNDLED, presetSource } from "../lib/flow-dir.mjs";
 import { LockError, NewerLockError, readLock } from "../lib/lock.mjs";
@@ -112,7 +113,14 @@ export function sync(root, { direct = false, log = console.log, adopt = false, f
   if (files.has(LEFTHOOK_FILE) && pinMise(root))
     log(`${NAME} sync: pinned npm:oxfmt and npm:oxlint in mise.toml at the catalog's versions`);
   log(`${NAME} sync: rendered ${files.size} file(s); .flow/lock.json written`);
-  return { files: [...files.keys()], removed };
+  // A direct sync also projects `.agents/` into each assistant's folders (STA-2098 H6).
+  if (!direct) return { files: [...files.keys()], removed };
+  const projection = projectAssistants(root);
+  for (const line of [...projection.conflict, ...projection.broken]) log(`${NAME} sync: ${line}`);
+  log(
+    `${NAME} sync: projected .agents/ (${projection.written.length} written, ${projection.linked.length} linked, ${projection.pruned.length} pruned, ${projection.ok} up to date)`,
+  );
+  return { files: [...files.keys()], removed, projection };
 }
 
 /**
@@ -133,7 +141,8 @@ export function pinMise(root) {
 }
 
 /**
- * Runs the repository's projector after a non-direct render; its output is dropped when `quiet`.
+ * Runs the repository's projector after a non-direct render (a direct one projects in `sync`); its output is dropped
+ * when `quiet`.
  * @param {string} root
  * @param {boolean} direct
  * @param {import("../lib/workspace-run.mjs").Io} io
@@ -162,14 +171,18 @@ export function project(root, direct, io) {
  */
 export function report(root, args, io) {
   const direct = args.includes("--direct");
+  let projected;
   try {
-    sync(root, { direct, log: io.log });
+    projected = sync(root, { direct, log: io.log }).projection;
   } catch (error) {
     if (!(error instanceof SyncRefusal)) throw error;
     io.log(`${NAME} sync: ${error.message}`);
     return { code: 1, line: `refused: ${error.message}` };
   }
-  const code = project(root, direct, io);
+  // A conflict or a broken source in the direct projection fails the sync.
+  const code = projected
+    ? Number(projected.conflict.length + projected.broken.length > 0)
+    : project(root, direct, io);
   return { code, line: code ? `synced; agents:sync exited ${code}` : "synced" };
 }
 
