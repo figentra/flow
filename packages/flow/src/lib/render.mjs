@@ -853,11 +853,12 @@ export function installProblems(root, version = VERSION) {
   // A v1 lock recorded neither digest; the next `sync` records both.
   if (lock.preset.digest && lock.overrides !== overridesDigest(root))
     problems.push(`${OVERRIDES}/ differs from what ${LOCK} records (run \`${NAME} sync\`)`);
-  // A direct sync also owns each assistant's projection of `.agents/` (STA-2098 H6).
-  if (syncedDirect(lock)) {
+  // A direct sync, or one whose config sets `projection`, also owns each assistant's projection of `.agents/` (H6).
+  const direct = syncedDirect(lock);
+  if (direct || loadConfig(root).config.projection === true) {
     const projection = projectAssistants(root, { check: true });
     for (const line of [...projection.drift, ...projection.conflict, ...projection.broken])
-      problems.push(`${line} (run \`${NAME} sync --direct\`)`);
+      problems.push(`${line} (run \`${NAME} sync${direct ? " --direct" : ""}\`)`);
   }
   return problems;
 }

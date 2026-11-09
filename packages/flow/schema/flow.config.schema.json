@@ -584,6 +584,9 @@
         }
       }
     },
+    "projection": {
+      "type": "boolean"
+    },
     "session": {
       "type": "object",
       "additionalProperties": false,
