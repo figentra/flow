@@ -295,7 +295,8 @@ function renderPreset(root, direct, overrides) {
   if (readme !== undefined) out.set("README.md", readme);
   const { apps, approve, baseline, ci, runner, secrets } = config;
   // STA-1942: only a repository whose main is red asks for the baseline gate.
-  if (baseline) out.set(`.github/workflows/${BASELINE_WORKFLOW}`, baselineWorkflow(baseline));
+  if (baseline)
+    out.set(`.github/workflows/${BASELINE_WORKFLOW}`, baselineWorkflow(baseline, ci?.filters));
   // The standard CI, with its one required check; its setup and install fall back to `baseline`'s.
   if (ci) out.set(`.github/workflows/${CI_WORKFLOW}`, ciWorkflow(ci, baseline));
   const ownerOnly = ownerOnlyExtra(root, overrides);
