@@ -1,7 +1,7 @@
 {
   "$schema": "./packages/flow/schema/flow.config.schema.json",
   "version": 1,
-  "preset": "stackra",
+  "preset": "neutral",
   "tracker": {
     "kind": "linear",
     "team": "STA",

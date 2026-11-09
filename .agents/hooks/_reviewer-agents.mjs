@@ -6,10 +6,4 @@
  * Governing contract: STA-2098 (H6).
  */
 /** Agent types that may run a review; the guard denies every other caller. */
-export const REVIEWER_AGENTS = new Set([
-  "accessibility-reviewer",
-  "architecture-guardian",
-  "code-reviewer",
-  "design-brand-reviewer",
-  "security-tenancy-reviewer",
-]);
+export const REVIEWER_AGENTS = new Set([]);
