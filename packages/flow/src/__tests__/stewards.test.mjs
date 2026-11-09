@@ -147,7 +147,7 @@ test("approval workflow: the pinned check, in its environment, with the approver
     ownerOnly: ["it's/**"],
   });
   assert.match(text, /^ {4}environment: fflow-approve$/m);
-  assert.match(text, /app-id: \$\{\{ secrets\.A_ID \}\}/);
+  assert.match(text, /client-id: \$\{\{ secrets\.A_ID \}\}/);
   assert.match(text, /private-key: \$\{\{ secrets\.A_KEY \}\}/);
   assert.match(text, /permission-pull-requests: write/);
   assert.match(text, /@figentra-oss\/flow@9\.9\.9/);

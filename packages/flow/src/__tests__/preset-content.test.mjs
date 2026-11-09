@@ -359,7 +359,7 @@ test("the stackra preset's agents name no file only core has: docs pages are lin
   // A product's validate refuses an agent that backticks a repository path it lacks (core's checkAgentSources); a
   // direct sync renders the rules under .claude/rules, so a rule's path differs by mode too.
   const coreOnly =
-    /`(?:apps\/docs\/src\/docs\/[^`<>*]+\.mdx|\.agents\/rules\/[^`<>*]+|tools\/[^`<>*]+)`/;
+    /`(?:apps\/docs\/src\/docs\/[^`<>*]+\.mdx|\.agents\/rules\/[^`<>*]+|tools\/[^`<>*]+|\.opencode\/[^`]*)`/;
   const agents = join(STACKRA, "agents");
   const offenders = readdirSync(agents)
     .filter((f) => f.endsWith(".md"))

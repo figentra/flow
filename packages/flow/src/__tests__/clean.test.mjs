@@ -221,3 +221,78 @@ test("clean: an in-use folder matches by path prefix, not by a shared name start
   });
   assert.match(inside.kept[0]?.reason ?? "", /in use/);
 });
+
+test("clean: a tree whose PR merged at its head goes although its issue is open and it was never pushed", async (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  const path = tree(r.root, "sta-13-merged");
+  const moved = tree(r.root, "sta-14-moved");
+  const pulls = new Map([
+    ["figentra/sta-13-merged", { number: 13, head: sh(path, "rev-parse", "HEAD") }],
+    ["figentra/sta-14-moved", { number: 14, head: "0".repeat(40) }],
+  ]);
+  const report = await clean({ cwd: r.root, issues: states(), pulls });
+  assert.deepEqual(report.removed, [path]);
+  assert.equal(sh(r.root, "branch", "--list", "figentra/sta-13-merged"), "");
+  // A commit after the merge is new work: the usual rules apply.
+  assert.match(report.kept.find((k) => k.path === moved)?.reason ?? "", /unsaved/);
+});
+
+test("clean: a branch whose own commits are in origin/main goes; a fresh tree off main does not", async (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  const path = tree(r.root, "sta-15-in-main");
+  sh(path, "push", "-q", "origin", "HEAD:main");
+  sh(r.root, "fetch", "-q", "origin");
+  const fresh = join(r.root, ".claude", "worktrees", "sta-16-fresh");
+  sh(r.root, "worktree", "add", "-q", "-b", "figentra/sta-16-fresh", fresh, "origin/main");
+  const report = await clean({ cwd: r.root, issues: states(), pulls: new Map(), merged: true });
+  assert.deepEqual(report.removed, [path]);
+  assert.equal(existsSync(fresh), true);
+  // `--merged` reports only the merged trees it keeps.
+  assert.deepEqual(report.kept, []);
+  assert.equal(report.budget, undefined);
+});
+
+test("clean --merged keeps a merged tree that is dirty or holds ignored files, with the reason", async (t) => {
+  const r = repo({ ".gitignore": ".testbed/\n" });
+  t.after(r.dispose);
+  const dirty = tree(r.root, "sta-17-dirty");
+  writeFileSync(join(dirty, "wip.txt"), "wip\n");
+  const proof = tree(r.root, "sta-18-proof");
+  mkdirSync(join(proof, ".testbed"));
+  writeFileSync(join(proof, ".testbed", "out.txt"), "x\n");
+  const open = tree(r.root, "sta-19-open");
+  const head = (/** @type {string} */ p) => sh(p, "rev-parse", "HEAD");
+  const pulls = new Map([
+    ["figentra/sta-17-dirty", { number: 17, head: head(dirty) }],
+    ["figentra/sta-18-proof", { number: 18, head: head(proof) }],
+  ]);
+  const report = await clean({ cwd: r.root, issues: states(), pulls, merged: true });
+  assert.deepEqual(report.removed, []);
+  const reasons = Object.fromEntries(report.kept.map((k) => [k.path, k.reason]));
+  assert.equal(reasons[dirty], "uncommitted changes");
+  assert.match(reasons[proof] ?? "", /\.testbed/);
+  assert.equal(reasons[open], undefined);
+});
+
+test("clean: keeps a merged tree the repository's git hooks run a program from", async (t) => {
+  const r = repo();
+  t.after(r.dispose);
+  const path = tree(r.root, "sta-20-hooks");
+  const other = tree(r.root, "sta-21-free");
+  const hooks = sh(r.root, "rev-parse", "--path-format=absolute", "--git-path", "hooks");
+  mkdirSync(hooks, { recursive: true });
+  writeFileSync(
+    join(hooks, "pre-commit"),
+    `#!/bin/sh\n${path}/node_modules/.bin/lefthook run pre-commit\n`,
+  );
+  const head = (/** @type {string} */ p) => sh(p, "rev-parse", "HEAD");
+  const pulls = new Map([
+    ["figentra/sta-20-hooks", { number: 20, head: head(path) }],
+    ["figentra/sta-21-free", { number: 21, head: head(other) }],
+  ]);
+  const report = await clean({ cwd: r.root, issues: states(), pulls, merged: true });
+  assert.deepEqual(report.removed, [other]);
+  assert.match(report.kept.find((k) => k.path === path)?.reason ?? "", /git hooks/);
+});

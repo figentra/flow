@@ -1,6 +1,6 @@
 /**
  * Figentra Flow file contract:
- * Purpose: `fflow clean [--dry-run] [--adopt] [--fix-ignore] [--all]` — remove the finished worktrees of the
+ * Purpose: `fflow clean [--dry-run] [--merged] [--adopt] [--fix-ignore] [--all]` — remove the finished worktrees of the
  *   repository (or of every workspace repository with `--all`), move stray ones inside, and make `.gitignore` ignore
  *   `.claude/worktrees/`. A worktree is removed only when it is
  *   - not a tester's (`g-*`, `*-gate`, `land-*`, `tpl-core`, `c6-lock*`, `template-wt-lean`);
@@ -8,9 +8,14 @@
  *   - clean (no change, untracked files included);
  *   - saved: its head on a remote ref, or every commit landed by patch (`git cherry`), since core lands by cherry-pick,
  *     or the squash commit `fflow land` recorded (`branch.<b>.figentraFlowLanded`) on the default branch;
- *   - finished: its issue Done or Canceled when its name carries a key, else idle for 2 hours or more by its HEAD
- *     reflog (a detached HEAD or a builder sub-agent tree);
- *   - free of ignored files outside the usual caches (`.env`, `ios/`, `android/` keep it).
+ *   - finished: its pull request merged with this head, or its branch's own commits already in the default branch
+ *     (merged trees skip the next two rules); else its issue Done or Canceled when its name carries a key, else idle
+ *     for 2 hours or more by its HEAD reflog (a detached HEAD or a builder sub-agent tree);
+ *   - free of ignored files outside the usual caches (`.env`, `ios/`, `android/` keep it);
+ *   - not where the repository's git hooks run from: a hook (lefthook's, say) naming a program inside it would break
+ *     every commit once it is gone, so the tree stays until the hooks are installed again elsewhere.
+ *   `--merged` removes only the merged trees and reports only the merged ones it keeps; with `clean.whenMerged` the
+ *   guard runs it in the background at a session's start (`../guard/clean-merged.mjs`).
  *   A stray tree is adopted only when it is not in use and idle for 2 hours. Every kept tree is reported with its reason, and the space freed is reported.
  *   The budget (STA-1871): every run counts the linked worktrees against `clean.budget` (default 10), warns above it
  *   and lists the candidates: trees under `.claude/worktrees/` idle for 24 hours whose head is merged or pushed, not
@@ -23,16 +28,26 @@
  *   with `--adopt`, and one appended `.gitignore` line with `--fix-ignore`. `--dry-run` changes nothing.
  * Runtime: node
  * Governing contract: Stackra ADR 0503 (decision 6); STA-1729 (the leader's revisions of 2026-10-31).
- * Secrets: the Linear token only from the environment the calling wrapper sets; never read or printed.
+ * Secrets: the Linear token only from the environment the calling wrapper sets; never read or printed. GitHub is read
+ *   through the configured credentials (`../lib/github.mjs`), which hold the token.
  */
 import { spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
 
+import { slugOf } from "./gate-run.mjs";
 import { trackerFor } from "../adapters/tracker/index.mjs";
 import { matches } from "../lib/artifacts.mjs";
 import { loadConfig } from "../lib/config.mjs";
+import { github } from "../lib/github.mjs";
 import { LANDED_KEY, LEGACY_LANDED_KEY, NAME } from "../lib/product.mjs";
 import {
   busyFolders,
@@ -92,6 +107,77 @@ export function writeWorktreesReadme(root) {
   return true;
 }
 
+/**
+ * The merged pull requests of `root`'s origin, head branch to number and head commit, from one API call; empty when
+ * GitHub cannot be asked (no credentials, not a GitHub origin, a failed call).
+ * shortcut: only the 100 most recently updated closed PRs; an older merge falls to the branch-in-base rule.
+ * @param {string} root
+ * @returns {Map<string, { number: number, head: string }>}
+ */
+export function mergedPulls(root) {
+  const repo = slugOf(git(root, ["remote", "get-url", "origin"]).out);
+  if (!repo) return new Map();
+  let r;
+  try {
+    r = github(root, { warn: () => {} })(
+      "GET",
+      `/repos/${repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100`,
+    );
+  } catch {
+    return new Map();
+  }
+  return new Map(
+    (r.ok && Array.isArray(r.json) ? r.json : [])
+      .filter((p) => p.merged_at && p.head?.ref)
+      .map((p) => [p.head.ref, { number: p.number, head: p.head.sha }]),
+  );
+}
+
+/**
+ * Why a tree's work is merged, or undefined: its PR merged at this head, or its branch made commits of its own (more
+ * than its creation in the reflog, so a fresh tree off main never counts) and `origin/<base>` holds its head.
+ * @param {string} root
+ * @param {{ head: string, branch?: string }} tree
+ * @param {string} base
+ * @param {Map<string, { number: number, head: string }>} pulls
+ */
+function mergedWhy(root, tree, base, pulls) {
+  if (!tree.branch) return undefined;
+  const pr = pulls.get(tree.branch);
+  if (pr && pr.head === tree.head) return `#${pr.number} merged`;
+  const log = git(root, ["log", "-g", "--format=%gs", `refs/heads/${tree.branch}`]);
+  const own = log.ok && log.out.split("\n").some((l) => l && !l.startsWith("branch: Created from"));
+  return own && git(root, ["merge-base", "--is-ancestor", tree.head, `origin/${base}`]).ok
+    ? `in origin/${base}`
+    : undefined;
+}
+
+/**
+ * The text of the repository's git hooks (the shared `hooks` folder, or `core.hooksPath`), samples left out.
+ * @param {string} root
+ * @returns {string[]}
+ */
+function hookTexts(root) {
+  const dir = git(root, ["rev-parse", "--path-format=absolute", "--git-path", "hooks"]).out;
+  if (!dir || !existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => !f.endsWith(".sample"))
+    .flatMap((f) => {
+      try {
+        return [readFileSync(join(dir, f), "utf8")];
+      } catch {
+        return []; // a folder or an unreadable file holds no path
+      }
+    });
+}
+
+/** Whether a hook in `hooks` names a path inside `tree`. */
+const hooksInside = (/** @type {string[]} */ hooks, /** @type {string} */ tree) =>
+  hooks.some((text) => text.includes(resolve(tree) + sep));
+
+/** What keeps a tree the hooks run from. */
+const HOOKS_INSIDE = `the repository's git hooks run a program inside it; install them again from the main checkout first`;
+
 /** The issue states that finish a keyed worktree. */
 const FINISHED = new Set(["Done", "Canceled", "Cancelled", "Duplicate"]);
 
@@ -143,9 +229,10 @@ export function ignoresWorktrees(root) {
 /**
  * Cleans the repository at `cwd`.
  * @param {{ cwd: string, dry?: boolean, adopt?: boolean, fixIgnore?: boolean, issues?: Issues, now?: number,
- *           busy?: string[], only?: string[], budget?: boolean, backupDir?: string }} options   `only`: act on these
+ *           busy?: string[], only?: string[], budget?: boolean, backupDir?: string, merged?: boolean,
+ *           pulls?: Map<string, { number: number, head: string }> }} options   `only`: act on these
  *   worktree paths alone (`fflow land`); `budget`: sweep the budget candidates; `backupDir`: where ignored
- *   files go (default `~/Backups/<NAME>/`)
+ *   files go (default `~/Backups/<NAME>/`); `merged`: the merged trees alone; `pulls`: the merged PRs (tests)
  * @returns {Promise<Report>}
  */
 export async function clean(options) {
@@ -183,6 +270,9 @@ export async function clean(options) {
 
   const busy = options.busy ?? busyFolders();
   const only = options.only?.map((p) => resolve(p));
+  // `land` has just merged the one it names; any other run asks GitHub once.
+  const pulls = options.pulls ?? (only ? new Map() : mergedPulls(root));
+  const hooks = hookTexts(root);
   for (const tree of worktrees(root).filter((t) => !only || only.includes(resolve(t.path)))) {
     const name = basename(tree.path);
     const keep = (/** @type {string} */ reason) => report.kept.push({ path: tree.path, reason });
@@ -191,6 +281,8 @@ export async function clean(options) {
       keep("a tester worktree");
       continue;
     }
+    const merged = mergedWhy(root, tree, base, pulls);
+    if (options.merged && !merged) continue;
     if (busy === undefined) {
       keep("running processes cannot be listed (no lsof or /proc)");
       continue;
@@ -243,12 +335,13 @@ export async function clean(options) {
     const landed = landedAt(root, tree.branch);
     const landedOnBase =
       Boolean(landed) && git(root, ["merge-base", "--is-ancestor", landed, `origin/${base}`]).ok;
-    if (!landedOnBase && !isSaved(tree.path, base)) {
+    if (!merged && !landedOnBase && !isSaved(tree.path, base)) {
       keep("unsaved: commits on no remote and not landed");
       continue;
     }
     const key = scheme.parse(tree.branch ?? "") ?? scheme.parse(name);
-    if (key !== undefined) {
+    // Merged is finished, whatever the issue's state or how recently the tree was used.
+    if (!merged && key !== undefined) {
       const state = await stateOf(key);
       if (state === undefined) {
         keep(`${scheme.display(key)}'s state is unknown (tracker unavailable)`);
@@ -258,7 +351,7 @@ export async function clean(options) {
         keep(`${scheme.display(key)} is ${state}`);
         continue;
       }
-    } else {
+    } else if (!merged) {
       const idle = idleHours(tree.path, now);
       if (idle < IDLE_HOURS) {
         keep(`no issue key, idle ${idle.toFixed(1)} h (< ${IDLE_HOURS} h)`);
@@ -270,6 +363,10 @@ export async function clean(options) {
       keep(
         `ignored files outside the caches: ${precious.slice(0, 5).join(", ")}${precious.length > 5 ? ", …" : ""}`,
       );
+      continue;
+    }
+    if (hooksInside(hooks, tree.path)) {
+      keep(HOOKS_INSIDE);
       continue;
     }
     const kb = sizeKb(tree.path);
@@ -289,7 +386,7 @@ export async function clean(options) {
     if (!dry) ignoreWorktrees(root);
     report.ignoreFixed = true;
   }
-  if (!only) {
+  if (!only && !options.merged) {
     if (!dry) writeWorktreesReadme(root);
     report.budget = budget(root, report, {
       apply: Boolean(options.budget) && !dry,
@@ -314,6 +411,7 @@ export async function clean(options) {
 function budget(root, report, { apply, now, busy, keepNames, base, backupDir }) {
   const inside = join(resolve(root), ".claude", "worktrees") + sep;
   const left = worktrees(root).filter((t) => !report.removed.includes(t.path));
+  const hooks = hookTexts(root);
   /** @type {Budget} */
   const out = {
     limit: loadConfig(root).config.clean?.budget ?? BUDGET,
@@ -339,6 +437,10 @@ function budget(root, report, { apply, now, busy, keepNames, base, backupDir }) 
     const merged =
       Boolean(landed) && git(root, ["merge-base", "--is-ancestor", landed, `origin/${base}`]).ok;
     if (!merged && !isSaved(tree.path, base)) continue;
+    if (hooksInside(hooks, tree.path)) {
+      out.kept.push({ path: tree.path, reason: HOOKS_INSIDE });
+      continue;
+    }
     out.candidates.push(tree.path);
     if (!apply) continue;
     const kb = sizeKb(tree.path);
@@ -412,7 +514,7 @@ function sweep(root, tree, { now, backupDir, preserved }) {
 export const human = (kb) =>
   kb >= 1_048_576 ? `${(kb / 1_048_576).toFixed(1)} GB` : `${(kb / 1024).toFixed(0)} MB`;
 
-/** `fflow clean [--dry-run] [--adopt] [--fix-ignore] [--budget] [--all]`. */
+/** `fflow clean [--dry-run] [--merged] [--adopt] [--fix-ignore] [--budget] [--all]`. */
 export async function run(args) {
   const dry = args.includes("--dry-run");
   const roots = args.includes("--all") ? readWorkspace().map((r) => r.path) : [process.cwd()];
@@ -429,6 +531,7 @@ export async function run(args) {
       adopt: args.includes("--adopt"),
       fixIgnore: args.includes("--fix-ignore"),
       budget: args.includes("--budget"),
+      merged: args.includes("--merged"),
     });
     freed += r.freedKb;
     console.log(

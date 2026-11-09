@@ -13,8 +13,10 @@ ones hides real work.
 
 1. **One worktree per active task, only under `.claude/worktrees/<name>/`.** Never put one next to the
    repository. Make it with `fflow start <key>`.
-2. **`fflow land` removes the worktree after the merge.** Run `fflow land <n>` again on a PR that auto-merged to
-   finish it.
+2. **A merged worktree goes.** `fflow land` removes it after the merge (run `fflow land <n>` again on a PR that
+   auto-merged), and `fflow clean --merged` removes every tree whose PR merged or whose commits are in the default
+   branch; with `clean.whenMerged` it runs at each session's start. A tree that is in use, dirty or holds ignored
+   outputs stays, and the report says why.
 3. **A session removes its own worktree when it ends.** First commit or push the work. Then run
    `git worktree remove <path>`, never with `--force`. Leave a worktree another session is using alone.
 4. **Never leave a detached HEAD with commits.** Put the commits on a branch (`git switch -c <branch>`) before

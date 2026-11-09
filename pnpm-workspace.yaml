@@ -38,7 +38,10 @@ catalogs:
 
 # Install scripts allowed to run (reviewed); any other fails install with ERR_PNPM_IGNORED_BUILDS.
 allowBuilds:
-  lefthook: true
+  # Off: its install script ran `lefthook install` in every worktree, rewriting the shared .git/hooks with that
+  # worktree's lefthook path. The root `prepare` installs the hooks instead, only from the main checkout, never when
+  # CI is set or in a tree without .git (the Testbed's copy).
+  lefthook: false
 minimumReleaseAgeExclude:
   # Figentra's own open packages install the day they publish (owner, 2026-11-09).
   - "@figentra-oss/*"

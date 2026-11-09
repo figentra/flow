@@ -447,6 +447,9 @@
         },
         "lefthook": {
           "type": "boolean"
+        },
+        "opencode": {
+          "type": "boolean"
         }
       }
     },
@@ -464,6 +467,9 @@
         "budget": {
           "type": "integer",
           "minimum": 1
+        },
+        "whenMerged": {
+          "type": "boolean"
         }
       }
     },
@@ -491,6 +497,12 @@
           "minLength": 1
         },
         "setup": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "afterInstall": {
           "type": "array",
           "items": {
             "type": "object"
@@ -583,6 +595,9 @@
           "minLength": 1
         }
       }
+    },
+    "projection": {
+      "type": "boolean"
     },
     "session": {
       "type": "object",

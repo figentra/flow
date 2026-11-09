@@ -155,7 +155,11 @@ export const SCHEMA = {
     surfaces: {
       type: "object",
       additionalProperties: false,
-      properties: { settings: { type: "boolean" }, lefthook: { type: "boolean" } },
+      properties: {
+        settings: { type: "boolean" },
+        lefthook: { type: "boolean" },
+        opencode: { type: "boolean" },
+      },
     },
     clean: {
       type: "object",
@@ -163,6 +167,8 @@ export const SCHEMA = {
       properties: {
         keep: { type: "array", items: str },
         budget: { type: "integer", minimum: 1 },
+        // Remove merged worktrees in the background at each session's start (`fflow clean --merged`).
+        whenMerged: { type: "boolean" },
       },
     },
     baseline: {
@@ -173,6 +179,7 @@ export const SCHEMA = {
         mustPass: { type: "array", items: str },
         install: str,
         setup: { type: "array", items: { type: "object" } },
+        afterInstall: { type: "array", items: { type: "object" } },
         branch: str,
       },
     },
@@ -217,6 +224,8 @@ export const SCHEMA = {
     // STA-2131: `pushAtEnd` renders the SessionEnd hook that commits the session's work as WIP and pushes it; off
     // unless a repository opts in. `contextCommands` are the repository's own commands (argv, no shell) whose
     // output the SessionStart context appends.
+    // Project `.agents/` into each assistant's folders after every sync, not only `--direct` (STA-2098 H6).
+    projection: { type: "boolean" },
     session: {
       type: "object",
       additionalProperties: false,
@@ -323,8 +332,9 @@ export function validate(schema, value, path = "") {
  *                      owner?: string },
  *             gate?: { check?: string, shard?: string }, approve?: { ownerOnly?: string[], checks?: Record<string, string>,
  *                      workflows?: string[], requesters?: string[], tolerate?: string[] },
- *             surfaces?: { settings?: boolean, lefthook?: boolean },
- *             clean?: { keep?: string[], budget?: number }, review?: { required?: string[] },
+ *             surfaces?: { settings?: boolean, lefthook?: boolean, opencode?: boolean },
+ *             projection?: boolean,
+ *             clean?: { keep?: string[], budget?: number, whenMerged?: boolean }, review?: { required?: string[] },
  *             baseline?: { tasks?: string[], mustPass?: string[], install?: string, setup?: Record<string, unknown>[], branch?: string },
  *             artifacts?: { paths?: string[], maxBytes?: number },
  *             train?: { cutoff?: number, eject?: "bisect" | "manual", after?: string[], label?: string },

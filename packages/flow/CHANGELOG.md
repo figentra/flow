@@ -1,5 +1,51 @@
 # @figentra-oss/flow
 
+## 0.11.0
+
+### Minor Changes
+
+- 7ced7b9: `fflow clean` now treats a worktree as finished as soon as its work is merged: either its pull request merged at the
+  tree's head, or its branch's own commits are already in the default branch. It no longer waits for the issue to close
+  or for two idle hours, and it removes the branch too. Every other rule still keeps a tree, with the reason: in use,
+  locked, uncommitted changes, a tester's name, ignored files outside the caches (`.env`, `ios/`, `android/`, proof
+  outputs), or the repository's git hooks running a program from inside it. `fflow clean --merged` removes only merged trees, and lists only the merged trees it keeps. With
+  `clean.whenMerged: true`, the guard starts that run in the background each time a session starts, no more than once
+  every ten minutes. Its report goes to `.claude/worktrees/clean-merged.log`.
+
+### Patch Changes
+
+- fc7c070: The rendered gate and baseline workflows pin `actions/checkout` v7.0.1, which runs on Node 24; v4.4.0 ran on Node 20,
+  which GitHub deprecated. The other pinned actions (setup-node, upload-artifact, create-github-app-token, mise-action)
+  already run on Node 24.
+  
+  The approval workflow's app-token step passes `client-id:` instead of `app-id:` (the same value), as
+  `create-github-app-token` now names it.
+  
+  The config's `baseline.afterInstall` steps run in the baseline workflow after the install and before the tasks, for
+  example a cache save that should only run once the install filled the cache.
+
+## 0.10.0
+
+### Minor Changes
+
+- a2a9512: A non-direct sync projects `.agents/` into each assistant's folders when the config sets `projection: true`. That covers
+  the agents in each dialect, the linked skills, hooks and templates, the reviewer list and `.mcp.json`. `fflow check`
+  then owns the projection, as it does after a direct sync. A repository keeps its rendered rules and skills under
+  `.agents/` and still drops its own projector script (core keeps ADR 0016's layout while retiring `agents-sync`).
+
+### Patch Changes
+
+- 54dae4c: The OpenCode files, `opencode.jsonc` and `.opencode/**` with the guard plugin, are opt-in like `.claude/settings.json`,
+  under the config's new `surfaces.opencode`. `opencode.jsonc` allows broadly and then denies, so a product that does not
+  use OpenCode should not get it unasked. Unset, a repository keeps them only where its lock already records
+  `opencode.jsonc`, so core and the template keep theirs.
+  
+  A first sync now refuses to replace any rendered file the repository wrote itself, not only AGENTS.md and README.md.
+  That covers `.mcp.yaml` and `.github/CODEOWNERS`; opting in to a surface is the repository's answer for that file, and sync logs what it drops. The refusal names what the render would drop
+  (an `.mcp.yaml`'s servers, a file's lines) and where it belongs instead: `mcp` in the config, or an extend override for
+  CODEOWNERS. When an owned file was edited since the last sync, sync still renders it as before, and now says which
+  lines go and where they belong.
+
 ## 0.9.2
 
 ### Patch Changes

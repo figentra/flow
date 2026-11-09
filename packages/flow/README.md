@@ -78,7 +78,7 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow parse <file>`                                                  | what the parsers read from a `spec.md`, `plan.md`, `tasks.md` or `routing.yaml`, as JSON                                                                                                         |
 | `fflow linear issue <spec.md>` / `tasks <tasks.md>`                   | the spec's Linear issue and one sub-issue per task; `--dry-run` needs no token                                                                                                                   |
 | `fflow start <STA-n> [--slug s] [--install] [--no-spec]`              | branch `figentra/sta-n-<slug>` from `origin/<default>` into `.claude/worktrees/sta-n-<slug>`; issue In Progress; the record's `start` (or `worktree` for a Tasked spec) committed and pushed; a key with no folder on `origin/<default>` (and none in the bug lane) gets `spec.md` from the spec template, committed with the record; `--no-spec` for trivial work (a trivial PR deletes a spec it turns out not to need) |
-| `fflow clean [--dry-run] [--adopt] [--fix-ignore] [--budget] [--all]` | removes finished worktrees (clean, saved, issue Done or idle 2 h), reports what it kept and the space freed; warns over `clean.budget`, and `--budget` sweeps idle merged or pushed trees safely |
+| `fflow clean [--dry-run] [--merged] [--adopt] [--fix-ignore] [--budget] [--all]` | removes finished worktrees (clean, and merged, or saved with the issue Done or idle 2 h; `--merged`: the merged ones only), reports what it kept and the space freed; warns over `clean.budget`, and `--budget` sweeps idle merged or pushed trees safely |
 | `fflow guard [--print-settings]`                                      | the guard engine on the hook event on stdin: the preset's rules, the side doors and the secret files; `--print-settings` prints the hooks that wire `.agents/hooks/fflow-guard.mjs` for four events |
 | `fflow init --workspace <dir>…`                                       | writes the workspace list (`~/.config/fflow/workspace.yaml`) that `--all` acts on                                                                                                                |
 | `fflow status [--repo p] [--json] [--offline]`                        | specs by status, worktrees, open PRs with their gate and review, and sessions, for every repository of the workspace                                                                             |
@@ -233,6 +233,8 @@ setting you have not made refuses and names it.
   any prefix are read and the commands that move issues refuse, naming the key.
 
 - `clean.keep` lists worktree names `clean` never removes or adopts. These are globs such as `*-gate`.
+- `clean.whenMerged: true` runs `fflow clean --merged` in the background each time a session starts (at most every ten
+  minutes; the report is `.claude/worktrees/clean-merged.log`), so a worktree goes once its pull request merges.
 - `artifacts` is the guard `gate run` and `land` apply to a change. `paths` defaults to `.cache/`, `node_modules/`,
   `dist/`, `.turbo/` and `coverage/`, where a trailing `/` matches the folder at any depth and other entries are globs.
   `maxBytes` defaults to 5 MB. A change that adds or changes such a file is refused, with each file named.
