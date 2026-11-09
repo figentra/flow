@@ -255,3 +255,28 @@ test("sync says which lines an edited owned file loses, and where they belong", 
     lines.join("\n"),
   );
 });
+
+test("projection: a non-direct sync projects .agents/ when the config asks, its sources staying under .agents/", (t) => {
+  const root = governed(t, { config: { preset: "stackra" } });
+  mkdirSync(join(root, ".claude"), { recursive: true });
+  // Not asked: a non-direct sync leaves the assistants' folders alone, as before.
+  assert.equal(sync(root, quiet).projection, undefined);
+  configure(root, {
+    preset: "stackra",
+    surfaces: { settings: true, lefthook: true },
+    projection: true,
+  });
+  const { files, projection } = sync(root, quiet);
+  assert.ok(projection, "projected");
+  assert.deepEqual([...projection.conflict, ...projection.broken], []);
+  assert.ok(files.includes(".agents/skills/docs-adr/SKILL.md"), "sources stay under .agents/");
+  assert.match(
+    readFileSync(join(root, ".claude/agents/code-reviewer.md"), "utf8"),
+    /generated from \.agents\/agents/,
+  );
+  assert.deepEqual(
+    check(root).problems.filter((l) => /\.claude\//.test(l)),
+    [],
+    "check owns the projection",
+  );
+});

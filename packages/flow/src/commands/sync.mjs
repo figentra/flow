@@ -28,7 +28,7 @@ import { fileURLToPath } from "node:url";
 
 import { CONFIG_FILE, NAME } from "../lib/product.mjs";
 import { projectAssistants } from "../lib/project-assistants.mjs";
-import { ConfigError } from "../lib/config.mjs";
+import { ConfigError, loadConfig } from "../lib/config.mjs";
 import { BUNDLED, LOCK, presetSource } from "../lib/flow-dir.mjs";
 import { driftOf, LockError, NewerLockError, readLock } from "../lib/lock.mjs";
 import { incompatibility } from "../lib/preset-package.mjs";
@@ -212,8 +212,10 @@ export function sync(root, { direct = false, log = console.log, adopt = false, f
   if (files.has(LEFTHOOK_FILE) && pinMise(root))
     log(`${NAME} sync: pinned npm:oxfmt and npm:oxlint in mise.toml at the catalog's versions`);
   log(`${NAME} sync: rendered ${files.size} file(s); .flow/lock.json written`);
-  // A direct sync also projects `.agents/` into each assistant's folders (STA-2098 H6).
-  if (!direct) return { files: [...files.keys()], removed };
+  // A direct sync also projects `.agents/` into each assistant's folders (STA-2098 H6), and so does any sync of a
+  // repository whose config sets `projection`: its rendered sources stay under `.agents/` (core's ADR 0016).
+  if (!direct && loadConfig(root).config.projection !== true)
+    return { files: [...files.keys()], removed };
   const projection = projectAssistants(root);
   for (const line of [...projection.conflict, ...projection.broken]) log(`${NAME} sync: ${line}`);
   log(
