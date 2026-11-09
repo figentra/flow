@@ -1,7 +1,7 @@
 # assets/landing
 
 Flow's landing page as one experience document for the shared landing kit (`@stackra/experience`, figentra/stackra
-#403). `index.json` is the home page: a list of `{ id, block, props, children? }` nodes, every human string a
+#870). `index.json` is the home page: a list of `{ id, block, props, children? }` nodes, every human string a
 `{ "en", "ar" }` pair. Code, commands and file names are plain strings and are never translated.
 
 **PROPOSED, Arabic awaiting Qossai Alqawasmi's review.** The English follows Flow's voice and messaging in
@@ -27,14 +27,13 @@ glossary. Nothing Arabic ships before his review.
 
 ## Owed before it ships
 
-- **Art.** `hero.art` points at `/art/flow`, four single-tone mask layers (`flow.ground.svg`, `flow.dots.svg`,
-  `flow.line.svg`, `flow.core.svg`) that don't exist yet. The strata posters are Stackra's; Flow's own posters come
-  from its brand kit.
-- **The terminal session.** `try-it.lines` is empty. Record it from the real CLI with the kit's recorder on the
-  Testbed; never write output lines by hand.
+- **Art (held).** `hero.art` points at `/art/flow`: four single-tone mask layers (`flow.ground.svg`, `flow.dots.svg`,
+  `flow.line.svg`, `flow.core.svg`), a brand asset proposed in figentra/brand for the owner. Until then the hero has
+  no art of its own.
+- **Posters (held).** `hero.horizon` and `try-it.art` use Stackra's strata posters until Flow's brand kit has its own.
+- **The terminal session.** `try-it.lines` is empty. Record it from the real CLI with
+  `tools/scripts/record-terminal-demo.mjs` on the Testbed; never write a session by hand.
 - **Links.** They point at the docs pages on GitHub until Flow's docs site has its own URL.
-- **The `brand` of the product cards.** `flow` and `stackra` are brand ids from `figentra/brand`; check them against
-  the kit once it renders.
 
 ## Rules for the copy
 
