@@ -151,6 +151,12 @@ export const SCHEMA = {
         tolerate: { type: "array", items: { ...str, not: { enum: NEVER_TOLERATED } } },
       },
     },
+    // Opt-in surfaces (each unset: only where the lock already records the file).
+    surfaces: {
+      type: "object",
+      additionalProperties: false,
+      properties: { settings: { type: "boolean" }, lefthook: { type: "boolean" } },
+    },
     clean: {
       type: "object",
       additionalProperties: false,
@@ -317,6 +323,7 @@ export function validate(schema, value, path = "") {
  *                      owner?: string },
  *             gate?: { check?: string, shard?: string }, approve?: { ownerOnly?: string[], checks?: Record<string, string>,
  *                      workflows?: string[], requesters?: string[], tolerate?: string[] },
+ *             surfaces?: { settings?: boolean, lefthook?: boolean },
  *             clean?: { keep?: string[], budget?: number }, review?: { required?: string[] },
  *             baseline?: { tasks?: string[], mustPass?: string[], install?: string, setup?: Record<string, unknown>[], branch?: string },
  *             artifacts?: { paths?: string[], maxBytes?: number },

@@ -38,7 +38,7 @@ const settingsOf = (presetDir, hooks, config = {}) =>
   JSON.parse(
     renderSettings({
       root: "/repo",
-      config,
+      config: { surfaces: { settings: true }, ...config },
       presetDir,
       ...(hooks ? { profile: profile(hooks) } : {}),
     }).get(SETTINGS_FILE) ?? "null",

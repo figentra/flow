@@ -12,7 +12,7 @@ tools: [Read, Grep, Glob, Write, Edit, Bash]
 
 Deliver web UI that is accessible, RTL-safe, themed by tokens and wired to the generated client. Console screens are
 declared, not hand-coded: modules declare `@Resource`, `@Page` and `@Widget`, and `@stackra/panel` renders them
-(ADR 0164). A custom page is the escape hatch, not the default. `apps/console` is a stub today; keep new structure minimal.
+(ADR 0164). A custom page is the escape hatch, not the default. The console app is a stub today; keep new structure minimal.
 
 ## Must read
 

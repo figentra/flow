@@ -35,8 +35,8 @@ import { validateRepo } from "../commands/validate.mjs";
 import { FLOW_ASSETS } from "../lib/flow-dir.mjs";
 import { readLock } from "../lib/lock.mjs";
 import { VERSION } from "../lib/product.mjs";
-import { withHeader } from "../lib/provenance.mjs";
 import { installProblems, renderReference } from "../lib/render.mjs";
+import { fenced, withHeader } from "../lib/provenance.mjs";
 import { loadThirdParty } from "../lib/skills.mjs";
 import { parseYaml } from "../lib/yaml.mjs";
 import { governed, OWN_PRESET, snapshot } from "./__fixtures__/governed.mjs";
@@ -185,6 +185,29 @@ test("direct after a projector linked .claude/skills into .agents: the render re
     assert.equal(lstatSync(at).isSymbolicLink(), false, name);
     assert.ok(readFileSync(join(at, "SKILL.md"), "utf8").length > 0, name);
   }
+});
+
+test("rendered Markdown and JSONC keep their words but are fenced from a repository's formatter and speller", () => {
+  const front = "---\nname: x\ndescription: a very long line\n---\n\n# Title\n\nBody.\n";
+  assert.equal(
+    fenced(".agents/reference/encore/x/SKILL.md", front),
+    "---\n# cspell:disable\n# prettier-ignore\nname: x\n# prettier-ignore\ndescription: a very long line\n---\n\n" +
+      "<!-- prettier-ignore-start -->\n# Title\n\nBody.\n<!-- prettier-ignore-end -->\n",
+  );
+  assert.equal(
+    fenced("AGENTS.md", "# Plain\n"),
+    "<!-- cspell:disable -->\n\n<!-- prettier-ignore-start -->\n# Plain\n<!-- prettier-ignore-end -->\n",
+  );
+  assert.equal(fenced("opencode.jsonc", "{}\n"), "// cspell:disable\n// prettier-ignore\n{}\n");
+  assert.equal(fenced("lefthook.yml", "a: 1\n"), "a: 1\n");
+  // A skill only drops the spell checker: naming a formatter in it fails the skill-tech check (ADR 0227).
+  assert.equal(
+    fenced(".agents/skills/docs-adr/SKILL.md", "---\nname: x\n---\n\nBody\n"),
+    "---\n# cspell:disable\nname: x\n---\n\nBody\n",
+  );
+  assert.equal(fenced(".agents/routing.yaml", "a: 1\n"), "# cspell:disable\na: 1\n");
+  assert.equal(fenced(".agents/skills/flow-plan/SKILL.md", "x\n"), "x\n", "Flow's own commands");
+  assert.equal(fenced("README.md", "x\n"), "x\n");
 });
 
 test("the neutral preset renders none of core's content", (t) => {
