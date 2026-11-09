@@ -13,7 +13,7 @@
  */
 import { NAME, PACKAGE, REGISTRY, STATUS_CONTEXT } from "./product.mjs";
 
-const CHECKOUT = "actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0";
+const CHECKOUT = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1";
 export const SETUP_NODE = "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0";
 
 /** The job whose conclusion is the gate's verdict (`verdict.mjs` and the runner read it by this name). */

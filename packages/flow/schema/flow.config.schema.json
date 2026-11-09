@@ -502,6 +502,12 @@
             "type": "object"
           }
         },
+        "afterInstall": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
         "branch": {
           "type": "string",
           "minLength": 1

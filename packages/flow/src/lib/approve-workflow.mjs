@@ -222,7 +222,7 @@ ${
         id: app
         uses: ${APP_TOKEN}
         with:
-          app-id: \${{ secrets.${appId} }}
+          client-id: \${{ secrets.${appId} }}
           private-key: \${{ secrets.${privateKey} }}
           permission-pull-requests: write
       - name: Check and approve
