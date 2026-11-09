@@ -1,0 +1,100 @@
+---
+title: Presets
+description: What a preset carries, the neutral and stackra presets, overrides, and writing your own.
+---
+
+A preset is the content `fflow sync` renders and the gate reads: the `flow-*` command texts, the spec, plan and tasks
+templates, the agents and rules, the guard tables and the repository surfaces (`AGENTS.md`, `lefthook.yml`, the coding
+tools' settings). It carries a team's conventions, so the same Flow serves teams that work differently.
+
+## The two presets Flow ships
+
+| Preset    | For                    | What it adds                                                                                                                                         |
+| --------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `neutral` | any repository         | Only what the gates need: the spec folder, the issue key, the clarifications marker, tiers and approval stops, and the plan gate. It names no brand. |
+| `stackra` | Stackra's repositories | The Impact questionnaire, the Constitution Check, deploy modes, correctness properties, task routes and Stackra's agents, rules and skills.          |
+
+`neutral` is the default: a repository with no `preset` in `flow.config.json` uses it. Flow never needs Stackra:
+`stackra` is one example of a preset, and it is moving into its own package, `@stackra/flow-preset`.
+
+The gate holds every spec to the shared rules whatever the preset: the clarifications marker, the statuses, the tiers,
+the approvals, the acceptance criteria in EARS form and the design sections. A preset adds rules on top.
+
+## Using a preset package
+
+Any other preset is an npm package the repository installs and names:
+
+```sh
+pnpm exec fflow preset add @acme/flow-preset   # install it as a dev dependency and name it in flow.config.json
+pnpm exec fflow sync                           # render it; .flow/lock.json records its name, version and digest
+```
+
+`preset add` uses the package manager whose lockfile the repository has (pnpm when there is none). Nothing runs on
+install: a preset package has no postinstall, and Flow loads code only from the preset the configuration names.
+
+To upgrade, upgrade the package, then run `fflow update`. It prints the diff and adopts the new version into the lock.
+`sync` refuses a preset whose content differs from the lock until `update` has adopted it.
+
+## Changing what a preset renders: overrides
+
+A repository changes what `sync` renders without forking the preset, with an override file at
+`.flow/overrides/<surface>/<id>.yml`:
+
+```yaml
+kind: disable # or extend, configure, replace
+target: .agents/agents/ci-steward.md
+reason: we have no CI
+owner: your-login
+review: 2027-01-31
+```
+
+- `extend` adds items or text, `configure` sets values, `replace` swaps a whole file and `disable` drops it.
+- `replace` and `disable` need a `reason`, an `owner` and a `review` date. `fflow check` warns 14 days before the
+  review date and fails after it.
+- The mandatory policies (the secrets guard, the tenancy guard, the owner-only list and the guard's wiring) can't be
+  disabled, replaced or configured. An `extend` of one may only add to it.
+
+The header of every file an override shaped names the override.
+
+## Profiles
+
+A preset can declare profiles, each selecting which of its agents, skills and hooks `sync` renders. Set `profile` in
+`flow.config.json`; without it, the preset's `default` applies. Narrowing a profile deletes the rendered files it drops,
+unless someone edited them.
+
+## Writing a preset package
+
+A preset package names its preset folder in `package.json` and declares the Flow versions it works with:
+
+```json
+{
+  "name": "@acme/flow-preset",
+  "version": "1.0.0",
+  "files": ["preset"],
+  "flow": { "preset": "./preset" },
+  "peerDependencies": { "@figentra-oss/flow": ">=0.9.0 <1" }
+}
+```
+
+The folder has the bundled presets' layout. Every part is optional: templates fall back to Flow's base ones and guard
+tables to the neutral ones.
+
+```text
+preset/
+  preset.yml          # id, name, version, profiles; optional requires.flow, approve, queues, parameters
+  commands/           # flow-<verb>.md: the command texts sync renders as the flow-* commands
+  templates/          # spec-template.md, plan-template.md, tasks-template.md, …
+  agents/  rules/     # agent definitions and rules
+  skills/<name>/      # the preset's own skills (a folder may not be named flow-*)
+  guard/              # bash-rules.mjs, path-rules.mjs, hints.mjs: the guard engine's tables
+  surfaces/           # settings.json, opencode.jsonc, mcp.yaml, agents-md/agents.md, lefthook.yml
+  quality-words.yml   # vague words the spec gate flags
+  third-party.yml     # third-party skills, each with its source and licence
+```
+
+Guard tables are imported in place from the installed package, so they may import only Node's built-ins (`node:*`),
+files of their own `guard/` folder, and Flow's public entry points: `@figentra-oss/flow/guard` and
+`@figentra-oss/flow/guard/neutral`. When the installed Flow is outside the preset's range, `fflow doctor` fails its
+`preset` row with the fix, and `sync` refuses to render.
+
+The `neutral` preset in Flow's package (`assets/flow/presets/neutral`) is a complete example.
