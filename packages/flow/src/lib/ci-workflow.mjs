@@ -117,6 +117,10 @@ export function ciWorkflow(ci, baseline) {
   const setup = stepsYaml(ci.setup ?? baseline?.setup);
   // After the install, before the tasks: a cache save that should only run once the install filled it, say.
   const afterInstall = stepsYaml(ci.afterInstall ?? baseline?.afterInstall);
+  // The repository's own required checks, inside Code so Quality Gate holds them: `checks` after gen and before the
+  // tasks (a format check, a PR-key check), `after` once the tasks ran (a validate that reads the build).
+  const checks = stepsYaml(ci.checks);
+  const after = stepsYaml(ci.after);
   const nightly = c.nightly === true ? CI_DEFAULTS.nightly : c.nightly;
   const optional = ci.optional ?? [];
   const ids = optional.map((o) => o.id);
@@ -178,7 +182,7 @@ ${stepYaml({ name: "Install", run: install })}${afterInstall}`;
         : affectedPair("Gen", "gen", "gen");
 
   const code = `${head("code", "Code")}${permissions}    steps:
-${prepare(true)}${commitlint}${turbo}${gen}${affectedPair("Tasks", pr, main)}`;
+${prepare(true)}${commitlint}${turbo}${gen}${checks}${affectedPair("Tasks", pr, main)}${after}`;
 
   let int = "";
   if (ci.int) {

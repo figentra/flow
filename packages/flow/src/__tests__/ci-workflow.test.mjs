@@ -304,3 +304,19 @@ test("ci: os's baseline renders its Uniwind steps unchanged, and a mobile job st
   assert.equal(wf.jobs.mobile["continue-on-error"], true);
   assert.ok(wf.jobs.mobile.steps.some((/** @type {any} */ s) => s.id === "uniwind-cache"));
 });
+
+test("ci: checks run inside Code after gen and before the tasks, after once they ran; both stay under Quality Gate", () => {
+  const wf = parseYaml(
+    ciWorkflow({
+      checks: [{ name: "Format check", run: "pnpm format:check" }],
+      after: [{ name: "Validate", run: "pnpm validate" }],
+    }),
+  );
+  const names = wf.jobs.code.steps.map((/** @type {any} */ s) => s.name);
+  const at = (/** @type {string} */ name) => names.indexOf(name);
+  assert.ok(at("Gen") < at("Format check") && at("Format check") < at("Tasks (affected)"));
+  assert.ok(at("Tasks") < at("Validate"));
+  assert.equal(names.at(-1), "Validate");
+  assert.deepEqual(wf.jobs.gate.needs, ["code"]);
+  assert.equal(wf.jobs.code["continue-on-error"], undefined);
+});
