@@ -423,8 +423,18 @@ test("gate baseline: save, then check passes on the subset, fails on a new failu
   );
   // no baseline anywhere: closed
   const closed = { ...deps, api: github({ ancestors: [A], artifacts: {}, events: {} }) };
-  assert.equal(await run(["check", "--base", A], closed), 1);
+  /** @type {string[]} */
+  const said = [];
+  assert.equal(
+    await run(["check", "--base", A], {
+      ...closed,
+      log: (/** @type {string} */ l) => said.push(l),
+    }),
+    1,
+  );
   assert.match(readFileSync(step, "utf8"), /no baseline[\s\S]*fails closed/);
+  // the job log says why too, not only the run's summary page
+  assert.match(said.join("\n"), /no baseline[\s\S]*fails closed/);
   // a fail-closed path still prints JSON for a consumer parsing stdout
   /** @type {string[]} */
   const out = [];
