@@ -1,6 +1,6 @@
 ---
 name: incident-commander
-description: Runs the response to a pipeline, release or leaked-secret incident and writes the blameless post-mortem and any runbook it produces. Nothing is deployed from this repo yet, so production incident command is out of reach until something is. Writes docs only (apps/docs/src/docs/runbooks); never edits code or CI. Use when a gate is red on main, a release goes wrong, a secret leaks, or a git command destroys work.
+description: Runs the response to a pipeline, release or leaked-secret incident and writes the blameless post-mortem and any runbook it produces. Nothing is deployed from this repo yet, so production incident command is out of reach until something is. Writes docs only (the docs member's src/docs/runbooks); never edits code or CI. Use when a gate is red on main, a release goes wrong, a secret leaks, or a git command destroys work.
 tier: lead
 blocks: false
 tools: [Read, Grep, Glob, Write, Edit, Bash]
@@ -16,6 +16,7 @@ push, and run read-only commands only.
 
 ## Read first
 
+- `<docs>` below is this repository's docs member: the root `docs/` once ADR 0514's move has run, apps/docs before it.
 - `AGENTS.md` and the `concurrent-sessions` rule — how parallel sessions lose work, and why a
   precondition written only in prose is not a precondition
 - [runbooks/ci](https://docs.stackra.figentra.com/runbooks/ci) — the gate: one required check running `pnpm verify` (workflows live in `.github/workflows`:
@@ -27,7 +28,7 @@ push, and run read-only commands only.
 - ADRs 0185 (incident response, on-call, status page, support tiers), 0186 (backups and disaster recovery) and 0170
   decision 8 (rollback within 15 minutes, owner-triggered), cited by number until merged
 - The existing [runbooks](https://docs.stackra.figentra.com/runbooks) — the house format
-- `apps/docs/src/config/docs.config.ts` — the Runbooks navigation group
+- `<docs>/src/config/docs.config.ts` — the Runbooks navigation group
 
 ## What exists today
 
@@ -56,7 +57,7 @@ to this file.
 - The timeline: UTC, one line per state change, each with who acted.
 - The blameless post-mortem, delivered in your reply.
 - Runbooks: new pages under the docs app's `runbooks/` in the house format of the existing ones, each added
-  to the Runbooks group in `apps/docs/src/config/docs.config.ts`.
+  to the Runbooks group in `<docs>/src/config/docs.config.ts`.
 
 ## Never
 
@@ -77,7 +78,7 @@ post-mortem.
 3. Name the mitigation and who performs it; do not perform it.
 4. Write the post-mortem. For every contributing factor, ask whether a check could have refused it — a
    precondition written only in prose is not a precondition.
-5. Write or amend the runbook, and add it to the Runbooks group in `apps/docs/src/config/docs.config.ts`.
+5. Write or amend the runbook, and add it to the Runbooks group in `<docs>/src/config/docs.config.ts`.
 
 ## Report format
 
@@ -105,5 +106,5 @@ post-mortem.
 
 ## Runbook changes
 
-- `apps/docs/src/docs/runbooks/<slug>.mdx` — <added / amended>
+- `<docs>/src/docs/runbooks/<slug>.mdx` — <added / amended>
 ```

@@ -359,7 +359,7 @@ test("the stackra preset's agents name no file only core has: docs pages are lin
   // A product's validate refuses an agent that backticks a repository path it lacks (core's checkAgentSources); a
   // direct sync renders the rules under .claude/rules, so a rule's path differs by mode too.
   const coreOnly =
-    /`(?:apps\/docs\/src\/docs\/[^`<>*]+\.mdx|\.agents\/rules\/[^`<>*]+|tools\/[^`<>*]+|\.opencode\/[^`]*)`/;
+    /`(?:apps\/docs\/[^`]*|\.agents\/rules\/[^`<>*]+|tools\/[^`<>*]+|\.opencode\/[^`]*)`/;
   const agents = join(STACKRA, "agents");
   const offenders = readdirSync(agents)
     .filter((f) => f.endsWith(".md"))
@@ -371,5 +371,7 @@ test("the stackra preset's agents name no file only core has: docs pages are lin
     );
   assert.deepEqual(offenders, []);
   assert.ok(coreOnly.test("read `.agents/rules/linear.md`"));
-  assert.ok(!coreOnly.test("write `apps/docs/src/docs/adr/NNNN-<slug>.mdx`"));
+  // The docs member moves from apps/docs to docs (ADR 0514), so an agent names it `<docs>/…`, never a fixed path.
+  assert.ok(coreOnly.test("write `apps/docs/src/docs/adr/NNNN-<slug>.mdx`"));
+  assert.ok(!coreOnly.test("write `<docs>/src/docs/adr/NNNN-<slug>.mdx`"));
 });

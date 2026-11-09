@@ -1,6 +1,6 @@
 ---
 name: docs-adr-steward
-description: Writes and maintains the ADRs in apps/docs/src/docs/adr — new records, status changes, same-commit supersession, the index table and the docs navigation. Does not decide, and does not audit code against docs. Never blocks. Use when a decision needs recording or an existing ADR's status changes.
+description: Writes and maintains the ADRs in the docs member's src/docs/adr — new records, status changes, same-commit supersession, the index table and the docs navigation. Does not decide, and does not audit code against docs. Never blocks. Use when a decision needs recording or an existing ADR's status changes.
 tier: steward
 blocks: false
 tools: [Read, Write, Edit, Grep, Glob, Bash]
@@ -25,18 +25,19 @@ prose, never source code.
 
 ## Read first
 
+- `<docs>` below is this repository's docs member: the root `docs/` once ADR 0514's move has run, apps/docs before it.
 - The docs app's ADR template (`adr/template.mdx`) — the mandatory shape, the status vocabulary and the supersession rule.
 - [adr](https://docs.stackra.figentra.com/adr) — the index table every ADR is listed in.
 - The two or three most recent ADRs, which show the conventions currently in use.
-- Every ADR that touches the concern at hand. Search `apps/docs/src/docs/adr/` by keyword before assuming a topic
+- Every ADR that touches the concern at hand. Search `<docs>/src/docs/adr/` by keyword before assuming a topic
   is undecided — ADR 0227 (which refreshes 0011) records what is rejected or deferred.
 - `AGENTS.md` and the `concurrent-sessions` rule.
 
 ## Owns
 
-- `apps/docs/src/docs/adr/NNNN-<kebab-slug>.mdx` — new ADRs and the status lines of existing ones.
+- `<docs>/src/docs/adr/NNNN-<kebab-slug>.mdx` — new ADRs and the status lines of existing ones.
 - The index table in [adr](https://docs.stackra.figentra.com/adr).
-- The `{ folder: "adr" }` navigation entry in `apps/docs/src/config/docs.config.ts` (it lists every ADR; nothing to add per ADR).
+- The `{ folder: "adr" }` navigation entry in `<docs>/src/config/docs.config.ts` (it lists every ADR; nothing to add per ADR).
 
 ## Never
 
@@ -62,7 +63,7 @@ to the owner.
    an ADR.
 4. **Index and nav in the same change.** Add or update the row in the table in
    [adr](https://docs.stackra.figentra.com/adr), in ascending order. The `{ folder: "adr" }` entry in
-   `apps/docs/src/config/docs.config.ts` lists the new page; gen refuses a page no entry lists.
+   `<docs>/src/config/docs.config.ts` lists the new page; gen refuses a page no entry lists.
 5. **Verify.** Read-only commands only:
    - `pnpm validate` for repository-shape findings
    - `pnpm turbo run format:check lint typecheck --filter=@figentra/docs` — for the docs site, `lint` runs
@@ -76,8 +77,8 @@ to the owner.
 ```markdown
 ## ADR stewardship: <topic>
 
-- Created / changed: `apps/docs/src/docs/adr/NNNN-<slug>.mdx` (status → <status>)
-- Superseded: `apps/docs/src/docs/adr/MMMM-<slug>.mdx` (status line + index row only)
+- Created / changed: `<docs>/src/docs/adr/NNNN-<slug>.mdx` (status → <status>)
+- Superseded: `<docs>/src/docs/adr/MMMM-<slug>.mdx` (status line + index row only)
 - Index: `adr/index.mdx` row added/updated; nav: listed by the `adr` folder entry
 - Decided by: <human or agent, and where the decision was made>
 - Rules that now cite a stale decision (for the lead): <paths or "none">
