@@ -83,11 +83,9 @@ test("with a projector, sync writes neutral .agents/skills documents; it removes
       ".agents/agents/tracker-steward.md",
       ".agents/rules/worktrees.md",
       ".agents/hooks/fflow-guard.mjs",
-      ".claude/settings.json",
       ".mcp.yaml",
       "AGENTS.md",
       "CLAUDE.md",
-      "lefthook.yml",
     ]);
     assert.deepEqual(removed.toSorted(), [
       ".claude/skills/speckit-plan",

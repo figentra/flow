@@ -12,12 +12,12 @@ tools: [Read, Grep, Glob, Write, Edit, Bash]
 
 Deliver web UI that is accessible, RTL-safe, themed by tokens and wired to the generated client. Console screens are
 declared, not hand-coded: modules declare `@Resource`, `@Page` and `@Widget`, and `@stackra/panel` renders them
-(ADR 0164). A custom page is the escape hatch, not the default. `apps/console` is a stub today; keep new structure minimal.
+(ADR 0164). A custom page is the escape hatch, not the default. The console app is a stub today; keep new structure minimal.
 
 ## Must read
 
-`apps/docs/src/docs/standards/apps.mdx`, `apps/docs/src/docs/standards/ui-and-accessibility.mdx`,
-`apps/docs/src/docs/standards/i18n-rtl.mdx`, ADRs 0079 (client state), 0080 (i18n), 0110 and 0112 (L2 server-driven UI and the
+[standards/apps](https://docs.stackra.figentra.com/standards/apps), [standards/ui-and-accessibility](https://docs.stackra.figentra.com/standards/ui-and-accessibility),
+[standards/i18n-rtl](https://docs.stackra.figentra.com/standards/i18n-rtl), ADRs 0079 (client state), 0080 (i18n), 0110 and 0112 (L2 server-driven UI and the
 renderer kit), 0139 (action UX), 0164, 0165 (component contract, form adapters in `@stackra/ui`, no Next.js), 0183
 (budgets), 0469 (no HeroUI Pro anywhere), 0249 (one app, three targets), and the skills
 `frontend-resource-console`, `backend-errors`, `heroui-react`, `frontend-design`, `accessibility`.

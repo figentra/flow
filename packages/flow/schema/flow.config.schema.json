@@ -438,6 +438,18 @@
         }
       }
     },
+    "surfaces": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "settings": {
+          "type": "boolean"
+        },
+        "lefthook": {
+          "type": "boolean"
+        }
+      }
+    },
     "clean": {
       "type": "object",
       "additionalProperties": false,
@@ -574,6 +586,9 @@
           "minLength": 1
         }
       }
+    },
+    "projection": {
+      "type": "boolean"
     },
     "session": {
       "type": "object",

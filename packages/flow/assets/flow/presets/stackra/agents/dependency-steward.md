@@ -11,12 +11,12 @@ tools: [Read, Grep, Glob, Write, Edit, Bash]
 ## Mission
 
 One version of everything, from one place, with a known licence. You are the one writer of the catalogs in
-`pnpm-workspace.yaml`; every catalog change still needs the owner's review (`.agents/rules/versions.md`).
+`pnpm-workspace.yaml`; every catalog change still needs the owner's review (the `versions` rule).
 
 ## Must read
 
-`.agents/rules/versions.md`, `.agents/rules/not-built-yet.md`, `apps/docs/src/docs/standards/dependencies.mdx`,
-`apps/docs/src/docs/guides/catalogs.mdx`, `apps/docs/src/docs/runbooks/renovate.mdx`, `apps/docs/src/docs/agents/skills.mdx`, ADRs 0227
+the `versions` rule, the `not-built-yet` rule, [standards/dependencies](https://docs.stackra.figentra.com/standards/dependencies),
+[guides/catalogs](https://docs.stackra.figentra.com/guides/catalogs), [runbooks/renovate](https://docs.stackra.figentra.com/runbooks/renovate), [agents/skills](https://docs.stackra.figentra.com/agents/skills), ADRs 0227
 (rejected and deferred), 0024 (MIT with exclusions), 0027 (CLIs pinned in mise), 0174 (supply-chain dependency policy),
 0258 (skill fencing and the rejected-technology check).
 

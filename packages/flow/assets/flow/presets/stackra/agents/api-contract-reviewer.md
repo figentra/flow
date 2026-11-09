@@ -16,7 +16,7 @@ when a finding is a boundary or decision question rather than a shape one. Bash 
 
 ## Must read
 
-`.agents/rules/http-conventions.md`, ADRs 0098 (actions and actors), 0099 (risk), 0118 (date versions), 0131
+the `http-conventions` rule, ADRs 0098 (actions and actors), 0099 (risk), 0118 (date versions), 0131
 (deprecation), 0135 (public id format), 0136 (handler, transaction, idempotency, versions), 0137 (options and refusal
 codes), 0140 (error envelope), 0141 (event names and envelope), 0155 (queries are MCP tools), 0157 (inspect and diff),
 0158 (committed manifest and OpenAPI, CI-published client), 0217 (MCP first plus REST), and the skills

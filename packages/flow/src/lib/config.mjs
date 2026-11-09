@@ -151,6 +151,12 @@ export const SCHEMA = {
         tolerate: { type: "array", items: { ...str, not: { enum: NEVER_TOLERATED } } },
       },
     },
+    // Opt-in surfaces (each unset: only where the lock already records the file).
+    surfaces: {
+      type: "object",
+      additionalProperties: false,
+      properties: { settings: { type: "boolean" }, lefthook: { type: "boolean" } },
+    },
     clean: {
       type: "object",
       additionalProperties: false,
@@ -213,6 +219,8 @@ export const SCHEMA = {
     // STA-2131: `pushAtEnd` renders the SessionEnd hook that commits the session's work as WIP and pushes it; off
     // unless a repository opts in. `contextCommands` are the repository's own commands (argv, no shell) whose
     // output the SessionStart context appends.
+    // Project `.agents/` into each assistant's folders after every sync, not only `--direct` (STA-2098 H6).
+    projection: { type: "boolean" },
     session: {
       type: "object",
       additionalProperties: false,
@@ -319,6 +327,8 @@ export function validate(schema, value, path = "") {
  *                      owner?: string },
  *             gate?: { check?: string, shard?: string }, approve?: { ownerOnly?: string[], checks?: Record<string, string>,
  *                      workflows?: string[], requesters?: string[], tolerate?: string[] },
+ *             surfaces?: { settings?: boolean, lefthook?: boolean },
+ *             projection?: boolean,
  *             clean?: { keep?: string[], budget?: number, whenMerged?: boolean }, review?: { required?: string[] },
  *             baseline?: { tasks?: string[], mustPass?: string[], install?: string, setup?: Record<string, unknown>[], branch?: string },
  *             artifacts?: { paths?: string[], maxBytes?: number },
