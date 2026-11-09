@@ -350,3 +350,58 @@ test("ci: a failing check hides nothing after it; every check and task in Code r
     assert.match(byName[name], /^\$\{\{ !cancelled\(\) && /);
   assert.equal(byName.Install, undefined);
 });
+
+test("ci: filters go on every turbo run; a capped task runs in its own step, on the side that names it", () => {
+  const wf = parseYaml(
+    ciWorkflow({
+      pr: ["lint", "typecheck"],
+      main: ["lint", "typecheck", "build"],
+      filters: ["!@figentra/mobile", "...[HEAD~1]"],
+      concurrency: { typecheck: 2 },
+      int: {},
+    }),
+  );
+  const runs = Object.fromEntries(
+    wf.jobs.code.steps.map((/** @type {any} */ s) => [s.name, s.run]),
+  );
+  const f = "--filter='!@figentra/mobile' --filter='...[HEAD~1]'";
+  assert.equal(runs["Gen (affected)"], `pnpm exec turbo run gen ${f} --affected`);
+  assert.equal(runs.Gen, `pnpm exec turbo run gen ${f}`);
+  assert.equal(runs["Tasks (affected)"], `pnpm exec turbo run lint ${f} --affected`);
+  assert.equal(runs.Tasks, `pnpm exec turbo run lint build ${f}`);
+  assert.equal(
+    runs["Task typecheck (affected)"],
+    `pnpm exec turbo run typecheck --concurrency=2 ${f} --affected`,
+  );
+  assert.equal(runs["Task typecheck"], `pnpm exec turbo run typecheck --concurrency=2 ${f}`);
+  const int = wf.jobs.int.steps.filter((/** @type {any} */ s) => /turbo run/.test(s.run ?? ""));
+  for (const s of int) assert.ok(s.run.includes(f), s.name);
+  // a cap on a task only one side names: that side's step alone; both sides capped: no shared step
+  const one = parseYaml(
+    ciWorkflow({ pr: ["lint"], main: ["lint", "build"], concurrency: { build: 1 } }),
+  ).jobs.code.steps.map((/** @type {any} */ s) => s.name);
+  assert.ok(one.includes("Task build") && !one.includes("Task build (affected)"));
+  const all = parseYaml(
+    ciWorkflow({ pr: ["lint"], main: ["lint"], concurrency: { lint: 3 } }),
+  ).jobs.code.steps.map((/** @type {any} */ s) => s.name);
+  assert.ok(!all.includes("Tasks") && !all.includes("Tasks (affected)"));
+  assert.ok(all.includes("Task lint") && all.includes("Task lint (affected)"));
+  // without either option the render is unchanged
+  assert.equal(ciWorkflow({ filters: [], concurrency: {} }), ciWorkflow({}));
+});
+
+test("ci: a filter a shell would read, a cap that is not a positive integer, or a cap on no task is a ConfigError", () => {
+  for (const ci of [
+    { filters: ["x' && curl evil '"] },
+    { filters: ["$(id)"] },
+    { filters: ["a b"] },
+    { concurrency: { typecheck: 0 } },
+    { concurrency: { typecheck: "2" } },
+    { concurrency: { deploy: 2 } },
+    { concurrency: { constructor: 2 } },
+  ])
+    assert.throws(() => ciWorkflow(/** @type {any} */ (ci)), ConfigError, JSON.stringify(ci));
+  assert.doesNotThrow(() =>
+    ciWorkflow({ filters: ["./services/*", "{./apps/web}...", "@scope/pkg^...", "!@a/b"] }),
+  );
+});

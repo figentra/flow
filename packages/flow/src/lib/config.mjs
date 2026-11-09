@@ -22,6 +22,11 @@ const strs = { type: "array", items: str, minItems: 1 };
 /** A turbo task list a rendered `run:` line names: plain task words, nothing a shell would read. */
 export const TASK_PATTERN = "^[\\w:@./-]+$";
 const tasks = { type: "array", items: { type: "string", pattern: TASK_PATTERN }, minItems: 1 };
+/**
+ * A turbo `--filter` value a rendered `run:` line holds in single quotes: a package name, a `./path`, a `[ref]`,
+ * `...` and a leading `!`, nothing a shell would read inside the quotes.
+ */
+export const FILTER_PATTERN = "^!?[\\w@./*{}\\[\\]^~-]+$";
 /** The marketplace sources `claudeCode.extraKnownMarketplaces` may name: remote ones only (STA-2131). */
 export const MARKETPLACE_SOURCES = ["github", "git", "url"];
 /** A port block chosen by `kind`: one variant per adapter. */
@@ -210,6 +215,10 @@ export const SCHEMA = {
         afterInstall: { type: "array", items: { type: "object" } },
         checks: { type: "array", items: { type: "object" } },
         after: { type: "array", items: { type: "object" } },
+        // Turbo filters on every task run (gen, the tasks, the integration tasks): members CI leaves out.
+        filters: { type: "array", items: { type: "string", pattern: FILTER_PATTERN } },
+        // A task's turbo `--concurrency`, which runs it in its own step: a task that runs the runner out of memory.
+        concurrency: { type: "object", additionalProperties: { type: "integer", minimum: 1 } },
         turbo: { type: "boolean" },
         runsOn: str,
         timeoutMinutes: { type: "integer", minimum: 1 },

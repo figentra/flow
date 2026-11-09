@@ -4,11 +4,13 @@
  *   aggregate job that passes when every job it needs passed or was skipped. `Code` runs gen and the turbo tasks, the
  *   members a pull request affects (`--affected`) or, on a push to the default branch, the nightly run and a manual
  *   run, everything; on a pull request it also checks the title with commitlint (a squash merge lands the title).
+ *   `ci.filters` go on every turbo run; a task in `ci.concurrency` runs in a step of its own with that cap.
  *   `Integration`, with `ci.int`, runs the integration tasks beside a Postgres service. The optional jobs and the
  *   OSV-Scanner dependency scan run on their own, outside the gate's `needs`.
  * Boundary: returns text; writes nothing. Every value from the owner-only config is written as JSON, which YAML reads
- *   back unchanged (`blockYaml`); only task names reach a `run:` line, and the schema and this module refuse any that
- *   is not a plain word (`TASK_PATTERN`). Every action Flow adds is pinned to a commit, as the infra lead's reference
+ *   back unchanged (`blockYaml`); only task names, caps and filters reach a `run:` line: the schema and this module
+ *   refuse a task that is not a plain word (`TASK_PATTERN`), the schema a cap that is not an integer and a filter
+ *   with anything a shell reads inside single quotes (`FILTER_PATTERN`). Every action Flow adds is pinned to a commit, as the infra lead's reference
  *   workflows pin it; a mise-action setup step with no `version` gets `MISE_VERSION`.
  * Runtime: node
  * Governing contract: the infra lead's standard CI (2026-11-09): core, pay and os CI as the reference.
@@ -96,25 +98,29 @@ function taskWords(tasks, key) {
 }
 
 /**
- * Two steps: `tasks` for the members a pull request affects, against the base commit, and `full` otherwise.
+ * Two steps: `tasks` for the members a pull request affects, against the base commit, and `full` otherwise. An empty
+ * side has no step (a capped task that only one of `ci.pr` and `ci.main` names).
  * @param {string} name
  * @param {string} tasks
  * @param {string} full
  * @param {Record<string, string>} [env] each step's environment besides the base
  * @param {boolean} [going] run even after an earlier step of the job failed (`keepGoing`)
+ * @param {string} [args] what follows the task names on both lines: `--concurrency`, the filters
  */
-function affectedPair(name, tasks, full, env = {}, going = false) {
+function affectedPair(name, tasks, full, env = {}, going = false, args = "") {
   const extra = Object.keys(env).length ? blockYaml(env, 10) : "";
-  return `      - name: ${name} (affected)
+  const affected = `      - name: ${name} (affected)
         if: ${going ? GOING_ON_PR : ON_PR}
         env:
           # A pull request checks out its merge into the base branch, so HEAD~1 is the base and the diff is the PR's own.
           TURBO_SCM_BASE: HEAD~1
-${extra}        run: pnpm exec turbo run ${tasks} --affected
-      - name: ${name}
-        if: ${going ? GOING_OFF_PR : OFF_PR}
-${extra ? `        env:\n${extra}` : ""}        run: pnpm exec turbo run ${full}
+${extra}        run: pnpm exec turbo run ${tasks}${args} --affected
 `;
+  const rest = `      - name: ${name}
+        if: ${going ? GOING_OFF_PR : OFF_PR}
+${extra ? `        env:\n${extra}` : ""}        run: pnpm exec turbo run ${full}${args}
+`;
+  return `${tasks ? affected : ""}${full ? rest : ""}`;
 }
 
 /**
@@ -127,8 +133,20 @@ export function ciWorkflow(ci, baseline) {
   const problems = validate(SCHEMA.properties.ci, ci, "ci");
   if (problems.length) throw new ConfigError(problems.join("\n"));
   const c = { ...CI_DEFAULTS, ...ci };
-  const pr = taskWords(c.pr, "pr");
-  const main = taskWords(c.main, "main");
+  taskWords(c.pr, "pr");
+  taskWords(c.main, "main");
+  // A capped task runs in a step of its own with its `--concurrency`; the others share one step.
+  const caps = ci.concurrency ?? {};
+  const stray = Object.keys(caps).filter((t) => !c.pr.includes(t) && !c.main.includes(t));
+  if (stray.length)
+    throw new ConfigError(
+      `ci.concurrency: ${stray.map((t) => JSON.stringify(t)).join(", ")} is in neither ci.pr nor ci.main`,
+    );
+  const shared = (/** @type {string[]} */ list) =>
+    list.filter((t) => !Object.hasOwn(caps, t)).join(" ");
+  const capped = [...new Set([...c.pr, ...c.main])].filter((t) => Object.hasOwn(caps, t));
+  // The schema holds each filter to FILTER_PATTERN, so the single quotes are the whole shell reading.
+  const filters = (ci.filters ?? []).map((f) => ` --filter='${f}'`).join("");
   const install = ci.install ?? baseline?.install ?? CI_DEFAULTS.install;
   const setup = stepsYaml(ci.setup ?? baseline?.setup);
   // After the install, before the tasks: a cache save that should only run once the install filled it, say.
@@ -195,10 +213,22 @@ ${stepYaml({ name: "Install", run: install })}${afterInstall}`;
       ? ""
       : typeof c.gen === "string"
         ? stepYaml(keepGoing({ name: "Gen", run: c.gen }))
-        : affectedPair("Gen", "gen", "gen", {}, true);
+        : affectedPair("Gen", "gen", "gen", {}, true, filters);
+  const taskSteps = `${affectedPair("Tasks", shared(c.pr), shared(c.main), {}, true, filters)}${capped
+    .map((t) =>
+      affectedPair(
+        `Task ${t}`,
+        c.pr.includes(t) ? t : "",
+        c.main.includes(t) ? t : "",
+        {},
+        true,
+        ` --concurrency=${caps[t]}${filters}`,
+      ),
+    )
+    .join("")}`;
 
   const code = `${head("code", "Code")}${permissions}    steps:
-${prepare(true)}${commitlint}${turbo}${gen}${checks}${affectedPair("Tasks", pr, main, {}, true)}${after}`;
+${prepare(true)}${commitlint}${turbo}${gen}${checks}${taskSteps}${after}`;
 
   let int = "";
   if (ci.int) {
@@ -218,7 +248,7 @@ ${prepare(true)}${commitlint}${turbo}${gen}${checks}${affectedPair("Tasks", pr, 
     };
     int = `${head("int", "Integration")}${permissions}    services:
 ${blockYaml(service, 6)}    steps:
-${prepare(true)}${turbo}${affectedPair("Integration tasks", tasks, tasks, env)}`;
+${prepare(true)}${turbo}${affectedPair("Integration tasks", tasks, tasks, env, false, filters)}`;
   }
 
   // Their own jobs, never in the gate's `needs`: a failure shows on the run and blocks nothing.

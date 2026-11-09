@@ -593,6 +593,20 @@
             "type": "object"
           }
         },
+        "filters": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^!?[\\w@./*{}\\[\\]^~-]+$"
+          }
+        },
+        "concurrency": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
         "turbo": {
           "type": "boolean"
         },
