@@ -9,8 +9,10 @@
 </p>
 
 {{/banner}}
+{{^banner}}
 <h1 align="center">{{name}}</h1>
 
+{{/banner}}
 <p align="center"><strong>{{tagline}}</strong></p>
 
 <p align="center">
