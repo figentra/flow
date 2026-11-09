@@ -509,28 +509,12 @@ export function renderReference({ presetDir, source = (_, preset) => preset }) {
   for (const [path, text] of presetTree(reference, (path) =>
     source(`reference/${path}`, join(reference, path)),
   ))
-    out.set(`.agents/reference/${path}`, path.endsWith(".md") ? vendored(text) : text);
+    out.set(`.agents/reference/${path}`, text);
   for (const file of REFERENCE_FILES) {
     const at = join(presetDir, file);
     if (existsSync(at)) out.set(`.agents/${file}`, readFileSync(source(file, at), "utf8"));
   }
   return out;
-}
-
-/**
- * Vendored Markdown as a repository's formatter and spell checker leave it: its upstream wording is kept byte for byte,
- * so `cspell:disable` opens it and the body sits in a Prettier ignore range (oxfmt honours both); each front matter
- * key gets `# prettier-ignore`, since a range cannot cover YAML. Without these, a product's format and spell checks
- * fail on text it may not change (the lock pins it).
- * @param {string} text
- */
-export function vendored(text) {
-  const front = /^---\n([\s\S]*?)\n---\n/.exec(text);
-  const body = (front ? text.slice(front[0].length) : text).trim();
-  const wrapped = `<!-- prettier-ignore-start -->\n${body}\n<!-- prettier-ignore-end -->\n`;
-  if (!front) return `<!-- cspell:disable -->\n\n${wrapped}`;
-  const keys = front[1].replace(/^(?=[A-Za-z_][\w-]*:)/gm, "# prettier-ignore\n");
-  return `---\n# cspell:disable\n${keys}\n---\n\n${wrapped}`;
 }
 
 /** The preset's top-level files `renderReference` renders under `.agents/`. */

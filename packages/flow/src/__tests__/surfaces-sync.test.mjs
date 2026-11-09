@@ -71,7 +71,7 @@ test("sync: the stackra preset renders every surface, headed where the format al
     assert.ok(read(path).startsWith(`# ${words}\n`), path);
   for (const path of ["AGENTS.md", "CLAUDE.md"])
     assert.ok(read(path).startsWith(`<!-- ${words} -->\n`), path);
-  assert.match(read("CLAUDE.md"), /\n@AGENTS\.md\n$/);
+  assert.match(read("CLAUDE.md"), /\n@AGENTS\.md\n/);
   const settings = JSON.parse(read(".claude/settings.json"));
   assert.equal(settings.hooks.Stop, undefined, "STA-2131: no uncommitted record by default");
   assert.equal(settings.hooks.SessionEnd, undefined, "STA-2131: no push at session end by default");

@@ -4,7 +4,9 @@
  *   fflow, the preset and its version, and the override that shaped the file, if any, and says "do not edit; change
  *   `.flow/overrides/`". Strict JSON carries none; the lock's digest alone identifies it. A Markdown file with front
  *   matter carries it as the front matter's first line (a YAML comment), since the front matter must open the file;
- *   a script keeps its shebang first.
+ *   a script keeps its shebang first. Markdown and JSONC are fenced from the repository's formatter and spell checker
+ *   (`fenced`): a render's bytes are the lock's, and a product's own oxfmt and cspell settings would otherwise fail
+ *   on text it may not change.
  * Boundary: pure text functions.
  * Runtime: node
  * Governing contract: STA-1945 (FR-3, P-006).
@@ -56,6 +58,32 @@ export function headerText(meta) {
 }
 
 /**
+ * The renders a product's format and spell checks reached in 0.9.1: the root agent pages, JSONC, the vendored
+ * reference and the preset's own skills (not the `flow-*` commands, whose text Flow owns and checks itself).
+ */
+const FENCED =
+  /^(?:AGENTS\.md|CLAUDE\.md|[^/]*\.jsonc|\.agents\/reference\/.+\.md|\.(?:agents|claude)\/skills\/(?!flow-)[^/]+\/.+\.md)$/;
+
+/**
+ * `text` fenced from a repository's formatter and spell checker, its words untouched (only the paths `FENCED` names): Markdown opens with
+ * `cspell:disable`, each front matter key gets `# prettier-ignore` (a range cannot cover YAML) and the body sits in a
+ * Prettier ignore range; JSONC opens with `cspell:disable` and `// prettier-ignore` above its root. oxfmt honours
+ * both. Other files pass through.
+ * @param {string} path
+ * @param {string} text
+ */
+export function fenced(path, text) {
+  if (!FENCED.test(path)) return text;
+  if (path.endsWith(".jsonc")) return `// cspell:disable\n// prettier-ignore\n${text}`;
+  const front = /^---\n([\s\S]*?)\n---\n/.exec(text);
+  const body = (front ? text.slice(front[0].length) : text).trim();
+  const wrapped = `<!-- prettier-ignore-start -->\n${body}\n<!-- prettier-ignore-end -->\n`;
+  if (!front) return `<!-- cspell:disable -->\n\n${wrapped}`;
+  const keys = front[1].replace(/^(?=[A-Za-z_][\w-]*:)/gm, "# prettier-ignore\n");
+  return `---\n# cspell:disable\n${keys}\n---\n\n${wrapped}`;
+}
+
+/**
  * `text` with the provenance header first (after a shebang, or as the front matter's first line).
  * @param {string} path
  * @param {string} text
@@ -63,6 +91,7 @@ export function headerText(meta) {
  * @returns {string}
  */
 export function withHeader(path, text, meta) {
+  text = fenced(path, text);
   const style = commentStyle(path);
   const words = headerText(meta);
   if (style === undefined) return text;
