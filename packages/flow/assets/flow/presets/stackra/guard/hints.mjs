@@ -78,7 +78,7 @@ export const SESSION = {
     "2. Every member extends one @stackra/typescript-config preset, one @stackra/vitest-config preset, and declares exactly one turbo tier tag (tier:config|lib|app|service).",
     "3. Versions live only in pnpm-workspace.yaml catalogs (catalogMode: strict). A member's package.json names catalog:<name> or workspace:* — `pnpm validate` fails otherwise.",
     "4. Every test file sits directly in a __tests__/ folder beside its subject (src/**/__tests__/<name>.test.ts); there is no root tests/ folder and no .spec. An app's e2e lives in that app (ADR 0022, enforced by pnpm validate).",
-    "5. Docs are apps/docs (Mintlify). Pages and ADRs live in apps/docs/src/docs (ADRs in apps/docs/src/docs/adr, served at /adr/<file>), assets in apps/docs/src/assets, the site config in apps/docs/src/config/docs.config.ts; gen writes the Mintlify site to apps/docs/.stackra/site.",
+    "5. Docs are apps/docs (Fumadocs on a Worker, ADR 0514). Pages and ADRs live in apps/docs/src/docs (ADRs in apps/docs/src/docs/adr, served at /adr/<file>), assets in apps/docs/src/assets, the site config in apps/docs/src/config/docs.config.ts; gen writes the Fumadocs site to apps/docs/.stackra/site.",
     "6. Secrets: never print, read or write a value. Values are set by a human; developer tokens live in the vault.",
     "7. Worktrees: WIP commits, never stash (refs/stash is shared by every worktree). Destructive git and rm -rf run only in your own worktree (ADR 0293).",
     "8. Done = `pnpm verify` green (format, lint, typecheck, test, build, validate, boundaries, knip). Conventional commits; changesets for releases.",
