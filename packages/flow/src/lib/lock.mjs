@@ -63,6 +63,25 @@ export function readLock(root) {
 }
 
 /**
+ * Whether the repository at `root` takes an opt-in surface (`surfaces.<key>` in its config): the config's choice, else
+ * whether its lock already records `file`, so a repository that had the file keeps it and a new one gets none.
+ * @param {string} root
+ * @param {{ surfaces?: Record<string, boolean | undefined> }} config
+ * @param {"settings" | "lefthook"} key
+ * @param {string} file
+ */
+export function takesSurface(root, config, key, file) {
+  const chosen = config.surfaces?.[key];
+  if (typeof chosen === "boolean") return chosen;
+  try {
+    return Boolean(readLock(root)?.files?.[file]);
+  } catch (error) {
+    if (error instanceof LockError) return false;
+    throw error;
+  }
+}
+
+/**
  * @param {unknown} v
  * @returns {v is Record<string, unknown>}
  */

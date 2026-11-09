@@ -26,10 +26,10 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { NAME } from "../lib/product.mjs";
+import { CONFIG_FILE, NAME } from "../lib/product.mjs";
 import { projectAssistants } from "../lib/project-assistants.mjs";
 import { ConfigError } from "../lib/config.mjs";
-import { BUNDLED, presetSource } from "../lib/flow-dir.mjs";
+import { BUNDLED, LOCK, presetSource } from "../lib/flow-dir.mjs";
 import { LockError, NewerLockError, readLock } from "../lib/lock.mjs";
 import { incompatibility } from "../lib/preset-package.mjs";
 import { catalogPins, LEFTHOOK_FILE, pinTools } from "../lib/render-lefthook.mjs";
@@ -79,13 +79,34 @@ export function lockOrNone(root) {
   }
 }
 
+/** The rendered files a repository usually writes itself, whose words a first sync must not replace unasked. */
+const PROSE = ["AGENTS.md", "README.md"];
+
+/**
+ * The prose files `files` would replace that the repository wrote itself: there, not in the lock, and not what
+ * `sync` renders. A product's 800-line AGENTS.md became the preset's 100-line page on its first 0.9 update.
+ * @param {string} root
+ * @param {Map<string, string>} files
+ * @param {{ files?: Record<string, string> } | undefined} lock
+ */
+function ownProse(root, files, lock) {
+  return PROSE.filter(
+    (p) =>
+      files.has(p) &&
+      !lock?.files?.[p] &&
+      existsSync(join(root, p)) &&
+      readFileSync(join(root, p), "utf8") !== files.get(p),
+  );
+}
+
 /**
  * Renders and writes the `flow-*` files of `root`.
  * @param {string} root
  * @param {{ direct?: boolean, log?: (s: string) => void, adopt?: boolean,
  *   fetchTree?: import("../lib/skills.mjs").FetchTree }} [options] `adopt` takes the installed preset even when the
  *   lock records another (only `update` passes it); `fetchTree` replaces the git fetch of third-party skills (tests)
- * @throws {SyncRefusal} when the installed preset differs from the lock's and `adopt` is not set
+ * @throws {SyncRefusal} when the installed preset differs from the lock's and `adopt` is not set, or a first sync
+ *   would replace an AGENTS.md or README.md the repository wrote (`ownProse`)
  * @throws {ConfigError} when a newer Flow wrote the lock, a third-party skill may not or cannot install, the preset
  *   package is not installed, or the preset declares a Flow range the installed Flow is outside (STA-2097)
  */
@@ -108,6 +129,11 @@ export function sync(root, { direct = false, log = console.log, adopt = false, f
   for (const p of skipped)
     log(`${NAME} sync: skipped ${p} (\`${NAME} validate\` names every problem)`);
   const files = render(root, { direct, overrides });
+  const own = ownProse(root, files, lock);
+  if (own.length)
+    throw new SyncRefusal(
+      `${NAME} would replace ${own.join(", ")}, which the repository wrote (${LOCK} does not list it): move what the preset does not say into ${CONFIG_FILE}'s \`agentsMd.facts\` or a .flow/overrides/ file, delete the file, then sync again`,
+    );
   const removed = writeRendered(root, files, overrides);
   for (const p of removed) log(`${NAME} sync: removed ${p}`);
   if (files.has(LEFTHOOK_FILE) && pinMise(root))

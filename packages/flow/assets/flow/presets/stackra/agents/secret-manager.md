@@ -5,31 +5,6 @@ tier: executor
 assistants: [claude]
 blocks: false
 tools: [Bash]
-permissions:
-  - action: shell
-    resource: "*"
-    effect: deny
-  - action: shell
-    resource: "pnpm secrets:put *"
-    effect: allow
-  - action: shell
-    resource: "pnpm secrets:import*"
-    effect: allow
-  - action: read
-    resource: "*"
-    effect: deny
-  - action: edit
-    resource: "*"
-    effect: deny
-  - action: webfetch
-    resource: "*"
-    effect: deny
-  - action: websearch
-    resource: "*"
-    effect: deny
-  - action: subagent
-    resource: "*"
-    effect: deny
 ---
 
 # secret-manager

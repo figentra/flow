@@ -12,7 +12,7 @@ tools: [Read, Grep, Glob, Write, Edit, Bash]
 
 Ship one service change end to end: code, tests, README/AGENTS.md. Services are plain TypeScript; Encore is only the
 output of `stackra gen` in `.stackra/encore` (ADR 0091, 0124), so you never write `encore.dev`, `api()`,
-`encore.service.ts` or a `__generated__/` folder. Follow the example services (`services/example` in a repository cut from the template).
+`encore.service.ts` or a `__generated__/` folder. Follow the template's example service.
 
 ## Must read
 

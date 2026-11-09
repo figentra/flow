@@ -5,37 +5,6 @@ tier: executor
 assistants: [claude]
 blocks: false
 tools: [Bash]
-permissions:
-  - action: shell
-    resource: "*"
-    effect: deny
-  - action: shell
-    resource: "pnpm secrets:catalog --check*"
-    effect: allow
-  - action: shell
-    resource: "pnpm secrets:generate *"
-    effect: allow
-  - action: shell
-    resource: "pnpm secrets:rotate *"
-    effect: allow
-  - action: shell
-    resource: "pnpm secrets:import --list*"
-    effect: allow
-  - action: read
-    resource: "*"
-    effect: deny
-  - action: edit
-    resource: "*"
-    effect: deny
-  - action: webfetch
-    resource: "*"
-    effect: deny
-  - action: websearch
-    resource: "*"
-    effect: deny
-  - action: subagent
-    resource: "*"
-    effect: deny
 ---
 
 # vault-keeper

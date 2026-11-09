@@ -5,25 +5,6 @@ tier: executor
 assistants: [claude]
 blocks: false
 tools: [Read, Grep, Glob, Bash]
-permissions:
-  - action: shell
-    resource: "*"
-    effect: deny
-  - action: shell
-    resource: "pnpm store*"
-    effect: allow
-  - action: shell
-    resource: "gh workflow run store.yml*"
-    effect: allow
-  - action: shell
-    resource: "gh run *"
-    effect: allow
-  - action: edit
-    resource: "*"
-    effect: deny
-  - action: webfetch
-    resource: "*"
-    effect: deny
 ---
 
 # releaser

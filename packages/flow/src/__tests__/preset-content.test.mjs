@@ -36,7 +36,7 @@ import { FLOW_ASSETS } from "../lib/flow-dir.mjs";
 import { readLock } from "../lib/lock.mjs";
 import { VERSION } from "../lib/product.mjs";
 import { withHeader } from "../lib/provenance.mjs";
-import { installProblems, renderReference } from "../lib/render.mjs";
+import { installProblems, renderReference, vendored } from "../lib/render.mjs";
 import { loadThirdParty } from "../lib/skills.mjs";
 import { parseYaml } from "../lib/yaml.mjs";
 import { governed, OWN_PRESET, snapshot } from "./__fixtures__/governed.mjs";
@@ -187,6 +187,19 @@ test("direct after a projector linked .claude/skills into .agents: the render re
   }
 });
 
+test("vendored Markdown keeps its words but is fenced from a repository's formatter and spell checker", () => {
+  const front = "---\nname: x\ndescription: a very long line\n---\n\n# Title\n\nBody.\n";
+  assert.equal(
+    vendored(front),
+    "---\n# cspell:disable\n# prettier-ignore\nname: x\n# prettier-ignore\ndescription: a very long line\n---\n\n" +
+      "<!-- prettier-ignore-start -->\n# Title\n\nBody.\n<!-- prettier-ignore-end -->\n",
+  );
+  assert.equal(
+    vendored("# Plain\n"),
+    "<!-- cspell:disable -->\n\n<!-- prettier-ignore-start -->\n# Plain\n<!-- prettier-ignore-end -->\n",
+  );
+});
+
 test("the neutral preset renders none of core's content", (t) => {
   const { files } = sync(repo(t, "neutral"), quiet);
   assert.deepEqual(
@@ -267,8 +280,8 @@ test("renderReference reads only its preset folder; a missing file or folder ren
   assert.deepEqual(
     [...renderReference({ presetDir: dir })],
     [
-      [".agents/reference/README.md", "R\n"],
-      [".agents/reference/a/b.md", "B\n"],
+      [".agents/reference/README.md", vendored("R\n")],
+      [".agents/reference/a/b.md", vendored("B\n")],
       [".agents/models.yaml", "tiers: []\n"],
     ],
   );

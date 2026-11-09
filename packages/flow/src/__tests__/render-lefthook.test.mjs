@@ -68,7 +68,12 @@ function fixture(t) {
  * @param {string} [presetDir]
  */
 function hooks(config = {}, presetDir = STACKRA) {
-  const text = renderLefthook({ root: "/repo", config, presetDir }).get(LEFTHOOK_FILE) ?? "";
+  const text =
+    renderLefthook({
+      root: "/repo",
+      config: { surfaces: { lefthook: true }, ...config },
+      presetDir,
+    }).get(LEFTHOOK_FILE) ?? "";
   return parseYaml(text);
 }
 
