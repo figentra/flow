@@ -3,7 +3,7 @@
  * Purpose: the baseline workflow `sync` renders when the config has `baseline` (STA-1942 FR-5). One job, `Baseline`:
  *   the repository's own setup steps, its install, one `turbo run <tasks> --continue --summarize`, then `gate baseline
  *   save`; a push to the default branch uploads the results as that commit's baseline, a pull request checks against
- *   the nearest one.
+ *   the nearest one. Its checkout pin and YAML helpers are shared with the CI workflow (`ci-workflow.mjs`).
  * Boundary: returns text; writes nothing. The setup and after-install steps come from the owner-only config, as block YAML with their
  *   values unchanged, except that a `jdx/mise-action` step with no `version` gets `MISE_VERSION` (an unpinned
  *   mise-action downloads the latest mise, which once returned 504 for hours); every action Flow adds is pinned to
@@ -15,7 +15,7 @@
 import { artifactName } from "./baseline.mjs";
 import { BASELINE_CHECK, GATE_DIR, MISE_VERSION, NAME } from "./product.mjs";
 
-const CHECKOUT = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1";
+export const CHECKOUT = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1";
 const UPLOAD = "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2";
 
 /**
@@ -23,7 +23,7 @@ const UPLOAD = "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
  * @param {Record<string, unknown>} step
  * @returns {Record<string, unknown>}
  */
-function pinnedMise(step) {
+export function pinnedMise(step) {
   if (typeof step.uses !== "string" || !step.uses.startsWith("jdx/mise-action@")) return step;
   const options = /** @type {Record<string, unknown>} */ (step.with ?? {});
   return "version" in options ? step : { ...step, with: { ...options, version: MISE_VERSION } };
@@ -43,7 +43,7 @@ export const BASELINE_DEFAULTS = {
  * @param {number} indent
  * @returns {string}
  */
-function blockYaml(value, indent) {
+export function blockYaml(value, indent) {
   const pad = " ".repeat(indent);
   const entries = Array.isArray(value)
     ? value.map((v) => ["-", v])

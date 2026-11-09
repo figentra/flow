@@ -1,0 +1,306 @@
+/**
+ * Figentra Flow file contract:
+ * Purpose: hold the standard CI workflow (`ci-workflow.mjs`) to the infra lead's content:
+ *   - the header line `gate ci` checks, `permissions: {}` at the top, and the triggers: pull requests and pushes to
+ *     the default branch, the nightly schedule (present by default, absent with `nightly: false`) and manual runs;
+ *   - the defaults render `Quality Gate`, which needs `code` only, runs always and reads the results from the
+ *     environment, and `Code`, with the turbo tasks `--affected` on a pull request only;
+ *   - `ci.int` adds the `Integration` job with its Postgres service, and joins the gate's `needs`;
+ *   - optional jobs and the OSV-Scanner scan are `continue-on-error` or apart, never in the gate's `needs`;
+ *   - the pull request title reaches commitlint through the environment: no `run:` line holds `${{`;
+ *   - `ci.setup` falls back to `baseline.setup`; `ci.turbo` decrypts only the turbo names;
+ *   - a task name that is not a plain word, or an optional job taking Flow's id, is a ConfigError;
+ *   - `sync` renders `fflow-ci.yml` only with `ci` configured.
+ * Boundary: renders text and parses it with Flow's own YAML reader; one temporary folder for `sync`.
+ * Runtime: node
+ * Governing contract: the infra lead's standard CI (2026-11-09).
+ */
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { sync } from "../commands/sync.mjs";
+import { ciWorkflow } from "../lib/ci-workflow.mjs";
+import { ConfigError } from "../lib/config.mjs";
+import { CI_CHECK, CI_WORKFLOW } from "../lib/product.mjs";
+import { parseYaml } from "../lib/yaml.mjs";
+
+/** An optional job, as the os repository's mobile line would write one. */
+const opt = {
+  id: "mobile",
+  name: "Mobile app (Uniwind Pro)",
+  steps: [{ name: "Mobile", run: "pnpm exec turbo run build --filter=@figentra/os-mobile" }],
+};
+
+/** Every step of every job, with its job id. */
+const allSteps = (/** @type {any} */ wf) =>
+  Object.entries(wf.jobs).flatMap(([id, job]) =>
+    /** @type {any[]} */ (/** @type {any} */ (job).steps).map((s) => ({ id, ...s })),
+  );
+
+test("ci: the header, top-level permissions and the triggers, the nightly schedule included", () => {
+  const yml = ciWorkflow({});
+  assert.equal(
+    yml.split("\n")[0],
+    "# Written by `fflow sync` from the config's `ci`; `fflow gate ci` fails on a hand edit.",
+  );
+  const wf = parseYaml(yml);
+  assert.equal(wf.name, "fflow ci");
+  assert.deepEqual(wf.permissions, {});
+  assert.deepEqual(wf.on.pull_request, { branches: ["main"] });
+  assert.deepEqual(wf.on.push, { branches: ["main"] });
+  assert.deepEqual(wf.on.schedule, [{ cron: "17 2 * * *" }]);
+  assert.ok("workflow_dispatch" in wf.on);
+  assert.equal(wf.concurrency["cancel-in-progress"], "${{ github.event_name == 'pull_request' }}");
+  assert.deepEqual(parseYaml(ciWorkflow({ nightly: "5 4 * * 1" })).on.schedule, [
+    { cron: "5 4 * * 1" },
+  ]);
+  assert.ok(!("schedule" in parseYaml(ciWorkflow({ nightly: false })).on));
+  assert.deepEqual(parseYaml(ciWorkflow({ branch: "trunk" })).on.push, { branches: ["trunk"] });
+});
+
+test("ci: the defaults render Quality Gate, needing code only, and Code", () => {
+  const wf = parseYaml(ciWorkflow({}));
+  const { gate, code } = wf.jobs;
+  assert.equal(gate.name, CI_CHECK);
+  assert.deepEqual(gate.needs, ["code"]);
+  assert.equal(gate.if, "always()");
+  assert.deepEqual(gate.permissions, {});
+  assert.equal(gate.steps[0].env.NEEDS, "${{ toJSON(needs) }}");
+  assert.match(gate.steps[0].run, /\["success", "skipped"\]\.includes\(job\.result\)/);
+  assert.equal(code.name, "Code");
+  assert.equal(code["runs-on"], "ubuntu-24.04");
+  assert.equal(code["timeout-minutes"], 30);
+  assert.deepEqual(code.permissions, { contents: "read", "id-token": "write" });
+  assert.equal(code.steps[0].with["persist-credentials"], false);
+  assert.ok(!("int" in wf.jobs));
+  // the pnpm store cache before the install
+  const names = code.steps.map((/** @type {any} */ s) => s.name);
+  assert.ok(names.indexOf("pnpm store cache") < names.indexOf("Install"));
+  const cache = code.steps.find((/** @type {any} */ s) => s.name === "pnpm store cache");
+  assert.equal(cache.with.key, "pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}");
+  assert.equal(cache.with["restore-keys"], "pnpm-store-${{ runner.os }}-");
+  const install = code.steps.find((/** @type {any} */ s) => s.name === "Install");
+  assert.equal(install.run, "pnpm install --frozen-lockfile");
+  // the OSV scan is its own job, outside the gate's needs
+  assert.equal(wf.jobs["dependency-scan"].name, "Dependency scan (OSV-Scanner)");
+  assert.ok(!("dependency-scan" in parseYaml(ciWorkflow({ osv: false })).jobs));
+});
+
+test("ci: --affected only on a pull request; push, nightly and manual runs take the main tasks", () => {
+  const steps = parseYaml(ciWorkflow({})).jobs.code.steps;
+  const affected = steps.filter((/** @type {any} */ s) => /--affected/.test(s.run ?? ""));
+  assert.deepEqual(
+    affected.map((/** @type {any} */ s) => [s.if, s.run]),
+    [
+      ["github.event_name == 'pull_request'", "pnpm exec turbo run gen --affected"],
+      ["github.event_name == 'pull_request'", "pnpm exec turbo run typecheck lint test --affected"],
+    ],
+  );
+  const full = steps.filter(
+    (/** @type {any} */ s) => s.if === "github.event_name != 'pull_request'",
+  );
+  assert.deepEqual(
+    full.map((/** @type {any} */ s) => s.run),
+    ["pnpm exec turbo run gen", "pnpm exec turbo run typecheck lint test build"],
+  );
+  const own = parseYaml(ciWorkflow({ pr: ["lint"], main: ["lint", "build"], gen: "pnpm gen" })).jobs
+    .code.steps;
+  assert.deepEqual(
+    own
+      .filter((/** @type {any} */ s) => /turbo|gen/.test(s.run ?? ""))
+      .map((/** @type {any} */ s) => s.run),
+    ["pnpm gen", "pnpm exec turbo run lint --affected", "pnpm exec turbo run lint build"],
+  );
+  const noGen = parseYaml(ciWorkflow({ gen: false })).jobs.code.steps;
+  assert.ok(!noGen.some((/** @type {any} */ s) => /\bgen\b/.test(s.run ?? "")));
+});
+
+test("ci: the PR title reaches commitlint through the environment; no run: line holds ${{", () => {
+  const wf = parseYaml(ciWorkflow({ int: {}, turbo: true, optional: [opt] }));
+  const lint = wf.jobs.code.steps.find((/** @type {any} */ s) => /commitlint/.test(s.run ?? ""));
+  assert.equal(lint.if, "github.event_name == 'pull_request'");
+  assert.equal(lint.env.PR_TITLE, "${{ github.event.pull_request.title }}");
+  assert.equal(lint.run, `printf '%s\\n' "$PR_TITLE" | pnpm exec commitlint`);
+  for (const s of allSteps(wf)) assert.ok(!/\$\{\{/.test(s.run ?? ""), `${s.id}: ${s.name}`);
+  const off = parseYaml(ciWorkflow({ commitlint: false })).jobs.code.steps;
+  assert.ok(!off.some((/** @type {any} */ s) => /commitlint/.test(s.run ?? "")));
+});
+
+test("ci: int adds the Postgres service and joins the gate's needs", () => {
+  const wf = parseYaml(ciWorkflow({ int: {} }));
+  assert.deepEqual(wf.jobs.gate.needs, ["code", "int"]);
+  const int = wf.jobs.int;
+  assert.equal(int.name, "Integration");
+  assert.equal(int.services.postgres.image, "postgres:17.6-alpine");
+  assert.deepEqual(int.services.postgres.env, {
+    POSTGRES_PASSWORD: "postgres",
+    POSTGRES_USER: "postgres",
+    POSTGRES_DB: "test",
+  });
+  assert.match(int.services.postgres.options, /^--health-cmd "pg_isready -U postgres" /);
+  assert.deepEqual(int.services.postgres.ports, ["5432:5432"]);
+  const tasks = int.steps.filter((/** @type {any} */ s) => /turbo run/.test(s.run ?? ""));
+  assert.deepEqual(
+    tasks.map((/** @type {any} */ s) => s.run),
+    ["pnpm exec turbo run test:int --affected", "pnpm exec turbo run test:int"],
+  );
+  for (const s of tasks) {
+    assert.equal(s.env.TESTBED_POSTGRES_HOST, "localhost");
+    assert.equal(s.env.DATABASE_URL, "postgres://postgres:postgres@localhost:5432/test");
+  }
+  const own = parseYaml(
+    ciWorkflow({ int: { tasks: ["test:pg"], postgres: { image: "postgres:18-alpine" } } }),
+  ).jobs.int;
+  assert.equal(own.services.postgres.image, "postgres:18-alpine");
+  assert.ok(own.steps.some((/** @type {any} */ s) => s.run === "pnpm exec turbo run test:pg"));
+});
+
+test("ci: optional jobs are continue-on-error and never in the gate's needs", () => {
+  const wf = parseYaml(
+    ciWorkflow({
+      int: {},
+      optional: [
+        opt,
+        {
+          id: "validate",
+          name: "Validate structure",
+          steps: [{ run: "pnpm validate" }],
+          needsInstall: true,
+        },
+      ],
+    }),
+  );
+  assert.deepEqual(wf.jobs.gate.needs, ["code", "int"]);
+  assert.equal(wf.jobs.mobile.name, "Mobile app (Uniwind Pro)");
+  assert.equal(wf.jobs.mobile["continue-on-error"], true);
+  assert.deepEqual(
+    wf.jobs.mobile.steps.map((/** @type {any} */ s) => s.name),
+    ["Checkout", "Mobile"],
+  );
+  assert.equal(wf.jobs.validate["continue-on-error"], true);
+  const names = wf.jobs.validate.steps.map((/** @type {any} */ s) => s.name);
+  assert.ok(names.indexOf("Install") >= 0 && names.indexOf("Install") < names.length - 1);
+  assert.equal(wf.jobs.validate.steps.at(-1).run, "pnpm validate");
+  assert.throws(() => ciWorkflow({ optional: [{ ...opt, id: "code" }] }), ConfigError);
+  assert.throws(() => ciWorkflow({ optional: [opt, opt] }), ConfigError);
+});
+
+test("ci: setup, install and afterInstall fall back to baseline's; ci's own win", () => {
+  const auth = { name: "Registry auth", uses: "./.github/actions/registry-auth" };
+  const save = {
+    name: "Save",
+    uses: "actions/cache/save@0000000000000000000000000000000000000000",
+  };
+  const fromBaseline = parseYaml(
+    ciWorkflow(
+      {},
+      { setup: [auth], install: "pnpm install --child-concurrency=1", afterInstall: [save] },
+    ),
+  ).jobs.code.steps;
+  assert.deepEqual(fromBaseline[1], auth);
+  const at = fromBaseline.findIndex((/** @type {any} */ s) => s.name === "Install");
+  assert.equal(fromBaseline[at].run, "pnpm install --child-concurrency=1");
+  assert.deepEqual(fromBaseline[at + 1], save);
+  const own = { name: "Own setup", run: "echo own" };
+  const fromCi = parseYaml(ciWorkflow({ setup: [own] }, { setup: [auth] })).jobs.code.steps;
+  assert.deepEqual(fromCi[1], own);
+  assert.ok(!fromCi.some((/** @type {any} */ s) => s.name === "Registry auth"));
+});
+
+test("ci: turbo decrypts ci/build/turbo by name before the tasks, and only when asked", () => {
+  const steps = parseYaml(ciWorkflow({ turbo: true })).jobs.code.steps;
+  const at = steps.findIndex((/** @type {any} */ s) => s.name === "Turborepo remote cache (sops)");
+  assert.ok(at > 0);
+  assert.match(
+    steps[at].uses,
+    /^figentra\/stackra\/\.github\/actions\/secrets-decrypt@[0-9a-f]{40}$/,
+  );
+  assert.deepEqual(steps[at].with, {
+    scope: "ci/build/turbo",
+    names: "TURBO_API,TURBO_TOKEN,TURBO_TEAM,TURBO_REMOTE_CACHE_SIGNATURE_KEY",
+  });
+  assert.ok(at < steps.findIndex((/** @type {any} */ s) => /turbo run/.test(s.run ?? "")));
+  assert.doesNotMatch(ciWorkflow({}), /secrets-decrypt/);
+});
+
+test("ci: a task name that is not a plain word is a ConfigError", () => {
+  for (const ci of [
+    { pr: ["lint; curl evil"] },
+    { main: ["build", "$(id)"] },
+    { int: { tasks: ["test:int && echo"] } },
+  ])
+    assert.throws(() => ciWorkflow(/** @type {any} */ (ci)), ConfigError);
+  assert.doesNotThrow(() => ciWorkflow({ pr: ["test:int", "@scope/pkg:build", "a.b/c-d_e"] }));
+});
+
+test("sync renders fflow-ci.yml only with `ci`", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "flow-ci-sync-"));
+  t.after(() => rmSync(root, { recursive: true }));
+  const path = `.github/workflows/${CI_WORKFLOW}`;
+  writeFileSync(join(root, "flow.config.json"), JSON.stringify({ version: 1, preset: "neutral" }));
+  assert.ok(!sync(root, { log: () => {} }).files.includes(path));
+  writeFileSync(
+    join(root, "flow.config.json"),
+    JSON.stringify({ version: 1, preset: "neutral", ci: {} }),
+  );
+  sync(root, { log: () => {} });
+  assert.match(readFileSync(join(root, path), "utf8"), /^name: fflow ci$/m);
+});
+
+// Core's and os's own `baseline` blocks (core main; os's 0.11.0 prep), so the render is checked against what the two
+// repositories will feed it, Uniwind's `${{ }}` conditions included.
+const FIXTURES = join(import.meta.dirname, "__fixtures__", "ci");
+const baselineOf = (/** @type {string} */ repo) =>
+  JSON.parse(readFileSync(join(FIXTURES, `${repo}-baseline.json`), "utf8"));
+
+test("ci: core's baseline renders with the turbo cache and the integration job", () => {
+  const baseline = baselineOf("core");
+  const wf = parseYaml(ciWorkflow({ turbo: true, int: {} }, baseline));
+  assert.deepEqual(wf.jobs.gate.needs, ["code", "int"]);
+  const steps = wf.jobs.code.steps;
+  assert.equal(
+    steps.find((/** @type {any} */ s) => s.name === "Toolchain (mise)").uses,
+    baseline.setup[0].uses,
+  );
+  assert.equal(steps.find((/** @type {any} */ s) => s.name === "Install").run, baseline.install);
+  assert.ok(steps.some((/** @type {any} */ s) => s.with?.scope === "ci/build/turbo"));
+  assert.ok(wf.jobs.int.services.postgres);
+  assert.equal(wf.jobs["dependency-scan"].name, "Dependency scan (OSV-Scanner)");
+});
+
+test("ci: os's baseline renders its Uniwind steps unchanged, and a mobile job stays out of the gate", () => {
+  const baseline = baselineOf("os");
+  const wf = parseYaml(
+    ciWorkflow(
+      {
+        optional: [
+          {
+            id: "mobile",
+            name: "Mobile apps (Uniwind Pro)",
+            needsInstall: true,
+            steps: [
+              { name: "Mobile build", run: "pnpm exec turbo run build --filter=@figentra/mobile" },
+            ],
+          },
+        ],
+      },
+      baseline,
+    ),
+  );
+  assert.deepEqual(wf.jobs.gate.needs, ["code"]);
+  const steps = wf.jobs.code.steps;
+  const cache = steps.find((/** @type {any} */ s) => s.id === "uniwind-cache");
+  assert.equal(
+    cache.with.key,
+    baseline.setup.find((/** @type {any} */ s) => s.id === "uniwind-cache").with.key,
+  );
+  const save = steps.find((/** @type {any} */ s) => s.name === "Uniwind Pro download cache (save)");
+  assert.equal(save.if, baseline.afterInstall[1].if);
+  assert.equal(save["continue-on-error"], true);
+  assert.equal(steps.find((/** @type {any} */ s) => s.name === "Install").run, baseline.install);
+  assert.equal(wf.jobs.mobile["continue-on-error"], true);
+  assert.ok(wf.jobs.mobile.steps.some((/** @type {any} */ s) => s.id === "uniwind-cache"));
+});

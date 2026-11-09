@@ -19,6 +19,9 @@ import { CONFIG_FILE, LEGACY_CONFIG_FILE, NAME, NEVER_TOLERATED } from "./produc
 
 const str = { type: "string", minLength: 1 };
 const strs = { type: "array", items: str, minItems: 1 };
+/** A turbo task list a rendered `run:` line names: plain task words, nothing a shell would read. */
+export const TASK_PATTERN = "^[\\w:@./-]+$";
+const tasks = { type: "array", items: { type: "string", pattern: TASK_PATTERN }, minItems: 1 };
 /** The marketplace sources `claudeCode.extraKnownMarketplaces` may name: remote ones only (STA-2131). */
 export const MARKETPLACE_SOURCES = ["github", "git", "url"];
 /** A port block chosen by `kind`: one variant per adapter. */
@@ -183,6 +186,51 @@ export const SCHEMA = {
         branch: str,
       },
     },
+    // The standard CI workflow (`ci-workflow.mjs`): one required check, `Quality Gate`. Task names reach a `run:` line,
+    // so they are plain words; every other value is written as a quoted YAML scalar.
+    ci: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        pr: tasks,
+        main: tasks,
+        // A command, `true` for the turbo default, or `false` for no gen step.
+        gen: { type: ["string", "boolean"], minLength: 1 },
+        commitlint: { type: "boolean" },
+        int: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            tasks,
+            postgres: { type: "object", additionalProperties: false, properties: { image: str } },
+          },
+        },
+        setup: { type: "array", items: { type: "object" } },
+        install: str,
+        afterInstall: { type: "array", items: { type: "object" } },
+        turbo: { type: "boolean" },
+        runsOn: str,
+        timeoutMinutes: { type: "integer", minimum: 1 },
+        branch: str,
+        // A cron line, `true` for the default, or `false` for no nightly run.
+        nightly: { type: ["string", "boolean"], minLength: 1 },
+        optional: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["id", "name", "steps"],
+            properties: {
+              id: { type: "string", pattern: "^[A-Za-z_][\\w-]*$" },
+              name: str,
+              steps: { type: "array", items: { type: "object" }, minItems: 1 },
+              needsInstall: { type: "boolean" },
+            },
+          },
+        },
+        osv: { type: "boolean" },
+      },
+    },
     review: {
       type: "object",
       additionalProperties: false,
@@ -336,6 +384,7 @@ export function validate(schema, value, path = "") {
  *             projection?: boolean,
  *             clean?: { keep?: string[], budget?: number, whenMerged?: boolean }, review?: { required?: string[] },
  *             baseline?: { tasks?: string[], mustPass?: string[], install?: string, setup?: Record<string, unknown>[], branch?: string },
+ *             ci?: CiConfig,
  *             artifacts?: { paths?: string[], maxBytes?: number },
  *             train?: { cutoff?: number, eject?: "bisect" | "manual", after?: string[], label?: string },
  *             mcp?: Record<string, Record<string, any>>, lefthook?: Record<string, Record<string, any>[]>,
@@ -343,6 +392,12 @@ export function validate(schema, value, path = "") {
  *             session?: { pushAtEnd?: boolean, contextCommands?: string[][] },
  *             claudeCode?: { enabledPlugins?: Record<string, boolean>,
  *                            extraKnownMarketplaces?: Record<string, { source: Record<string, unknown> }> } }} Config
+ * @typedef {{ pr?: string[], main?: string[], gen?: string | boolean, commitlint?: boolean,
+ *             int?: { tasks?: string[], postgres?: { image?: string } },
+ *             setup?: Record<string, unknown>[], install?: string, afterInstall?: Record<string, unknown>[],
+ *             turbo?: boolean, runsOn?: string, timeoutMinutes?: number, branch?: string, nightly?: string | boolean,
+ *             optional?: { id: string, name: string, steps: Record<string, unknown>[], needsInstall?: boolean }[],
+ *             osv?: boolean }} CiConfig
  * @typedef {{ config: Config, source: string | undefined, warnings: string[], errors: string[] }} Loaded
  */
 

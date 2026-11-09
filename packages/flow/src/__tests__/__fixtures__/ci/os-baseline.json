@@ -1,0 +1,73 @@
+{
+  "tasks": ["lint", "typecheck", "build"],
+  "mustPass": [
+    "@figentra/service-tenancy#typecheck",
+    "@figentra/service-identity#typecheck",
+    "@figentra/service-access#typecheck",
+    "@figentra/service-licensing#typecheck",
+    "@figentra/service-security-center#typecheck"
+  ],
+  "setup": [
+    {
+      "name": "Toolchain (mise)",
+      "uses": "jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7",
+      "with": {
+        "install_args": "gitleaks@8.30.1 node@24.22.0 pnpm@12.16.1 aqua:google/osv-scanner@2.7.0",
+        "cache": false
+      }
+    },
+    {
+      "name": "Put gitleaks, pnpm and osv-scanner on PATH",
+      "run": "dirname \"$(mise exec gitleaks@8.30.1 -- which gitleaks)\" >> \"$GITHUB_PATH\"\ndirname \"$(mise exec pnpm@12.16.1 -- which pnpm)\" >> \"$GITHUB_PATH\"\ndirname \"$(mise exec aqua:google/osv-scanner@2.7.0 -- which osv-scanner)\" >> \"$GITHUB_PATH\"\n"
+    },
+    {
+      "name": "Put node on PATH",
+      "run": "dirname \"$(mise exec node@24.22.0 -- which node)\" >> \"$GITHUB_PATH\""
+    },
+    {
+      "name": "Registry auth",
+      "uses": "./.github/actions/registry-auth"
+    },
+    {
+      "name": "Uniwind Pro token (sops)",
+      "uses": "figentra/stackra/.github/actions/secrets-decrypt@c8563c852108bb4759827e132b7e5b82b6ae33f4",
+      "with": {
+        "scope": "ci/build",
+        "names": "UNIWIND_AUTH_TOKEN"
+      }
+    },
+    {
+      "name": "Uniwind Pro cache directory",
+      "run": "echo \"UNIWIND_CACHE_DIR=$HOME/.uniwind/cache/pro\" >> \"$GITHUB_ENV\""
+    },
+    {
+      "name": "Uniwind Pro download cache (restore)",
+      "id": "uniwind-cache",
+      "uses": "actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
+      "with": {
+        "path": "~/.uniwind/cache/pro",
+        "key": "uniwind-pro-1-${{ runner.os }}-${{ hashFiles('pnpm-workspace.yaml') }}",
+        "restore-keys": "uniwind-pro-1-${{ runner.os }}-"
+      }
+    }
+  ],
+  "install": "pnpm install --frozen-lockfile --child-concurrency=1",
+  "afterInstall": [
+    {
+      "name": "Uniwind Pro download cache (filled?)",
+      "id": "uniwind-filled",
+      "if": "${{ !cancelled() }}",
+      "run": "if find \"$UNIWIND_CACHE_DIR\" -type f ! -name '*.sha256' -size +100k 2>/dev/null | grep -q .; then\n  echo \"filled=true\" >> \"$GITHUB_OUTPUT\"\nfi\n"
+    },
+    {
+      "name": "Uniwind Pro download cache (save)",
+      "if": "${{ !cancelled() && steps.uniwind-cache.outputs.cache-hit != 'true' && steps.uniwind-filled.outputs.filled == 'true' }}",
+      "continue-on-error": true,
+      "uses": "actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
+      "with": {
+        "path": "~/.uniwind/cache/pro",
+        "key": "uniwind-pro-1-${{ runner.os }}-${{ hashFiles('pnpm-workspace.yaml') }}"
+      }
+    }
+  ]
+}
