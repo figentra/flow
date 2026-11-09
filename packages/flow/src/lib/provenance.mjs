@@ -58,24 +58,29 @@ export function headerText(meta) {
 }
 
 /**
- * The renders a product's format and spell checks reached in 0.9.1: the root agent pages, JSONC, the vendored
- * reference and the preset's own skills (not the `flow-*` commands, whose text Flow owns and checks itself).
+ * The renders a product's format and spell checks reached in 0.9.1: the root agent pages, JSONC and the vendored
+ * reference are fenced from both (`FENCED`); the preset's own skills and the routing and models files only from the
+ * spell checker (`UNSPELLED`), since every repository already keeps its formatter off `.agents/skills/`, and a skill
+ * that names a formatter fails the skill-tech check (ADR 0227). Flow's `flow-*` commands and README stay as they are.
  */
-const FENCED =
-  /^(?:AGENTS\.md|CLAUDE\.md|[^/]*\.jsonc|\.agents\/reference\/.+\.md|\.(?:agents|claude)\/skills\/(?!flow-)[^/]+\/.+\.md)$/;
+const FENCED = /^(?:AGENTS\.md|CLAUDE\.md|[^/]*\.jsonc|\.agents\/reference\/.+\.md)$/;
+const UNSPELLED =
+  /^(?:\.agents\/(?:routing|models)\.yaml|\.(?:agents|claude)\/skills\/(?!flow-)[^/]+\/.+\.md)$/;
 
 /**
- * `text` fenced from a repository's formatter and spell checker, its words untouched (only the paths `FENCED` names): Markdown opens with
+ * `text` fenced from a repository's formatter and spell checker, its words untouched. Fenced Markdown opens with
  * `cspell:disable`, each front matter key gets `# prettier-ignore` (a range cannot cover YAML) and the body sits in a
- * Prettier ignore range; JSONC opens with `cspell:disable` and `// prettier-ignore` above its root. oxfmt honours
- * both. Other files pass through.
+ * Prettier ignore range; fenced JSONC opens with `cspell:disable` and `// prettier-ignore` above its root (oxfmt honours
+ * both). An unspelled file only opens with `cspell:disable`. Other files pass through.
  * @param {string} path
  * @param {string} text
  */
 export function fenced(path, text) {
+  const front = /^---\n([\s\S]*?)\n---\n/.exec(text);
+  if (UNSPELLED.test(path))
+    return front ? `---\n# cspell:disable\n${text.slice(4)}` : `# cspell:disable\n${text}`;
   if (!FENCED.test(path)) return text;
   if (path.endsWith(".jsonc")) return `// cspell:disable\n// prettier-ignore\n${text}`;
-  const front = /^---\n([\s\S]*?)\n---\n/.exec(text);
   const body = (front ? text.slice(front[0].length) : text).trim();
   const wrapped = `<!-- prettier-ignore-start -->\n${body}\n<!-- prettier-ignore-end -->\n`;
   if (!front) return `<!-- cspell:disable -->\n\n${wrapped}`;
