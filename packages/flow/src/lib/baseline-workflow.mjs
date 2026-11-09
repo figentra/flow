@@ -15,7 +15,7 @@
 import { artifactName } from "./baseline.mjs";
 import { BASELINE_CHECK, GATE_DIR, MISE_VERSION, NAME } from "./product.mjs";
 
-const CHECKOUT = "actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0";
+const CHECKOUT = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1";
 const UPLOAD = "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2";
 
 /**
