@@ -121,6 +121,24 @@ test("renderReadme: the stackra layout with its sections, badges and footer; not
   }
 });
 
+test("renderReadme: a banner is the logo, so no name heading repeats it under the banner (STA-2661)", () => {
+  for (const preset of ["stackra", "neutral"]) {
+    const root = repo(preset, `${DATA}banner:\n  light: l.svg\n  dark: d.svg\n`);
+    try {
+      const text = renderReadme(root) ?? "";
+      assert.match(text, /<img src="l\.svg" alt="Example" width="640" \/>/, preset);
+      assert.doesNotMatch(text, /<h1/, preset);
+      assert.match(
+        text,
+        /<\/p>\n\n<p align="center"><strong>An example product\.<\/strong><\/p>/,
+        preset,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
 test("renderReadme: an invalid data file and a preset without the template are ConfigErrors", () => {
   const bad = repo("stackra", "name: Example\n");
   const bare = repo("presets/own");
