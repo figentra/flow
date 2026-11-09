@@ -165,19 +165,25 @@ test("sync: the config's mcp, lefthook and agentsMd reach their surfaces; the sc
   ]);
 });
 
-test("sync: settings.json and lefthook.yml are opt-in; unset, a repository keeps only what its lock already has", (t) => {
+test("sync: settings.json, lefthook.yml and the OpenCode files are opt-in; unset, only what the lock has stays", (t) => {
   // A product's update must not start allowing commands and hooking every tool call, or replace its hook jobs.
   const root = governed(t, { config: { preset: "stackra", surfaces: undefined } });
   const files = () => sync(root, { direct: true, ...quiet }).files;
   const fresh = files();
   assert.equal(fresh.includes(".claude/settings.json"), false);
   assert.equal(fresh.includes("lefthook.yml"), false);
-  configure(root, { preset: "stackra", surfaces: { settings: true, lefthook: true } });
+  assert.equal(fresh.includes("opencode.jsonc"), false);
+  assert.equal(fresh.includes(".opencode/plugins/fflow-guard.mjs"), false);
+  configure(root, {
+    preset: "stackra",
+    surfaces: { settings: true, lefthook: true, opencode: true },
+  });
   assert.ok(files().includes(".claude/settings.json"));
   configure(root, { preset: "stackra" });
   const kept = files();
   assert.ok(kept.includes(".claude/settings.json"), "the lock has it");
   assert.ok(kept.includes("lefthook.yml"), "the lock has it");
+  assert.ok(kept.includes("opencode.jsonc"), "the lock has it");
   configure(root, { preset: "stackra", surfaces: { settings: false } });
   assert.equal(files().includes(".claude/settings.json"), false);
   assert.equal(existsSync(join(root, ".claude/settings.json")), false, "an unedited render goes");

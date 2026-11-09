@@ -447,6 +447,9 @@
         },
         "lefthook": {
           "type": "boolean"
+        },
+        "opencode": {
+          "type": "boolean"
         }
       }
     },

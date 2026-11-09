@@ -155,7 +155,11 @@ export const SCHEMA = {
     surfaces: {
       type: "object",
       additionalProperties: false,
-      properties: { settings: { type: "boolean" }, lefthook: { type: "boolean" } },
+      properties: {
+        settings: { type: "boolean" },
+        lefthook: { type: "boolean" },
+        opencode: { type: "boolean" },
+      },
     },
     clean: {
       type: "object",
@@ -323,7 +327,7 @@ export function validate(schema, value, path = "") {
  *                      owner?: string },
  *             gate?: { check?: string, shard?: string }, approve?: { ownerOnly?: string[], checks?: Record<string, string>,
  *                      workflows?: string[], requesters?: string[], tolerate?: string[] },
- *             surfaces?: { settings?: boolean, lefthook?: boolean },
+ *             surfaces?: { settings?: boolean, lefthook?: boolean, opencode?: boolean },
  *             clean?: { keep?: string[], budget?: number }, review?: { required?: string[] },
  *             baseline?: { tasks?: string[], mustPass?: string[], install?: string, setup?: Record<string, unknown>[], branch?: string },
  *             artifacts?: { paths?: string[], maxBytes?: number },
