@@ -94,9 +94,12 @@ export async function run([mode, ...args], deps = {}) {
       return (log(`${NAME} gate baseline: run \`save\` first`), closed("not_saved"));
     const api = deps.api ?? rest(String(env.GITHUB_TOKEN), env.GITHUB_API_URL);
     const found = await findBaseline({ api, repo, base });
+    // The job log says why too: a reason only on the run's summary page read as a silent exit 1.
     /** @param {string} text */
-    const summary = (text) =>
-      env.GITHUB_STEP_SUMMARY ? appendFileSync(env.GITHUB_STEP_SUMMARY, text) : log(text);
+    const summary = (text) => {
+      if (env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY, text);
+      log(text);
+    };
     if ("searched" in found) {
       summary(
         `### Baseline: no baseline\n\nNo push to the default branch left a baseline at \`${base}\` or its ` +
