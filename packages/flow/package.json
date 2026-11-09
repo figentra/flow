@@ -1,6 +1,6 @@
 {
   "name": "@figentra-oss/flow",
-  "version": "0.11.1",
+  "version": "0.12.0",
   "private": false,
   "description": "Spec-driven development for agent teams: specs, approval stops, tasks, the gate, landing and releases, with presets and adapters for your tracker, runner, credentials and secrets",
   "keywords": [

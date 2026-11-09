@@ -1,5 +1,22 @@
 # @figentra-oss/flow
 
+## 0.12.0
+
+### Minor Changes
+
+- 6705493: `fflow sync` now renders the standard CI workflow, `.github/workflows/fflow-ci.yml`, from a new `ci` block in `flow.config.json`, with one required check, `Quality Gate`, over the `Code` job and, when configured, the `Integration` job with its Postgres service. The block sets the turbo tasks for pull requests (run with `--affected`) and for main and the nightly run, gen, commitlint on the pull request title, the turbo remote cache, optional jobs and the OSV-Scanner scan, and falls back to `baseline` for the setup and install steps.
+
+### Patch Changes
+
+- b6cad3a: The stackra preset's `docs-adr-steward` and `incident-commander` agents name the docs member as `<docs>/…`, so a product's
+  `stackra validate` keeps passing once its docs move from `apps/docs` to the root `docs/` (ADR 0514). A preset test now
+  refuses any backticked `apps/docs/` path in an agent.
+- 1cff438: The rendered `.github/CODEOWNERS` no longer names `/figentra-flow.config.json`. `sync` renames that pre-0.2.2 file before
+  it writes CODEOWNERS, so the line only showed a retired name; `land` and the approval check still treat the old file as
+  owner-only.
+- 4f3759e: `fflow readme` writes no `<h1>` name heading under a banner: the banner is the product's logo, which already shows the
+  name (and carries it as the image's alt text). A README without a banner keeps the heading.
+
 ## 0.11.1
 
 ### Patch Changes
