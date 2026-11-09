@@ -31,7 +31,11 @@ function coreLike() {
     ".agents/speckit/presets/stackra/preset.yml": 'preset:\n  id: "stackra"\n',
     ".claude/skills/speckit-plan/SKILL.md": "old\n",
     ".opencode/commands/speckit.plan.md": "old\n",
-    [CONFIG_FILE]: JSON.stringify({ version: 1, preset: ".agents/speckit/presets/stackra" }),
+    [CONFIG_FILE]: JSON.stringify({
+      version: 1,
+      preset: ".agents/speckit/presets/stackra",
+      surfaces: { lefthook: true },
+    }),
     "package.json": JSON.stringify(
       {
         scripts: {

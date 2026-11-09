@@ -39,7 +39,13 @@ export function governed(t, { own = false, config = {}, at } = {}) {
     cpSync(join(FLOW_ASSETS, "presets", "neutral"), join(root, OWN_PRESET), { recursive: true });
   writeFileSync(
     join(root, "flow.config.json"),
-    JSON.stringify({ version: 1, preset: own ? OWN_PRESET : "neutral", ...config }),
+    // The opt-in surfaces on, as before they were opt-in; a test of the default sets its own `surfaces`.
+    JSON.stringify({
+      version: 1,
+      preset: own ? OWN_PRESET : "neutral",
+      surfaces: { settings: true, lefthook: true, opencode: true },
+      ...config,
+    }),
   );
   return root;
 }

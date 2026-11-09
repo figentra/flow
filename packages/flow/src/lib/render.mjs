@@ -35,8 +35,16 @@
  *   STA-2098.
  * Secrets: none.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, posix, resolve } from "node:path";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, isAbsolute, join, posix, resolve, sep } from "node:path";
 
 import { commandFiles, HARNESSES, NEUTRAL } from "../adapters/harness/index.mjs";
 import { GATE_WORKFLOW } from "../adapters/runner/github-actions.mjs";
@@ -640,12 +648,32 @@ export function writeRendered(root, files, overrides) {
   }
   const written = withHeaders(root, files, overrides);
   for (const [path, text] of written) {
+    clearDanglingLinks(top, join(top, path));
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), text);
   }
   // The lock goes last: a failed write leaves the old lock, and `check` names what differs.
   writeLock(root, lockOf(root, written));
   return removed;
+}
+
+/**
+ * Removes each dangling symbolic link on `path`'s way below `top`, the file's own included. A projection that linked
+ * `.claude/skills/<name>` to `.agents/skills/<name>` dangles once a direct sync moves that render to `.claude/` and
+ * removes the `.agents/` copy; writing through it fails (ENOENT). A link that still resolves is left alone.
+ * @param {string} top
+ * @param {string} path
+ */
+function clearDanglingLinks(top, path) {
+  for (let at = path; at.startsWith(top + sep); at = dirname(at)) {
+    let link = false;
+    try {
+      link = lstatSync(at).isSymbolicLink();
+    } catch {
+      continue; // not there yet: mkdir makes it
+    }
+    if (link && !existsSync(at)) rmSync(at);
+  }
 }
 
 /**
@@ -825,11 +853,12 @@ export function installProblems(root, version = VERSION) {
   // A v1 lock recorded neither digest; the next `sync` records both.
   if (lock.preset.digest && lock.overrides !== overridesDigest(root))
     problems.push(`${OVERRIDES}/ differs from what ${LOCK} records (run \`${NAME} sync\`)`);
-  // A direct sync also owns each assistant's projection of `.agents/` (STA-2098 H6).
-  if (syncedDirect(lock)) {
+  // A direct sync, or one whose config sets `projection`, also owns each assistant's projection of `.agents/` (H6).
+  const direct = syncedDirect(lock);
+  if (direct || loadConfig(root).config.projection === true) {
     const projection = projectAssistants(root, { check: true });
     for (const line of [...projection.drift, ...projection.conflict, ...projection.broken])
-      problems.push(`${line} (run \`${NAME} sync --direct\`)`);
+      problems.push(`${line} (run \`${NAME} sync${direct ? " --direct" : ""}\`)`);
   }
   return problems;
 }

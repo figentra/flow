@@ -8,6 +8,8 @@
  *   `session.pushAtEnd` is true, its WIP commit and push (`SessionEnd`; STA-2131) run the installed package's CLI,
  *   each a silent no-op (exit 0) on a checkout with no install. The config's `claudeCode` adds the repository's
  *   `enabledPlugins` and `extraKnownMarketplaces` (STA-2131), and nothing else.
+ *   Opt-in (`surfaces.settings`): the file sets every session's permissions and runs a hook on each tool call, so
+ *   unset it renders only where the lock already records it (`takesSurface`).
  *   The profile's `hooks` selects them by id; the guard is mandatory (FR-5), so every profile gets it. Strict JSON
  *   carries no provenance header; the lock's digest identifies the file.
  * Boundary: reads the preset's file; returns text, writes nothing (`sync` writes).
@@ -19,6 +21,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { ConfigError, MARKETPLACE_SOURCES } from "./config.mjs";
+import { takesSurface } from "./lock.mjs";
 import { NAME, PACKAGE } from "./product.mjs";
 import { selects } from "./profiles.mjs";
 import { GUARD_FILE } from "./render-guard.mjs";
@@ -94,13 +97,15 @@ export function hookSettings(
 }
 
 /**
- * `.claude/settings.json`, or nothing when the preset has no `surfaces/settings.json`.
+ * `.claude/settings.json`, or nothing when the preset has no `surfaces/settings.json` or the repository does not take
+ * it (`surfaces.settings`).
  * @param {import("./render.mjs").RenderContext} ctx
  * @returns {Map<string, string>}
  */
 export function renderSettings(ctx) {
   const file = join(ctx.presetDir, "surfaces", "settings.json");
-  if (!existsSync(file)) return new Map();
+  if (!existsSync(file) || !takesSurface(ctx.root, ctx.config, "settings", SETTINGS_FILE))
+    return new Map();
   /** @type {Record<string, any>} */
   let preset;
   try {

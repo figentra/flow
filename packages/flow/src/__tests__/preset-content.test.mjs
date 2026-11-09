@@ -9,7 +9,7 @@
  *   selects the agents routing's trust tasks go to, and `validate` names each agent or skill a profile selects that
  *   its preset lacks; a `replace` of a preset skill's file, a reference file or `routing.yaml` is a preset source
  *   `sync` renders (FR-4); its own text runs one member's tests through turbo, never a bare filtered `pnpm test`,
- *   which skips `stackra gen` (STA-2129).
+ *   which skips `stackra gen` (STA-2129); its agents name no file only core has (a docs page is a link, a rule is named).
  * Boundary: temporary folders; no network.
  * Runtime: node
  * Governing contract: STA-1945 (C6, D2, FR-4).
@@ -17,7 +17,16 @@
 // @covers sta-1945:FR-4 sta-1945:FR-6 sta-1945:FR-7 sta-1945:FR-11 sta-1945:FR-12 sta-1945:AC-7 sta-1945:P-009 sta-1945:P-010 sta-1945:P-016
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -26,8 +35,8 @@ import { validateRepo } from "../commands/validate.mjs";
 import { FLOW_ASSETS } from "../lib/flow-dir.mjs";
 import { readLock } from "../lib/lock.mjs";
 import { VERSION } from "../lib/product.mjs";
-import { withHeader } from "../lib/provenance.mjs";
 import { installProblems, renderReference } from "../lib/render.mjs";
+import { fenced, withHeader } from "../lib/provenance.mjs";
 import { loadThirdParty } from "../lib/skills.mjs";
 import { parseYaml } from "../lib/yaml.mjs";
 import { governed, OWN_PRESET, snapshot } from "./__fixtures__/governed.mjs";
@@ -158,6 +167,47 @@ test("direct: the skills go to .claude/skills; reference, routing and models sta
   assert.ok(files.includes(".agents/routing.yaml"));
   assert.ok(files.includes(".agents/models.yaml"));
   assert.equal(under(files, ".agents/reference/").length, 29);
+});
+
+test("direct after a projector linked .claude/skills into .agents: the render replaces the dangling links", (t) => {
+  // Core before H6: a non-direct sync renders the skills under .agents/skills, and its own projector links each into
+  // .claude/skills. The first direct sync removes the .agents copies, so those links dangle where it writes.
+  const root = repo(t, "stackra");
+  const { files } = sync(root, quiet);
+  const linked = names(files, ".agents/skills/");
+  mkdirSync(join(root, ".claude", "skills"), { recursive: true });
+  for (const name of linked)
+    symlinkSync(join("..", "..", ".agents", "skills", name), join(root, ".claude", "skills", name));
+  const direct = sync(root, { direct: true, ...quiet });
+  assert.ok(direct.files.includes(".claude/skills/docs-adr/SKILL.md"));
+  for (const name of ["docs-adr", "flow-specify"]) {
+    const at = join(root, ".claude", "skills", name);
+    assert.equal(lstatSync(at).isSymbolicLink(), false, name);
+    assert.ok(readFileSync(join(at, "SKILL.md"), "utf8").length > 0, name);
+  }
+});
+
+test("rendered Markdown and JSONC keep their words but are fenced from a repository's formatter and speller", () => {
+  const front = "---\nname: x\ndescription: a very long line\n---\n\n# Title\n\nBody.\n";
+  assert.equal(
+    fenced(".agents/reference/encore/x/SKILL.md", front),
+    "---\n# cspell:disable\n# prettier-ignore\nname: x\n# prettier-ignore\ndescription: a very long line\n---\n\n" +
+      "<!-- prettier-ignore-start -->\n# Title\n\nBody.\n<!-- prettier-ignore-end -->\n",
+  );
+  assert.equal(
+    fenced("AGENTS.md", "# Plain\n"),
+    "<!-- cspell:disable -->\n\n<!-- prettier-ignore-start -->\n# Plain\n<!-- prettier-ignore-end -->\n",
+  );
+  assert.equal(fenced("opencode.jsonc", "{}\n"), "// cspell:disable\n// prettier-ignore\n{}\n");
+  assert.equal(fenced("lefthook.yml", "a: 1\n"), "a: 1\n");
+  // A skill only drops the spell checker: naming a formatter in it fails the skill-tech check (ADR 0227).
+  assert.equal(
+    fenced(".agents/skills/docs-adr/SKILL.md", "---\nname: x\n---\n\nBody\n"),
+    "---\n# cspell:disable\nname: x\n---\n\nBody\n",
+  );
+  assert.equal(fenced(".agents/routing.yaml", "a: 1\n"), "# cspell:disable\na: 1\n");
+  assert.equal(fenced(".agents/skills/flow-plan/SKILL.md", "x\n"), "x\n", "Flow's own commands");
+  assert.equal(fenced("README.md", "x\n"), "x\n");
 });
 
 test("the neutral preset renders none of core's content", (t) => {
@@ -303,4 +353,23 @@ test("the stackra preset runs one member's tests through turbo, never a bare fil
     readFileSync(join(STACKRA, "rules", "task-vocabulary.md"), "utf8"),
     /`Needs testing: pnpm turbo run test --filter=<name>`/,
   );
+});
+
+test("the stackra preset's agents name no file only core has: docs pages are links, rules are named", () => {
+  // A product's validate refuses an agent that backticks a repository path it lacks (core's checkAgentSources); a
+  // direct sync renders the rules under .claude/rules, so a rule's path differs by mode too.
+  const coreOnly =
+    /`(?:apps\/docs\/src\/docs\/[^`<>*]+\.mdx|\.agents\/rules\/[^`<>*]+|tools\/[^`<>*]+|\.opencode\/[^`]*)`/;
+  const agents = join(STACKRA, "agents");
+  const offenders = readdirSync(agents)
+    .filter((f) => f.endsWith(".md"))
+    .flatMap((f) =>
+      readFileSync(join(agents, f), "utf8")
+        .split("\n")
+        .filter((line) => coreOnly.test(line))
+        .map((line) => `${f}: ${line.trim()}`),
+    );
+  assert.deepEqual(offenders, []);
+  assert.ok(coreOnly.test("read `.agents/rules/linear.md`"));
+  assert.ok(!coreOnly.test("write `apps/docs/src/docs/adr/NNNN-<slug>.mdx`"));
 });

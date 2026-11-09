@@ -1,5 +1,61 @@
 # @figentra-oss/flow
 
+## 0.10.0
+
+### Minor Changes
+
+- a2a9512: A non-direct sync projects `.agents/` into each assistant's folders when the config sets `projection: true`. That covers
+  the agents in each dialect, the linked skills, hooks and templates, the reviewer list and `.mcp.json`. `fflow check`
+  then owns the projection, as it does after a direct sync. A repository keeps its rendered rules and skills under
+  `.agents/` and still drops its own projector script (core keeps ADR 0016's layout while retiring `agents-sync`).
+
+### Patch Changes
+
+- 54dae4c: The OpenCode files, `opencode.jsonc` and `.opencode/**` with the guard plugin, are opt-in like `.claude/settings.json`,
+  under the config's new `surfaces.opencode`. `opencode.jsonc` allows broadly and then denies, so a product that does not
+  use OpenCode should not get it unasked. Unset, a repository keeps them only where its lock already records
+  `opencode.jsonc`, so core and the template keep theirs.
+  
+  A first sync now refuses to replace any rendered file the repository wrote itself, not only AGENTS.md and README.md.
+  That covers `.mcp.yaml` and `.github/CODEOWNERS`; opting in to a surface is the repository's answer for that file, and sync logs what it drops. The refusal names what the render would drop
+  (an `.mcp.yaml`'s servers, a file's lines) and where it belongs instead: `mcp` in the config, or an extend override for
+  CODEOWNERS. When an owned file was edited since the last sync, sync still renders it as before, and now says which
+  lines go and where they belong.
+
+## 0.9.2
+
+### Patch Changes
+
+- 648fa50: A repository's first `fflow sync --direct` no longer fails with ENOENT when its own projector had linked
+  `.claude/skills/<name>` to `.agents/skills/<name>`. The direct sync moves those renders to `.claude/` and removes the
+  `.agents/` copies, which left the links dangling where it writes; it now replaces a dangling link on a rendered file's
+  path. A link that still resolves is left alone.
+- 6f5d7ce: A product's first update no longer changes what it did not ask for:
+  
+  - `.claude/settings.json` (permissions and the guard's per-call hooks) and `lefthook.yml` are opt-in, under the
+    config's new `surfaces.settings` and `surfaces.lefthook`. Unset, a repository keeps only what its lock already
+    records, so core and the template keep theirs and a product gets neither.
+  - `sync` and `update` refuse to replace an `AGENTS.md` or `README.md` the repository wrote, one its lock does not list.
+    Move what it says into `agentsMd.facts`, delete it, and sync again.
+  - Renders a product's format and spell checks reached are fenced, their words untouched. AGENTS.md, CLAUDE.md,
+    JSONC and the vendored `.agents/reference/**` open with `cspell:disable` and carry Prettier ignore markers (oxfmt
+    honours them). The preset's skills and `.agents/routing.yaml` and `models.yaml` only drop the spell checker, since
+    a skill naming a formatter fails the skill-tech check.
+  - The releaser, secret-manager and vault-keeper agents lose OpenCode permission blocks that only `allow`ed. They never
+    render for OpenCode, and validate refuses an agent `allow`.
+  - The compiler-engineer, frontend-builder and service-builder agents no longer name `packages/developer`,
+    `apps/console` or `services/example`.
+
+## 0.9.1
+
+### Patch Changes
+
+- 20cc73b: The stackra preset's agents no longer name files that only core has, so a product's validate stops failing on them
+  (geo, invoicing). A docs page is now a link to docs.stackra.figentra.com instead of an `apps/docs/src/docs/…` path. A
+  rule is named (the `linear` rule) instead of its `.agents/rules/…` path, which a direct sync renders under
+  `.claude/rules` anyway. Core's `linear-reconcile.repos.yaml`, the ADR number queue and the ADR template are named as
+  core's. A test keeps such paths out.
+
 ## 0.9.0
 
 ### Minor Changes

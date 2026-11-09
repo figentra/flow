@@ -39,7 +39,11 @@ function installed(/** @type {import("node:test").TestContext} */ t) {
 }
 
 test("renderOpencode: the stackra preset's opencode.jsonc and guard plugin, as in the preset", () => {
-  const out = renderOpencode({ root: "/repo", config: {}, presetDir: STACKRA });
+  const out = renderOpencode({
+    root: "/repo",
+    config: { surfaces: { opencode: true } },
+    presetDir: STACKRA,
+  });
   assert.deepEqual([...out.keys()], [OPENCODE_FILE, ".opencode/plugins/fflow-guard.mjs"]);
   assert.equal(
     out.get(OPENCODE_FILE),
@@ -49,7 +53,13 @@ test("renderOpencode: the stackra preset's opencode.jsonc and guard plugin, as i
     out.get(".opencode/plugins/fflow-guard.mjs"),
     readFileSync(join(STACKRA, "surfaces/opencode/plugins/fflow-guard.mjs"), "utf8"),
   );
-  assert.equal(renderOpencode({ root: "/repo", config: {}, presetDir: NEUTRAL }).size, 0);
+  assert.equal(
+    renderOpencode({ root: "/repo", config: { surfaces: { opencode: true } }, presetDir: NEUTRAL })
+      .size,
+    0,
+  );
+  // Opt-in: unset, a repository whose lock has no opencode.jsonc gets none of it.
+  assert.equal(renderOpencode({ root: "/repo", config: {}, presetDir: STACKRA }).size, 0);
 });
 
 test("guard plugin: asks the repository's guard bundle; a side door is refused, the rest allowed", (t) => {

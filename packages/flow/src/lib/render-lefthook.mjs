@@ -19,6 +19,7 @@
  */
 import { ConfigError } from "./config.mjs";
 import { surfaceYaml } from "./flow-dir.mjs";
+import { takesSurface } from "./lock.mjs";
 import { CONFIG_FILE } from "./product.mjs";
 import { stringifyYaml } from "./yaml.mjs";
 
@@ -55,11 +56,14 @@ export function skipOnRegistry401(run) {
 }
 
 /**
- * `lefthook.yml`, or nothing when the preset has no `surfaces/lefthook.yml`.
+ * `lefthook.yml`, or nothing when the preset has no `surfaces/lefthook.yml` or the repository does not take it
+ * (`surfaces.lefthook`: opt-in, since it replaces the repository's own hook jobs; unset, only where the lock already
+ * records it).
  * @param {import("./render.mjs").RenderContext} ctx
  * @returns {Map<string, string>}
  */
 export function renderLefthook(ctx) {
+  if (!takesSurface(ctx.root, ctx.config, "lefthook", LEFTHOOK_FILE)) return new Map();
   const preset = surfaceYaml(ctx.presetDir, LEFTHOOK_FILE);
   if (preset === undefined) return new Map();
   /** @type {Record<string, any>} */

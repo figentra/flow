@@ -231,7 +231,7 @@ test("preset add: each lockfile's package manager, then the config line, keeping
     ["yarn.lock", "yarn", ["add", "-D", PKG]],
   ];
   for (const [lockfile, bin, args] of managers) {
-    const root = governed(t, { config: { specs: { dir: "docs/specs" } } });
+    const root = governed(t, { config: { specs: { dir: "docs/specs" }, surfaces: undefined } });
     writeFileSync(join(root, lockfile), "");
     const s = spawner();
     const out = io();
