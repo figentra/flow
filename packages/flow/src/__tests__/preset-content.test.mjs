@@ -17,7 +17,16 @@
 // @covers sta-1945:FR-4 sta-1945:FR-6 sta-1945:FR-7 sta-1945:FR-11 sta-1945:FR-12 sta-1945:AC-7 sta-1945:P-009 sta-1945:P-010 sta-1945:P-016
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -158,6 +167,24 @@ test("direct: the skills go to .claude/skills; reference, routing and models sta
   assert.ok(files.includes(".agents/routing.yaml"));
   assert.ok(files.includes(".agents/models.yaml"));
   assert.equal(under(files, ".agents/reference/").length, 29);
+});
+
+test("direct after a projector linked .claude/skills into .agents: the render replaces the dangling links", (t) => {
+  // Core before H6: a non-direct sync renders the skills under .agents/skills, and its own projector links each into
+  // .claude/skills. The first direct sync removes the .agents copies, so those links dangle where it writes.
+  const root = repo(t, "stackra");
+  const { files } = sync(root, quiet);
+  const linked = names(files, ".agents/skills/");
+  mkdirSync(join(root, ".claude", "skills"), { recursive: true });
+  for (const name of linked)
+    symlinkSync(join("..", "..", ".agents", "skills", name), join(root, ".claude", "skills", name));
+  const direct = sync(root, { direct: true, ...quiet });
+  assert.ok(direct.files.includes(".claude/skills/docs-adr/SKILL.md"));
+  for (const name of ["docs-adr", "flow-specify"]) {
+    const at = join(root, ".claude", "skills", name);
+    assert.equal(lstatSync(at).isSymbolicLink(), false, name);
+    assert.ok(readFileSync(join(at, "SKILL.md"), "utf8").length > 0, name);
+  }
 });
 
 test("the neutral preset renders none of core's content", (t) => {
