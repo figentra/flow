@@ -21,6 +21,26 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+/** The line each gate step prints before it runs, then the time in seconds and the step: `::gate-step::<s> <step>`. */
+export const STEP_MARK = "::gate-step::";
+
+/**
+ * The steps `log` shows starting, in order, with their start time in seconds.
+ * @param {string} log
+ * @returns {{ at: number, step: string }[]}
+ */
+export function stepsOf(log) {
+  return log
+    .split("\n")
+    .filter((line) => line.startsWith(STEP_MARK))
+    .map((line) => {
+      const rest = line.slice(STEP_MARK.length);
+      const space = rest.indexOf(" ");
+      return { at: Number(rest.slice(0, space)), step: rest.slice(space + 1).trim() };
+    })
+    .filter((entry) => Number.isFinite(entry.at) && entry.step !== "");
+}
+
 const API = "https://api.github.com";
 
 /** Lines of the check's log the comment carries on a failure. */
@@ -144,8 +164,14 @@ export async function post({ job, exit, log = "", env, fetch, now = Date.now() }
       seconds === undefined
         ? ""
         : ` in ${Math.floor(seconds / 60)}m${String(seconds % 60).padStart(2, "0")}s`;
+    // The checks run one after another and stop at the first failure, so a red run failed in the last step it started.
+    const failed = green ? undefined : stepsOf(log).at(-1)?.step;
     const description = (
-      green ? `checks passed${took}` : `checks failed (exit ${exit})${took}`
+      green
+        ? `checks passed${took}`
+        : failed === undefined
+          ? `checks failed (exit ${exit})${took}`
+          : `failed at ${failed} (exit ${exit})${took}`
     ).slice(0, 140);
 
     const owner = job.repository.split("/")[0];
