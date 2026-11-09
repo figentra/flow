@@ -54,6 +54,7 @@ import {
   tierOf,
 } from "../commands/gate.mjs";
 import { keyScheme } from "../adapters/tracker/index.mjs";
+import { RULES, repoScheme } from "../lib/spec-check.mjs";
 import {
   labelsFor,
   specLinks,
@@ -93,12 +94,19 @@ const spec = ({ status = "complete", linear = "STA-12", body = impact(), stage =
 const FIX = join(HERE, "__fixtures__/sdd/sta-901-widget");
 const fixture = (name) => readFileSync(join(FIX, name), "utf8");
 const known = new Set(["tests", "spec-task"]);
+// The fixtures and the questionnaire are the stackra preset's, so these tests hold its rules whatever preset the
+// repository running them uses (Flow's own is neutral).
+const STACKRA = RULES.stackra;
+const stackraSpec = (/** @type {string} */ text) => checkSpec(text, repoScheme(), STACKRA);
+const stackraTier = (/** @type {Parameters<typeof computedTier>[0]} */ changes) =>
+  computedTier(changes, STACKRA);
 const stageOf = (text, over = {}) =>
   checkStage("sta-901-widget", text, {
     files: ["spec.md", "plan.md", "tasks.md"],
     plan: fixture("plan.md"),
     tasks: fixture("tasks.md"),
     known,
+    rules: STACKRA,
     ...over,
   });
 const at = (status) =>
@@ -189,7 +197,8 @@ test("Planned: constitution rows, deploy modes and FR validation", () => {
 
 test("Tasked: the tasks lint names the line and the problem", () => {
   const tasks = fixture("tasks.md");
-  const lint = (t) => checkTasks(t, { spec: fixture("spec.md"), plan: fixture("plan.md"), known });
+  const lint = (t) =>
+    checkTasks(t, { spec: fixture("spec.md"), plan: fixture("plan.md"), known, rules: STACKRA });
   assert.deepEqual(lint(tasks), []);
   assert.match(lint(tasks.replace("T002 [P]", "T001 [P]")).join(), /T001 repeats line/);
   assert.match(lint(tasks.replace("covers: FR-002 ", "")).join(), /T002 has no `covers:`/);
@@ -232,7 +241,8 @@ test("Implementing needs a ticked task; Done needs them all", () => {
 test("optional and checkpoint tasks: the lint accepts them, Done skips an open optional task", () => {
   const extra = (optional, checkpoint) =>
     `${fixture("tasks.md")}- [${optional}] T004* Polish in \`packages/foundation/widget/README.md\` — covers: FR-001 — route: spec-task\n- [${checkpoint}] T005 Checkpoint: \`pnpm verify\` [STA-904]\n`;
-  const lint = (t) => checkTasks(t, { spec: fixture("spec.md"), plan: fixture("plan.md"), known });
+  const lint = (t) =>
+    checkTasks(t, { spec: fixture("spec.md"), plan: fixture("plan.md"), known, rules: STACKRA });
   assert.deepEqual(lint(extra(" ", " ")), []);
   assert.deepEqual(stageOf(at("Done"), { tasks: extra(" ", "x") }), []);
   assert.match(stageOf(at("Done"), { tasks: extra(" ", " ") }).join(), /T005 are unticked/);
@@ -475,26 +485,26 @@ test("install check: a synced repository passes; a hand edit, a stale lock, a mi
 });
 
 test("a clarified, linked, fully answered spec passes", () => {
-  assert.deepEqual(checkSpec(spec()), []);
+  assert.deepEqual(stackraSpec(spec()), []);
 });
 
 test("pending clarifications, a placeholder Linear key and open markers each block planning", () => {
-  assert.match(checkSpec(spec({ status: "pending" }))[0], /Clarifications status/);
-  assert.match(checkSpec(spec({ linear: "STA-n" }))[0], /Linear/);
-  assert.match(checkSpec(`${spec()}[NEEDS CLARIFICATION: x]`).join(), /NEEDS CLARIFICATION/);
+  assert.match(stackraSpec(spec({ status: "pending" }))[0], /Clarifications status/);
+  assert.match(stackraSpec(spec({ linear: "STA-n" }))[0], /Linear/);
+  assert.match(stackraSpec(`${spec()}[NEEDS CLARIFICATION: x]`).join(), /NEEDS CLARIFICATION/);
 });
 
 test("an unanswered or missing Impact line blocks planning", () => {
-  assert.match(checkSpec(spec({ body: impact("[apps]") })).join(), /unanswered/);
-  assert.match(checkSpec(spec({ body: "- **Secrets**: none" })).join(), /Apps touched.*missing/);
+  assert.match(stackraSpec(spec({ body: impact("[apps]") })).join(), /unanswered/);
+  assert.match(stackraSpec(spec({ body: "- **Secrets**: none" })).join(), /Apps touched.*missing/);
   assert.match(
-    checkSpec("**Linear**: STA-1\n**Clarifications status**: complete\n").join(),
+    stackraSpec("**Linear**: STA-1\n**Clarifications status**: complete\n").join(),
     /Impact/,
   );
 });
 
 test("HTML comments are ignored", () => {
-  assert.match(checkSpec(spec({ status: "pending" }) + "<!-- complete -->").join(), /Clarif/);
+  assert.match(stackraSpec(spec({ status: "pending" }) + "<!-- complete -->").join(), /Clarif/);
 });
 
 test("spec-linear labels the issues an agent creates `agent`", () => {
@@ -582,24 +592,24 @@ const tiered = (status, tier, extra = "") =>
 test("tiers: the declared tier, the diff's floor and the tier rule", () => {
   assert.equal(tierOf("**Tier**: Big"), "big");
   assert.equal(tierOf("**Status**: Draft"), undefined);
-  assert.equal(computedTier([{ status: "M", path: "packages/data/x/src/a.ts" }]).tier, "trivial");
+  assert.equal(stackraTier([{ status: "M", path: "packages/data/x/src/a.ts" }]).tier, "trivial");
   assert.equal(
-    computedTier([
+    stackraTier([
       { status: "A", path: "services/o/src/modules/o/database/migrations/0002-x.migration.ts" },
     ]).tier,
     "feature",
   );
   assert.equal(
-    computedTier([{ status: "M", path: "services/o/src/modules/o/access/o.permissions.ts" }]).tier,
+    stackraTier([{ status: "M", path: "services/o/src/modules/o/access/o.permissions.ts" }]).tier,
     "feature",
   );
   assert.equal(
-    computedTier([{ status: "M", path: "packages/commerce/ledger/src/a.ts" }]).tier,
+    stackraTier([{ status: "M", path: "packages/commerce/ledger/src/a.ts" }]).tier,
     "feature",
   );
-  assert.equal(computedTier([{ status: "A", path: "services/pay/package.json" }]).tier, "big");
+  assert.equal(stackraTier([{ status: "A", path: "services/pay/package.json" }]).tier, "big");
   assert.equal(
-    computedTier([{ status: "M", path: "apps/docs/src/docs/payments.mdx" }]).tier,
+    stackraTier([{ status: "M", path: "apps/docs/src/docs/payments.mdx" }]).tier,
     "trivial",
   );
   assert.deepEqual(checkTier({ declared: "feature", computed: "feature" }), []);

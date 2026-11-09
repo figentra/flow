@@ -17,5 +17,11 @@
     ".github/workflows/fflow-approve.yml",
     ".github/workflows/fflow-baseline.yml",
     "README.md",
+    // rendered by `fflow sync --direct` from the stackra preset; .flow/lock.json pins their bytes
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".mcp.yaml",
+    ".claude/**",
+    ".opencode/**",
   ],
 }
