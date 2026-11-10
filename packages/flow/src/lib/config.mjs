@@ -22,6 +22,8 @@ const strs = { type: "array", items: str, minItems: 1 };
 /** A turbo task list a rendered `run:` line names: plain task words, nothing a shell would read. */
 export const TASK_PATTERN = "^[\\w:@./-]+$";
 const tasks = { type: "array", items: { type: "string", pattern: TASK_PATTERN }, minItems: 1 };
+/** A locale a site's routes start with (`en`, `ar`, `en-us`), as its folder is named. */
+const LOCALE_PATTERN = "^[a-z]{2,3}(-[a-z0-9]+)?$";
 /**
  * A turbo `--filter` value a rendered `run:` line holds in single quotes: a package name, a `./path`, a `[ref]`,
  * `...` and a leading `!`, nothing a shell would read inside the quotes.
@@ -242,6 +244,43 @@ export const SCHEMA = {
           },
         },
         osv: { type: "boolean" },
+        // The render proof (`fflow render`): one job per built site, every page at each width in Chromium.
+        render: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["id", "name", "dir"],
+            properties: {
+              id: { type: "string", pattern: "^[A-Za-z_][\\w-]*$" },
+              name: str,
+              // The command that builds the site, after the install; none when a task already built it.
+              build: str,
+              dir: str,
+              out: str,
+              locales: { type: "array", items: { type: "string", pattern: LOCALE_PATTERN } },
+              rtl: { type: "array", items: { type: "string", pattern: LOCALE_PATTERN } },
+              widths: { type: "array", items: { type: "integer", minimum: 240 }, minItems: 1 },
+              requests: {
+                type: "array",
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  required: ["url", "status"],
+                  properties: {
+                    url: { type: "string", pattern: "^/" },
+                    status: { type: "integer", minimum: 100 },
+                    location: str,
+                    csp: { type: "boolean" },
+                  },
+                },
+              },
+              playwright: { type: "string", pattern: "^\\d+\\.\\d+\\.\\d+$" },
+              // false: the job runs beside the gate, not in Quality Gate's needs.
+              required: { type: "boolean" },
+            },
+          },
+        },
       },
     },
     review: {
@@ -413,7 +452,10 @@ export function validate(schema, value, path = "") {
  *             filters?: string[], concurrency?: Record<string, number>,
  *             turbo?: boolean, runsOn?: string, timeoutMinutes?: number, branch?: string, nightly?: string | boolean,
  *             optional?: { id: string, name: string, steps: Record<string, unknown>[], needsInstall?: boolean }[],
- *             osv?: boolean }} CiConfig
+ *             osv?: boolean, render?: RenderJob[] }} CiConfig
+ * @typedef {{ id: string, name: string, dir: string, build?: string, out?: string, locales?: string[], rtl?: string[],
+ *   widths?: number[], requests?: { url: string, status: number, location?: string, csp?: boolean }[],
+ *   playwright?: string, required?: boolean }} RenderJob
  * @typedef {{ config: Config, source: string | undefined, warnings: string[], errors: string[] }} Loaded
  */
 

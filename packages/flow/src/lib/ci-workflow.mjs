@@ -6,7 +6,9 @@
  *   run, everything; on a pull request it also checks the title with commitlint (a squash merge lands the title).
  *   `ci.filters` go on every turbo run; a task in `ci.concurrency` runs in a step of its own with that cap.
  *   `Integration`, with `ci.int`, runs the integration tasks beside a Postgres service. The optional jobs and the
- *   OSV-Scanner dependency scan run on their own, outside the gate's `needs`.
+ *   OSV-Scanner dependency scan run on their own, outside the gate's `needs`. Each `ci.render` entry adds a job that
+ *   builds a site and runs `fflow render` on it (every page at each width in Chromium), in the gate's `needs` unless
+ *   `required: false`.
  * Boundary: returns text; writes nothing. Every value from the owner-only config is written as JSON, which YAML reads
  *   back unchanged (`blockYaml`); only task names, caps and filters reach a `run:` line: the schema and this module
  *   refuse a task that is not a plain word (`TASK_PATTERN`), the schema a cap that is not an integer and a filter
@@ -28,6 +30,9 @@ const MISE = "jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0"
 const DECRYPT =
   "figentra/stackra/.github/actions/secrets-decrypt@c8563c852108bb4759827e132b7e5b82b6ae33f4 # @stackra/runway@0.15.0";
 const OSV_SCANNER = "aqua:google/osv-scanner@2.7.0";
+const UPLOAD = "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2";
+/** The Playwright a render job installs when its entry names none (SITE's pin, figentra#66). */
+export const PLAYWRIGHT = "1.56.1";
 /** The names the turbo remote cache reads from ci/build/turbo; nothing else in the scope reaches the job. */
 const TURBO_NAMES = ["TURBO_API", "TURBO_TOKEN", "TURBO_TEAM", "TURBO_REMOTE_CACHE_SIGNATURE_KEY"];
 
@@ -157,10 +162,13 @@ export function ciWorkflow(ci, baseline) {
   const after = stepsYaml(ci.after?.map(keepGoing));
   const nightly = c.nightly === true ? CI_DEFAULTS.nightly : c.nightly;
   const optional = ci.optional ?? [];
-  const ids = optional.map((o) => o.id);
+  const renders = ci.render ?? [];
+  const ids = [...optional, ...renders].map((o) => o.id);
   const taken = ids.filter((id, i) => JOBS.includes(id) || ids.indexOf(id) !== i);
   if (taken.length)
-    throw new ConfigError(`ci.optional: the job id ${taken.join(", ")} is Flow's or used twice`);
+    throw new ConfigError(
+      `ci.optional, ci.render: the job id ${taken.join(", ")} is Flow's or used twice`,
+    );
 
   const head = (/** @type {string} */ id, /** @type {string} */ name, minutes = c.timeoutMinutes) =>
     `  ${id}:
@@ -258,6 +266,41 @@ ${permissions}    steps:
 ${o.needsInstall ? prepare() : checkout()}${stepsYaml(o.steps)}`,
   );
 
+  // The render proof of each built site (`fflow render`): Playwright at a pin, installed outside the workspace so the
+  // lockfile never changes for a test tool, then every page at each width; the screenshots are the job's artifact.
+  // The entry reaches the command as JSON in FFLOW_RENDER, never on a `run:` line; only `build` is a command.
+  const renderJobs = renders.map((r) => {
+    const out = r.out ?? `.${NAME}/render/${r.id}`;
+    const options = Object.fromEntries(
+      Object.entries({
+        dir: r.dir,
+        out,
+        locales: r.locales,
+        rtl: r.rtl,
+        widths: r.widths,
+        requests: r.requests,
+      }).filter(([, v]) => v !== undefined),
+    );
+    const build = r.build ? stepYaml({ name: "Build the site", run: r.build }) : "";
+    return `${head(r.id, r.name)}${r.required === false ? "    continue-on-error: true\n" : ""}${permissions}    steps:
+${prepare()}${build}${stepYaml({
+      name: "Playwright",
+      env: { PLAYWRIGHT_VERSION: r.playwright ?? PLAYWRIGHT },
+      run: 'npm install --prefix "$RUNNER_TEMP/playwright" --no-audit --no-fund --no-package-lock "playwright@$PLAYWRIGHT_VERSION"\n"$RUNNER_TEMP/playwright/node_modules/.bin/playwright" install --with-deps chromium\n',
+    })}${stepYaml({
+      name: "Render every page",
+      env: {
+        FFLOW_RENDER: JSON.stringify(options),
+        NODE_PATH: "${{ runner.temp }}/playwright/node_modules",
+      },
+      run: `pnpm exec ${NAME} render`,
+    })}      - name: Screenshots
+        if: \${{ !cancelled() }}
+        uses: ${UPLOAD}
+        with:
+${blockYaml({ name: `${r.id}-screenshots`, path: out, "if-no-files-found": "ignore", "retention-days": 14 }, 10)}`;
+  });
+
   // Known vulnerabilities in the lockfile, as pay's CI scans them: its own job, so a finding never skips the code
   // checks. mise runs before checkout, so the repository's mise.toml is not loaded.
   const osv = c.osv
@@ -277,7 +320,8 @@ ${checkout()}      - name: Dependency scan (OSV-Scanner)
 `
     : "";
 
-  const needs = ci.int ? "[code, int]" : "[code]";
+  // A render job is a required proof unless its entry says `required: false`.
+  const needs = `[${["code", ...(ci.int ? ["int"] : []), ...renders.filter((r) => r.required !== false).map((r) => r.id)].join(", ")}]`;
   const branch = JSON.stringify(c.branch);
   const schedule = nightly ? `  schedule:\n    - cron: ${JSON.stringify(nightly)}\n` : "";
   return `# Written by \`${NAME} sync\` from the config's \`ci\`; \`${NAME} gate ci\` fails on a hand edit.
@@ -319,5 +363,5 @@ jobs:
             process.exit(failed.length ? 1 : 0);
           '
 
-${code}${int ? `\n${int}` : ""}${extra.map((e) => `\n${e}`).join("")}${osv ? `\n${osv}` : ""}`;
+${code}${int ? `\n${int}` : ""}${extra.map((e) => `\n${e}`).join("")}${renderJobs.map((e) => `\n${e}`).join("")}${osv ? `\n${osv}` : ""}`;
 }

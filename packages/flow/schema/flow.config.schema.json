@@ -663,6 +663,50 @@
         },
         "osv": {
           "type": "boolean"
+        },
+        "render": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "dir"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[A-Za-z_][\\w-]*$" },
+              "name": { "type": "string", "minLength": 1 },
+              "build": { "type": "string", "minLength": 1 },
+              "dir": { "type": "string", "minLength": 1 },
+              "out": { "type": "string", "minLength": 1 },
+              "locales": {
+                "type": "array",
+                "items": { "type": "string", "pattern": "^[a-z]{2,3}(-[a-z0-9]+)?$" }
+              },
+              "rtl": {
+                "type": "array",
+                "items": { "type": "string", "pattern": "^[a-z]{2,3}(-[a-z0-9]+)?$" }
+              },
+              "widths": {
+                "type": "array",
+                "items": { "type": "integer", "minimum": 240 },
+                "minItems": 1
+              },
+              "requests": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["url", "status"],
+                  "properties": {
+                    "url": { "type": "string", "pattern": "^/" },
+                    "status": { "type": "integer", "minimum": 100 },
+                    "location": { "type": "string", "minLength": 1 },
+                    "csp": { "type": "boolean" }
+                  }
+                }
+              },
+              "playwright": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+              "required": { "type": "boolean" }
+            }
+          }
         }
       }
     },
