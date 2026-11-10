@@ -240,13 +240,14 @@ test("ci: setup, install and afterInstall fall back to baseline's; ci's own win"
       { setup: [auth], install: "pnpm install --child-concurrency=1", afterInstall: [save] },
     ),
   ).jobs.code.steps;
-  assert.deepEqual(fromBaseline[1], auth);
+  // Checkout, then Scope (pull requests only), then the setup
+  assert.deepEqual(fromBaseline[2], auth);
   const at = fromBaseline.findIndex((/** @type {any} */ s) => s.name === "Install");
   assert.equal(fromBaseline[at].run, "pnpm install --child-concurrency=1");
   assert.deepEqual(fromBaseline[at + 1], save);
   const own = { name: "Own setup", run: "echo own" };
   const fromCi = parseYaml(ciWorkflow({ setup: [own] }, { setup: [auth] })).jobs.code.steps;
-  assert.deepEqual(fromCi[1], own);
+  assert.deepEqual(fromCi[2], own);
   assert.ok(!fromCi.some((/** @type {any} */ s) => s.name === "Registry auth"));
 });
 

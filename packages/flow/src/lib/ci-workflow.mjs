@@ -21,7 +21,7 @@
  */
 import { blockYaml, CHECKOUT, pinnedMise } from "./baseline-workflow.mjs";
 import { ConfigError, SCHEMA, TASK_PATTERN, validate } from "./config.mjs";
-import { CI_CHECK, MISE_VERSION, NAME } from "./product.mjs";
+import { CI_CHECK, CONFIG_FILE, MISE_VERSION, NAME } from "./product.mjs";
 
 // The pins the reference workflows (core, pay and os CI) use.
 const CACHE = "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0";
@@ -64,7 +64,7 @@ const GOING_ON_PR = `\${{ !cancelled() && ${ON_PR} }}`;
  */
 export const FULL_RUN_INPUTS = [
   ".github/",
-  "flow.config.json",
+  CONFIG_FILE,
   "turbo.json",
   "turbo.jsonc",
   "pnpm-lock.yaml",
