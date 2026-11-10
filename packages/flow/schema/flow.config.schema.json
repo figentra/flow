@@ -496,6 +496,13 @@
           "type": "string",
           "minLength": 1
         },
+        "filters": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^!?[\\w@./*{}\\[\\]^~-]+$"
+          }
+        },
         "setup": {
           "type": "array",
           "items": {

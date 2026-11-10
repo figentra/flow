@@ -17,7 +17,8 @@
  *     workflows; the old binary prints one notice;
  *   - the baseline search walks the ancestors, ignores an artifact a pull request run or another branch made, and
  *     fails closed when it finds none;
- *   - `sync` renders the workflow only with `baseline` configured, with the repository's setup steps verbatim.
+ *   - `sync` renders the workflow only with `baseline` configured, with the repository's setup steps verbatim;
+ *   - the default install and the tasks take `baseline.filters`, else `ci.filters`; a written `install` is kept.
  * Boundary: canned run summaries (trimmed from a real turbo 2.11.9 summary) and a stubbed GitHub; temporary folders.
  * Runtime: node
  * Governing contract: ADR 0022; STA-1942; STA-1945 FR-22.
@@ -44,7 +45,7 @@ import {
   READERS,
   summaryTable,
 } from "../lib/baseline.mjs";
-import { loadConfig } from "../lib/config.mjs";
+import { ConfigError, loadConfig } from "../lib/config.mjs";
 import { baselineWorkflow } from "../lib/baseline-workflow.mjs";
 import { BASELINE_WORKFLOW, MISE_VERSION } from "../lib/product.mjs";
 import { parseYaml } from "../lib/yaml.mjs";
@@ -547,4 +548,30 @@ test("the old binary prints one notice, then runs fflow", () => {
   assert.equal(r.status, 0);
   assert.equal(r.stderr.match(/is now `fflow`/g)?.length, 1);
   assert.match(r.stdout, /Usage:\n\s+fflow <command>/);
+});
+
+test("the baseline's default install and tasks take baseline.filters, else ci.filters; a written install is kept", () => {
+  const run = (/** @type {any} */ wf, /** @type {string} */ name) =>
+    parseYaml(wf).jobs.baseline.steps.find((/** @type {any} */ s) => s.name === name).run;
+  const f = "--filter='!@figentra/os-mobile'";
+  // the gate's filters when the baseline names none
+  const fromCi = baselineWorkflow({ tasks: ["lint", "build"] }, ["!@figentra/os-mobile"]);
+  assert.equal(run(fromCi, "Install"), `pnpm install --frozen-lockfile ${f}`);
+  assert.equal(
+    run(fromCi, "Tasks"),
+    `pnpm exec turbo run lint build ${f} --continue --summarize || true`,
+  );
+  // its own win; an empty list turns them off
+  const own = baselineWorkflow({ filters: ["!@a/b"] }, ["!@figentra/os-mobile"]);
+  assert.equal(run(own, "Install"), "pnpm install --frozen-lockfile --filter='!@a/b'");
+  const none = baselineWorkflow({ filters: [] }, ["!@figentra/os-mobile"]);
+  assert.equal(run(none, "Install"), "pnpm install --frozen-lockfile");
+  // a written install is the config's own; the tasks still take the filters
+  const written = baselineWorkflow({ install: "pnpm install --child-concurrency=1" }, ["!x"]);
+  assert.equal(run(written, "Install"), "pnpm install --child-concurrency=1");
+  assert.match(run(written, "Tasks"), / --filter='!x' --continue/);
+  // without filters the render is unchanged
+  assert.equal(baselineWorkflow({}, []), baselineWorkflow({}));
+  assert.equal(baselineWorkflow({}), baselineWorkflow({}, undefined));
+  assert.throws(() => baselineWorkflow({ filters: ["x' && curl evil '"] }), ConfigError);
 });

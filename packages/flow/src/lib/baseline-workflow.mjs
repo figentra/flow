@@ -1,7 +1,8 @@
 /**
  * Figentra Flow file contract:
  * Purpose: the baseline workflow `sync` renders when the config has `baseline` (STA-1942 FR-5). One job, `Baseline`:
- *   the repository's own setup steps, its install, one `turbo run <tasks> --continue --summarize`, then `gate baseline
+ *   the repository's own setup steps, its install, one `turbo run <tasks> --continue --summarize` (both with
+ *   `baseline.filters`, else `ci.filters`), then `gate baseline
  *   save`; a push to the default branch uploads the results as that commit's baseline, a pull request checks against
  *   the nearest one. Its checkout pin and YAML helpers are shared with the CI workflow (`ci-workflow.mjs`).
  * Boundary: returns text; writes nothing. The setup and after-install steps come from the owner-only config, as block YAML with their
@@ -13,6 +14,7 @@
  * Secrets: holds none; a repository's setup steps may name its own, as its CI does.
  */
 import { artifactName } from "./baseline.mjs";
+import { ConfigError, FILTER_PATTERN } from "./config.mjs";
 import { BASELINE_CHECK, GATE_DIR, MISE_VERSION, NAME } from "./product.mjs";
 
 export const CHECKOUT = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1";
@@ -64,11 +66,22 @@ export function blockYaml(value, indent) {
 
 /**
  * The workflow's YAML.
- * @param {{ tasks?: string[], install?: string, setup?: Record<string, unknown>[],
+ * @param {{ tasks?: string[], install?: string, filters?: string[], setup?: Record<string, unknown>[],
  *   afterInstall?: Record<string, unknown>[], branch?: string }} baseline
+ * @param {string[]} [ciFilters] `ci.filters`, the filters when `baseline` names none: the gate's own
  */
-export function baselineWorkflow(baseline) {
-  const { tasks, install, branch } = { ...BASELINE_DEFAULTS, ...baseline };
+export function baselineWorkflow(baseline, ciFilters) {
+  const { tasks, branch } = { ...BASELINE_DEFAULTS, ...baseline };
+  // A member the gate leaves out (a licensed install with a quota, say) stays out of the baseline too: the default
+  // install and the tasks take the filters; an `install` the config writes is its own.
+  const list = baseline.filters ?? ciFilters ?? [];
+  const bad = list.filter((f) => !new RegExp(FILTER_PATTERN).test(f));
+  if (bad.length)
+    throw new ConfigError(
+      `baseline.filters: ${bad.map((f) => JSON.stringify(f)).join(", ")} is not a turbo filter`,
+    );
+  const filters = list.map((f) => ` --filter='${f}'`).join("");
+  const install = baseline.install ?? `${BASELINE_DEFAULTS.install}${filters}`;
   // A step is written as block YAML (the YAML standard, STA-299, refuses flow mappings), its first key on the `- ` line.
   const steps = (/** @type {Record<string, unknown>[] | undefined} */ list) =>
     (list ?? []).map((s) => `      - ${blockYaml(pinnedMise(s), 8).slice(8)}`).join("");
@@ -109,7 +122,7 @@ ${setup}      - name: Install
         run: ${install}
 ${afterInstall}      # Failures are judged against main's baseline, so the run itself never fails the job.
       - name: Tasks
-        run: pnpm exec turbo run ${tasks.join(" ")} --continue --summarize || true
+        run: pnpm exec turbo run ${tasks.join(" ")}${filters} --continue --summarize || true
       - name: Results
         run: pnpm exec ${NAME} gate baseline save
       - if: github.event_name == 'push'

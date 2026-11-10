@@ -186,6 +186,8 @@ export const SCHEMA = {
         tasks: { type: "array", items: str, minItems: 1 },
         mustPass: { type: "array", items: str },
         install: str,
+        // Turbo filters on the default install and the tasks (members the job leaves out); `ci.filters` by default.
+        filters: { type: "array", items: { type: "string", pattern: FILTER_PATTERN } },
         setup: { type: "array", items: { type: "object" } },
         afterInstall: { type: "array", items: { type: "object" } },
         branch: str,
@@ -394,7 +396,8 @@ export function validate(schema, value, path = "") {
  *             surfaces?: { settings?: boolean, lefthook?: boolean, opencode?: boolean },
  *             projection?: boolean,
  *             clean?: { keep?: string[], budget?: number, whenMerged?: boolean }, review?: { required?: string[] },
- *             baseline?: { tasks?: string[], mustPass?: string[], install?: string, setup?: Record<string, unknown>[], branch?: string },
+ *             baseline?: { tasks?: string[], mustPass?: string[], install?: string, filters?: string[],
+ *               setup?: Record<string, unknown>[], branch?: string },
  *             ci?: CiConfig,
  *             artifacts?: { paths?: string[], maxBytes?: number },
  *             train?: { cutoff?: number, eject?: "bisect" | "manual", after?: string[], label?: string },
