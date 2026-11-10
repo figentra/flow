@@ -51,6 +51,7 @@ import { GATE_WORKFLOW } from "../adapters/runner/github-actions.mjs";
 import { approveWorkflow } from "./approve-workflow.mjs";
 import { baselineWorkflow } from "./baseline-workflow.mjs";
 import { ciWorkflow } from "./ci-workflow.mjs";
+import { sandboxWorkflow } from "./sandbox-workflow.mjs";
 import { ConfigError, gateLogins, loadConfig } from "./config.mjs";
 import {
   FLOW_ASSETS,
@@ -82,6 +83,7 @@ import {
   APPROVE_WORKFLOW,
   BASELINE_WORKFLOW,
   CI_WORKFLOW,
+  SANDBOX_WORKFLOW,
   CONFIG_FILE,
   ENV_PREFIX,
   LEGACY_CONFIG_FILE,
@@ -299,6 +301,8 @@ function renderPreset(root, direct, overrides) {
     out.set(`.github/workflows/${BASELINE_WORKFLOW}`, baselineWorkflow(baseline, ci?.filters));
   // The standard CI, with its one required check; its setup and install fall back to `baseline`'s.
   if (ci) out.set(`.github/workflows/${CI_WORKFLOW}`, ciWorkflow(ci, baseline));
+  // The owner-gated manual run against a provider's sandbox, apart from the CI.
+  if (ci?.sandbox) out.set(`.github/workflows/${SANDBOX_WORKFLOW}`, sandboxWorkflow(ci, baseline));
   const ownerOnly = ownerOnlyExtra(root, overrides);
   // No owner, no approval path: GitHub must be able to ask someone for the owner-only paths (CODEOWNERS).
   if (!apps?.owner) return out;
