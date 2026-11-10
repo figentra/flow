@@ -897,10 +897,17 @@ export function checkLane({
   ];
 }
 
-/** The spec folder is the PR's own (keyed by the branch's issue key); only it must reach Tasked on a ready PR. */
+/**
+ * The spec folder is the PR's own: keyed by the branch's issue key, or, on a branch with no key, the folder whose slug
+ * is the branch's last segment (`chore/cancel-order` → `<key>-cancel-order`), as `specDir` finds it (FR-31). Only it
+ * must reach Tasked on a ready PR.
+ */
 export function isOwnSpec(folder, branch, keys = repoScheme()) {
   const key = keys.keys(branch)[0];
-  return Boolean(key) && keys.folderKey(folder) === key;
+  if (key) return keys.folderKey(folder) === key;
+  const own = keys.folderKey(folder);
+  const tail = branch.split("/").pop() ?? "";
+  return Boolean(tail) && own !== undefined && folder.slice(own.length + 1) === tail;
 }
 
 /** The issue keys named on the `Refs:` trailers of the commit messages, lower-cased. */
@@ -1080,10 +1087,11 @@ const git = (...a) => {
   }
 };
 const currentBranch = () => process.env.STACKRA_BRANCH || git("branch", "--show-current").trim();
-/** The branch's own spec folder's name under SPECS_DIR, if it has one. */
+/** The branch's own spec folder's name under SPECS_DIR, if it has one; a keyless branch's slug must name just one. */
 const ownSpec = (branch = currentBranch()) => {
   const dir = join(ROOT, SPECS_DIR);
-  return (existsSync(dir) ? readdirSync(dir) : []).find((f) => isOwnSpec(f, branch));
+  const own = (existsSync(dir) ? readdirSync(dir) : []).filter((f) => isOwnSpec(f, branch));
+  return own.length === 1 ? own[0] : undefined;
 };
 
 /** Spec keys that exist, and the `[<KEY>]` keys in any tasks.md (phase and task sub-issues). */

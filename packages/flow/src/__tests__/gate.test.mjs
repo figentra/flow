@@ -317,6 +317,13 @@ test("ready rule: only the PR's own spec (the branch key's folder) must be at Ta
   assert.equal(isOwnSpec("sta-35-notifications", "figentra/sta-163-x"), false);
   assert.equal(isOwnSpec("sta-16-x", "figentra/sta-163-x"), false);
   assert.equal(isOwnSpec("sta-35-notifications", "chore/foo"), false);
+  // a branch with no key: the folder named for its last segment, as specDir finds it (FR-31)
+  assert.equal(isOwnSpec("sta-35-notifications", "chore/notifications"), true);
+  assert.equal(isOwnSpec("sta-35-notifications", "notifications"), true);
+  assert.equal(isOwnSpec("sta-35-notifications", "chore/notify"), false);
+  assert.equal(isOwnSpec("notes", "chore/notes"), false);
+  // a key in the branch decides alone, even when the slug matches another folder
+  assert.equal(isOwnSpec("sta-35-x", "figentra/sta-163-x"), false);
 });
 
 const statusSpec = (s) => `# X\n\n**Status**: ${s}\n**Linear**: STA-35\n`;
