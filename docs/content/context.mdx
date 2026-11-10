@@ -1,0 +1,51 @@
+---
+title: Task context
+description: fflow context, offline and bounded navigation of one checkout or the registered collection, over the CLI and MCP; and where guidance belongs.
+---
+
+`fflow context` answers "where do I look?" for an agent or a person entering a repository: the scoped instructions
+that apply to a path, the entry points, and the packages that match a query, from the working tree, with no setup
+and no network.
+
+```sh
+fflow context --json                                     # current checkout, no registry required
+fflow context --path packages/flow --limit 10            # scoped instructions and navigation
+fflow context --repo ../service --query payments --json  # an explicit standalone checkout
+fflow context --all --query payments --json              # the registered fflow workspace
+```
+
+## What it reads and returns
+
+Discovery reads git's tracked and non-ignored untracked paths, plus package names and descriptions. It returns up to
+20 matches per repository (1 to 100), at most 25 registered repositories, each repository's head, branch and dirty
+flag, the ancestor instruction paths (including `AGENTS.override.md`), the entry points, and explicit missing or
+invalid metadata. Results are uncached and describe the working tree; the head alone is insufficient when the tree
+is dirty. Narrow the query or select one repository when the result is truncated; a truncated result alone is not a
+failure. Missing repositories and malformed package metadata exit 1; invalid options exit 2.
+
+It does not fetch, install, run scripts, load private document bodies, follow symlinks, or traverse dependencies or
+build outputs. Paths are classified for navigation; no inferred owner or consumer graph is presented as fact.
+Ignored files, custom instruction file names and ancestor instructions outside the checkout are not indexed: the
+client's applicable instructions still govern.
+
+## Over MCP
+
+`fflow mcp` serves the same result as `fflow_context`. Query matching is by path, name and description, not document
+contents; `fflow_docs_lookup` is the bounded prose search. With no matches, use repository search and report the
+missing route.
+
+## Where guidance belongs
+
+| Boundary         | Minimum useful guidance                                                                                                      |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Repository       | README navigation, scoped AGENTS constraints, pinned guidance and the allowed verification environment                       |
+| Package, service | Purpose and owner, public exports, API and events, dependencies, failure boundaries, one example and the tests               |
+| Component family | Import and type, composition, accessibility, platform and state behaviour relevant to the component                          |
+| Capability       | The catalogue entry connecting step owners, contracts, consumers, authorisation and failure behaviour, and the test evidence |
+| Skill, role      | A narrow trigger, prerequisites and version compatibility, the procedure, the output, verification and the failure route     |
+
+Add guidance at real ownership or contract boundaries, not per ordinary folder or function. A README explains use,
+AGENTS governs work, an ADR explains a decision, a contract specifies behaviour and tests supply revision-specific
+evidence. A newer timestamp alone does not supersede a decision. Update generated sources, not projections. Treat
+release and deployment status as unknown until matching evidence exists; test files being present is not evidence that
+they passed.

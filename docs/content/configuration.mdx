@@ -1,0 +1,75 @@
+---
+title: Configuration
+description: Every key of flow.config.json, what it chooses, and the refusal a missing one causes; the .flow folder and the lock.
+---
+
+A repository chooses Flow's adapters in `flow.config.json` at its root. The file is checked against the shipped
+schema (`schema/flow.config.schema.json`, which editors read through `"$schema"`), and an unknown key or a wrong type
+stops every command, named by its path. Nothing defaults to an organisation's choice: a command that needs a setting
+you have not made refuses and names it. Only `flow.config.json` is read; no other file stands in for it.
+
+```json
+{
+  "$schema": "./node_modules/fflow/schema/flow.config.schema.json",
+  "version": 1,
+  "credentials": { "kind": "gh-user" },
+  "secrets": { "kind": "env" },
+  "gate": { "check": "pnpm verify" }
+}
+```
+
+The full reference, key by key with every sub-key, is the
+[Configuration section of the README](https://github.com/figentra/flow/blob/main/packages/flow/README.md#configuration).
+
+## Who you are
+
+| Key           | Chooses                                                                                                                                                                                                  |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `credentials` | how GitHub calls and network git authenticate: `env` (`GH_TOKEN` set by the caller), `gh-user` (your own `gh` login, on purpose), or `wrapper` (your own commands). Never a fallback to a personal login |
+| `secrets`     | where secrets come from: `env` (the caller fills the environment), or `sops` with `oidc` so the approval workflow decrypts the gate App's key itself. Flow fetches no value and prints none              |
+| `apps`        | the GitHub Apps Flow trusts: `gate.login` (and `gate.aliases` during a rename), `review.slug`, and `owner`, whose approval counts. There are no defaults; without a gate App `land` refuses              |
+
+## Where work is tracked and run
+
+| Key       | Chooses                                                                                                                                                                                                    |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tracker` | `linear` (with `team` and `branchPrefix`) or `github-issues` (with `branchPrefix`). Keys are `<prefix>-<n>`; `start` makes `<branchPrefix>/<key>-<slug>`. Without it, the commands that move issues refuse |
+| `runner`  | where `gate run`'s checks run: `ssh` with a `host`, `local`, `command` with an argument list (ours is `testbed run …`), or `github-actions` with its workflow. Without one, `gate run` refuses             |
+| `gate`    | `check`, the check command (default `pnpm verify`), and `shard`, the check one shard runs with `{filters}` for its packages                                                                                |
+| `specs`   | where specs live: `dir` (default `.agents/specs`) and `bugsDir`                                                                                                                                            |
+
+## What sync renders
+
+| Key          | Chooses                                                                                                                                                                                      |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `preset`     | `neutral` (the default), `stackra`, an npm package such as `@acme/flow-preset`, or a path to the repository's own preset folder ([Presets](/presets))                                        |
+| `profile`    | which of the preset's agents, skills and hooks `sync` renders, from the profiles its `preset.yml` declares; `.flow/lock.json` records it                                                     |
+| `harnesses`  | the coding tools `sync --direct` renders the `flow-*` commands for ([Coding tools](/coding-tools))                                                                                           |
+| `claudeCode` | the repository's Claude Code plugins, `enabledPlugins` and `extraKnownMarketplaces`, merged over the preset's; a local marketplace is refused                                                |
+| `agentsMd`   | `facts`, the repository's own Markdown under "This repository" in `AGENTS.md`; `land`, which replaces the landing line                                                                       |
+| `session`    | `pushAtEnd` (default `false`): renders the hooks that write the session's record and push its work when the session ends; `contextCommands`, commands whose output the session start appends |
+
+## Landing and releasing
+
+| Key         | Chooses                                                                                                                                                                       |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `approve`   | `ownerOnly` globs beside Flow's own list, `checks` (a required context's trusted login), `workflows` that wake main's land lane, `requesters` whose `fflow:land` label counts |
+| `review`    | `required`, the spec tiers whose changes get the AI review (default `small`, `feature`, `big`); the review is advisory                                                        |
+| `train`     | the release train: `label`, `eject` (`bisect` or `manual`), `after` (upstream repositories), `cutoff` in hours ([Releases and trains](/release-trains))                       |
+| `artifacts` | the guard `gate run` and `land` apply to a change: `paths` (default the caches and build outputs) and `maxBytes` (default 5 MB)                                               |
+| `clean`     | `keep`, worktree globs never removed; `whenMerged`, a background clean on session start; `budget`, the most worktrees to hold (default 10)                                    |
+
+## Overrides
+
+A repository changes what `sync` renders without forking a preset: owner-only files at
+`.flow/overrides/<surface>/<id>.yml`, each `kind: disable | extend | configure | replace` with a `target`, and for
+`replace` and `disable` a `reason`, an `owner` and a `review` date (`fflow check` warns 14 days before and fails
+after). The mandatory policies (`guard.secrets`, `guard.tenancy`, `owner-only`, `guard.wiring`) cannot be disabled,
+replaced or configured; an `extend` of one may only add items. The header of a file an override shaped names it.
+
+## The .flow folder and the lock
+
+`fflow init` writes `.flow/`: a README, a starter constitution and a `.gitignore`. `fflow sync` writes
+`.flow/lock.json`, every rendered file with its digest and the preset's digest; `fflow check` fails CI when a file
+drifts or the installed preset differs from the lock, and `fflow update` adopts a new preset version after printing
+the diff. `.flow/readme.yml` is the data `fflow readme` renders `README.md` from.
