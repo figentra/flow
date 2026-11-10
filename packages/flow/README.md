@@ -831,6 +831,30 @@ would run the runner out of memory; the other tasks still share one step. A pull
 one concurrency group, so a newer push cancels the older run; pushes to the default branch and the nightly run never
 cancel each other.
 
+#### The sandbox run
+
+`ci.sandbox` renders `.github/workflows/fflow-sandbox.yml`, a manual run against a provider's sandbox (Pay's connector
+certification on Stripe's test mode, say). Only `workflow_dispatch` starts it, never a push or a pull request, and it is
+never in `Quality Gate`'s needs. Its one job runs in the GitHub environment `environment` (default `sandbox`), whose
+reviewers the owner sets, so every dispatch waits for the owner, and the secrets can live there. The job installs,
+then runs `run` with `env` and each name in `secrets` as `${{ secrets.NAME }}`, and uploads `artifact.path` as
+`artifact.name` even after a failure, as the evidence. An `env` value holding `${{` is refused: a secret is named in
+`secrets`, or it does not reach the job.
+
+```json
+{
+  "ci": {
+    "sandbox": {
+      "name": "Connector sandbox (Stripe)",
+      "run": "pnpm exec turbo run test --filter=@figentra/pay-connector-certification",
+      "env": { "PAY_CONNECTOR_SANDBOX": "1", "CERTIFICATION_WRITE": "1" },
+      "secrets": ["STRIPE_SANDBOX_SECRET_KEY", "STRIPE_SANDBOX_WEBHOOK_SECRET"],
+      "artifact": { "name": "certification", "path": "packages/connectors/certification/CERTIFICATION.md" }
+    }
+  }
+}
+```
+
 GitHub calls use only the credentials the configuration names in `credentials`. `wrapper` runs your own command
 that gives `gh` a bot's token, and `gh-user` uses your own `gh` login, only because you said so. With neither, `land` refuses: Figentra Flow never falls back to a personal login.
 

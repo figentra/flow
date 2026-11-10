@@ -94,6 +94,9 @@ export const BASELINE_CHECK = "Baseline";
 /** The standard CI workflow `sync` renders when the config has `ci`; its `Quality Gate` job is the required check. */
 export const CI_WORKFLOW = `${NAME}-ci.yml`;
 
+/** The manual sandbox workflow `sync` renders from `ci.sandbox`. */
+export const SANDBOX_WORKFLOW = `${NAME}-sandbox.yml`;
+
 /** The CI workflow's aggregate job name, and so the one check a repository's ruleset requires. */
 export const CI_CHECK = "Quality Gate";
 

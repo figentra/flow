@@ -247,6 +247,27 @@ export const SCHEMA = {
           },
         },
         osv: { type: "boolean" },
+        // A manual job against a provider's sandbox (`sandbox-workflow.mjs`): workflow_dispatch only, in an
+        // environment the owner gates, never in Quality Gate's needs.
+        sandbox: {
+          type: "object",
+          additionalProperties: false,
+          required: ["name", "run"],
+          properties: {
+            name: str,
+            run: str,
+            env: { type: "object", additionalProperties: { type: "string" } },
+            secrets: { type: "array", items: { type: "string", pattern: "^[A-Z_][A-Z0-9_]*$" } },
+            environment: { type: "string", pattern: "^[\\w-]+$" },
+            artifact: {
+              type: "object",
+              additionalProperties: false,
+              required: ["name", "path"],
+              properties: { name: { type: "string", pattern: "^[\\w.-]+$" }, path: str },
+            },
+            timeoutMinutes: { type: "integer", minimum: 1 },
+          },
+        },
       },
     },
     review: {
@@ -418,7 +439,9 @@ export function validate(schema, value, path = "") {
  *             filters?: string[], concurrency?: Record<string, number>,
  *             turbo?: boolean, runsOn?: string, timeoutMinutes?: number, branch?: string, nightly?: string | boolean,
  *             optional?: { id: string, name: string, steps: Record<string, unknown>[], needsInstall?: boolean }[],
- *             osv?: boolean }} CiConfig
+ *             osv?: boolean, sandbox?: SandboxJob }} CiConfig
+ * @typedef {{ name: string, run: string, env?: Record<string, string>, secrets?: string[], environment?: string,
+ *   artifact?: { name: string, path: string }, timeoutMinutes?: number }} SandboxJob
  * @typedef {{ config: Config, source: string | undefined, warnings: string[], errors: string[] }} Loaded
  */
 
