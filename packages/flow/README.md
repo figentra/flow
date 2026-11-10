@@ -812,7 +812,8 @@ which passes when every job it needs passed or was skipped. `Code` runs gen and 
 `typecheck lint test`) with `--affected` on a pull request, and `turbo run <ci.main>` (default adds `build`) on a push
 to `ci.branch`, the nightly run (`ci.nightly`, a cron line or `false`) and a manual run; on a pull request it also runs
 commitlint on the title (`ci.commitlint`, default on). `ci.int` adds `Integration`, `turbo run test:int` beside a
-Postgres service, to the gate's needs. Each job checks out without credentials, runs `ci.setup` (else
+Postgres service, to the gate's needs; `ci.int.postgres: false` leaves the service out for suites that start their
+own Postgres on the runner's Docker (Testcontainers). Each job checks out without credentials, runs `ci.setup` (else
 `baseline.setup`), caches the pnpm store and runs `ci.install` and `ci.afterInstall` (else `baseline`'s). `ci.turbo`
 decrypts the turbo remote cache's names from the sops scope `ci/build/turbo`; `ci.optional` jobs run with
 `continue-on-error` outside the gate, and `ci.osv` (default on) scans the lockfile with OSV-Scanner in its own job.

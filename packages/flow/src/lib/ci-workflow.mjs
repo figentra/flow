@@ -5,7 +5,8 @@
  *   members a pull request affects (`--affected`) or, on a push to the default branch, the nightly run and a manual
  *   run, everything; on a pull request it also checks the title with commitlint (a squash merge lands the title).
  *   `ci.filters` go on every turbo run; a task in `ci.concurrency` runs in a step of its own with that cap.
- *   `Integration`, with `ci.int`, runs the integration tasks beside a Postgres service. The optional jobs and the
+ *   `Integration`, with `ci.int`, runs the integration tasks beside a Postgres service, or with `ci.int.postgres:
+ *   false` on the runner's Docker alone (suites that start their own, Testcontainers). The optional jobs and the
  *   OSV-Scanner dependency scan run on their own, outside the gate's `needs`.
  * Boundary: returns text; writes nothing. Every value from the owner-only config is written as JSON, which YAML reads
  *   back unchanged (`blockYaml`); only task names, caps and filters reach a `run:` line: the schema and this module
@@ -233,9 +234,13 @@ ${prepare(true)}${commitlint}${turbo}${gen}${checks}${taskSteps}${after}`;
   let int = "";
   if (ci.int) {
     const tasks = taskWords(ci.int.tasks ?? INT_DEFAULTS.tasks, "int.tasks");
+    // `postgres: false`: the suites start their own Postgres (Testcontainers) on the runner's Docker, so the job has
+    // no service container and no database environment.
+    const pg = ci.int.postgres;
+    const own = typeof pg === "object" ? pg : {};
     const service = {
       postgres: {
-        image: ci.int.postgres?.image ?? INT_DEFAULTS.image,
+        image: own.image ?? INT_DEFAULTS.image,
         env: { POSTGRES_PASSWORD: "postgres", POSTGRES_USER: "postgres", POSTGRES_DB: "test" },
         options:
           '--health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10',
@@ -246,9 +251,9 @@ ${prepare(true)}${commitlint}${turbo}${gen}${checks}${taskSteps}${after}`;
       TESTBED_POSTGRES_HOST: "localhost",
       DATABASE_URL: "postgres://postgres:postgres@localhost:5432/test",
     };
-    int = `${head("int", "Integration")}${permissions}    services:
-${blockYaml(service, 6)}    steps:
-${prepare(true)}${turbo}${affectedPair("Integration tasks", tasks, tasks, env, false, filters)}`;
+    const services = pg === false ? "" : `    services:\n${blockYaml(service, 6)}`;
+    int = `${head("int", "Integration")}${permissions}${services}    steps:
+${prepare(true)}${turbo}${affectedPair("Integration tasks", tasks, tasks, pg === false ? {} : env, false, filters)}`;
   }
 
   // Their own jobs, never in the gate's `needs`: a failure shows on the run and blocks nothing.
