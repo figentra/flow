@@ -2,7 +2,8 @@
  * Figentra Flow file contract:
  * Purpose: the standard CI workflow `sync` renders when the config has `ci`. One required check, `Quality Gate`: an
  *   aggregate job that passes when every job it needs passed or was skipped. `Code` runs gen and the turbo tasks, the
- *   members a pull request affects (`--affected`) or, on a push to the default branch, the nightly run and a manual
+ *   members a pull request affects (`--affected`; every member when it touches `FULL_RUN_INPUTS`) or, on a push to the
+ *   default branch, the nightly run and a manual
  *   run, everything; on a pull request it also checks the title with commitlint (a squash merge lands the title).
  *   `ci.filters` go on every turbo run; a task in `ci.concurrency` runs in a step of its own with that cap.
  *   `Integration`, with `ci.int`, runs the integration tasks beside a Postgres service, or with `ci.int.postgres:
@@ -21,7 +22,7 @@
  */
 import { blockYaml, CHECKOUT, pinnedMise } from "./baseline-workflow.mjs";
 import { ConfigError, SCHEMA, TASK_PATTERN, validate } from "./config.mjs";
-import { CI_CHECK, MISE_VERSION, NAME } from "./product.mjs";
+import { CI_CHECK, CONFIG_FILE, MISE_VERSION, NAME } from "./product.mjs";
 
 // The pins the reference workflows (core, pay and os CI) use.
 const CACHE = "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0";
@@ -57,7 +58,43 @@ const ON_PR = "github.event_name == 'pull_request'";
 const OFF_PR = "github.event_name != 'pull_request'";
 /** The same, for a step that runs after an earlier one in its job failed (`keepGoing`). */
 const GOING_ON_PR = `\${{ !cancelled() && ${ON_PR} }}`;
-const GOING_OFF_PR = `\${{ !cancelled() && ${OFF_PR} }}`;
+
+/**
+ * The paths whose change reaches every member: how the workspace builds or tests. `--affected` puts no member in
+ * scope for them, so a pull request that changes only one would pass on zero tasks (pay#230); it runs everything.
+ */
+export const FULL_RUN_INPUTS = [
+  ".github/",
+  CONFIG_FILE,
+  "turbo.json",
+  "turbo.jsonc",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  "package.json",
+];
+
+/** `FULL_RUN_INPUTS` as an extended regex over `git diff --name-only`: a folder by prefix, a file at the root. */
+const FULL_RUN_PATTERN = `^(${FULL_RUN_INPUTS.map((p) =>
+  p.endsWith("/") ? p.replaceAll(".", "\\.") : `${p.replaceAll(".", "\\.")}$`,
+).join("|")})`;
+
+/**
+ * On a pull request, `full=true` when the change touches `FULL_RUN_INPUTS`; the affected pairs read it. The
+ * pattern is Flow's own constant: no config value reaches the script.
+ */
+const SCOPE = `      - name: Scope
+        id: scope
+        if: ${ON_PR}
+        run: |
+          if git diff --name-only HEAD~1 HEAD | grep -qE '${FULL_RUN_PATTERN}'; then
+            echo "full=true" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Scope::the change touches the workspace's build or test inputs; every member runs"
+          fi
+`;
+
+/** An affected pair's two sides: the affected members on a pull request, unless `Scope` says every member. */
+const AFFECTED_ON = `${ON_PR} && steps.scope.outputs.full != 'true'`;
+const AFFECTED_OFF = `${OFF_PR} || steps.scope.outputs.full == 'true'`;
 
 /**
  * Steps as block YAML under a job's `steps:`, each with its first key on the `- ` line.
@@ -111,14 +148,14 @@ function taskWords(tasks, key) {
 function affectedPair(name, tasks, full, env = {}, going = false, args = "") {
   const extra = Object.keys(env).length ? blockYaml(env, 10) : "";
   const affected = `      - name: ${name} (affected)
-        if: ${going ? GOING_ON_PR : ON_PR}
+        if: ${going ? `\${{ !cancelled() && (${AFFECTED_ON}) }}` : `\${{ ${AFFECTED_ON} }}`}
         env:
           # A pull request checks out its merge into the base branch, so HEAD~1 is the base and the diff is the PR's own.
           TURBO_SCM_BASE: HEAD~1
 ${extra}        run: pnpm exec turbo run ${tasks}${args} --affected
 `;
   const rest = `      - name: ${name}
-        if: ${going ? GOING_OFF_PR : OFF_PR}
+        if: ${going ? `\${{ !cancelled() && (${AFFECTED_OFF}) }}` : `\${{ ${AFFECTED_OFF} }}`}
 ${extra ? `        env:\n${extra}` : ""}        run: pnpm exec turbo run ${full}${args}
 `;
   return `${tasks ? affected : ""}${full ? rest : ""}`;
@@ -181,7 +218,9 @@ export function ciWorkflow(ci, baseline) {
 ${full ? "          fetch-depth: 0\n" : ""}          persist-credentials: false
 `;
   // Checkout, the repository's setup, the pnpm store cache, the install and the after-install steps.
-  const prepare = (full = false) => `${checkout(full)}${setup}      - name: pnpm store directory
+  const prepare = (
+    full = false,
+  ) => `${checkout(full)}${full ? SCOPE : ""}${setup}      - name: pnpm store directory
         run: pnpm config set store-dir ~/.pnpm-store
       - name: pnpm store cache
         uses: ${CACHE}

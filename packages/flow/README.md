@@ -809,7 +809,9 @@ gate's requirement, and only while main is red.
 
 Add `ci` to the config and `sync` renders `.github/workflows/fflow-ci.yml`. Its one required check is `Quality Gate`,
 which passes when every job it needs passed or was skipped. `Code` runs gen and `turbo run <ci.pr>` (default
-`typecheck lint test`) with `--affected` on a pull request, and `turbo run <ci.main>` (default adds `build`) on a push
+`typecheck lint test`) with `--affected` on a pull request (every member when the change touches the workspace's
+build or test inputs: `.github/`, `flow.config.json`, `turbo.json(c)`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` or the
+root `package.json`, which `--affected` would leave out), and `turbo run <ci.main>` (default adds `build`) on a push
 to `ci.branch`, the nightly run (`ci.nightly`, a cron line or `false`) and a manual run; on a pull request it also runs
 commitlint on the title (`ci.commitlint`, default on). `ci.int` adds `Integration`, `turbo run test:int` beside a
 Postgres service, to the gate's needs; `ci.int.postgres: false` leaves the service out for suites that start their
