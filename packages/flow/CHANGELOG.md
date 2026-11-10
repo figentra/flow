@@ -1,5 +1,14 @@
 # @figentra-oss/flow
 
+## 0.14.0
+
+### Minor Changes
+
+- 040a27d: The rendered CI runs every member, not `--affected`, on a pull request that touches the workspace's build or test inputs (`.github/`, `flow.config.json`, `turbo.json(c)`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, the root `package.json`). A `Scope` step in Code and Integration decides it. `--affected` puts no member in scope for those files, so a change to how the gate tests passed on zero tasks (pay#230).
+- 943bad2: `ci.int.postgres: false` renders the `Integration` job without the Postgres service container and its database environment, for integration suites that start their own Postgres on the runner's Docker (Stackra's `usePostgres()` through Testcontainers). Without it, the job renders as before.
+- a1442b0: `fflow render` and `ci.render`: the render proof of a built site, from SITE's figentra.com job. The command serves the built folder as Cloudflare Pages does and opens every page at each width in Chromium. It fails on a console error, a page error, a failed request or a 4xx/5xx, and on a page that misses the basics (one `h1`, one `main`, a title, `lang`, the right `dir`, no overflow, every image's `alt`), plus any configured redirect, status or CSP request. It saves a screenshot per page. Each `ci.render` entry renders a job that builds the site, installs Playwright at a pin outside the workspace, runs the command and uploads the screenshots, in `Quality Gate`'s needs unless `required: false`.
+- 28ba041: `ci.sandbox` renders `fflow-sandbox.yml`: a manual run (`workflow_dispatch` only, never on a push or a pull request, never in `Quality Gate`'s needs) of one command against a provider's sandbox. It runs in an owner-gated GitHub environment (`sandbox` by default), with its `env` and its named `secrets` as `${{ secrets.NAME }}`, and the written evidence is uploaded as an artifact. An env value holding `${{` is refused.
+
 ## 0.13.0
 
 ### Minor Changes
