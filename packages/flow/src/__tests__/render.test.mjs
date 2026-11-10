@@ -9,6 +9,7 @@
  *     `_headers` on every response, `404.html` with a 404, nothing outside the root;
  *   - a render collects console errors, page errors, failed requests and 4xx/5xx responses, writes one screenshot
  *     per page and width, and exits 1 on a failure, 1 on no page and 2 on a missing site or Playwright;
+ *   - a width opens at its `heights` entry, else 800 px high from 768 px up and 844 px below;
  *   - the options come from `FFLOW_RENDER`'s JSON, the flags winning.
  * Boundary: temporary folders and a server on 127.0.0.1; the browser is a stub, so no Chromium runs here (the
  *   repository's own render job is the real proof).
@@ -246,16 +247,67 @@ test("render: a render collects every problem, writes a screenshot per page and 
   assert.ok(lines[0].startsWith("3 pages × 2 widths"));
 });
 
+/**
+ * Record each context's viewport on a stub browser.
+ * @param {any} playwright
+ * @returns {{ width: number, height: number }[]}
+ */
+function recordViewports(playwright) {
+  const viewports = [];
+  const launch = playwright.chromium.launch;
+  playwright.chromium.launch = async () => {
+    const browser = await launch();
+    const newContext = browser.newContext;
+    browser.newContext = async (options) => {
+      viewports.push(options.viewport);
+      return newContext(options);
+    };
+    return browser;
+  };
+  return viewports;
+}
+
+test("render: a width opens at its height by position, else 800 from 768 px up and 844 below", async (t) => {
+  const dir = site(t);
+  const out = mkdtempSync(join(tmpdir(), "flow-render-out-"));
+  t.after(() => rmSync(out, { recursive: true, force: true }));
+  const plain = stubPlaywright({}).playwright;
+  const plainViewports = recordViewports(plain);
+  await renderSite(
+    { dir, out, widths: [1280, 768, 390] },
+    { root: dir, say: () => {}, playwright: plain },
+  );
+  assert.deepEqual(plainViewports, [
+    { width: 1280, height: 800 },
+    { width: 768, height: 800 },
+    { width: 390, height: 844 },
+  ]);
+  const set = stubPlaywright({}).playwright;
+  const setViewports = recordViewports(set);
+  await renderSite({ dir, out, heights: [900] }, { root: dir, say: () => {}, playwright: set });
+  assert.deepEqual(setViewports, [
+    { width: 1280, height: 900 },
+    { width: 390, height: 844 },
+  ]);
+});
+
 test("render: the command reads FFLOW_RENDER, the flags win, and exits 0, 1 or 2", async (t) => {
   const dir = site(t);
   const env = {
-    FFLOW_RENDER: JSON.stringify({ dir: "nowhere", out: "o", locales: ["en"], widths: [400] }),
+    FFLOW_RENDER: JSON.stringify({
+      dir: "nowhere",
+      out: "o",
+      locales: ["en"],
+      widths: [400],
+      heights: [700],
+    }),
   };
   const opts = renderOptions({ dir }, env, "/repo");
   assert.equal(opts.dir, dir);
   assert.equal(opts.out, "/repo/o");
   assert.deepEqual(opts.locales, ["en"]);
   assert.deepEqual(opts.widths, [400]);
+  assert.deepEqual(opts.heights, [700]);
   assert.throws(() => renderOptions({}, {}, "/repo"), ConfigError);
   assert.throws(() => renderOptions({}, { FFLOW_RENDER: "{not json" }, "/repo"), ConfigError);
 

@@ -22,6 +22,15 @@ import { extname, join, normalize, relative } from "node:path";
 /** The widths a page opens at when the config names none: a desktop and a phone. */
 export const WIDTHS = [1280, 390];
 
+/** From this width up a viewport is a laptop screen (800 px high); below it, a phone's (844 px). */
+export const PHONE_BELOW = 768;
+
+/**
+ * The height a width opens at when the config names none: 1280×800 and 390×844 for the default widths.
+ * @param {number} width
+ */
+export const heightFor = (width) => (width >= PHONE_BELOW ? 800 : 844);
+
 /** The locales written right to left; a page in one of them must carry `dir="rtl"`. */
 export const RTL = ["ar", "fa", "he", "ur"];
 
@@ -223,7 +232,7 @@ export function loadPlaywright(root) {
 }
 
 /**
- * @typedef {{ dir: string, out: string, locales?: string[], rtl?: string[], widths?: number[],
+ * @typedef {{ dir: string, out: string, locales?: string[], rtl?: string[], widths?: number[], heights?: number[],
  *   requests?: RequestCheck[] }} RenderOptions
  * @typedef {{ route: string, at: string, problems: string[] }} RenderFailure
  */
@@ -247,8 +256,10 @@ export async function renderSite(options, io) {
   const failures = [];
   io.say(`${pages.length} pages × ${widths.length} widths`);
   try {
-    for (const width of widths) {
-      const context = await browser.newContext({ viewport: { width, height: 900 } });
+    for (const [i, width] of widths.entries()) {
+      // `heights` pairs with the widths by position; a width without one gets `heightFor`'s.
+      const height = options.heights?.[i] ?? heightFor(width);
+      const context = await browser.newContext({ viewport: { width, height } });
       for (const route of pages) {
         const page = await context.newPage();
         /** @type {string[]} */

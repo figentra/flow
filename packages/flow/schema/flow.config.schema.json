@@ -689,6 +689,11 @@
                 "items": { "type": "integer", "minimum": 240 },
                 "minItems": 1
               },
+              "heights": {
+                "type": "array",
+                "items": { "type": "integer", "minimum": 240 },
+                "minItems": 1
+              },
               "requests": {
                 "type": "array",
                 "items": {

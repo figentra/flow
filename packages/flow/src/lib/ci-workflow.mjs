@@ -322,6 +322,7 @@ ${o.needsInstall ? prepare() : checkout()}${stepsYaml(o.steps)}`,
         locales: r.locales,
         rtl: r.rtl,
         widths: r.widths,
+        heights: r.heights,
         requests: r.requests,
       }).filter(([, v]) => v !== undefined),
     );
