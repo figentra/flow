@@ -22,7 +22,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { sync } from "../commands/sync.mjs";
-import { ciWorkflow } from "../lib/ci-workflow.mjs";
+import { ciWorkflow, FULL_RUN_INPUTS } from "../lib/ci-workflow.mjs";
 import { ConfigError } from "../lib/config.mjs";
 import { CI_CHECK, CI_WORKFLOW } from "../lib/product.mjs";
 import { parseYaml } from "../lib/yaml.mjs";
@@ -96,17 +96,19 @@ test("ci: --affected only on a pull request; push, nightly and manual runs take 
     affected.map((/** @type {any} */ s) => [s.if, s.run]),
     [
       [
-        "${{ !cancelled() && github.event_name == 'pull_request' }}",
+        "${{ !cancelled() && (github.event_name == 'pull_request' && steps.scope.outputs.full != 'true') }}",
         "pnpm exec turbo run gen --affected",
       ],
       [
-        "${{ !cancelled() && github.event_name == 'pull_request' }}",
+        "${{ !cancelled() && (github.event_name == 'pull_request' && steps.scope.outputs.full != 'true') }}",
         "pnpm exec turbo run typecheck lint test --affected",
       ],
     ],
   );
   const full = steps.filter(
-    (/** @type {any} */ s) => s.if === "${{ !cancelled() && github.event_name != 'pull_request' }}",
+    (/** @type {any} */ s) =>
+      s.if ===
+      "${{ !cancelled() && (github.event_name != 'pull_request' || steps.scope.outputs.full == 'true') }}",
   );
   assert.deepEqual(
     full.map((/** @type {any} */ s) => s.run),
@@ -116,12 +118,44 @@ test("ci: --affected only on a pull request; push, nightly and manual runs take 
     .code.steps;
   assert.deepEqual(
     own
-      .filter((/** @type {any} */ s) => /turbo|gen/.test(s.run ?? ""))
+      .filter((/** @type {any} */ s) => s.name !== "Scope" && /turbo|gen/.test(s.run ?? ""))
       .map((/** @type {any} */ s) => s.run),
     ["pnpm gen", "pnpm exec turbo run lint --affected", "pnpm exec turbo run lint build"],
   );
   const noGen = parseYaml(ciWorkflow({ gen: false })).jobs.code.steps;
   assert.ok(!noGen.some((/** @type {any} */ s) => /\bgen\b/.test(s.run ?? "")));
+});
+
+test("ci: a pull request that touches the workspace's build or test inputs runs every member, not --affected", () => {
+  const wf = parseYaml(ciWorkflow({ int: {} }));
+  for (const job of ["code", "int"]) {
+    const steps = wf.jobs[job].steps;
+    const at = steps.findIndex((/** @type {any} */ s) => s.name === "Scope");
+    // right after the full-history checkout, before setup and the install, on a pull request only
+    assert.equal(steps[at - 1].name, "Checkout");
+    assert.equal(steps[at - 1].with["fetch-depth"], 0);
+    assert.equal(steps[at].id, "scope");
+    assert.equal(steps[at].if, "github.event_name == 'pull_request'");
+    assert.match(steps[at].run, /git diff --name-only HEAD~1 HEAD \| grep -qE/);
+    assert.match(steps[at].run, /echo "full=true" >> "\$GITHUB_OUTPUT"/);
+  }
+  // the pattern: a folder by prefix, a file at the root only
+  const run = wf.jobs.code.steps.find((/** @type {any} */ s) => s.name === "Scope").run;
+  const pattern = new RegExp(/grep -qE '([^']+)'/.exec(run)?.[1] ?? "");
+  for (const path of FULL_RUN_INPUTS.map((p) => (p.endsWith("/") ? `${p}workflows/ci.yml` : p)))
+    assert.ok(pattern.test(path), path);
+  for (const path of [
+    "services/pay/package.json",
+    "apps/web/turbo.jsonc",
+    "src/a.ts",
+    "docs/.github.md",
+  ])
+    assert.ok(!pattern.test(path), path);
+  // an optional job takes no scope: it has no affected pair
+  const opt = parseYaml(
+    ciWorkflow({ optional: [{ id: "x", name: "X", steps: [{ run: "true" }] }] }),
+  );
+  assert.ok(!opt.jobs.x.steps.some((/** @type {any} */ s) => s.name === "Scope"));
 });
 
 test("ci: the PR title reaches commitlint through the environment; no run: line holds ${{", () => {
