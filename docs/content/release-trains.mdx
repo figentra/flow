@@ -1,0 +1,64 @@
+---
+title: Releases and trains
+description: Changesets and the version pull request, the release preflight, release trains for repositories without a merge queue, and fflow ship for dev and staging.
+---
+
+A release is the changesets Version Packages pull request, approved and merged by the owner; merging it publishes.
+Flow reads the release's state, says whether the version pull request may be merged now, runs a release train where
+GitHub's merge queue is not available, and ships dev and staging. It never publishes and never deploys production.
+
+## What the next release would publish
+
+`fflow release [--json] [--offline]` reads the pending changesets and the next versions, the version pull request,
+the Release workflow's last run and its notices, and the registry's versions. It publishes nothing.
+
+## Release preflight
+
+`fflow release --preflight` answers one question before the owner merges the version pull request: may it be merged
+now? It reads only (git, GitHub and the registry by anonymous GET) and never merges, dispatches or publishes. One row
+per item, each failed one with its fix, and exit 1 when any fails:
+
+| Row                               | Passes when                                                                                                                                           |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `branch`, `clean`, `up-to-date`   | the checkout is on the default branch, has no changes and is at its GitHub head                                                                       |
+| `main-checks`                     | the Quality Gate's checks and every context the ruleset requires are green at main's head, from their trusted sources                                 |
+| `changesets`                      | changesets are pending, and each names a package of the repository                                                                                    |
+| `version-pr`, `version-pr-checks` | the open `changeset-release/<default>` pull request is based on main's head, its versions are the ones the changesets imply, and its checks are green |
+| `publish-config`, `registry`      | each package to publish names the Release workflow's registry, and that registry does not have the next version yet                                   |
+| `lockfile`                        | `pnpm-lock.yaml`'s importers match the `package.json` files at the version pull request's head                                                        |
+
+With `--offline` the rows that need GitHub or the registry are skipped, not passed, and the answer says it is
+incomplete. `--json` prints `{ schema, ok, rows }`.
+
+Repositories install with pnpm's minimum release age, so a version a lockfile resolves for the first time can be
+hidden for a day. Each repository therefore excludes Figentra's own open scope, `@figentra-oss/*`, from the age check
+and keeps it for everything else.
+
+## Release trains
+
+`fflow train` runs a repository's release train. A train is a milestone and a label, both named `<label><version>`;
+its state (the members in board order, the ejections, the pull requests waiting for the next train) is one marked line
+in the milestone's description. Every subcommand that changes something takes `--dry-run`.
+
+1. `train open [<version>]` opens the next train after a release; only one is open at a time.
+2. `train add <pr>` boards a pull request that is open, based on the default branch and green on `fflow/gate` at its
+   exact head. After the cut-off, the pull request waits for the next train.
+3. `train close` is the cut-off, or set `train.cutoff` in hours.
+4. `train build` creates `train/<version>` from the default branch and merges each member in board order with merge
+   commits, never a rebase or a squash. A member that conflicts, or is no longer open and green, is ejected with a
+   comment. Then it gates the branch; on red, `bisect` finds the first member that breaks the train, ejects it with
+   the red gate's report, rebuilds and gates again. `manual` stops and reports, and `train eject <pr>` ejects by hand.
+5. `train depart` checks the gate is green on the tip's exact sha, the move is a fast-forward, and every `train.after`
+   upstream's latest cut-off train has a published release; then it moves the default branch to the tip, which marks
+   the members merged, closes the milestone and opens the next train.
+6. `train status` shows the members and their gates, the ejections, the waiting pull requests, the tip and the upstream
+   chain.
+
+A default branch whose ruleset requires pull requests must let the train's fast-forward through.
+
+## Shipping dev and staging
+
+`fflow ship <dev|staging> [--wait m] [--resolve] [--dry-run]` dispatches the product's Runway deploy workflow on main
+and follows the run; it records the ship in the task's record and marks it done only when Runway reports `deployed`
+for that environment and the run's revision. Production is refused: the owner promotes. A ship still pending when
+`--wait` ends is read again with `fflow ship <env> --resolve`, which dispatches nothing.

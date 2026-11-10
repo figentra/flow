@@ -1,0 +1,79 @@
+---
+title: Command reference
+description: Every fflow command by group, with what it does; the usage line, flags and exit codes are in the README.
+---
+
+`fflow` runs on `@stackra/console`, the one CLI engine of every Figentra CLI. `fflow` alone prints the banner, the
+version and the commands by group; `fflow <command> --help` prints a command's usage and runs nothing; a mistyped
+command names the closest one and exits 2. A failure is one error block: what failed, why, the fix and a docs link.
+Output is plain text under `NO_COLOR` or in a pipe, and the commands that take `--json` write one document,
+`{ "ok", "data" }`. A command refuses a flag it does not declare, with exit 2, instead of ignoring it.
+
+The full table, with every flag and exit code, is the
+[Commands section of the README](https://github.com/figentra/flow/blob/main/packages/flow/README.md#commands); this
+page groups the commands by what they are for.
+
+## Set up a repository
+
+| Command                              | What it does                                                                                                             |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `fflow init [--force]`               | writes `.flow/`, a starter `flow.config.json` when there is none, and renders the `flow-*` skills                        |
+| `fflow init --runner github-actions` | writes the gate workflow for repositories with no box                                                                    |
+| `fflow migrate [--dry-run]`          | moves a spec-kit repository onto `.flow/`, then syncs                                                                    |
+| `fflow preset add <pkg>`             | installs a preset package and sets `"preset"` in `flow.config.json`; run `fflow sync` after                              |
+| `fflow doctor [--json] [--offline]`  | checks Node, git, the configuration, the preset, the `.flow/` install, the roster and the credentials, each with its fix |
+
+## Keep the rendered files in agreement
+
+| Command                 | What it does                                                                                                                                                                                    |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fflow sync [--direct]` | renders the `flow-*` skills, the agents, rules and the preset's surfaces with their provenance headers, and writes `.flow/lock.json`; refuses a preset that differs from the lock               |
+| `fflow update`          | prints the diff, adopts the installed preset into the lock, then syncs                                                                                                                          |
+| `fflow check`           | the CI check: fails, naming each cause, on a file that drifted, an unadopted preset, an invalid config or override, a mandatory policy off, or an override past its review date; writes nothing |
+| `fflow diff`            | prints every file `sync` or `update` would add, change or delete; writes nothing                                                                                                                |
+| `fflow validate`        | checks `flow.config.json` and `.flow/overrides/` against their schemas and the mandatory policies                                                                                               |
+| `… --workspace <dir>`   | runs `sync`, `update`, `check`, `diff` or `validate` in every repository under `<dir>` that has a `flow.config.json`                                                                            |
+
+## Take a change through its stages
+
+| Command                                                     | What it does                                                                                                                                                            |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fflow start <KEY> [--slug s] [--no-spec]`                  | the branch and the worktree from the default branch, the issue In Progress, the record committed and pushed; a key with no spec folder gets `spec.md` from the template |
+| `fflow spec paths \| setup-plan \| setup-tasks \| template` | the spec folder, its documents and the resolved templates, for the `flow-*` commands                                                                                    |
+| `fflow spec ask <key> [--async]`, `fflow spec resume <key>` | the spec's open questions; `--async` posts them on the issue, `resume` records the answers given there                                                                  |
+| `fflow gate plan <spec.md>`                                 | exits 1 until the spec may be planned                                                                                                                                   |
+| `fflow plan <key> --input \| --record <tasks.md>`           | the plan workflow's input, and its tasks written only when every requirement and criterion is covered                                                                   |
+| `fflow task start \| done <key> <T###>`                     | moves a task's marker; `done` ticks it only when its check exits 0 at a clean head                                                                                      |
+| `fflow task wave <key>`                                     | queues the build's next wave and prints it                                                                                                                              |
+| `fflow next [<key>]`, `fflow resume <key>`                  | the stage a task is at and the command that moves it on; re-enter a stage a stopped session left half done                                                              |
+| `fflow review <pr> --input \| --record`                     | the review workflow's input, and its verified findings recorded; `land` refuses a confirmed blocking one                                                                |
+| `fflow gate run [--ref b] [--box host] [--shards n]`        | the repository's checks through the configured runner at the pushed head; one `fflow/gate` is posted                                                                    |
+| `fflow land [<pr>] [--dry-run]`                             | squash-merges a pull request that is green on `fflow/gate` and has its approvals, or asks main's land lane                                                              |
+| `fflow clean [--merged] [--budget]`                         | removes finished worktrees, reports what it kept and the space freed                                                                                                    |
+
+## Release
+
+| Command                                                        | What it does                                                                                       |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `fflow release [--json] [--offline] [--preflight]`             | what the next release would publish; `--preflight` says whether the version PR may be merged now   |
+| `fflow train <open\|add\|close\|build\|eject\|depart\|status>` | the release train, for repositories without a merge queue ([Releases and trains](/release-trains)) |
+| `fflow ship <dev\|staging>`                                    | dispatches the product's Runway deploy on main; production is refused, the owner promotes          |
+| `fflow adr reserve <slug> --issue <key>`                       | lands the next ADR number on the default branch under the `adr` queue lock, then prints it         |
+
+## Read and tell
+
+| Command                                  | What it does                                                                                                 |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `fflow status [--json] [--offline]`      | specs by status, worktrees, open pull requests with their gate and review, and sessions, for the workspace   |
+| `fflow trace trace <dir> \| drift \| ci` | the requirement → task → `@covers` test matrix, spec-vs-diff drift, the Done rules                           |
+| `fflow parse <file>`                     | what the parsers read from a `spec.md`, `plan.md`, `tasks.md` or `routing.yaml`, as JSON                     |
+| `fflow linear issue \| tasks`            | the spec's Linear issue and one sub-issue per task; `--dry-run` needs no token                               |
+| `fflow context [--path] [--query]`       | offline, bounded repository navigation ([Task context](/context))                                            |
+| `fflow mcp`                              | an MCP server over stdio: status, spec, trace, worktrees, metrics, open questions, a docs lookup, one writer |
+| `fflow readme [--check]`                 | renders `README.md` from `.flow/readme.yml`; `--check` exits 1 when it differs                               |
+| `fflow guard`                            | the guard engine on a hook event: the preset's rules, the side doors and the secret files                    |
+| `fflow hooks run <stage>`                | the stage's lefthook jobs, here or on the runner's box                                                       |
+| `fflow session stop [--save-only]`       | the SessionEnd hook: commits and pushes the tracked work with the record                                     |
+
+Bare `fflow train`, `fflow team` and `fflow hooks` are unknown commands and exit 2. `fflow linear` reads its token
+from the environment only (`LINEAR_AGENT_TOKEN`, else `LINEAR_API_KEY`) and never prints it.

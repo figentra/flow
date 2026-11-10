@@ -1,4 +1,15 @@
 {
   "title": "Figentra Flow",
-  "pages": ["index", "getting-started", "presets", "gates", "approvals"]
+  "pages": [
+    "index",
+    "getting-started",
+    "presets",
+    "gates",
+    "approvals",
+    "commands",
+    "configuration",
+    "coding-tools",
+    "release-trains",
+    "context"
+  ]
 }

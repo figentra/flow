@@ -1,0 +1,100 @@
+---
+title: الإعدادات المسبقة
+description: ما يحمله الإعداد المسبق، والإعدادان neutral وstackra، والتجاوزات، وكتابة إعدادك أنت.
+---
+
+{/* ar: draft, for Qossai's review */}
+
+الإعداد المسبق هو المحتوى الذي يصيّره `fflow sync` وتقرؤه البوابة: نصوص أوامر `flow-*`، وقوالب المواصفة والخطة
+والمهام، والوكلاء والقواعد، وجداول الحارس، وأسطح المستودع (`AGENTS.md` و`lefthook.yml` وإعدادات أدوات البرمجة).
+يحمل أعراف فريق، فتخدم فلو الواحدة فرقًا تعمل على نحو مختلف.
+
+## الإعدادان اللذان تشحنهما فلو
+
+| الإعداد   | لمن             | ما يضيفه                                                                                                                                |
+| --------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `neutral` | أي مستودع       | ما تحتاجه البوابات فقط: مجلد المواصفة، ومفتاح القضية، وعلامة التوضيحات، والفئات ومحطات الموافقة، وبوابة التخطيط. لا يسمّي علامة تجارية. |
+| `stackra` | مستودعات ستاكرا | استبيان الأثر، وفحص الدستور، وأوضاع النشر، وخصائص الصحة، ومسارات المهام، ووكلاء ستاكرا وقواعدها ومهاراتها.                              |
+
+`neutral` هو الافتراضي: المستودع الذي لا `preset` في `flow.config.json` فيه يستعمله. لا تحتاج فلو ستاكرا أبدًا:
+`stackra` مثالٌ واحد على إعداد مسبق، وهو ينتقل إلى حزمته الخاصة، `@stackra/flow-preset`.
+
+تُلزم البوابة كل مواصفة بالقواعد المشتركة أيًّا كان الإعداد المسبق: علامة التوضيحات، والحالات، والفئات، والموافقات،
+ومعايير القبول بصيغة EARS، وأقسام التصميم. ويضيف الإعداد المسبق قواعد فوقها.
+
+## استعمال حزمة إعداد مسبق
+
+أي إعداد مسبق آخر حزمةُ npm يثبّتها المستودع ويسمّيها:
+
+```sh
+pnpm exec fflow preset add @acme/flow-preset   # ثبّتها تبعية تطوير وسمّها في flow.config.json
+pnpm exec fflow sync                           # صيّرها؛ يسجّل .flow/lock.json اسمها وإصدارها وبصمتها
+```
+
+يستعمل `preset add` مدير الحزم الذي يملك المستودع ملف قفله (وpnpm حين لا يوجد). لا شيء يعمل عند التثبيت: لا
+postinstall في حزمة الإعداد المسبق، ولا تحمّل فلو شيفرة إلا من الإعداد المسبق الذي يسمّيه الإعداد.
+
+للترقية رقِّ الحزمة ثم شغّل `fflow update`. يطبع الفرق ويعتمد الإصدار الجديد في القفل. ويرفض `sync` إعدادًا مسبقًا
+يختلف محتواه عن القفل حتى يعتمده `update`.
+
+## تغيير ما يصيّره الإعداد المسبق: التجاوزات
+
+يغيّر المستودع ما يصيّره `sync` دون تفريع الإعداد المسبق، بملف تجاوز في `.flow/overrides/<surface>/<id>.yml`:
+
+```yaml
+kind: disable # أو extend أو configure أو replace
+target: .agents/agents/ci-steward.md
+reason: we have no CI
+owner: your-login
+review: 2027-01-31
+```
+
+- `extend` يضيف عناصر أو نصًّا، و`configure` يضبط قيمًا، و`replace` يبدّل ملفًا كاملًا، و`disable` يسقطه.
+- يحتاج `replace` و`disable` إلى `reason` و`owner` وموعد `review`. يحذّر `fflow check` قبل موعد المراجعة بأربعة
+  عشر يومًا ويفشل بعده.
+- السياسات الإلزامية (حارس الأسرار، وحارس تعدد المستأجرين، وقائمة المالك وحده، وتوصيل الحارس) لا تُعطَّل ولا تُستبدل
+  ولا تُضبط. و`extend` لإحداها لا يجوز له إلا الإضافة إليها.
+
+ترويسة كل ملف شكّله تجاوزٌ تسمّي ذلك التجاوز.
+
+## الملفات الشخصية
+
+يمكن للإعداد المسبق أن يعلن ملفات شخصية، يختار كلٌّ منها أيّ وكلائه ومهاراته وخطّافاته يصيّرها `sync`. اضبط
+`profile` في `flow.config.json`؛ وبدونه ينطبق `default` الإعداد المسبق. وتضييق الملف الشخصي يحذف الملفات المصيَّرة
+التي يُسقطها، ما لم يعدّلها أحد.
+
+## كتابة حزمة إعداد مسبق
+
+تسمّي حزمة الإعداد المسبق مجلد إعدادها في `package.json` وتعلن إصدارات فلو التي تعمل معها:
+
+```json
+{
+  "name": "@acme/flow-preset",
+  "version": "1.0.0",
+  "files": ["preset"],
+  "flow": { "preset": "./preset" },
+  "peerDependencies": { "@figentra-oss/flow": ">=0.9.0 <1" }
+}
+```
+
+للمجلد تخطيط الإعدادات المسبقة المضمَّنة. وكل جزء اختياري: تتراجع القوالب إلى قوالب فلو الأساسية، وجداول الحارس إلى
+جداول `neutral`.
+
+```text
+preset/
+  preset.yml          # id, name, version, profiles; optional requires.flow, approve, queues, parameters
+  commands/           # flow-<verb>.md: the command texts sync renders as the flow-* commands
+  templates/          # spec-template.md, plan-template.md, tasks-template.md, …
+  agents/  rules/     # agent definitions and rules
+  skills/<name>/      # the preset's own skills (a folder may not be named flow-*)
+  guard/              # bash-rules.mjs, path-rules.mjs, hints.mjs: the guard engine's tables
+  surfaces/           # settings.json, opencode.jsonc, mcp.yaml, agents-md/agents.md, lefthook.yml
+  quality-words.yml   # vague words the spec gate flags
+  third-party.yml     # third-party skills, each with its source and licence
+```
+
+تُستورد جداول الحارس في مكانها من الحزمة المثبّتة، فلا يجوز لها أن تستورد إلا وحدات Node المدمجة (`node:*`)، وملفات
+مجلد `guard/` الخاص بها، ونقاط دخول فلو العامة: `@figentra-oss/flow/guard` و`@figentra-oss/flow/guard/neutral`. وحين
+تكون فلو المثبّتة خارج نطاق الإعداد المسبق، يُفشل `fflow doctor` سطر `preset` مع الإصلاح، ويرفض `sync` التصيير.
+
+الإعداد المسبق `neutral` في حزمة فلو (`assets/flow/presets/neutral`) مثالٌ كامل.
