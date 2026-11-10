@@ -209,7 +209,12 @@ export const SCHEMA = {
           additionalProperties: false,
           properties: {
             tasks,
-            postgres: { type: "object", additionalProperties: false, properties: { image: str } },
+            // `false`: no service container, for suites that start their own Postgres (Testcontainers).
+            postgres: {
+              type: ["object", "boolean"],
+              additionalProperties: false,
+              properties: { image: str },
+            },
           },
         },
         setup: { type: "array", items: { type: "object" } },
@@ -407,7 +412,7 @@ export function validate(schema, value, path = "") {
  *             claudeCode?: { enabledPlugins?: Record<string, boolean>,
  *                            extraKnownMarketplaces?: Record<string, { source: Record<string, unknown> }> } }} Config
  * @typedef {{ pr?: string[], main?: string[], gen?: string | boolean, commitlint?: boolean,
- *             int?: { tasks?: string[], postgres?: { image?: string } },
+ *             int?: { tasks?: string[], postgres?: { image?: string } | boolean },
  *             setup?: Record<string, unknown>[], install?: string, afterInstall?: Record<string, unknown>[],
  *             checks?: Record<string, unknown>[], after?: Record<string, unknown>[],
  *             filters?: string[], concurrency?: Record<string, number>,

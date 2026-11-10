@@ -561,7 +561,7 @@
               "minItems": 1
             },
             "postgres": {
-              "type": "object",
+              "type": ["object", "boolean"],
               "additionalProperties": false,
               "properties": {
                 "image": {

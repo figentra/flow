@@ -164,6 +164,30 @@ test("ci: int adds the Postgres service and joins the gate's needs", () => {
   assert.ok(own.steps.some((/** @type {any} */ s) => s.run === "pnpm exec turbo run test:pg"));
 });
 
+test("ci: int with postgres false has no service container and no database env (Testcontainers)", () => {
+  const wf = parseYaml(ciWorkflow({ int: { postgres: false } }));
+  assert.deepEqual(wf.jobs.gate.needs, ["code", "int"]);
+  const int = wf.jobs.int;
+  assert.ok(!("services" in int));
+  const tasks = int.steps.filter((/** @type {any} */ s) => /turbo run/.test(s.run ?? ""));
+  assert.deepEqual(
+    tasks.map((/** @type {any} */ s) => s.run),
+    ["pnpm exec turbo run test:int --affected", "pnpm exec turbo run test:int"],
+  );
+  for (const s of tasks) {
+    assert.ok(!("DATABASE_URL" in (s.env ?? {})));
+    assert.ok(!("TESTBED_POSTGRES_HOST" in (s.env ?? {})));
+  }
+  // the affected run keeps its base commit
+  assert.equal(tasks[0].env.TURBO_SCM_BASE, "HEAD~1");
+  // `true` is the default service
+  assert.equal(
+    parseYaml(ciWorkflow({ int: { postgres: true } })).jobs.int.services.postgres.image,
+    "postgres:17.6-alpine",
+  );
+  assert.throws(() => ciWorkflow(/** @type {any} */ ({ int: { postgres: "yes" } })), ConfigError);
+});
+
 test("ci: optional jobs are continue-on-error and never in the gate's needs", () => {
   const wf = parseYaml(
     ciWorkflow({
