@@ -67,6 +67,7 @@ baseline) imports nothing from `@stackra/*`, and `fflow guard`, the agent hook, 
 | `fflow land [<pr>] [--stack] [--dry-run] [--manual-ok] [--wait <m>] [--no-wait]` | squash-merges a PR that is green on `fflow/gate` from the gate App on its head and has its approvals, or asks main's land lane with `fflow:land` and waits for its merge; Linear Done, worktree and branch removed |
 | `fflow adr reserve <slug> --issue <key> [--owner <who>]`              | under the `adr` queue lock (`flow/queue/adr`, stale after 15 minutes), lands the next number of the preset's `queues.adr` file on the default branch, then prints only it on stdout; a reservation that does not land is withdrawn |
 | `fflow train <open\|add\|close\|build\|eject\|depart\|status>`        | the release train: board green PRs, cut off, build `train/<version>` by merge commits with bisect ejection, depart by fast-forward (see [Release trains](#release-trains))                       |
+| `fflow render [--dir d] [--out o]`                                   | the render proof of a built site: every page at each width in Chromium, failing on a console error, a page error, a failed request, a 4xx/5xx or a missing basic, plus the configured requests; a screenshot per page (see [The render proof](#the-render-proof)) |
 | `fflow ship <dev\|staging> [--workflow f] [--wait m] [--resolve] [--dry-run]` | dispatches the product's Runway deploy workflow (`deploy.yml`, input `environment`) on main; production is refused: the owner promotes. In a landed task's checkout it records `ship` there; with a `runway.yaml` it takes the run id GitHub's dispatch answers with (else finds the run), writes it to the record at once, follows the run and records its `runway-outcome-<env>` artifact (done only when Runway reports `deployed` for that environment and the run's revision; a GitHub error reading the artifact keeps the ship pending). A ship still pending when `--wait` ends: `fflow ship <env> --resolve` dispatches nothing, re-reads that newest ship's run and writes its outcome into the record (committed and pushed); `fflow status` only shows it |
 | `fflow release [--json] [--offline] [--preflight]`                    | what the next release would publish: pending changesets and next versions, the version PR, the Release workflow's last run and its notices, the registry's versions; it publishes nothing. `--preflight`: whether the owner may merge the version PR now (see [Release preflight](#release-preflight)) |
 | `fflow preset add <pkg> [--dry-run]`                                  | installs a preset package as a dev dependency with the package manager whose lockfile the repository has (pnpm when none), then sets `"preset": "<pkg>"` in `flow.config.json`; run `fflow sync` after. `--dry-run` prints both and runs nothing |
@@ -830,6 +831,41 @@ filters to every gen, task and integration run, such as `!@figentra/mobile` for 
 would run the runner out of memory; the other tasks still share one step. A pull request's runs share
 one concurrency group, so a newer push cancels the older run; pushes to the default branch and the nightly run never
 cancel each other.
+
+#### The render proof
+
+A site counts as live only when it renders in a real browser with no console error. Each `ci.render` entry adds a
+job, in `Quality Gate`'s needs unless `required: false`: the install, the entry's `build` command, Playwright at a pin
+(`playwright`, default 1.56.1) installed outside the workspace so the lockfile never changes, then
+`fflow render`. That opens every page of the built folder `dir` (each folder with an `index.html`, narrowed to
+`locales` when set) at each width (`widths`, default 1280 and 390) in Chromium, served as Cloudflare Pages serves it
+(`_redirects`, `_headers`, `404.html`). It fails on a console error, a page error, a failed request or a 4xx/5xx
+response, and on a page without one `h1`, one `main`, a title, `lang`, `dir="rtl"` exactly for a right-to-left
+locale (`rtl`, default ar, fa, he and ur), no horizontal overflow or an `alt` on every image. `requests` adds
+checks of a status, a `location` and a CSP header. Every page leaves a full-page screenshot, uploaded as
+`<id>-screenshots`.
+
+```json
+{
+  "ci": {
+    "render": [
+      {
+        "id": "site",
+        "name": "Site render (Playwright)",
+        "build": "node site/src/build.mjs",
+        "dir": "site/dist",
+        "locales": ["en", "ar"],
+        "requests": [{ "url": "/", "status": 302, "location": "/en/" }]
+      }
+    ]
+  }
+}
+```
+
+The entry reaches `fflow render` as JSON in `FFLOW_RENDER`, never on a `run:` line; only `build` is a command.
+`fflow render --dir <folder>` runs the same proof anywhere Playwright resolves.
+
+#### The sandbox run
 
 #### The sandbox run
 

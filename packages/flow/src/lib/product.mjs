@@ -61,6 +61,9 @@ export const GATE_DIR = `.${NAME}-gate`;
 /** The environment variables' prefix (`<PREFIX>GATE_APP_ID`, `<PREFIX>WORKSPACE`, …). */
 export const ENV_PREFIX = `${NAME.toUpperCase().replaceAll("-", "_")}_`;
 
+/** The variable the `ci.render` job hands `render` its entry in, as JSON. */
+export const RENDER_ENV = `${ENV_PREFIX}RENDER`;
+
 /** The prefix before 0.2.2, still read for one release where a user sets a variable (`<PREFIX>WORKSPACE`, `TRACKER`). */
 export const LEGACY_ENV_PREFIX = `${LEGACY_NAME.toUpperCase().replaceAll("-", "_")}_`;
 

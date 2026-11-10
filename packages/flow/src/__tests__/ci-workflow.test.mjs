@@ -10,7 +10,9 @@
  *   - the pull request title reaches commitlint through the environment: no `run:` line holds `${{`;
  *   - `ci.setup` falls back to `baseline.setup`; `ci.turbo` decrypts only the turbo names;
  *   - a task name that is not a plain word, or an optional job taking Flow's id, is a ConfigError;
- *   - `sync` renders `fflow-ci.yml` only with `ci` configured.
+ *   - `sync` renders `fflow-ci.yml` only with `ci` configured;
+ *   - a `ci.render` entry adds a job (required unless `required: false`) that builds the site, installs Playwright at
+ *     its pin and runs `fflow render` with the entry as JSON in `FFLOW_RENDER`; a taken id or a bad value is refused.
  * Boundary: renders text and parses it with Flow's own YAML reader; one temporary folder for `sync`.
  * Runtime: node
  * Governing contract: the infra lead's standard CI (2026-11-09).
@@ -22,7 +24,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { sync } from "../commands/sync.mjs";
-import { ciWorkflow, FULL_RUN_INPUTS } from "../lib/ci-workflow.mjs";
+import { ciWorkflow, FULL_RUN_INPUTS, PLAYWRIGHT } from "../lib/ci-workflow.mjs";
 import { ConfigError } from "../lib/config.mjs";
 import { CI_CHECK, CI_WORKFLOW } from "../lib/product.mjs";
 import { parseYaml } from "../lib/yaml.mjs";
@@ -463,4 +465,101 @@ test("ci: a filter a shell would read, a cap that is not a positive integer, or 
   assert.doesNotThrow(() =>
     ciWorkflow({ filters: ["./services/*", "{./apps/web}...", "@scope/pkg^...", "!@a/b"] }),
   );
+});
+
+test("ci: a render entry adds a job that builds the site, installs pinned Playwright and runs fflow render", () => {
+  const site = {
+    id: "site",
+    name: "Site render (Playwright)",
+    build: "node site/src/build.mjs",
+    dir: "site/dist",
+    locales: ["en", "ar"],
+    requests: [{ url: "/", status: 302, location: "/en/" }],
+  };
+  const wf = parseYaml(ciWorkflow({ render: [site] }));
+  // a required proof: in the gate's needs, not continue-on-error
+  assert.deepEqual(wf.jobs.gate.needs, ["code", "site"]);
+  const job = wf.jobs.site;
+  assert.equal(job.name, "Site render (Playwright)");
+  assert.ok(!("continue-on-error" in job));
+  const byName = Object.fromEntries(job.steps.map((/** @type {any} */ s) => [s.name, s]));
+  assert.ok(byName.Install, "the workspace install, for fflow and the build");
+  assert.equal(byName["Build the site"].run, "node site/src/build.mjs");
+  assert.equal(byName.Playwright.env.PLAYWRIGHT_VERSION, PLAYWRIGHT);
+  assert.match(byName.Playwright.run, /--no-package-lock "playwright@\$PLAYWRIGHT_VERSION"/);
+  assert.match(byName.Playwright.run, /playwright" install --with-deps chromium/);
+  const render = byName["Render every page"];
+  assert.equal(render.run, "pnpm exec fflow render");
+  assert.equal(render.env.NODE_PATH, "${{ runner.temp }}/playwright/node_modules");
+  assert.deepEqual(JSON.parse(render.env.FFLOW_RENDER), {
+    dir: "site/dist",
+    out: ".fflow/render/site",
+    locales: ["en", "ar"],
+    requests: [{ url: "/", status: 302, location: "/en/" }],
+  });
+  const shots = byName.Screenshots;
+  assert.equal(shots.if, "${{ !cancelled() }}");
+  assert.match(shots.uses, /^actions\/upload-artifact@[0-9a-f]{40}$/);
+  assert.equal(shots.with.name, "site-screenshots");
+  assert.equal(shots.with.path, ".fflow/render/site");
+  // only Flow's own words reach a run: line; the entry's values arrive through the environment
+  for (const s of job.steps) assert.ok(!/site\/dist|\/en\//.test(s.run ?? ""), s.name);
+
+  // not required: beside the gate; no build step when none is named; its own Playwright pin
+  const loose = parseYaml(
+    ciWorkflow({
+      render: [
+        {
+          id: "docs",
+          name: "Docs render",
+          dir: "apps/docs/out",
+          playwright: "1.55.0",
+          required: false,
+        },
+      ],
+    }),
+  );
+  assert.deepEqual(loose.jobs.gate.needs, ["code"]);
+  assert.equal(loose.jobs.docs["continue-on-error"], true);
+  assert.ok(!loose.jobs.docs.steps.some((/** @type {any} */ s) => s.name === "Build the site"));
+  assert.equal(
+    loose.jobs.docs.steps.find((/** @type {any} */ s) => s.name === "Playwright").env
+      .PLAYWRIGHT_VERSION,
+    "1.55.0",
+  );
+  // with int, the gate needs code, int and the required renders
+  assert.deepEqual(parseYaml(ciWorkflow({ int: {}, render: [site] })).jobs.gate.needs, [
+    "code",
+    "int",
+    "site",
+  ]);
+});
+
+test("ci: a render entry is refused on a taken id, a locale, a width or a pin that is not one", () => {
+  for (const render of [
+    [{ id: "code", name: "X", dir: "d" }],
+    [
+      { id: "a", name: "A", dir: "d" },
+      { id: "a", name: "B", dir: "e" },
+    ],
+    [{ id: "site", name: "X", dir: "d", locales: ["EN"] }],
+    [{ id: "site", name: "X", dir: "d", widths: [10] }],
+    [{ id: "site", name: "X", dir: "d", playwright: "latest" }],
+    [{ id: "site", name: "X", dir: "d", requests: [{ url: "no-slash", status: 200 }] }],
+    [{ id: "site", name: "X" }],
+  ])
+    assert.throws(
+      () => ciWorkflow(/** @type {any} */ ({ render })),
+      ConfigError,
+      JSON.stringify(render),
+    );
+  assert.throws(
+    () =>
+      ciWorkflow(
+        /** @type {any} */ ({ optional: [opt], render: [{ id: "mobile", name: "M", dir: "d" }] }),
+      ),
+    ConfigError,
+  );
+  // without render the workflow is unchanged
+  assert.equal(ciWorkflow({ render: [] }), ciWorkflow({}));
 });

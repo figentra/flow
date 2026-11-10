@@ -30,6 +30,7 @@ import {
   ENV_PREFIX,
   HOMEPAGE,
   NAME,
+  RENDER_ENV,
   STATUS_CONTEXT,
   VERSION,
 } from "./product.mjs";
@@ -886,6 +887,47 @@ Option({
 })(CleanCommand.prototype, "budget");
 Option({ description: "Every repository of the workspace list" })(CleanCommand.prototype, "all");
 
+class RenderCommand extends Command({
+  name: "render",
+  description:
+    "Render every page of a built site in Chromium at each width; fail on a console error, a failed request or a missing basic",
+  group: GROUPS.work,
+  docs: DOCS,
+  examples: [
+    `${NAME} render --dir site/dist`,
+    `${NAME} render --dir apps/landing/dist --out .fflow/render`,
+  ],
+}) {
+  dir = "";
+  out = "";
+
+  /** @param {CommandIo} io */
+  async handle(io) {
+    const { run } = await import("../commands/render.mjs");
+    return refusing(() =>
+      run(
+        {
+          cwd: io.cwd,
+          env: process.env,
+          say: (line) => io.output.line(line),
+          complain: (line) => io.output.error(line),
+        },
+        this,
+      ),
+    );
+  }
+}
+Option({ description: `The built site (a folder of index.html pages); else ${RENDER_ENV}'s dir` })(
+  RenderCommand.prototype,
+  "dir",
+);
+Str()(RenderCommand.prototype, "dir");
+Option({ description: "Where the screenshots go (default .fflow/render)" })(
+  RenderCommand.prototype,
+  "out",
+);
+Str()(RenderCommand.prototype, "out");
+
 class ShipCommand extends Command({
   name: "ship",
   description: "Ship the default branch to dev or staging through the deploy workflow",
@@ -1674,6 +1716,7 @@ export const COMMANDS = [
     sub: "status",
     description: "The open train: members and their gates, ejections, waiting PRs",
   }),
+  RenderCommand,
   ShipCommand,
   ReleaseCommand,
   LedgerCommand,
