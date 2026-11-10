@@ -474,6 +474,7 @@ test("ci: a render entry adds a job that builds the site, installs pinned Playwr
     build: "node site/src/build.mjs",
     dir: "site/dist",
     locales: ["en", "ar"],
+    heights: [800, 844],
     requests: [{ url: "/", status: 302, location: "/en/" }],
   };
   const wf = parseYaml(ciWorkflow({ render: [site] }));
@@ -495,6 +496,7 @@ test("ci: a render entry adds a job that builds the site, installs pinned Playwr
     dir: "site/dist",
     out: ".fflow/render/site",
     locales: ["en", "ar"],
+    heights: [800, 844],
     requests: [{ url: "/", status: 302, location: "/en/" }],
   });
   const shots = byName.Screenshots;

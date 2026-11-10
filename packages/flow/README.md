@@ -838,7 +838,8 @@ A site counts as live only when it renders in a real browser with no console err
 job, in `Quality Gate`'s needs unless `required: false`: the install, the entry's `build` command, Playwright at a pin
 (`playwright`, default 1.56.1) installed outside the workspace so the lockfile never changes, then
 `fflow render`. That opens every page of the built folder `dir` (each folder with an `index.html`, narrowed to
-`locales` when set) at each width (`widths`, default 1280 and 390) in Chromium, served as Cloudflare Pages serves it
+`locales` when set) at each width (`widths`, default 1280 and 390) in Chromium, at the height `heights` names by
+position, else 800 px from 768 px up and 844 px below, served as Cloudflare Pages serves it
 (`_redirects`, `_headers`, `404.html`). It fails on a console error, a page error, a failed request or a 4xx/5xx
 response, and on a page without one `h1`, one `main`, a title, `lang`, `dir="rtl"` exactly for a right-to-left
 locale (`rtl`, default ar, fa, he and ur), no horizontal overflow or an `alt` on every image. `requests` adds

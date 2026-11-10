@@ -266,6 +266,8 @@ export const SCHEMA = {
               locales: { type: "array", items: { type: "string", pattern: LOCALE_PATTERN } },
               rtl: { type: "array", items: { type: "string", pattern: LOCALE_PATTERN } },
               widths: { type: "array", items: { type: "integer", minimum: 240 }, minItems: 1 },
+              // The height at each width, by position; else 800 from 768 px up and 844 below.
+              heights: { type: "array", items: { type: "integer", minimum: 240 }, minItems: 1 },
               requests: {
                 type: "array",
                 items: {
@@ -480,7 +482,7 @@ export function validate(schema, value, path = "") {
  *             optional?: { id: string, name: string, steps: Record<string, unknown>[], needsInstall?: boolean }[],
  *             osv?: boolean, render?: RenderJob[], sandbox?: SandboxJob }} CiConfig
  * @typedef {{ id: string, name: string, dir: string, build?: string, out?: string, locales?: string[], rtl?: string[],
- *   widths?: number[], requests?: { url: string, status: number, location?: string, csp?: boolean }[],
+ *   widths?: number[], heights?: number[], requests?: { url: string, status: number, location?: string, csp?: boolean }[],
  *   playwright?: string, required?: boolean }} RenderJob
  * @typedef {{ name: string, run: string, env?: Record<string, string>, secrets?: string[], environment?: string,
  *   artifact?: { name: string, path: string }, timeoutMinutes?: number }} SandboxJob

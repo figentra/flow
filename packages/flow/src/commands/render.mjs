@@ -43,6 +43,7 @@ export function renderOptions(flags, env, cwd) {
     locales: fromEnv.locales,
     rtl: fromEnv.rtl,
     widths: fromEnv.widths,
+    heights: fromEnv.heights,
     requests: fromEnv.requests,
   };
 }
