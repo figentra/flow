@@ -14,7 +14,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { ConfigError } from "../lib/config.mjs";
-import { NAME } from "../lib/product.mjs";
+import { NAME, RENDER_ENV } from "../lib/product.mjs";
 import { renderSite } from "../lib/render-site.mjs";
 
 /**
@@ -27,11 +27,11 @@ import { renderSite } from "../lib/render-site.mjs";
 export function renderOptions(flags, env, cwd) {
   /** @type {Record<string, any>} */
   let fromEnv = {};
-  if (env.FFLOW_RENDER) {
+  if (env[RENDER_ENV]) {
     try {
-      fromEnv = JSON.parse(env.FFLOW_RENDER);
+      fromEnv = JSON.parse(env[RENDER_ENV]);
     } catch {
-      throw new ConfigError("FFLOW_RENDER is not JSON");
+      throw new ConfigError(`${RENDER_ENV} is not JSON`);
     }
   }
   const dir = flags.dir || fromEnv.dir;

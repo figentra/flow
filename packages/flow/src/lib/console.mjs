@@ -30,6 +30,7 @@ import {
   ENV_PREFIX,
   HOMEPAGE,
   NAME,
+  RENDER_ENV,
   STATUS_CONTEXT,
   VERSION,
 } from "./product.mjs";
@@ -916,7 +917,7 @@ class RenderCommand extends Command({
     );
   }
 }
-Option({ description: "The built site (a folder of index.html pages); else FFLOW_RENDER's dir" })(
+Option({ description: `The built site (a folder of index.html pages); else ${RENDER_ENV}'s dir` })(
   RenderCommand.prototype,
   "dir",
 );

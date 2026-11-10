@@ -22,7 +22,7 @@
  */
 import { blockYaml, CHECKOUT, pinnedMise } from "./baseline-workflow.mjs";
 import { ConfigError, SCHEMA, TASK_PATTERN, validate } from "./config.mjs";
-import { CI_CHECK, MISE_VERSION, NAME } from "./product.mjs";
+import { CI_CHECK, MISE_VERSION, NAME, RENDER_ENV } from "./product.mjs";
 
 // The pins the reference workflows (core, pay and os CI) use.
 const CACHE = "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0";
@@ -290,7 +290,7 @@ ${prepare()}${build}${stepYaml({
     })}${stepYaml({
       name: "Render every page",
       env: {
-        FFLOW_RENDER: JSON.stringify(options),
+        [RENDER_ENV]: JSON.stringify(options),
         NODE_PATH: "${{ runner.temp }}/playwright/node_modules",
       },
       run: `pnpm exec ${NAME} render`,
