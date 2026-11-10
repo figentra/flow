@@ -24,7 +24,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { sync } from "../commands/sync.mjs";
-import { ciWorkflow, PLAYWRIGHT } from "../lib/ci-workflow.mjs";
+import { ciWorkflow, FULL_RUN_INPUTS, PLAYWRIGHT } from "../lib/ci-workflow.mjs";
 import { ConfigError } from "../lib/config.mjs";
 import { CI_CHECK, CI_WORKFLOW } from "../lib/product.mjs";
 import { parseYaml } from "../lib/yaml.mjs";
@@ -98,17 +98,19 @@ test("ci: --affected only on a pull request; push, nightly and manual runs take 
     affected.map((/** @type {any} */ s) => [s.if, s.run]),
     [
       [
-        "${{ !cancelled() && github.event_name == 'pull_request' }}",
+        "${{ !cancelled() && (github.event_name == 'pull_request' && steps.scope.outputs.full != 'true') }}",
         "pnpm exec turbo run gen --affected",
       ],
       [
-        "${{ !cancelled() && github.event_name == 'pull_request' }}",
+        "${{ !cancelled() && (github.event_name == 'pull_request' && steps.scope.outputs.full != 'true') }}",
         "pnpm exec turbo run typecheck lint test --affected",
       ],
     ],
   );
   const full = steps.filter(
-    (/** @type {any} */ s) => s.if === "${{ !cancelled() && github.event_name != 'pull_request' }}",
+    (/** @type {any} */ s) =>
+      s.if ===
+      "${{ !cancelled() && (github.event_name != 'pull_request' || steps.scope.outputs.full == 'true') }}",
   );
   assert.deepEqual(
     full.map((/** @type {any} */ s) => s.run),
@@ -118,12 +120,44 @@ test("ci: --affected only on a pull request; push, nightly and manual runs take 
     .code.steps;
   assert.deepEqual(
     own
-      .filter((/** @type {any} */ s) => /turbo|gen/.test(s.run ?? ""))
+      .filter((/** @type {any} */ s) => s.name !== "Scope" && /turbo|gen/.test(s.run ?? ""))
       .map((/** @type {any} */ s) => s.run),
     ["pnpm gen", "pnpm exec turbo run lint --affected", "pnpm exec turbo run lint build"],
   );
   const noGen = parseYaml(ciWorkflow({ gen: false })).jobs.code.steps;
   assert.ok(!noGen.some((/** @type {any} */ s) => /\bgen\b/.test(s.run ?? "")));
+});
+
+test("ci: a pull request that touches the workspace's build or test inputs runs every member, not --affected", () => {
+  const wf = parseYaml(ciWorkflow({ int: {} }));
+  for (const job of ["code", "int"]) {
+    const steps = wf.jobs[job].steps;
+    const at = steps.findIndex((/** @type {any} */ s) => s.name === "Scope");
+    // right after the full-history checkout, before setup and the install, on a pull request only
+    assert.equal(steps[at - 1].name, "Checkout");
+    assert.equal(steps[at - 1].with["fetch-depth"], 0);
+    assert.equal(steps[at].id, "scope");
+    assert.equal(steps[at].if, "github.event_name == 'pull_request'");
+    assert.match(steps[at].run, /git diff --name-only HEAD~1 HEAD \| grep -qE/);
+    assert.match(steps[at].run, /echo "full=true" >> "\$GITHUB_OUTPUT"/);
+  }
+  // the pattern: a folder by prefix, a file at the root only
+  const run = wf.jobs.code.steps.find((/** @type {any} */ s) => s.name === "Scope").run;
+  const pattern = new RegExp(/grep -qE '([^']+)'/.exec(run)?.[1] ?? "");
+  for (const path of FULL_RUN_INPUTS.map((p) => (p.endsWith("/") ? `${p}workflows/ci.yml` : p)))
+    assert.ok(pattern.test(path), path);
+  for (const path of [
+    "services/pay/package.json",
+    "apps/web/turbo.jsonc",
+    "src/a.ts",
+    "docs/.github.md",
+  ])
+    assert.ok(!pattern.test(path), path);
+  // an optional job takes no scope: it has no affected pair
+  const opt = parseYaml(
+    ciWorkflow({ optional: [{ id: "x", name: "X", steps: [{ run: "true" }] }] }),
+  );
+  assert.ok(!opt.jobs.x.steps.some((/** @type {any} */ s) => s.name === "Scope"));
 });
 
 test("ci: the PR title reaches commitlint through the environment; no run: line holds ${{", () => {
@@ -164,6 +198,30 @@ test("ci: int adds the Postgres service and joins the gate's needs", () => {
   ).jobs.int;
   assert.equal(own.services.postgres.image, "postgres:18-alpine");
   assert.ok(own.steps.some((/** @type {any} */ s) => s.run === "pnpm exec turbo run test:pg"));
+});
+
+test("ci: int with postgres false has no service container and no database env (Testcontainers)", () => {
+  const wf = parseYaml(ciWorkflow({ int: { postgres: false } }));
+  assert.deepEqual(wf.jobs.gate.needs, ["code", "int"]);
+  const int = wf.jobs.int;
+  assert.ok(!("services" in int));
+  const tasks = int.steps.filter((/** @type {any} */ s) => /turbo run/.test(s.run ?? ""));
+  assert.deepEqual(
+    tasks.map((/** @type {any} */ s) => s.run),
+    ["pnpm exec turbo run test:int --affected", "pnpm exec turbo run test:int"],
+  );
+  for (const s of tasks) {
+    assert.ok(!("DATABASE_URL" in (s.env ?? {})));
+    assert.ok(!("TESTBED_POSTGRES_HOST" in (s.env ?? {})));
+  }
+  // the affected run keeps its base commit
+  assert.equal(tasks[0].env.TURBO_SCM_BASE, "HEAD~1");
+  // `true` is the default service
+  assert.equal(
+    parseYaml(ciWorkflow({ int: { postgres: true } })).jobs.int.services.postgres.image,
+    "postgres:17.6-alpine",
+  );
+  assert.throws(() => ciWorkflow(/** @type {any} */ ({ int: { postgres: "yes" } })), ConfigError);
 });
 
 test("ci: optional jobs are continue-on-error and never in the gate's needs", () => {
@@ -208,13 +266,14 @@ test("ci: setup, install and afterInstall fall back to baseline's; ci's own win"
       { setup: [auth], install: "pnpm install --child-concurrency=1", afterInstall: [save] },
     ),
   ).jobs.code.steps;
-  assert.deepEqual(fromBaseline[1], auth);
+  // Checkout, then Scope (pull requests only), then the setup
+  assert.deepEqual(fromBaseline[2], auth);
   const at = fromBaseline.findIndex((/** @type {any} */ s) => s.name === "Install");
   assert.equal(fromBaseline[at].run, "pnpm install --child-concurrency=1");
   assert.deepEqual(fromBaseline[at + 1], save);
   const own = { name: "Own setup", run: "echo own" };
   const fromCi = parseYaml(ciWorkflow({ setup: [own] }, { setup: [auth] })).jobs.code.steps;
-  assert.deepEqual(fromCi[1], own);
+  assert.deepEqual(fromCi[2], own);
   assert.ok(!fromCi.some((/** @type {any} */ s) => s.name === "Registry auth"));
 });
 

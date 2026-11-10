@@ -561,7 +561,7 @@
               "minItems": 1
             },
             "postgres": {
-              "type": "object",
+              "type": ["object", "boolean"],
               "additionalProperties": false,
               "properties": {
                 "image": {
@@ -706,6 +706,31 @@
               "playwright": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
               "required": { "type": "boolean" }
             }
+          }
+        },
+        "sandbox": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "run"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "run": { "type": "string", "minLength": 1 },
+            "env": { "type": "object", "additionalProperties": { "type": "string" } },
+            "secrets": {
+              "type": "array",
+              "items": { "type": "string", "pattern": "^[A-Z_][A-Z0-9_]*$" }
+            },
+            "environment": { "type": "string", "pattern": "^[\\w-]+$" },
+            "artifact": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "path"],
+              "properties": {
+                "name": { "type": "string", "pattern": "^[\\w.-]+$" },
+                "path": { "type": "string", "minLength": 1 }
+              }
+            },
+            "timeoutMinutes": { "type": "integer", "minimum": 1 }
           }
         }
       }

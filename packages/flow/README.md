@@ -810,10 +810,13 @@ gate's requirement, and only while main is red.
 
 Add `ci` to the config and `sync` renders `.github/workflows/fflow-ci.yml`. Its one required check is `Quality Gate`,
 which passes when every job it needs passed or was skipped. `Code` runs gen and `turbo run <ci.pr>` (default
-`typecheck lint test`) with `--affected` on a pull request, and `turbo run <ci.main>` (default adds `build`) on a push
+`typecheck lint test`) with `--affected` on a pull request (every member when the change touches the workspace's
+build or test inputs: `.github/`, `flow.config.json`, `turbo.json(c)`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` or the
+root `package.json`, which `--affected` would leave out), and `turbo run <ci.main>` (default adds `build`) on a push
 to `ci.branch`, the nightly run (`ci.nightly`, a cron line or `false`) and a manual run; on a pull request it also runs
 commitlint on the title (`ci.commitlint`, default on). `ci.int` adds `Integration`, `turbo run test:int` beside a
-Postgres service, to the gate's needs. Each job checks out without credentials, runs `ci.setup` (else
+Postgres service, to the gate's needs; `ci.int.postgres: false` leaves the service out for suites that start their
+own Postgres on the runner's Docker (Testcontainers). Each job checks out without credentials, runs `ci.setup` (else
 `baseline.setup`), caches the pnpm store and runs `ci.install` and `ci.afterInstall` (else `baseline`'s). `ci.turbo`
 decrypts the turbo remote cache's names from the sops scope `ci/build/turbo`; `ci.optional` jobs run with
 `continue-on-error` outside the gate, and `ci.osv` (default on) scans the lockfile with OSV-Scanner in its own job.
@@ -861,6 +864,32 @@ checks of a status, a `location` and a CSP header. Every page leaves a full-page
 
 The entry reaches `fflow render` as JSON in `FFLOW_RENDER`, never on a `run:` line; only `build` is a command.
 `fflow render --dir <folder>` runs the same proof anywhere Playwright resolves.
+
+#### The sandbox run
+
+#### The sandbox run
+
+`ci.sandbox` renders `.github/workflows/fflow-sandbox.yml`, a manual run against a provider's sandbox (Pay's connector
+certification on Stripe's test mode, say). Only `workflow_dispatch` starts it, never a push or a pull request, and it is
+never in `Quality Gate`'s needs. Its one job runs in the GitHub environment `environment` (default `sandbox`), whose
+reviewers the owner sets, so every dispatch waits for the owner, and the secrets can live there. The job installs,
+then runs `run` with `env` and each name in `secrets` as `${{ secrets.NAME }}`, and uploads `artifact.path` as
+`artifact.name` even after a failure, as the evidence. An `env` value holding `${{` is refused: a secret is named in
+`secrets`, or it does not reach the job.
+
+```json
+{
+  "ci": {
+    "sandbox": {
+      "name": "Connector sandbox (Stripe)",
+      "run": "pnpm exec turbo run test --filter=@figentra/pay-connector-certification",
+      "env": { "PAY_CONNECTOR_SANDBOX": "1", "CERTIFICATION_WRITE": "1" },
+      "secrets": ["STRIPE_SANDBOX_SECRET_KEY", "STRIPE_SANDBOX_WEBHOOK_SECRET"],
+      "artifact": { "name": "certification", "path": "packages/connectors/certification/CERTIFICATION.md" }
+    }
+  }
+}
+```
 
 GitHub calls use only the credentials the configuration names in `credentials`. `wrapper` runs your own command
 that gives `gh` a bot's token, and `gh-user` uses your own `gh` login, only because you said so. With neither, `land` refuses: Figentra Flow never falls back to a personal login.

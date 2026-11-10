@@ -211,7 +211,12 @@ export const SCHEMA = {
           additionalProperties: false,
           properties: {
             tasks,
-            postgres: { type: "object", additionalProperties: false, properties: { image: str } },
+            // `false`: no service container, for suites that start their own Postgres (Testcontainers).
+            postgres: {
+              type: ["object", "boolean"],
+              additionalProperties: false,
+              properties: { image: str },
+            },
           },
         },
         setup: { type: "array", items: { type: "object" } },
@@ -279,6 +284,27 @@ export const SCHEMA = {
               // false: the job runs beside the gate, not in Quality Gate's needs.
               required: { type: "boolean" },
             },
+          },
+        },
+        // A manual job against a provider's sandbox (`sandbox-workflow.mjs`): workflow_dispatch only, in an
+        // environment the owner gates, never in Quality Gate's needs.
+        sandbox: {
+          type: "object",
+          additionalProperties: false,
+          required: ["name", "run"],
+          properties: {
+            name: str,
+            run: str,
+            env: { type: "object", additionalProperties: { type: "string" } },
+            secrets: { type: "array", items: { type: "string", pattern: "^[A-Z_][A-Z0-9_]*$" } },
+            environment: { type: "string", pattern: "^[\\w-]+$" },
+            artifact: {
+              type: "object",
+              additionalProperties: false,
+              required: ["name", "path"],
+              properties: { name: { type: "string", pattern: "^[\\w.-]+$" }, path: str },
+            },
+            timeoutMinutes: { type: "integer", minimum: 1 },
           },
         },
       },
@@ -446,16 +472,18 @@ export function validate(schema, value, path = "") {
  *             claudeCode?: { enabledPlugins?: Record<string, boolean>,
  *                            extraKnownMarketplaces?: Record<string, { source: Record<string, unknown> }> } }} Config
  * @typedef {{ pr?: string[], main?: string[], gen?: string | boolean, commitlint?: boolean,
- *             int?: { tasks?: string[], postgres?: { image?: string } },
+ *             int?: { tasks?: string[], postgres?: { image?: string } | boolean },
  *             setup?: Record<string, unknown>[], install?: string, afterInstall?: Record<string, unknown>[],
  *             checks?: Record<string, unknown>[], after?: Record<string, unknown>[],
  *             filters?: string[], concurrency?: Record<string, number>,
  *             turbo?: boolean, runsOn?: string, timeoutMinutes?: number, branch?: string, nightly?: string | boolean,
  *             optional?: { id: string, name: string, steps: Record<string, unknown>[], needsInstall?: boolean }[],
- *             osv?: boolean, render?: RenderJob[] }} CiConfig
+ *             osv?: boolean, render?: RenderJob[], sandbox?: SandboxJob }} CiConfig
  * @typedef {{ id: string, name: string, dir: string, build?: string, out?: string, locales?: string[], rtl?: string[],
  *   widths?: number[], requests?: { url: string, status: number, location?: string, csp?: boolean }[],
  *   playwright?: string, required?: boolean }} RenderJob
+ * @typedef {{ name: string, run: string, env?: Record<string, string>, secrets?: string[], environment?: string,
+ *   artifact?: { name: string, path: string }, timeoutMinutes?: number }} SandboxJob
  * @typedef {{ config: Config, source: string | undefined, warnings: string[], errors: string[] }} Loaded
  */
 

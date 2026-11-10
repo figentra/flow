@@ -1,0 +1,53 @@
+---
+title: Coding tools
+description: What sync renders for each coding tool, the flow-* commands, the guard hook, and how Codex fits.
+---
+
+A `flow-*` command names what a step needs, not the tool that does it: the question step of `flow-clarify` and
+`flow-specify` is an `ask` block (`<!-- flow:ask -->` … `<!-- /flow:ask -->`; `todo`, `docs` and `subagent` are
+reserved the same way). A harness adapter renders each command where one tool reads it and fills each block in for
+that tool. Choose the tools in `flow.config.json` and run `fflow sync --direct`:
+
+```json
+{ "version": 1, "harnesses": ["claude-code", "copilot"] }
+```
+
+## The tools
+
+| Harness       | Files                                   | The `ask` step                                                                                                                                  |
+| ------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `claude-code` | `.claude/skills/flow-<verb>/SKILL.md`   | the `AskUserQuestion` tool: 1 to 4 questions, 2 to 4 options, the recommended one first and labelled "(Recommended)", free text always possible |
+| `opencode`    | `.opencode/commands/flow-<verb>.md`     | its `question` tool, the same way                                                                                                               |
+| `copilot`     | `.github/prompts/flow-<verb>.prompt.md` | the text table                                                                                                                                  |
+| `cursor`      | `.cursor/commands/flow-<verb>.md`       | the text table                                                                                                                                  |
+| `codex`       | `.agents/skills/flow-<verb>/SKILL.md`   | the text table                                                                                                                                  |
+
+Where a tool's question tool is unavailable, the command still carries the text table to ask with. Every rendered
+file has the provenance header and its digest in `.flow/lock.json`, and a tool removed from the list takes its
+unedited commands with it. Without `harnesses`, `--direct` renders Claude Code's and OpenCode's files, and a plain
+`sync` renders the neutral `.agents/skills/` documents, both with the text table. Answers are recorded in the spec,
+never only in a tool's chat; the MCP server's `fflow_clarification_record` writes them the same way from any tool.
+
+## The flow-\* commands
+
+The commands follow the path of a change: `flow-specify` and `flow-clarify` write and settle the spec, `flow-plan`
+the plan, `flow-tasks` the tasks, `flow-implement` the build, `flow-analyze` the consistency check, `flow-checklist`
+the review list and `flow-converge` the close. Each reads its inputs through `fflow spec …` and records through
+`fflow task …`, so the record, not the chat, is the truth of where a change is.
+
+## The guard hook
+
+`fflow guard` is the hook a tool calls on an event (a shell command about to run, a file about to be written): it
+applies the preset's rules, the side doors and the secret files, and refuses with the reason. `fflow guard
+--print-settings` prints the hooks that wire `.agents/hooks/fflow-guard.mjs` for four events. The guard is always
+rendered, whatever the profile; the mandatory policies behind it (`guard.secrets`, `guard.tenancy`, `owner-only`,
+`guard.wiring`) cannot be switched off ([Configuration](/configuration)).
+
+## Codex
+
+Codex uses the existing `codex` harness, `AGENTS.md` and `.agents/skills/`; Flow adds no second Codex adapter or
+home-directory prompt files. A plain `fflow sync` renders native skills. For a mixed setup, include `"codex"` in
+`harnesses` and use `fflow sync --direct`; review `fflow diff` before updating an existing governed setup. Open Codex
+in the repository and invoke a rendered skill such as `$flow-plan`. Flow's Claude-specific hooks and `.mcp.yaml` are
+not evidence of Codex hook enforcement or MCP registration: register `fflow mcp` in the client's own MCP configuration
+if needed; CLI context lookup works without MCP ([Task context](/context)).
