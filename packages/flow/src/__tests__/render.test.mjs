@@ -259,7 +259,8 @@ function recordViewports(playwright) {
     const browser = await launch();
     const newContext = browser.newContext;
     browser.newContext = async (options) => {
-      viewports.push(options.viewport);
+      // the requests' probe context opens without a viewport
+      if (options?.viewport) viewports.push(options.viewport);
       return newContext(options);
     };
     return browser;
