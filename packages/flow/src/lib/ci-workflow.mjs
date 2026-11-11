@@ -5,6 +5,7 @@
  *   members a pull request affects (`--affected`; every member when it touches `FULL_RUN_INPUTS`) or, on a push to the
  *   default branch, the nightly run and a manual
  *   run, everything; on a pull request it also checks the title with commitlint (a squash merge lands the title).
+ *   A pull request runs when it opens, gets a push, reopens or is marked ready for review.
  *   `ci.filters` go on every turbo run; a task in `ci.concurrency` runs in a step of its own with that cap.
  *   `Integration`, with `ci.int`, runs the integration tasks beside a Postgres service, or with `ci.int.postgres:
  *   false` on the runner's Docker alone (suites that start their own, Testcontainers). The optional jobs and the
@@ -376,6 +377,9 @@ name: ${NAME} ci
 on:
   pull_request:
     branches: [${branch}]
+    # ready_for_review runs the gate again when a draft is marked ready: a check that reads the draft flag (a spec
+    # gate that holds a ready pull request to more) sees the ready state.
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [${branch}]
 ${schedule}  workflow_dispatch:
