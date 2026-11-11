@@ -1,9 +1,11 @@
 # Figentra Flow file contract:
-# Purpose: the Quality Gate: install, format check, lint, typecheck and build on every PR and push to main (`verify`,
-#          the required check), and the package's tests (`test`, owner default O4, 2026-11-04: Flow's tests run in
-#          its own CI). On a pull request typecheck and build run for the members the change affects, against the base
-#          commit; the tests always run in full. `e2e` (STA-1945 T121, not required) packs the package and installs the
-#          tarball from the public registries into a scratch repository, as an outsider would, then runs `fflow`.
+# Purpose: the Quality Gate: install, format check, lint, typecheck and build on every PR and push to main (`verify`),
+#          the package's tests (`test`, owner default O4, 2026-11-04: Flow's tests run in its own CI) and `e2e`
+#          (STA-1945 T121), which packs the package and installs the tarball from the public registries into a scratch
+#          repository, as an outsider would, then runs `fflow`. On a pull request typecheck and build run for the
+#          members the change affects, against the base commit; the tests always run in full. The `Quality Gate` job
+#          is the one required check: it passes only when all three passed (owner, 2026-11-11, so `pr:merge` can land
+#          a Flow pull request on a green gate).
 # Owner: release-operations
 # Secrets: none; the @stackra scope's registry is read-only and public for this job.
 name: Quality Gate
@@ -21,6 +23,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The ruleset requires this job by name. It runs even when a job it needs failed, and fails unless each passed (a
+  # skipped job counts as a failure); the results arrive through the environment, never the script.
+  gate:
+    name: Quality Gate
+    needs: [verify, test, e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Every job passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          node -e '
+            const failed = Object.entries(JSON.parse(process.env.NEEDS)).filter(([, job]) => job.result !== "success");
+            for (const [id, job] of failed) console.log("::error title=Quality Gate::" + id + ": " + job.result);
+            process.exit(failed.length ? 1 : 0);
+          '
+
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
