@@ -814,7 +814,8 @@ which passes when every job it needs passed or was skipped. `Code` runs gen and 
 build or test inputs: `.github/`, `flow.config.json`, `turbo.json(c)`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` or the
 root `package.json`, which `--affected` would leave out), and `turbo run <ci.main>` (default adds `build`) on a push
 to `ci.branch`, the nightly run (`ci.nightly`, a cron line or `false`) and a manual run; on a pull request it also runs
-commitlint on the title (`ci.commitlint`, default on). `ci.int` adds `Integration`, `turbo run test:int` beside a
+commitlint on the title (`ci.commitlint`, default on). A pull request runs when it opens, gets a push, reopens or is
+marked ready for review, so a check that reads the draft flag sees the ready state. `ci.int` adds `Integration`, `turbo run test:int` beside a
 Postgres service, to the gate's needs; `ci.int.postgres: false` leaves the service out for suites that start their
 own Postgres on the runner's Docker (Testcontainers). Each job checks out without credentials, runs `ci.setup` (else
 `baseline.setup`), caches the pnpm store and runs `ci.install` and `ci.afterInstall` (else `baseline`'s). `ci.turbo`

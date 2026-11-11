@@ -1,8 +1,9 @@
 /**
  * Figentra Flow file contract:
  * Purpose: hold the standard CI workflow (`ci-workflow.mjs`) to the infra lead's content:
- *   - the header line `gate ci` checks, `permissions: {}` at the top, and the triggers: pull requests and pushes to
- *     the default branch, the nightly schedule (present by default, absent with `nightly: false`) and manual runs;
+ *   - the header line `gate ci` checks, `permissions: {}` at the top, and the triggers: pull requests (marking a draft
+ *     ready included) and pushes to the default branch, the nightly schedule (present by default, absent with
+ *     `nightly: false`) and manual runs;
  *   - the defaults render `Quality Gate`, which needs `code` only, runs always and reads the results from the
  *     environment, and `Code`, with the turbo tasks `--affected` on a pull request only;
  *   - `ci.int` adds the `Integration` job with its Postgres service, and joins the gate's `needs`;
@@ -51,7 +52,10 @@ test("ci: the header, top-level permissions and the triggers, the nightly schedu
   const wf = parseYaml(yml);
   assert.equal(wf.name, "fflow ci");
   assert.deepEqual(wf.permissions, {});
-  assert.deepEqual(wf.on.pull_request, { branches: ["main"] });
+  assert.deepEqual(wf.on.pull_request, {
+    branches: ["main"],
+    types: ["opened", "synchronize", "reopened", "ready_for_review"],
+  });
   assert.deepEqual(wf.on.push, { branches: ["main"] });
   assert.deepEqual(wf.on.schedule, [{ cron: "17 2 * * *" }]);
   assert.ok("workflow_dispatch" in wf.on);
