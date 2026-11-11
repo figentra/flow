@@ -1,5 +1,13 @@
 # @figentra-oss/flow
 
+## 0.14.1
+
+### Patch Changes
+
+- 8647359: The rendered `fflow-ci.yml` runs the gate again when a draft pull request is marked ready for review, as core's and
+  pay's hand-written CI do, so a check that reads the draft flag (core's spec gate) sees the ready state.
+- 404a745: `fflow render` opens each width at a real screen's height: 800 px from 768 px up and 844 px below, so the default widths render at 1280×800 and 390×844, as SITE's figentra.com job did (it was 900 for every width). `ci.render`'s `heights` sets the height at each width by position.
+
 ## 0.14.0
 
 ### Minor Changes
